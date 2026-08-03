@@ -1,0 +1,198 @@
+# Run pdmux from the published images.
+#
+# This is the "I want to use it" path, not the "I want to work on it" path. It pulls
+# ghcr.io/podosoft-dev/pdmux-{api,web} rather than building anything, so nothing on
+# the machine needs Node, Go or this repository — only Docker and this file.
+#
+#   cp infra/docker/selfhost.env.example .env
+#   $EDITOR .env                       # a domain, and the four secrets it asks for
+#   docker compose -f infra/docker/selfhost.compose.yml --env-file .env up -d
+#
+# Then open https://<your PDMUX_DOMAIN> and register the first account, which becomes
+# the administrator because ADMIN_EMAILS names it.
+#
+# ⚠ HTTPS IS NOT OPTIONAL, WHICH IS WHY CADDY IS IN THIS FILE. The API refuses to boot
+# in production with a plain-http BETTER_AUTH_URL, and it is right to: the session
+# cookie and every agent token would otherwise cross the network in the clear, and the
+# install command people paste into a host bakes in whatever origin the gateway
+# reports. Caddy obtains and renews the certificate on its own, so the requirement
+# costs one line of configuration rather than a certificate procedure.
+#
+#   PDMUX_DOMAIN=pdmux.example.com   a name that resolves to this machine
+#                                    -> a real certificate, automatically
+#   PDMUX_DOMAIN=localhost           -> Caddy's own local CA. The browser warns once,
+#                                    and agents on OTHER machines cannot reach a
+#                                    localhost anyway. Fine to look at; not a
+#                                    deployment.
+#
+# Pin PDMUX_VERSION to a release rather than leaving it at latest: `podo deploy` and
+# the update path both compare exact versions, and "whatever was newest when this
+# container started" is not something you can roll back to.
+#
+# The images are published for linux/amd64 and linux/arm64, so an Apple Silicon Mac or
+# a Graviton instance pulls a native image with nothing to configure.
+#
+# For a real deployment — retention, backups, an existing gateway in front instead of
+# this one — read docs/OPERATIONS.md §1. This file is deliberately a single machine,
+# which is the shape most people start from.
+
+name: pdmux
+
+x-postgres-env: &postgres-env
+  POSTGRES_USER: ${POSTGRES_USER:-pdmux}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+  POSTGRES_DB: ${POSTGRES_DB:-pdmux}
+
+services:
+  # Automatic HTTPS, and the only container that publishes a port. `reverse-proxy`
+  # passes Upgrade/Connection through, which is all the terminal and agent WebSockets
+  # need, and sets the X-Forwarded-* headers the install script reads to decide the
+  # origin it bakes into itself (docs/OPERATIONS.md §2-2).
+  caddy:
+    image: caddy:2.10-alpine
+    command:
+      - caddy
+      - reverse-proxy
+      - --from
+      - ${PDMUX_DOMAIN:?set PDMUX_DOMAIN in .env}
+      - --to
+      - web:3000
+    depends_on:
+      web: { condition: service_started }
+    ports:
+      - "${PDMUX_HTTP_PORT:-80}:80"
+      - "${PDMUX_HTTPS_PORT:-443}:443"
+    # ⚠ KEEP THIS VOLUME. It holds the issued certificates and the local CA. Losing it
+    # means re-issuing on every restart, and Let's Encrypt rate-limits that.
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16.10-alpine
+    environment: *postgres-env
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pdmux} -d ${POSTGRES_DB:-pdmux}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4.5-alpine
+    command: ["redis-server", "--save", "60", "1"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Commit patch bodies. Any S3-compatible service works; point S3_ENDPOINT at it and
+  # drop this service if you already have one.
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID in .env}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY in .env}
+    volumes:
+      - minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      sh -c "mc alias set s3 http://minio:9000 $$S3_ACCESS_KEY_ID $$S3_SECRET_ACCESS_KEY &&
+             mc mb --ignore-existing s3/$$S3_BUCKET"
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_BUCKET: ${S3_BUCKET:-pdmux}
+    restart: "no"
+
+  # ⚠ RUNS TO COMPLETION BEFORE THE API STARTS. The schema has to exist first, and a
+  # migration is additive, so running it against the previous release is safe.
+  migrate:
+    image: ghcr.io/podosoft-dev/pdmux-api:${PDMUX_VERSION:?set PDMUX_VERSION in .env}
+    command: ["npm", "run", "migrate:all"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment: &api-env
+      NODE_ENV: production
+      PORT: "5002"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      <<: *postgres-env
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      STORAGE_PROVIDER: minio
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-pdmux}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_FORCE_PATH_STYLE: "true"
+      # ⚠ KEEP THIS WITH YOUR BACKUP. Settings encrypted in the database (OAuth
+      # secrets, SMTP passwords) are unlocked with it, and losing it loses them.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env, 32+ characters}
+      BETTER_AUTH_URL: https://${PDMUX_DOMAIN}
+      CORS_ORIGIN: https://${PDMUX_DOMAIN}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:?set ADMIN_EMAILS in .env}
+      AUDIT_LOG_ENABLED: "true"
+    restart: "no"
+
+  api:
+    image: ghcr.io/podosoft-dev/pdmux-api:${PDMUX_VERSION}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment: *api-env
+    restart: unless-stopped
+
+  # ⚠ `npm start`, NOT `node build`. adapter-node's own entry point hands the
+  # /terminal/ws upgrade to SvelteKit, which answers 303 — HTTP keeps working and
+  # every terminal pane sits on "reconnecting" for ever. This entry adds the relay.
+  web:
+    image: ghcr.io/podosoft-dev/pdmux-web:${PDMUX_VERSION}
+    depends_on:
+      api: { condition: service_started }
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # adapter-node checks the request's origin against this rather than trusting a
+      # forwarded header, so it has to be the address a browser actually types.
+      ORIGIN: https://${PDMUX_DOMAIN}
+      BACKEND_INTERNAL_URL: http://api:5002
+      BODY_SIZE_LIMIT: 3M
+    restart: unless-stopped
+
+  # Retention and cleanup. Same image and environment as the API, different command.
+  worker:
+    image: ghcr.io/podosoft-dev/pdmux-api:${PDMUX_VERSION}
+    command: ["npm", "run", "start:worker"]
+    depends_on:
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment: *api-env
+    restart: unless-stopped
+
+volumes:
+  postgres:
+  redis:
+  minio:
+  caddy-data:
+  caddy-config:
