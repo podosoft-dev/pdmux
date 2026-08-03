@@ -21,6 +21,7 @@
   import { Badge } from "$lib/components/ui/badge";
   import { Button } from "$lib/components/ui/button";
   import * as Card from "$lib/components/ui/card";
+  import * as Select from "$lib/components/ui/select";
   import * as Dialog from "$lib/components/ui/dialog";
   import { Input } from "$lib/components/ui/input";
   import { Label } from "$lib/components/ui/label";
@@ -48,7 +49,11 @@
   let copied = $state<string | null>(null);
 
   let label = $state("");
-  let expiresInDays = $state(90);
+  /**
+   * A string because that is what `Select` binds, converted where the API needs a
+   * number — the same shape the host key screen uses for its own expiry select.
+   */
+  let expiryDays = $state("90");
   let tier = $state<Tier>("operate");
   let sort = $state<SortState>({ key: "createdAt", dir: "desc" });
   /**
@@ -61,8 +66,16 @@
 
   const endpoint = $derived(typeof window === "undefined" ? "" : `${window.location.origin}/mcp`);
   const rank = (value: Tier): number => TIERS.indexOf(value);
-  /** Above the ceiling is DISABLED, never hidden — see the fieldset below. */
+  /**
+   * Above the ceiling is DISABLED, never hidden.
+   *
+   * ⚠ A CLOSED SELECT SHOWS NOTHING, so the disabled items alone no longer make the
+   * permission model visible the way three radios did. The reason line below the
+   * control carries that weight instead, and it is drawn whether or not the list is
+   * open — otherwise the eventual 403 arrives with nothing on screen explaining it.
+   */
   const allowed = (value: Tier): boolean => policy !== null && rank(value) <= rank(policy.ceiling);
+  const capped = $derived(policy !== null && policy.ceiling !== "admin");
 
   const codexConfig = $derived(
     `codex mcp add pdmux --url ${endpoint} --bearer-token-env-var ${ENV_VAR}`,
@@ -90,7 +103,7 @@
     if (busy || label.trim().length === 0) return;
     busy = true;
     try {
-      revealed = await mcpTokensApi.mint({ label: label.trim(), expiresInDays, tier });
+      revealed = await mcpTokensApi.mint({ label: label.trim(), expiresInDays: Number(expiryDays), tier });
       label = "";
       await reload();
     } catch (cause) {
@@ -160,13 +173,17 @@
 
 <svelte:head><title>{i18n.t.dash.mcpTokens.title}</title></svelte:head>
 
-<!--
-  ⚠ `data-pdmux-region="page"` AND ITS OWN SCROLL, like every other full-screen route.
-  The shell places its children BY ROLE, so a div without the attribute is not placed at
-  all — and without `min-h-0 overflow-y-auto` a grid child refuses to shrink below its
-  content, so everything past the first card was simply cut off with no way to reach it.
-  Measured on the deployed screen: the token list existed and could not be scrolled to.
--->
+<!-- The shell owns the viewport, so this column owns its own scrolling (ARCHITECTURE §7),
+     and `data-pdmux-region="page"` is how the shell knows where to put it — it places its
+     children by role, so a div without it is not placed at all.
+
+     ⚠ AND EVERY CARD BELOW CARRIES `shrink-0`, WHICH IS THE PART THAT WAS MISSING. A flex
+     column shrinks its children by default, so the cards were squeezed to fit the viewport
+     instead of overflowing it: the container never scrolled, and the shadcn `Card` being
+     `overflow-hidden` meant a squeezed card CLIPPED its own contents. Measured at 1440x900
+     with the region attribute already in place — scrollHeight 900 against clientHeight 900
+     while the token list sat at y=763..928, past the bottom edge with no way to reach it.
+     `/settings` carries the same class for the same reason, and records the same measurement. -->
 <div
   class="flex min-h-0 flex-col gap-4 overflow-y-auto p-6"
   data-testid="mcp-tokens"
@@ -179,7 +196,7 @@
     <p class="text-muted-foreground text-sm">{i18n.t.dash.mcpTokens.blurb}</p>
   </div>
 
-  <Card.Root>
+  <Card.Root class="shrink-0">
     <Card.Header>
       <Card.Title>{i18n.t.dash.mcpTokens.endpointTitle}</Card.Title>
     </Card.Header>
@@ -201,56 +218,57 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root>
+  <Card.Root class="shrink-0">
     <Card.Header>
       <Card.Title>{i18n.t.dash.mcpTokens.newTitle}</Card.Title>
     </Card.Header>
     <Card.Content>
       <form class="grid gap-4" onsubmit={mint} data-testid="mcp-token-form">
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div class="grid gap-1.5">
+        <div class="grid gap-3 sm:grid-cols-3">
+          <div class="flex flex-col gap-1.5">
             <Label for="token-label">{i18n.t.dash.mcpTokens.labelField}</Label>
             <Input id="token-label" bind:value={label} maxlength={64} placeholder="my laptop" required />
           </div>
-          <div class="grid gap-1.5">
+          <div class="flex flex-col gap-1.5">
             <Label for="token-expiry">{i18n.t.dash.mcpTokens.expiryField}</Label>
-            <select
-              id="token-expiry"
-              class="border-input bg-background h-9 rounded-md border px-3 text-sm"
-              bind:value={expiresInDays}>
-              {#each policy?.expiryDays ?? [] as days (days)}
-                <option value={days}>{fmt(i18n.t.dash.mcpTokens.days, { days })}</option>
-              {/each}
-            </select>
+            <Select.Root type="single" bind:value={expiryDays}>
+              <Select.Trigger id="token-expiry" data-testid="mcp-token-expiry">
+                {fmt(i18n.t.dash.mcpTokens.days, { days: expiryDays })}
+              </Select.Trigger>
+              <Select.Content>
+                {#each policy?.expiryDays ?? [] as days (days)}
+                  <Select.Item value={String(days)}>{fmt(i18n.t.dash.mcpTokens.days, { days })}</Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label for="token-tier">{i18n.t.dash.mcpTokens.tierField}</Label>
+            <!-- ⚠ EVERY TIER IS LISTED; the ones above the ceiling are DISABLED rather
+                 than absent, so the permission model stays legible from inside the
+                 list. What a closed select cannot show is said below it. -->
+            <Select.Root type="single" bind:value={tier}>
+              <Select.Trigger id="token-tier" data-testid="mcp-token-tier">
+                {i18n.t.dash.mcpTokens.tier[tier].name}
+              </Select.Trigger>
+              <Select.Content>
+                {#each TIERS as option (option)}
+                  <Select.Item value={option} disabled={!allowed(option)} data-testid={`mcp-tier-${option}`}>
+                    {i18n.t.dash.mcpTokens.tier[option].name}
+                  </Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
           </div>
         </div>
 
-        <fieldset class="grid gap-2">
-          <legend class="text-sm font-medium">{i18n.t.dash.mcpTokens.tierField}</legend>
-          {#each TIERS as option (option)}
-            <label class="flex items-start gap-2 text-sm">
-              <input
-                type="radio"
-                name="tier"
-                class="mt-1"
-                value={option}
-                checked={tier === option}
-                disabled={!allowed(option)}
-                data-testid={`mcp-tier-${option}`}
-                onchange={() => (tier = option)} />
-              <span>
-                <span class="font-medium">{i18n.t.dash.mcpTokens.tier[option].name}</span>
-                {#if !allowed(option)}
-                  <!-- ⚠ DISABLED, NEVER HIDDEN. Hiding the tiers makes the permission
-                       model invisible and turns the eventual 403 into a surprise. -->
-                  <span class="text-muted-foreground block text-xs" data-testid={`mcp-tier-${option}-blocked`}>
-                    {i18n.t.dash.mcpTokens.aboveCeiling}
-                  </span>
-                {/if}
-              </span>
-            </label>
-          {/each}
-        </fieldset>
+        {#if capped}
+          <!-- Drawn whether or not the list is open: a disabled item nobody scrolls to
+               explains nothing, and the 403 it prevents would otherwise arrive bare. -->
+          <p class="text-muted-foreground text-xs" data-testid="mcp-tier-blocked">
+            {i18n.t.dash.mcpTokens.aboveCeiling}
+          </p>
+        {/if}
 
         <div class="bg-muted/50 grid gap-1 rounded-md p-3 text-sm" data-testid="mcp-tier-detail">
           <p class="font-medium">{fmt(i18n.t.dash.mcpTokens.canDo, { tier: i18n.t.dash.mcpTokens.tier[tier].name })}</p>
@@ -279,7 +297,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root>
+  <Card.Root class="shrink-0">
     <Card.Header>
       <Card.Title>{i18n.t.dash.mcpTokens.listTitle}</Card.Title>
     </Card.Header>

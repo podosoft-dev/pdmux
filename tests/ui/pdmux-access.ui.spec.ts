@@ -38,26 +38,31 @@ test.describe("coding CLI access", () => {
    * touches nobody's account.
    */
   test("[TC-PDMCP-103] shows a tier it cannot grant as refused, not as absent", async ({ page }) => {
-    await page.route(POLICY, (route) => route.fulfill({ json: { ceiling: "read", enabled: true } }));
+    await page.route(POLICY, (route) => route.fulfill({ json: { ceiling: "read", enabled: true, expiryDays: [7, 30, 90] } }));
     await page.route(TOKENS, (route) => route.fulfill({ json: [] }));
 
     await ready(page, "/access");
 
-    // Present, so the permission model is legible: a person can see that Operate and
-    // Admin exist and that they are not theirs to grant. Hiding them turns the 403
-    // they would eventually get into a surprise with nothing on screen explaining it.
+    // ⚠ THIS ONE IS ASSERTED WITH THE LIST CLOSED, and that is the point. A select
+    // shows nothing until it is opened, so disabled items alone would leave a person
+    // with no idea why the tier they wanted is unavailable — and the 403 they would
+    // eventually get would arrive bare.
+    await expect(page.locator("[data-testid='mcp-tier-blocked']")).toBeVisible();
+
+    await page.locator("[data-testid='mcp-token-tier']").click();
+    // Present, so the permission model is legible from inside the list too: a person
+    // can see that Operate and Admin exist and are not theirs to grant.
     for (const tier of ["read", "operate", "admin"]) {
       await expect(page.locator(`[data-testid='mcp-tier-${tier}']`)).toBeVisible();
     }
-    await expect(page.locator("[data-testid='mcp-tier-read']")).toBeEnabled();
-    await expect(page.locator("[data-testid='mcp-tier-operate']")).toBeDisabled();
-    await expect(page.locator("[data-testid='mcp-tier-admin']")).toBeDisabled();
-    // And says why, rather than leaving a dead control.
-    await expect(page.locator("[data-testid='mcp-tier-operate-blocked']")).toBeVisible();
+    await expect(page.locator("[data-testid='mcp-tier-read']")).not.toHaveAttribute("data-disabled", "");
+    await expect(page.locator("[data-testid='mcp-tier-operate']")).toHaveAttribute("data-disabled", "");
+    await expect(page.locator("[data-testid='mcp-tier-admin']")).toHaveAttribute("data-disabled", "");
+    await page.keyboard.press("Escape");
 
     // The selection follows the ceiling down: the form defaults to `operate`, and
     // submitting that would ask for a tier the server is about to refuse.
-    await expect(page.locator("[data-testid='mcp-tier-read']")).toBeChecked();
+    await expect(page.locator("[data-testid='mcp-token-tier']")).toContainText("Read only");
   });
 
   /**
@@ -117,9 +122,23 @@ test.describe("coding CLI access", () => {
    * which is why every other assertion in this file passed while the screen was
    * unusable. Reported from the deployment.
    */
-  test("[TC-PDMCP-103] is placed by the shell, and everything below the fold can be reached", async ({ page }) => {
-    await page.route(POLICY, (route) => route.fulfill({ json: { ceiling: "admin", enabled: true } }));
-    await page.route(TOKENS, (route) => route.fulfill({ json: [] }));
+  test("[TC-PDMCP-103] is placed by the shell, and the list below the fold can be reached", async ({ page }) => {
+    const row = (n: number) => ({
+      id: `0000000${n}-1111-4111-8111-111111111111`,
+      label: `token ${n}`,
+      keyPrefix: `pdmux_usr_row${n}`,
+      tier: "read",
+      effectiveTier: "read",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      expiringSoon: false,
+      lastUsedAt: null,
+      revokedAt: null,
+    });
+    await page.route(POLICY, (route) => route.fulfill({ json: { ceiling: "admin", enabled: true, expiryDays: [7, 30, 90] } }));
+    // Enough rows that the page must overflow. An empty list fits, and a screen that
+    // fits cannot demonstrate anything about a screen that does not.
+    await page.route(TOKENS, (route) => route.fulfill({ json: Array.from({ length: 8 }, (_, i) => row(i)) }));
 
     await ready(page, "/access");
 
@@ -132,11 +151,31 @@ test.describe("coding CLI access", () => {
     await expect(crumb).toBeVisible();
     await expect(crumb).toHaveAttribute("href", "/");
 
-    // ⚠ THE ASSERTION IS AFTER SCROLLING, because the failure was that scrolling did
-    // nothing. A visibility check alone passes on a `<div>` that simply overflows its
-    // parent: the node is painted, just not anywhere a person can get to.
+    /**
+     * ⚠ THE CONTAINER HAS TO ACTUALLY SCROLL, and that is a different question from
+     * whether it says `overflow-y: auto`.
+     *
+     * A flex column shrinks its children by default, so the cards were squeezed to fit
+     * the viewport rather than overflowing it — `scrollHeight` equalled `clientHeight`
+     * with nothing to scroll, while the cards, being `overflow-hidden`, clipped their
+     * own contents. Measured at 1440x900: 900 against 900, with the token list sitting
+     * at y=763..928.
+     *
+     * ⚠ AND THE FIRST VERSION OF THIS TEST ASSERTED ON THE FORM, which sat at
+     * y=402..834 — inside the viewport the whole time. It passed against the broken
+     * screen. The thing that was cut off is the LAST element, so that is what this
+     * looks at.
+     */
+    const scroll = await panel.evaluate((element) => ({
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    }));
+    expect(scroll.scrollHeight, "the page does not scroll, so its cards were squeezed instead").toBeGreaterThan(
+      scroll.clientHeight,
+    );
+
     await panel.evaluate((element) => element.scrollTo(0, element.scrollHeight));
-    await expect(page.locator("[data-testid='mcp-token-form']")).toBeInViewport();
+    await expect(page.locator("[data-testid='mcp-tokens'] table")).toBeInViewport();
   });
 
   /**
