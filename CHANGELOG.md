@@ -1,8 +1,21 @@
 # CHANGELOG
 
-## 0.1.0 (unreleased)
+## 0.3.1
 
-The first version. A self-hosted dashboard for operating several development machines from one
+- **Published images are multi-architecture.** `ghcr.io/podosoft-dev/pdmux-{api,web}` now carry both
+  `linux/amd64` and `linux/arm64`, so an Apple Silicon machine or a Graviton instance pulls a native
+  image instead of failing with `no matching manifest`. The two are built on native runners and joined
+  into one manifest list; the release job also verifies that both architectures' web images carry
+  **byte-identical agent binaries**, since an agent checks its update against a sha256 the server
+  hands out and a version number that meant different bytes on different servers would be worthless.
+
+## 0.3.0
+
+The first public release, and the first release whose number this file records — the tag line had
+moved ahead of `version` in `package.json` (which is what the API reports to an agent), and 0.3.1
+closes that gap. Everything below describes the product as of this release.
+
+A self-hosted dashboard for operating several development machines from one
 screen, with authentication, organisations, the audit log and the admin screens built on
 [PodoKit](https://github.com/podosoft-dev/podokit).
 

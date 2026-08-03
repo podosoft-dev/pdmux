@@ -1,6 +1,6 @@
 {
   "name": "pdmux-web",
-  "version": "0.1.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,9 +14,9 @@
   "dependencies": {
     "@internationalized/date": "^3.12.2",
     "@lucide/svelte": "^1.23.0",
-    "@pdmux/core": "0.1.0",
-    "@pdmux/protocol": "0.1.0",
-    "@pdmux/ui": "0.1.0",
+    "@pdmux/core": "0.3.1",
+    "@pdmux/protocol": "0.3.1",
+    "@pdmux/ui": "0.3.1",
     "@podosoft/podokit-api-client": "^0.8.0",
     "@xterm/xterm": "^5.5.0",
     "bits-ui": "^2.18.1",
