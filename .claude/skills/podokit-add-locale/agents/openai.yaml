@@ -1,0 +1,4 @@
+interface:
+  display_name: "PodoKit Locale Setup"
+  short_description: "Add and validate JSON locale catalogs safely"
+  default_prompt: "Use $podokit-add-locale to add, validate, activate, and test a new JSON locale in this PodoKit app."

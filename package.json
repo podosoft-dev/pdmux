@@ -1,0 +1,27 @@
+{
+  "name": "pdmux",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.22.1"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tests"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "build:agent": "node tools/build-agent-binaries.mjs",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e -w tests",
+    "test:e2e:ui": "npm run test:e2e:ui -w tests",
+    "test:e2e:api": "npm run test:e2e:api -w tests",
+    "audit:generic": "node tools/generalization-audit.mjs",
+    "e2e:reset": "node tools/reset-e2e-data.mjs"
+  },
+  "license": "Apache-2.0",
+  "description": "Self-hosted dashboard for operating development machines: host cards, split terminals and a read-only commit graph."
+}

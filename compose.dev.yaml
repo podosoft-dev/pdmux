@@ -1,0 +1,158 @@
+# Containerized development environment.
+#
+#   podo dev watch                                                # core stack
+#   podo dev watch --profile cache --profile storage \
+#     --profile queue                                             # with modules
+#
+# A user-level PodoKit gateway owns loopback :80 and routes each *.localhost host
+# to this stack. The legacy per-project Traefik service is opt-in only.
+# api/postgres/redis/minio have NO published ports — they talk by service name
+# on the internal network, so this stack never collides with other projects.
+#
+# Core services (traefik, web, api, postgres) always run. Module-specific
+# services are behind profiles — enable the ones your app uses:
+#   --profile cache    redis    (redis / rate-limit / bullmq modules)
+#   --profile storage  minio    (object-storage-s3 / file-upload modules)
+#   --profile queue    worker   (bullmq / job-progress modules)
+#
+# `watch` syncs your edits into the containers: the web has instant vite HMR;
+# an API source change restarts the api service (~5s), which is the stable
+# approach for nest inside a container.
+name: pdmux-dev
+
+services:
+  traefik:
+    profiles: [podokit-legacy-proxy]
+    image: traefik:v3.5
+    command:
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --api.dashboard=true
+      - --api.insecure=true
+    ports:
+      - "${TRAEFIK_PORT:-80}:80"
+      - "127.0.0.1:${TRAEFIK_DASHBOARD_PORT:-8080}:8080" # Traefik dashboard (dev only)
+    volumes:
+      - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+    networks: [podokit]
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: npm run dev -w pdmux-web -- --host 0.0.0.0
+    working_dir: /app
+    env_file: .env.docker
+    environment:
+      - VITE_DOCKER=1
+      - BACKEND_INTERNAL_URL=http://api:5002
+      # One trusted Traefik proxy sits in front of SvelteKit. This keeps
+      # getClientAddress() tied to the visitor instead of the proxy container.
+      - ADDRESS_HEADER=x-forwarded-for
+      - XFF_DEPTH=1
+    depends_on: [api]
+    networks: [podokit]
+    develop:
+      watch:
+        - { action: sync, path: ./apps/web/src, target: /app/apps/web/src }
+        - { action: sync, path: ./apps/web/static, target: /app/apps/web/static }
+        - { action: sync+restart, path: ./apps/web/vite.config.ts, target: /app/apps/web/vite.config.ts }
+        - { action: rebuild, path: ./apps/web/package.json }
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    init: true
+    command: npm run dev -w pdmux-api
+    working_dir: /app
+    env_file: .env.docker
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [podokit]
+    develop:
+      watch:
+        # nest-cli's in-container watch does not reliably respawn the app process,
+        # so restart the service on an API source change (~5s). The Docker docs'
+        # sync+restart is the stable, recommended approach; the web keeps instant
+        # HMR via plain sync.
+        - { action: sync+restart, path: ./apps/api/src, target: /app/apps/api/src }
+        - { action: sync, path: ./apps/api/scripts, target: /app/apps/api/scripts }
+        - { action: rebuild, path: ./apps/api/package.json }
+
+  worker:
+    # started only with the bullmq / job-progress modules: --profile queue
+    profiles: [queue]
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    init: true
+    command: npm run dev:worker -w pdmux-api
+    working_dir: /app
+    env_file: .env.docker
+    depends_on:
+      redis: { condition: service_started }
+    networks: [podokit]
+    develop:
+      watch:
+        # nest-cli's in-container watch does not reliably respawn the app process,
+        # so restart the service on an API source change (~5s). The Docker docs'
+        # sync+restart is the stable, recommended approach; the web keeps instant
+        # HMR via plain sync.
+        - { action: sync+restart, path: ./apps/api/src, target: /app/apps/api/src }
+        - { action: sync, path: ./apps/api/scripts, target: /app/apps/api/scripts }
+        - { action: rebuild, path: ./apps/api/package.json }
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: podokit
+      POSTGRES_PASSWORD: podokit
+      POSTGRES_DB: podokit
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U podokit"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [podokit] # no published ports — internal only
+
+  redis:
+    # started only with the redis / rate-limit / bullmq modules: --profile cache
+    profiles: [cache]
+    image: redis:7-alpine
+    networks: [podokit] # internal only
+
+  minio:
+    # started only with the object-storage-s3 / file-upload modules: --profile storage
+    profiles: [storage]
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: podokit
+      MINIO_ROOT_PASSWORD: podokitsecret
+    volumes:
+      - miniodata:/data
+    networks: [podokit] # internal only
+
+  minio-init:
+    profiles: [storage]
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_started }
+    entrypoint:
+      - sh
+      - -c
+      - |
+        until mc alias set loc http://minio:9000 podokit podokitsecret; do sleep 1; done
+        mc mb -p loc/podokit || true
+    networks: [podokit]
+
+networks:
+  podokit: {}
+
+volumes:
+  pgdata: {}
+  miniodata: {}

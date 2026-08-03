@@ -1,0 +1,1907 @@
+{
+  "$comment": "GENERATED FILE — do not hand-edit. Derived from packages/protocol/src/index.ts; regenerate with `npm run schema:build -w @pdmux/protocol`.",
+  "$defs": {
+    "agentCapability": {
+      "enum": [
+        "metrics",
+        "sessions",
+        "terminal",
+        "git",
+        "usage",
+        "services",
+        "exec"
+      ],
+      "type": "string"
+    },
+    "agentConfig": {
+      "additionalProperties": true,
+      "properties": {
+        "bodyMaxChars": {
+          "default": 1200,
+          "maximum": 20000,
+          "minimum": 200,
+          "type": "integer"
+        },
+        "gitDetailBudget": {
+          "default": 120,
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gitIntervalSec": {
+          "default": 120,
+          "maximum": 86400,
+          "minimum": 10,
+          "type": "integer"
+        },
+        "gitLimit": {
+          "default": 300,
+          "maximum": 2000,
+          "minimum": 10,
+          "type": "integer"
+        },
+        "gitRoots": {
+          "default": [],
+          "items": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "heartbeatSec": {
+          "default": 5,
+          "maximum": 3600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "probeTimeoutMs": {
+          "default": 2000,
+          "maximum": 10000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "services": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/agentServiceConfig"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "statusFileCap": {
+          "default": 300,
+          "maximum": 2000,
+          "minimum": 10,
+          "type": "integer"
+        },
+        "terminalBufferBytes": {
+          "default": 262144,
+          "maximum": 4000000,
+          "minimum": 4096,
+          "type": "integer"
+        },
+        "usageIntervalSec": {
+          "default": 60,
+          "maximum": 3600,
+          "minimum": 10,
+          "type": "integer"
+        },
+        "usageProviders": {
+          "default": [],
+          "items": {
+            "maxLength": 32,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "agentDiagnostic": {
+      "additionalProperties": true,
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "level": {
+          "default": "info",
+          "enum": [
+            "info",
+            "warn",
+            "error"
+          ],
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 512,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "agentDownstream": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "config": {
+              "$ref": "#/$defs/agentConfig"
+            },
+            "hostId": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "serverVersion": {
+              "default": "",
+              "maxLength": 32,
+              "type": "string"
+            },
+            "tokenExpiresAt": {
+              "maxLength": 40,
+              "type": "string"
+            },
+            "type": {
+              "const": "welcome",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "hostId",
+            "config"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "config": {
+              "$ref": "#/$defs/agentConfig"
+            },
+            "type": {
+              "const": "config",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "config"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "type": {
+              "const": "update",
+              "type": "string"
+            },
+            "update": {
+              "$ref": "#/$defs/agentUpdate"
+            }
+          },
+          "required": [
+            "type",
+            "update"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "exec": {
+              "$ref": "#/$defs/agentExec"
+            },
+            "type": {
+              "const": "exec",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "exec"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/terminalClientFrame"
+            },
+            "type": {
+              "const": "terminal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "frame"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "ts": {
+              "$ref": "#/$defs/epochSeconds"
+            },
+            "type": {
+              "const": "ping",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "ts"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "type": {
+              "const": "collect",
+              "type": "string"
+            },
+            "what": {
+              "enum": [
+                "heartbeat",
+                "repos"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "what"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "repoPath": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "shas": {
+              "items": {
+                "maxLength": 40,
+                "minLength": 7,
+                "type": "string"
+              },
+              "maxItems": 50,
+              "type": "array"
+            },
+            "type": {
+              "const": "commitDetail",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repoPath",
+            "shas"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "repoPath": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "shas": {
+              "items": {
+                "maxLength": 40,
+                "minLength": 7,
+                "type": "string"
+              },
+              "maxItems": 1000,
+              "type": "array"
+            },
+            "type": {
+              "const": "detailAck",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repoPath",
+            "shas"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "agentExec": {
+      "additionalProperties": true,
+      "properties": {
+        "args": {
+          "default": [],
+          "items": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "command": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "commandId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "cwd": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timeoutMs": {
+          "default": 30000,
+          "maximum": 600000,
+          "minimum": 1000,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "commandId",
+        "command"
+      ],
+      "type": "object"
+    },
+    "agentHello": {
+      "additionalProperties": true,
+      "properties": {
+        "address": {
+          "default": "",
+          "maxLength": 255,
+          "type": "string"
+        },
+        "agentVersion": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "arch": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "capabilities": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/agentCapability"
+          },
+          "type": "array"
+        },
+        "hostname": {
+          "maxLength": 255,
+          "type": "string"
+        },
+        "os": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "protocolVersion": {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "update": {
+          "$ref": "#/$defs/agentUpdateAbility",
+          "default": {}
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "agentVersion",
+        "hostname",
+        "os",
+        "arch"
+      ],
+      "type": "object"
+    },
+    "agentServiceConfig": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "path": {
+          "default": "/",
+          "maxLength": 512,
+          "type": "string"
+        },
+        "port": {
+          "exclusiveMinimum": 0,
+          "maximum": 65535,
+          "type": "integer"
+        },
+        "probe": {
+          "default": "tcp",
+          "enum": [
+            "tcp",
+            "http",
+            "none"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "port"
+      ],
+      "type": "object"
+    },
+    "agentUpdate": {
+      "additionalProperties": true,
+      "properties": {
+        "arch": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "artifactPath": {
+          "maxLength": 512,
+          "minLength": 1,
+          "pattern": "^\\/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*$",
+          "type": "string"
+        },
+        "bytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 200000000,
+          "type": "integer"
+        },
+        "commandId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "force": {
+          "default": false,
+          "type": "boolean"
+        },
+        "os": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "probationSec": {
+          "default": 300,
+          "maximum": 1800,
+          "minimum": 30,
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "commandId",
+        "version",
+        "artifactPath",
+        "sha256",
+        "bytes",
+        "os",
+        "arch"
+      ],
+      "type": "object"
+    },
+    "agentUpdateAbility": {
+      "additionalProperties": true,
+      "properties": {
+        "canRestart": {
+          "default": false,
+          "type": "boolean"
+        },
+        "restartMode": {
+          "default": "none",
+          "enum": [
+            "systemd",
+            "launchd",
+            "none"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "agentUpstream": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "hello": {
+              "$ref": "#/$defs/agentHello"
+            },
+            "type": {
+              "const": "hello",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "hello"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "heartbeat": {
+              "$ref": "#/$defs/heartbeat"
+            },
+            "type": {
+              "const": "heartbeat",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "heartbeat"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "repos": {
+              "items": {
+                "$ref": "#/$defs/repoSnapshot"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            "ts": {
+              "$ref": "#/$defs/epochSeconds"
+            },
+            "type": {
+              "const": "repos",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "ts",
+            "repos"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/terminalServerFrame"
+            },
+            "type": {
+              "const": "terminal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "frame"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "ts": {
+              "$ref": "#/$defs/epochSeconds"
+            },
+            "type": {
+              "const": "pong",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "ts"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "type": {
+              "const": "updateStatus",
+              "type": "string"
+            },
+            "update": {
+              "$ref": "#/$defs/updateStatus"
+            }
+          },
+          "required": [
+            "type",
+            "update"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/execResult"
+            },
+            "type": {
+              "const": "execResult",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "result"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "agentUsage": {
+      "additionalProperties": true,
+      "properties": {
+        "processes": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        "ts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochSeconds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "windows": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/usageWindow"
+          },
+          "maxItems": 8,
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "commitDetail": {
+      "additionalProperties": true,
+      "properties": {
+        "body": {
+          "default": "",
+          "type": "string"
+        },
+        "bodyTruncated": {
+          "default": false,
+          "type": "boolean"
+        },
+        "dropped": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "empty": {
+          "default": false,
+          "type": "boolean"
+        },
+        "files": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/diffFile"
+          },
+          "type": "array"
+        },
+        "sha": {
+          "maxLength": 40,
+          "minLength": 7,
+          "type": "string"
+        },
+        "subject": {
+          "default": "",
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sha"
+      ],
+      "type": "object"
+    },
+    "diffFile": {
+      "additionalProperties": true,
+      "properties": {
+        "add": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "binary": {
+          "default": false,
+          "type": "boolean"
+        },
+        "del": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lines": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oldPath": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "status": {
+          "default": "M",
+          "enum": [
+            "A",
+            "M",
+            "D",
+            "R"
+          ],
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "epochSeconds": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "execResult": {
+      "additionalProperties": true,
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "commandId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "exitCode": {
+          "type": "integer"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 512,
+          "type": "string"
+        },
+        "stderr": {
+          "default": "",
+          "maxLength": 64000,
+          "type": "string"
+        },
+        "stdout": {
+          "default": "",
+          "maxLength": 64000,
+          "type": "string"
+        },
+        "timedOut": {
+          "default": false,
+          "type": "boolean"
+        },
+        "truncated": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "commandId",
+        "exitCode"
+      ],
+      "type": "object"
+    },
+    "gitCommit": {
+      "additionalProperties": true,
+      "properties": {
+        "author": {
+          "default": "",
+          "maxLength": 255,
+          "type": "string"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochSeconds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parents": {
+          "default": [],
+          "items": {
+            "maxLength": 40,
+            "minLength": 7,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "refs": {
+          "default": [],
+          "items": {
+            "maxLength": 255,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "sha": {
+          "maxLength": 40,
+          "minLength": 7,
+          "type": "string"
+        },
+        "subject": {
+          "default": "",
+          "maxLength": 1024,
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha"
+      ],
+      "type": "object"
+    },
+    "gitHead": {
+      "additionalProperties": true,
+      "properties": {
+        "ahead": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "behind": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "detached": {
+          "default": false,
+          "type": "boolean"
+        },
+        "sha": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "upstream": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "gitRef": {
+      "additionalProperties": true,
+      "properties": {
+        "ahead": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "behind": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gone": {
+          "default": false,
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "local",
+            "remote",
+            "tag"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha": {
+          "maxLength": 40,
+          "minLength": 7,
+          "type": "string"
+        },
+        "upstream": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "sha"
+      ],
+      "type": "object"
+    },
+    "gitStatusFile": {
+      "additionalProperties": true,
+      "properties": {
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "x": {
+          "default": " ",
+          "maxLength": 1,
+          "type": "string"
+        },
+        "y": {
+          "default": " ",
+          "maxLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "gitUncommitted": {
+      "additionalProperties": true,
+      "properties": {
+        "conflicts": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dropped": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "files": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/gitStatusFile"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "staged": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "submodules": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unstaged": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "untracked": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "heartbeat": {
+      "additionalProperties": true,
+      "properties": {
+        "diagnostics": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/agentDiagnostic"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "listeners": {
+          "items": {
+            "$ref": "#/$defs/listener"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
+        "resource": {
+          "$ref": "#/$defs/resource",
+          "default": {}
+        },
+        "services": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/serviceProbe"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "sessions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/muxSession"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
+        "ts": {
+          "$ref": "#/$defs/epochSeconds"
+        },
+        "usage": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/agentUsage"
+          },
+          "maxItems": 16,
+          "type": "array"
+        }
+      },
+      "required": [
+        "ts"
+      ],
+      "type": "object"
+    },
+    "listener": {
+      "additionalProperties": true,
+      "properties": {
+        "loopbackOnly": {
+          "default": false,
+          "type": "boolean"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "process": {
+          "default": "",
+          "maxLength": 64,
+          "type": "string"
+        }
+      },
+      "required": [
+        "port"
+      ],
+      "type": "object"
+    },
+    "muxSession": {
+      "additionalProperties": true,
+      "properties": {
+        "attached": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "windows": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "percent": {
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "repoSnapshot": {
+      "additionalProperties": true,
+      "properties": {
+        "commits": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/gitCommit"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
+        "details": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/commitDetail"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "head": {
+          "$ref": "#/$defs/gitHead",
+          "default": {}
+        },
+        "limit": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 512,
+          "type": "string"
+        },
+        "partial": {
+          "default": false,
+          "type": "boolean"
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "pending": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "refs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/gitRef"
+          },
+          "maxItems": 2000,
+          "type": "array"
+        },
+        "truncated": {
+          "default": false,
+          "type": "boolean"
+        },
+        "ts": {
+          "$ref": "#/$defs/epochSeconds"
+        },
+        "uncommitted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/gitUncommitted"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workingDiff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/workingDiff"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "path",
+        "name",
+        "ts"
+      ],
+      "type": "object"
+    },
+    "resource": {
+      "additionalProperties": true,
+      "properties": {
+        "cpuPct": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/percent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "diskPct": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/percent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "diskTotalBytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "diskUsedBytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "load1": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memPct": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/percent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memTotalBytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memUsedBytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "uptimeSec": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "serviceProbe": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "latencyMs": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "default": "unknown",
+          "enum": [
+            "up",
+            "down",
+            "unknown"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "terminalClientFrame": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "target": {
+              "$ref": "#/$defs/terminalTarget"
+            },
+            "termId": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "open",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "type": "string"
+            },
+            "termId": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "input",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "cols": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000,
+              "type": "integer"
+            },
+            "rows": {
+              "exclusiveMinimum": 0,
+              "maximum": 500,
+              "type": "integer"
+            },
+            "termId": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "resize",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId",
+            "cols",
+            "rows"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "termId": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "close",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "terminalServerFrame": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "termId": {
+              "type": "string"
+            },
+            "type": {
+              "const": "ready",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "data": {
+              "type": "string"
+            },
+            "dropped": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "termId": {
+              "type": "string"
+            },
+            "type": {
+              "const": "output",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "termId": {
+              "type": "string"
+            },
+            "type": {
+              "const": "exit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "message": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "termId": {
+              "type": "string"
+            },
+            "type": {
+              "const": "error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId",
+            "message"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "terminalTarget": {
+      "additionalProperties": true,
+      "properties": {
+        "cols": {
+          "default": 80,
+          "exclusiveMinimum": 0,
+          "maximum": 1000,
+          "type": "integer"
+        },
+        "kind": {
+          "default": "session",
+          "enum": [
+            "session",
+            "shell"
+          ],
+          "type": "string"
+        },
+        "rows": {
+          "default": 24,
+          "exclusiveMinimum": 0,
+          "maximum": 500,
+          "type": "integer"
+        },
+        "session": {
+          "pattern": "^[A-Za-z0-9_-]{1,32}$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "updateStatus": {
+      "additionalProperties": true,
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "commandId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "currentVersion": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "maxLength": 512,
+          "type": "string"
+        },
+        "phase": {
+          "enum": [
+            "accepted",
+            "downloading",
+            "verifying",
+            "swapping",
+            "restarting",
+            "done",
+            "failed",
+            "rolledBack"
+          ],
+          "type": "string"
+        },
+        "progressPct": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/percent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sessionPanes": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shellPanes": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "targetVersion": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "commandId",
+        "phase",
+        "currentVersion"
+      ],
+      "type": "object"
+    },
+    "usageWindow": {
+      "additionalProperties": true,
+      "properties": {
+        "key": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "remainingPct": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/percent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "resetsAt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochSeconds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "usedPct": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/percent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    },
+    "workingDiff": {
+      "additionalProperties": true,
+      "properties": {
+        "dropped": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "staged": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/diffFile"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "default": false,
+          "type": "boolean"
+        },
+        "unstaged": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/diffFile"
+          },
+          "type": "array"
+        },
+        "untracked": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/diffFile"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "_generated": {
+    "command": "npm run schema:build -w @pdmux/protocol",
+    "doNotEdit": true,
+    "generator": "packages/protocol/scripts/build-schema.mjs",
+    "protocolVersion": 1,
+    "source": "packages/protocol/src/index.ts"
+  },
+  "roots": {
+    "agentDownstream": {
+      "$ref": "#/$defs/agentDownstream"
+    },
+    "agentUpstream": {
+      "$ref": "#/$defs/agentUpstream"
+    }
+  },
+  "title": "pdmux agent protocol"
+}

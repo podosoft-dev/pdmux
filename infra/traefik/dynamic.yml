@@ -1,0 +1,17 @@
+# Traefik dynamic config (file provider). Routes the browser-facing web app;
+# api/postgres/redis/minio stay internal (reached by service name).
+http:
+  routers:
+    web:
+      rule: "PathPrefix(`/`)"  # any host on this dedicated proxy -> web
+      entryPoints: [web]
+      middlewares: [compression]
+      service: web
+  middlewares:
+    compression:
+      compress: {}
+  services:
+    web:
+      loadBalancer:
+        servers:
+          - url: "http://web:5001"

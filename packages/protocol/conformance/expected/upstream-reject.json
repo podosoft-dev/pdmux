@@ -1,0 +1,16 @@
+{
+	"generatedBy": "packages/protocol/scripts/build-expected.mjs",
+	"cases": "conformance/cases/upstream-reject.json",
+	"protocolVersion": 1,
+	"accepted": {},
+	"rejected": {
+		"hello-capabilities-null": "hello.capabilities: Expected array, received null",
+		"hello-update-null": "hello.update: Expected object, received null",
+		"hello-unknown-capability": "hello.capabilities.1: Invalid enum value. Expected 'metrics' | 'sessions' | 'terminal' | 'git' | 'usage' | 'services' | 'exec', received 'containers'",
+		"heartbeat-resource-null": "heartbeat.resource: Expected object, received null",
+		"heartbeat-cpu-out-of-range": "heartbeat.resource.cpuPct: Number must be less than or equal to 100",
+		"heartbeat-cpu-fractional": "heartbeat.resource.cpuPct: Expected integer, received float",
+		"diagnostic-message-too-long": "heartbeat.diagnostics.0.message: String must contain at most 512 character(s)",
+		"repos-limit-zero": "repos.0.limit: Number must be greater than 0"
+	}
+}

@@ -1,0 +1,14 @@
+{
+  "extends": "./.svelte-kit/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    // The built server's upgrade proxy runs outside the SvelteKit bundle, so its
+    // modules are JavaScript (see src/lib/server/terminal-upgrade.js). They are
+    // JSDoc-typed and checked here rather than left as an untyped island.
+    "allowJs": true,
+    "checkJs": true
+  }
+}

@@ -1,0 +1,680 @@
+{
+  "pdmux": {
+    "card": {
+      "settings": "card settings",
+      "settingsFor": "card settings"
+    },
+    "cell": {
+      "assign": "Assign a terminal to this cell",
+      "close": "Close this cell (the panes after it move forward)",
+      "empty": "empty",
+      "nothingToPull": "No pane after this cell",
+      "terminal": "terminal"
+    },
+    "composer": {
+      "label": "Terminal input line",
+      "placeholder": "Type here, then send",
+      "put": "Send without newline",
+      "send": "Send"
+    },
+    "detail": {
+      "collecting": "Changes are still being collected",
+      "droppedFiles": "files omitted by the size cap",
+      "files": "Changed files",
+      "loading": "Loading changes…",
+      "missing": "Changes were not collected for this commit",
+      "notArrived": "The changes have not arrived yet",
+      "retry": "Try again"
+    },
+    "diff": {
+      "binary": "binary",
+      "binaryBody": "Binary file — contents are not shown",
+      "empty": "No changes",
+      "partial": "partial"
+    },
+    "graph": {
+      "empty": "No commits",
+      "uncommitted": "Uncommitted changes"
+    },
+    "grid": {
+      "label": "terminals"
+    },
+    "handle": {
+      "resize": "resize"
+    },
+    "host": {
+      "online": "online",
+      "stopped": "stopped",
+      "unknown": "unknown"
+    },
+    "metric": {
+      "trend": "recent trend"
+    },
+    "pane": {
+      "close": "Close (this cell stays empty)",
+      "detach": "Open in a new window",
+      "ephemeral": "Not persistent — ends with the connection",
+      "focus": "Focus this pane",
+      "headerHint": "Click to zoom · drag to move",
+      "retarget": "Change target",
+      "unreachable": "This host is not reachable",
+      "zoom": "Toggle zoom",
+      "history": "Show output"
+    },
+    "picker": {
+      "addTitle": "Add a terminal",
+      "cancel": "Cancel",
+      "cellTitle": "terminal target",
+      "clients": "clients",
+      "create": "Create",
+      "noMux": "This host has no terminal multiplexer installed",
+      "newSession": "New session",
+      "noSessions": "No sessions running",
+      "offline": "not reachable",
+      "sessionName": "session name",
+      "sessions": "Existing sessions",
+      "shell": "Plain shell (no multiplexer)",
+      "shellWarning": "ends with the connection",
+      "title": "Choose a terminal target",
+      "windows": "windows"
+    },
+    "refs": {
+      "detached": "detached",
+      "empty": "No branches or tags",
+      "fetchNote": "Remote refs are as of the last fetch",
+      "gone": "upstream gone",
+      "inSync": "in sync",
+      "label": "repository state",
+      "local": "Local branches",
+      "remote": "Remote branches",
+      "tags": "Tags",
+      "unknownHead": "unknown"
+    },
+    "services": {
+      "label": "service",
+      "open": "Open"
+    },
+    "sidebar": {
+      "add": "Add host",
+      "empty": "No hosts registered yet.",
+      "label": "hosts"
+    },
+    "usage": {
+      "age": "snapshot age",
+      "left": "left",
+      "none": "no budget reported",
+      "used": "used"
+    },
+    "keys": {
+      "label": "Terminal keys",
+      "cycle": "Next keys",
+      "scrollUp": "Scroll up",
+      "scrollDown": "Scroll down",
+      "esc": "Escape",
+      "tab": "Tab",
+      "ctrl": "Control",
+      "up": "Arrow up",
+      "down": "Arrow down",
+      "left": "Arrow left",
+      "right": "Arrow right",
+      "enter": "Enter",
+      "shiftTab": "Shift Tab",
+      "home": "Home",
+      "end": "End",
+      "pageUp": "Page up",
+      "pageDown": "Page down",
+      "delete": "Delete",
+      "backspace": "Backspace",
+      "ctrlA": "Control A",
+      "ctrlC": "Control C",
+      "ctrlD": "Control D",
+      "ctrlE": "Control E",
+      "ctrlK": "Control K",
+      "ctrlL": "Control L",
+      "ctrlR": "Control R",
+      "ctrlU": "Control U",
+      "ctrlW": "Control W",
+      "ctrlZ": "Control Z",
+      "f1": "F1",
+      "f2": "F2",
+      "f3": "F3",
+      "f4": "F4",
+      "f5": "F5",
+      "f6": "F6",
+      "f7": "F7",
+      "f8": "F8",
+      "f9": "F9",
+      "f10": "F10",
+      "f11": "F11",
+      "f12": "F12",
+      "set": {
+        "nav": "Arrows",
+        "edit": "Editing",
+        "move": "Movement",
+        "ctrl": "Control chords"
+      }
+    },
+    "history": {
+      "title": "Terminal output",
+      "copy": "Copy all",
+      "close": "Close",
+      "body": "Output",
+      "empty": "Nothing has been printed yet",
+      "screenOnly": "This pane runs a multiplexer, which keeps its own history — only the visible screen is available here."
+    }
+  },
+  "dash": {
+    "addTerminal": "Add terminal",
+    "adminConsole": "Admin console",
+    "agent": {
+      "state": {
+        "current": "current",
+        "outdated": "outdated",
+        "ahead": "ahead",
+        "unknown": "unknown",
+        "incompatible": "incompatible"
+      },
+      "phase": {
+        "accepted": "update accepted",
+        "downloading": "downloading",
+        "verifying": "verifying",
+        "swapping": "swapping the binary",
+        "restarting": "restarting",
+        "done": "updated",
+        "failed": "update failed",
+        "rolledBack": "rolled back"
+      },
+      "column": "Agent",
+      "update": "Update agent",
+      "updateTitle": "Update the agent on {label}",
+      "updateFromTo": "{from} → {to}",
+      "paneCounts": "{shell} shell panes will be terminated; {session} session panes will re-attach.",
+      "shellWarning": "{shell} shell panes and everything running in them are terminated. That cannot be undone.",
+      "confirmShells": "Terminate and update",
+      "inFlight": "An update is already running on this host",
+      "offline": "That host has no agent connected",
+      "noRelease": "No build is published for that host's platform",
+      "noCanary": "Run this build on one host first — a batch needs a canary",
+      "selected": "{count} selected",
+      "bulkMixed": "The selected hosts do not share one published version ({versions})",
+      "bulkClear": "Clear",
+      "bulkSelectRow": "Select {label}",
+      "bulkStarted": "{count} hosts are updating to {version}",
+      "bulkStopped": "The rollout stopped after repeated failures. {count} hosts were not attempted.",
+      "bulkFailed": "{count} hosts failed to reach {version}: {codes}",
+      "skip": {
+        "disabled": "disabled",
+        "offline": "offline",
+        "inFlight": "update in progress",
+        "unknown": "version unreadable",
+        "ahead": "ahead of the published build",
+        "current": "current",
+        "noBuild": "no build for this platform"
+      },
+      "bulkUpdateTitle": "Update {count} hosts",
+      "bulkUpdateTo": "Updating to {version}.",
+      "bulkWillUpdate": "Will update ({count})",
+      "bulkSkipped": "Skipped ({count})",
+      "bulkNothing": "None of the selected hosts can be updated.",
+      "bulkDelete": "Delete",
+      "bulkDeleteTitle": "Delete {count} hosts",
+      "bulkDeleteWarning": "This cannot be undone. Each host's services, tokens, enrollment code and collected history go with it, and its agent is disconnected — the agent stays on those machines and is refused until each is registered again with a new code. Type the number of hosts, {count}, to confirm.",
+      "bulkDeleted": "Deleted {count} hosts",
+      "bulkDeleteFailed": "{count} hosts could not be deleted",
+      "selectAll": "Select all",
+      "probation": "It is committed once the new binary proves it can connect; if it cannot, the agent rolls itself back."
+    },
+    "breadcrumbLabel": "Breadcrumb",
+    "clickAction": {
+      "label": "Pane click",
+      "zoom": "zooms",
+      "focus": "focuses"
+    },
+    "details": {
+      "address": "Address",
+      "agent": "Agent",
+      "system": "System",
+      "lastSeen": "Last seen",
+      "ssh": "SSH",
+      "never": "never"
+    },
+    "dockToggle": "Toggle commit graph",
+    "enroll": {
+      "title": "Install the agent on {label}",
+      "menu": "Install command",
+      "subtitle": "The host exists. It becomes a machine when this runs on it.",
+      "runHint": "Run this on the host:",
+      "osLinux": "Linux",
+      "osMacos": "macOS",
+      "serviceLinux": "Installs a systemd service, so the agent comes back after a reboot or a crash. amd64 and arm64 are detected automatically.",
+      "serviceMacos": "Installs a launchd daemon, so the agent comes back after a reboot or a crash. Intel and Apple Silicon are detected automatically.",
+      "minting": "Minting an enrollment code…",
+      "copyCommand": "Copy command",
+      "regenerate": "Regenerate",
+      "expiresIn": "Expires in {countdown}",
+      "expired": "Expired — regenerate to get a new code",
+      "codeOnly": "Or type the code into a session you already have open:",
+      "waiting": "Waiting for the agent…",
+      "onlineNoVersion": "The host is online — waiting for the agent to report its version…",
+      "arrived": "The agent is connected, running {version}.",
+      "errorHint": "The host was created; only the enrollment code failed.",
+      "retry": "Retry",
+      "advanced": "Advanced",
+      "userTitle": "Per-user install",
+      "userHintLinux": "Registers a systemd --user service in your home directory. Needs no root.",
+      "userHintMacos": "Registers a LaunchAgent in your home directory. Needs no root.",
+      "serverTitle": "Different server address",
+      "serverHint": "Use this when the host reaches pdmux on another address than your browser does.",
+      "verifyTitle": "Read it before you pipe it",
+      "verifyHint": "Fetch once, pin the digest, and run only the bytes you read.",
+      "manualTitle": "Air-gapped host",
+      "manualHint": "A machine that cannot reach this server installs from a binary you carry over, using a long-lived agent token minted on the host page.",
+      "manualLink": "Mint one under Agent tokens"
+    },
+    "error": {
+      "generic": "Something went wrong",
+      "forbidden": "You do not have permission to do that",
+      "notFound": "That is gone — the list has been refreshed",
+      "offline": "The server is unreachable",
+      "hostLabel": "A label is required",
+      "portRange": "A port is between 1 and 65535"
+    },
+    "feedError": "Live data is unavailable — retrying",
+    "form": {
+      "save": "Save",
+      "create": "Create",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "confirmHint": "Type {label}"
+    },
+    "git": {
+      "title": "Commits",
+      "repo": "Repository",
+      "noRepos": "No repositories collected on this host yet",
+      "noHost": "Choose a host",
+      "detach": "Open in a new window",
+      "refs": "Branches and tags",
+      "head": "HEAD",
+      "detachedHead": "detached",
+      "uncommittedRow": "uncommitted {count}",
+      "submodules": "submodules {count}",
+      "workingTree": "Working tree",
+      "snapshotUnknown": "never collected",
+      "stale": "stale",
+      "remoteNote": "Remote refs are as of the host's last fetch",
+      "error": "Collection failed: {message}",
+      "loadFailed": "Could not load this repository",
+      "noRoots": "No git repository paths on this host",
+      "noRootsAction": "Add one in host settings",
+      "noGit": "Git is not installed on this host"
+    },
+    "hosts": {
+      "title": "Hosts",
+      "subtitle": "Machines running a pdmux agent. Everything here is registered from this screen — no scripts.",
+      "add": "Add host",
+      "edit": "Edit",
+      "editTitle": "Edit host",
+      "addTitle": "Add host",
+      "delete": "Delete",
+      "deleteTitle": "Delete host",
+      "deleteWarning": "This cannot be undone. It takes the host's services, tokens, enrollment codes and collected history with it, and disconnects the agent — that machine keeps the agent installed and is refused until you register the host again with a new code. Type {label} to confirm.",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "enable": "Enable",
+      "disable": "Disable",
+      "manage": "Open",
+      "empty": "No hosts yet. Add one to get started.",
+      "label": "Label",
+      "address": "Address",
+      "addressHint": "Host or IP used to build service links (no port)",
+      "description": "Description",
+      "tags": "Tags",
+      "tagsHint": "Comma separated",
+      "state": "State",
+      "online": "online",
+      "offline": "offline",
+      "disabled": "disabled",
+      "agentVersion": "Agent",
+      "lastSeen": "Last seen",
+      "services": "Services",
+      "sortOrder": "Order",
+      "search": "Search",
+      "filterState": "State",
+      "filterAll": "All",
+      "filterSeen": "Last seen",
+      "seenRecent": "Within 7 days",
+      "seenStale": "30+ days ago",
+      "neverConnected": "Never connected",
+      "removalDue": "Removal due",
+      "removalIn": "Removal in {days}d",
+      "addShort": "Add",
+      "moveTitle": "Move to another account",
+      "moveIntro": "A host belongs to the account it was registered under. If this machine ended up in the wrong one, hand it over instead of registering it again.",
+      "moveAction": "Move host",
+      "moveEmail": "Email of the account to move it to",
+      "moveWarning": "\"{label}\" will leave this account's list and appear in theirs.",
+      "moveKeeps": "The agent keeps running and is not reinstalled. Its token, services, repositories and history all move with the host — only the owner changes.",
+      "dangerTitle": "Host",
+      "dangerIntro": "Everything that changes this host itself. The last two cannot be undone by pressing them again.",
+      "neverSeen": "never connected"
+    },
+    "hostsLink": "Hosts",
+    "fleet": {
+      "title": "Fleet settings",
+      "subtitle": "What every agent in this fleet collects, how long it is kept, and whether hosts that go silent are deleted.",
+      "scopeNote": "These belong to this fleet — the machines this account manages — and not to the whole installation. A change is pushed to every agent that is connected right now.",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Fleet settings saved",
+      "reset": "Discard changes",
+      "readOnly": "An organization's fleet is shared, so changing it is an administrator's job. Everything below is read-only for you.",
+      "unavailable": "The fleet's settings could not be read, so these are the shipped defaults — saving them would write those defaults over whatever the fleet actually has. Reload before you change anything.",
+      "bounds": "{min} to {max}",
+      "listHint": "Comma separated. Leave it empty for none.",
+      "error": {
+        "required": "Enter a number",
+        "integer": "Whole numbers only",
+        "range": "Enter a number between {min} and {max}"
+      },
+      "group": {
+        "cadence": {
+          "title": "Collection cadence",
+          "blurb": "How often each agent does the work. Every number here is time on somebody's machine and traffic on the wire: lower is fresher and more expensive."
+        },
+        "history": {
+          "title": "Stored history",
+          "blurb": "What is written to the database and how long it stays. This is the group that costs disk."
+        },
+        "caps": {
+          "title": "Caps",
+          "blurb": "Upper bounds on a single answer, so one enormous repository or a runaway working tree cannot fill a response."
+        },
+        "lists": {
+          "title": "Lists",
+          "blurb": "Where the agents look, and which coding agents they report on."
+        },
+        "sweep": {
+          "title": "Host sweep",
+          "blurb": "Deleting hosts that have gone silent. It is off unless you turn it on, and it is the only setting on this page that destroys anything."
+        }
+      },
+      "field": {
+        "heartbeatSec": {
+          "label": "Heartbeat interval (seconds)",
+          "why": "How often every agent reports in. Nothing a card shows can be fresher than this, and every host pays it on the wire — the cheapest thing the fleet does, and the most frequent."
+        },
+        "gitIntervalSec": {
+          "label": "Git collection interval (seconds)",
+          "why": "How often an agent re-reads the checkouts it found. Walking repositories costs far more than a heartbeat, so this is measured in minutes."
+        },
+        "usageIntervalSec": {
+          "label": "Coding-agent usage interval (seconds)",
+          "why": "How often an agent re-reads the usage windows of the providers below. Far costlier than a heartbeat: it reads each provider's own state, not a counter."
+        },
+        "probeTimeoutMs": {
+          "label": "Service probe timeout (ms)",
+          "why": "How long one service probe may hang before it is called down. A cap, not a target — without it a single unresponsive port would hold up the whole heartbeat behind it."
+        },
+        "metricStepSec": {
+          "label": "Metric sample interval (seconds)",
+          "why": "How far apart stored CPU, memory and disk samples are. Heartbeats arrive every few seconds, and storing each one would write about 17,000 rows per host per day to draw a graph whose pixels are 30 seconds apart."
+        },
+        "metricRetentionDays": {
+          "label": "Metric history kept (days)",
+          "why": "How long stored samples live before the prune job deletes them. This is the number that decides how much disk the fleet's history costs."
+        },
+        "gitLimit": {
+          "label": "Commits per repository",
+          "why": "How many commits the graph window holds for one repository. Past it the graph says it is truncated rather than growing without limit."
+        },
+        "gitDetailBudget": {
+          "label": "New commit details per pass",
+          "why": "How many previously unseen commit bodies and patches an agent may collect in one pass. It is what stops a freshly registered repository from sending its entire history at once."
+        },
+        "statusFileCap": {
+          "label": "Changed files per repository",
+          "why": "How many working-tree entries are reported for one repository. A tree with thousands of untracked files would otherwise become the largest thing on the wire."
+        },
+        "bodyMaxChars": {
+          "label": "Commit message body (characters)",
+          "why": "How much of a commit message body is stored. Long enough for a real message, short enough that a pasted log is not kept forever."
+        },
+        "terminalBufferBytes": {
+          "label": "Terminal buffer per pane (bytes)",
+          "why": "How much output an agent holds for one pane before the oldest bytes are dropped. The relay uses the same number toward the browser, so raising it costs memory in two places."
+        },
+        "gitRoots": {
+          "label": "Git roots",
+          "why": "Directories each agent scans for checkouts. These are paths on the hosts, not on this server; empty means nothing is collected. A host with its own paths ignores this list."
+        },
+        "usageProviders": {
+          "label": "Coding-agent providers",
+          "why": "Which providers' usage windows the agents report — the rows on a card's coding-agent widget. A name nobody runs simply reports nothing."
+        },
+        "staleHostRetentionDays": {
+          "label": "Delete a host after (days of silence)",
+          "why": "0 turns this off, and off is how it ships. Any other number lets the server DELETE a host that has not reported in for that long, taking its agent tokens, enrollment codes, services and collected history with it. That machine is then refused until somebody registers it again and re-runs the installer."
+        }
+      },
+      "sweep": {
+        "offNote": "0 — no host is ever deleted automatically. This is the shipped default.",
+        "onNote": "On. Hosts silent for longer than the window are deleted on the next sweep, and the list warns for the last seven days before that.",
+        "neverSwept": "A host that has never connected is never swept: a row with no last-seen is a machine whose installer has not run yet.",
+        "armTitle": "Turn on automatic host deletion",
+        "armWarning": "Every host silent for longer than the window is DELETED on the next sweep, with its agent tokens, enrollment codes, services and collected history. Each of those machines is then refused until somebody registers it again and re-runs the installer. This cannot be undone.",
+        "armConfirm": "Turn deletion on",
+        "atRisk": "{count} hosts are already past {days} days and would go on the next sweep:",
+        "atRiskNone": "No host is past {days} days today, so the next sweep would take nothing — but any host that goes quiet for that long afterwards will.",
+        "typeDays": "Type {days} to confirm."
+      }
+    },
+    "mode": {
+      "label": "Split",
+      "tab": "1",
+      "split2": "2",
+      "split4": "4",
+      "split9": "9",
+      "hint": "Press the active mode again for the next page"
+    },
+    "nextPage": "Next page",
+    "page": "Page {page}/{total}",
+    "prevPage": "Previous page",
+    "refresh": "Refresh",
+    "services": {
+      "title": "Services",
+      "subtitle": "Ports this host exposes. The agent probes them and the card links to them.",
+      "add": "Add service",
+      "addTitle": "Add service",
+      "editTitle": "Edit service",
+      "label": "Label",
+      "port": "Port",
+      "probe": "Probe",
+      "path": "Path",
+      "urlTemplate": "URL template",
+      "urlTemplateHint": "Optional. {address} and {port} are replaced.",
+      "status": "Status",
+      "up": "up",
+      "down": "down",
+      "unknown": "unknown",
+      "empty": "No services registered for this host.",
+      "deleteTitle": "Delete service",
+      "deleteWarning": "Type {label} to confirm.",
+      "off": "off",
+      "turnOff": "Turn off",
+      "turnOn": "Turn on",
+      "url": "URL",
+      "probeKind": {
+        "tcp": "tcp",
+        "http": "http",
+        "none": "none"
+      }
+    },
+    "gitRoots": {
+      "title": "Git repositories",
+      "subtitle": "Directories the agent scans for checkouts. These are paths on that host, not on this server.",
+      "add": "Add path",
+      "addTitle": "Add path",
+      "editTitle": "Edit path",
+      "path": "Path",
+      "pathHint": "An absolute path on that host.",
+      "pathDepthWarning": "Only the directory itself and one level below it are scanned: a checkout, or a directory of checkouts. Subdirectories are not searched recursively.",
+      "pathPlaceholder": "/home/you/work",
+      "status": "Status",
+      "found": "OK",
+      "pending": "Checking",
+      "pendingHint": "The agent has not scanned this path yet. The git pass runs on a timer, so this can take up to {sec} seconds.",
+      "missing": "Not found",
+      "empty": "No repositories",
+      "off": "Off",
+      "repos": "Repositories",
+      "repoCount": "{count}",
+      "turnOff": "Turn off",
+      "turnOn": "Turn on",
+      "deleteTitle": "Delete path",
+      "deleteWarning": "Type {path} to delete it.",
+      "emptyNoFleet": "No paths yet. This host's git graph is empty.",
+      "emptyFleet": "Using the fleet default: {paths}",
+      "emptyFleetHint": "Add a path here and this host will use only what you list.",
+      "missingHint": "The agent could not find this path. Check that it exists on that host.",
+      "gitMissing": "Git is not installed on this host, so no repositories are collected.",
+      "limit": "A host takes at most {max} paths.",
+      "duplicate": "That path is already listed.",
+      "notAbsolute": "Enter an absolute path starting with /.",
+      "tooLong": "A path is at most {max} characters."
+    },
+    "ports": {
+      "title": "Discovered ports",
+      "subtitle": "Ports this host is listening on that are not registered as services yet.",
+      "empty": "No unregistered ports are listening on this host.",
+      "unavailable": "This host cannot report its listening ports, so this list is empty for that reason — not because nothing is listening.",
+      "process": "Process",
+      "reach": "Reach",
+      "loopback": "host only",
+      "exposed": "reachable",
+      "unnamed": "unknown",
+      "register": "Register as service",
+      "showFolded": "Show {count} folded port(s)",
+      "hideFolded": "Hide folded ports",
+      "foldedNote": "Folded because they belong to the operating system, to a browser, or were assigned by the kernel and change on every restart.",
+      "fold": {
+        "ephemeral": "kernel-assigned",
+        "system-port": "system port",
+        "system-process": "system process"
+      },
+      "pickIntro": "Pick a port this host is listening on, or type one below.",
+      "pick": "Use this",
+      "unreported": "This host's agent is too old to report listening ports — it said nothing, which is not the same as finding none. Update the agent to see them here.",
+      "search": "Filter by port or process",
+      "searchNoMatch": "No port matches that search.",
+      "searchIncludesFolded": "The search also covers system and temporary ports."
+    },
+    "sidebarToggle": "Toggle host cards",
+    "tabs": {
+      "git": "Git",
+      "hosts": "Servers",
+      "label": "Views",
+      "terminal": "Terminals"
+    },
+    "terminal": {
+      "closeConfirm": "Close",
+      "closeTitle": "Close this terminal?",
+      "closeWarning": "{label} stops being shown here. The session keeps running on the host, so reopening this cell attaches to it again.",
+      "detached": "Detached terminal",
+      "dropped": "{count} bytes were dropped to keep up with the output",
+      "missingTarget": "No terminal target was given",
+      "reconnecting": "Reconnecting to the terminal relay…",
+      "unavailable": "The terminal relay is not reachable"
+    },
+    "title": "Dashboard",
+    "tokens": {
+      "title": "Agent tokens",
+      "subtitle": "One token per host. The plaintext is shown once, right after it is minted.",
+      "mint": "Mint token",
+      "name": "Name",
+      "created": "Created",
+      "lastUsed": "Last used",
+      "state": "State",
+      "active": "active",
+      "revoked": "revoked",
+      "rotate": "Rotate",
+      "revoke": "Revoke",
+      "revokeTitle": "Revoke token",
+      "revokeWarning": "The agent using this token stops connecting. Type {label} to confirm.",
+      "empty": "No tokens yet. Mint one to install the agent.",
+      "plaintextTitle": "Copy this token now",
+      "plaintextWarning": "It is stored hashed — this is the only time it is shown.",
+      "installHint": "Install the agent on the host with:",
+      "copy": "Copy",
+      "copied": "Copied",
+      "close": "Close",
+      "never": "never",
+      "expires": "Expires",
+      "expiryLabel": "Expiry",
+      "expiryNever": "Never",
+      "expiryDays": "{days} days",
+      "expiryHint": "A host's agent cannot renew its own credential, so a real machine takes “Never”. Pick a length only for an agent you know is temporary — it then stops on its own instead of keeping a working key forever.",
+      "expired": "expired",
+      "expiresOn": "until {date}"
+    },
+    "usageWindow": {
+      "session": "5h",
+      "weekly": "7d",
+      "monthly": "30d"
+    },
+    "userMenu": "Account menu",
+    "widgets": {
+      "agents": "Coding agents",
+      "resources": "Resources",
+      "links": "Service links"
+    },
+    "mcp": {
+      "title": "Coding CLI access",
+      "intro": "Connect Codex or Claude Code on this machine to pdmux, without checking out the source.",
+      "endpoint": "MCP endpoint",
+      "osTitle": "That machine's OS",
+      "osLinux": "Linux",
+      "osMacos": "macOS",
+      "osHint": "Put the key in your shell's environment. On this OS that is {file}; the default login shell differs, and writing the wrong file fails silently — the variable never appears and the CLI reports a 401 that looks like a bad key.",
+      "copyEnv": "Copy setup",
+      "clientTitle": "Your CLI",
+      "clientCodex": "Codex",
+      "clientClaude": "Claude Code",
+      "configHint": "Put the key in {envVar} in your own environment. Never commit it.",
+      "copyConfig": "Copy config",
+      "handoffTitle": "Hand this to your coding CLI",
+      "handoffHint": "Safe to paste anywhere — it names the host and the endpoint, never the key.",
+      "handoffText": "Work on the pdmux host \"{label}\" through its hosted MCP at {endpoint}. Read the key from {envVar} only; never print or store its value. Call host_detail first. If no pdmux agent is connected, call host_install_command and run the command it returns ON that machine. Use run_command for anything else you need from the host.",
+      "copyHandoff": "Copy handoff",
+      "keyLabel": "Label",
+      "keyExpiry": "Expires",
+      "keyScope": "Access",
+      "scopeRead": "Read only",
+      "scopeReadWrite": "Read and run commands",
+      "days": "{days} days",
+      "defaultLabel": "this machine's CLI",
+      "mint": "Create key",
+      "loading": "Loading keys…",
+      "empty": "No keys yet. Create one to connect a CLI.",
+      "revoke": "Revoke",
+      "live": "Live",
+      "revoked": "Revoked",
+      "expired": "Expired",
+      "until": "until {date}",
+      "createdTitle": "Key created",
+      "createdHint": "Copy it now. The full value is never shown again.",
+      "createdEnvHint": "Set it as {envVar} in the environment your CLI runs in.",
+      "copyKey": "Copy key",
+      "summaryKeys": "{count} key(s)",
+      "summaryNone": "No keys yet — attach a CLI here",
+      "expand": "Show coding CLI access",
+      "collapse": "Hide coding CLI access",
+      "keyPrefix": "Key",
+      "keyStatus": "State",
+      "keyActions": ""
+    },
+    "table": {
+      "prevPage": "Previous",
+      "nextPage": "Next"
+    }
+  }
+}

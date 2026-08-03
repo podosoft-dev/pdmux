@@ -1,0 +1,109 @@
+{
+	"generatedBy": "packages/protocol/scripts/build-expected.mjs",
+	"cases": "conformance/cases/downstream-accept.json",
+	"protocolVersion": 1,
+	"accepted": {
+		"config-empty-all-defaults": {
+			"config": {
+				"bodyMaxChars": 1200,
+				"gitDetailBudget": 120,
+				"gitIntervalSec": 120,
+				"gitLimit": 300,
+				"gitRoots": [],
+				"heartbeatSec": 5,
+				"probeTimeoutMs": 2000,
+				"services": [],
+				"statusFileCap": 300,
+				"terminalBufferBytes": 262144,
+				"usageIntervalSec": 60,
+				"usageProviders": []
+			},
+			"type": "config"
+		},
+		"config-unknown-field-stripped": {
+			"config": {
+				"bodyMaxChars": 1200,
+				"gitDetailBudget": 120,
+				"gitIntervalSec": 120,
+				"gitLimit": 300,
+				"gitRoots": [],
+				"heartbeatSec": 10,
+				"probeTimeoutMs": 2000,
+				"services": [
+					{
+						"id": "b2f8c0d4-1e3a-4b5c-8d7e-9f0a1b2c3d4e",
+						"path": "/",
+						"port": 5432,
+						"probe": "tcp"
+					}
+				],
+				"statusFileCap": 300,
+				"terminalBufferBytes": 262144,
+				"usageIntervalSec": 60,
+				"usageProviders": []
+			},
+			"type": "config"
+		},
+		"welcome-without-server-version": {
+			"config": {
+				"bodyMaxChars": 1200,
+				"gitDetailBudget": 120,
+				"gitIntervalSec": 120,
+				"gitLimit": 300,
+				"gitRoots": [
+					"/srv"
+				],
+				"heartbeatSec": 5,
+				"probeTimeoutMs": 2000,
+				"services": [],
+				"statusFileCap": 300,
+				"terminalBufferBytes": 262144,
+				"usageIntervalSec": 60,
+				"usageProviders": []
+			},
+			"hostId": "9f2c1e34-5b6a-4c7d-8e9f-0a1b2c3d4e5f",
+			"serverVersion": "",
+			"type": "welcome"
+		},
+		"terminal-open-empty-target": {
+			"frame": {
+				"target": {
+					"cols": 80,
+					"kind": "session",
+					"rows": 24
+				},
+				"termId": "t-01",
+				"type": "open"
+			},
+			"type": "terminal"
+		},
+		"terminal-open-named-session": {
+			"frame": {
+				"target": {
+					"cols": 120,
+					"kind": "session",
+					"rows": 40,
+					"session": "main-1_x"
+				},
+				"termId": "t-02",
+				"type": "open"
+			},
+			"type": "terminal"
+		},
+		"update-minimal-defaults": {
+			"type": "update",
+			"update": {
+				"arch": "amd64",
+				"artifactPath": "/agent/releases/0.2.0/pdmux-agent-linux-amd64",
+				"bytes": 12582912,
+				"commandId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+				"force": false,
+				"os": "linux",
+				"probationSec": 300,
+				"sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+				"version": "0.2.0"
+			}
+		}
+	},
+	"rejected": {}
+}

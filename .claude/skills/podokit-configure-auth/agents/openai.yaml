@@ -1,0 +1,4 @@
+interface:
+  display_name: "PodoKit Auth Setup"
+  short_description: "Bootstrap admin and configure authentication safely"
+  default_prompt: "Use $podokit-configure-auth to bootstrap the first administrator, then configure Google login, SMTP, and sign-up approval safely."

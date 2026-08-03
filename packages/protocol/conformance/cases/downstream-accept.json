@@ -1,0 +1,93 @@
+{
+	"description": "Server -> agent frames the Go agent must ACCEPT, and the normalised value it must act on. These defaults are load-bearing: the agent runs on the numbers it reads here, so a missing default is not a cosmetic difference but a busy loop, a dropped stream or a 0x0 terminal.",
+	"cases": [
+		{
+			"id": "config-empty-all-defaults",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "An unconfigured agent must be useful before anyone opens settings. Every field here has to be filled by the reader: heartbeatSec 0 is a busy loop, terminalBufferBytes 0 drops every byte, gitLimit 0 shows an empty graph.",
+			"frame": {
+				"type": "config",
+				"config": {}
+			}
+		},
+		{
+			"id": "config-unknown-field-stripped",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "Forward compatibility in the agent's direction: a newer server sending a setting this build has never heard of is accepted and the field is dropped, so a server upgrade never strands an installed agent.",
+			"frame": {
+				"type": "config",
+				"config": {
+					"heartbeatSec": 10,
+					"telemetryEndpoint": "https://example.invalid/collect",
+					"services": [
+						{
+							"id": "b2f8c0d4-1e3a-4b5c-8d7e-9f0a1b2c3d4e",
+							"port": 5432,
+							"probe": "tcp",
+							"weight": 3
+						}
+					]
+				}
+			}
+		},
+		{
+			"id": "welcome-without-server-version",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "serverVersion is advisory and defaults to the empty string - a server that does not announce itself must still complete the handshake, because the version is logged, never gated on.",
+			"frame": {
+				"type": "welcome",
+				"hostId": "9f2c1e34-5b6a-4c7d-8e9f-0a1b2c3d4e5f",
+				"config": { "gitRoots": ["/srv"] }
+			}
+		},
+		{
+			"id": "terminal-open-empty-target",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "A browser that asks for 'a terminal' and nothing else gets a persistent session at 80x24. kind defaults to session because work must survive a dropped connection; cols/rows default because a 0x0 PTY renders nothing.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "open",
+					"termId": "t-01",
+					"target": {}
+				}
+			}
+		},
+		{
+			"id": "terminal-open-named-session",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "The positive control for the session-name regex: letters, digits, underscore and dash, 1..32 characters. This name is what reaches `tmux new -A -s`, so the accepted set has to stay exactly this narrow.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "open",
+					"termId": "t-02",
+					"target": { "session": "main-1_x", "cols": 120, "rows": 40 }
+				}
+			}
+		},
+		{
+			"id": "update-minimal-defaults",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "force defaults to false (a downgrade needs an explicit request, not an omitted field) and probationSec to 300 - the window the new binary has to complete a handshake before it rolls itself back.",
+			"frame": {
+				"type": "update",
+				"update": {
+					"commandId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+					"version": "0.2.0",
+					"artifactPath": "/agent/releases/0.2.0/pdmux-agent-linux-amd64",
+					"sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+					"bytes": 12582912,
+					"os": "linux",
+					"arch": "amd64"
+				}
+			}
+		}
+	]
+}

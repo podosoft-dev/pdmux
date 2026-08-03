@@ -1,0 +1,20 @@
+{
+  "name": "pdmux (containerized dev)",
+  "dockerComposeFile": ["../compose.dev.yaml"],
+  "service": "api",
+  "workspaceFolder": "/app",
+  "runServices": ["traefik", "web", "api", "worker", "postgres", "redis", "minio", "minio-init"],
+  "shutdownAction": "stopCompose",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "svelte.svelte-vscode",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  },
+  "forwardPorts": [],
+  "remoteUser": "node"
+}

@@ -1,0 +1,55 @@
+
+!.env.example
+# e2e test artifacts
+# local performance reports
+# podo dev generated compose overlay
+*.log
+.DS_Store
+.env
+.env.*
+# the template carries no secrets and is how a new checkout learns the ports
+!.env.example
+.podokit/runtime/
+.svelte-kit/
+build/
+coverage/
+dist/
+node_modules/
+# Released agent artifacts, produced by `npm run build:agent`.
+#
+# THE BINARIES DO NOT BELONG IN GIT — four ~8MB files per release, and git keeps a blob
+# forever. Nothing needs them here either: the image builds its own in the Dockerfile's
+# `agent` stage and copies them in AFTER `COPY . .` (so a committed one would be
+# overwritten), CI builds its own to check the manifest against, and `.dockerignore`
+# excludes them from the build context for the same reason.
+#
+# THE MANIFEST AND THE CHECKSUMS DO — they are a few KB of text, and they are the record
+# of what was published: which four artifacts, at which version, with which sha256. That
+# is what lets somebody verify a binary they were handed, and what makes a rebuild
+# checkable rather than merely repeatable. The build is deliberately reproducible
+# (`-trimpath`, `-buildvcs=false`, Go pinned by `agent/go.mod`), so a rebuild that
+# disagrees with a committed hash is a finding rather than noise.
+#
+# ⚠ DENY FIRST, THEN ALLOW, and the bare `**/` line is load-bearing: git will not look
+# inside an excluded directory, so without re-including the directories themselves the
+# two allow rules below can never match. Written this way round on purpose — a new kind
+# of build output lands ignored unless somebody decides otherwise.
+apps/web/static/agent/**
+!apps/web/static/agent/**/
+!apps/web/static/agent/**/manifest.json
+!apps/web/static/agent/**/SHA256SUMS
+output/lighthouse/
+playwright-report/
+playwright/.auth/
+test-results/
+tests/playwright-report/
+tests/playwright/
+tests/test-results/
+
+# ⚠ THE DEPLOYMENT PROFILE IS NOT PUBLIC. It names the docker context, the SSH
+# endpoint fingerprint, the private address it binds to and the host paths of the
+# env files — a map of somebody's internal network, in a repository anybody can
+# read. It lives with the deployment record instead and is copied in when a deploy
+# runs. `publish.json` is the tracked one: image repositories and nothing else.
+.podokit/deploy/*.json
+!.podokit/deploy/publish.json

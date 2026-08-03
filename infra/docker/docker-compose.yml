@@ -1,0 +1,66 @@
+services:
+  # --- Runtime (always started by `docker compose up`) ---
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-podokit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-podokit}
+      POSTGRES_DB: ${POSTGRES_DB:-podokit}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-podokit}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Runtime, but only needed by cache/queue modules (redis, bullmq,
+  #     rate-limit, job-progress, sse). Start with: docker compose --profile cache up
+  redis:
+    image: redis:7-alpine
+    profiles: ["cache"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Development / testing tools (NOT for production) ---
+  #     Start with: docker compose --profile dev up
+  # Local email catcher: SMTP on 1025, web UI + REST API on 8025 (http://localhost:8025).
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["dev"]
+    ports:
+      - "${SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8025/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Local SMS catcher (the "Mailpit for SMS"): the app posts outgoing SMS here via
+  # SMS_WEBHOOK_URL and tests read them over REST. Development only.
+  sms-sink:
+    image: node:20-alpine
+    profiles: ["dev"]
+    command: ["node", "/app/sms-sink.mjs"]
+    environment:
+      PORT: "8095"
+    ports:
+      - "${SMS_SINK_PORT:-8095}:8095"
+    volumes:
+      - ./sms-sink.mjs:/app/sms-sink.mjs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8095/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

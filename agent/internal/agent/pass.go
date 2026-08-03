@@ -1,0 +1,144 @@
+package agent
+
+// The three passes: the cheap one that runs every few seconds, the expensive one
+// that walks every configured checkout, and the partial answer to a click.
+//
+// Each of them is also a guard. A pass that overlaps itself queues probes behind
+// each other until the agent is doing nothing but collecting, and a pass that
+// runs while the socket is down is pure waste — the result has nowhere to go and
+// the next pass will measure again anyway.
+
+import (
+	"context"
+	"time"
+
+	"github.com/podosoft-dev/pdmux/agent/internal/collect"
+	"github.com/podosoft-dev/pdmux/agent/internal/git"
+	"github.com/podosoft-dev/pdmux/agent/internal/log"
+	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
+)
+
+// heartbeatPass takes one pass over the host and ships it.
+//
+// It never fails as a whole: every collector inside contributes its own
+// nil/empty value on failure, because an agent that goes silent because `df`
+// hung looks exactly like a host that went down.
+func (a *Agent) heartbeatPass(ctx context.Context) {
+	if !a.heartbeatRunning.CompareAndSwap(false, true) {
+		return
+	}
+	defer a.heartbeatRunning.Store(false)
+	if !a.client.Connected() {
+		return
+	}
+	// Read straight off the store — a write that failed since the last beat must
+	// show up on this one.
+	a.diagnostics.NoteLedger(a.store.Unavailable())
+	beat := collect.Heartbeat(ctx, a.Config(), a.deps)
+	a.client.Send(&protocol.HeartbeatFrame{Heartbeat: beat})
+}
+
+// gitPass rediscovers the configured roots and ships a snapshot of each
+// checkout. Everything it does is read-only, by construction of internal/git.
+func (a *Agent) gitPass(ctx context.Context) {
+	if !a.gitRunning.CompareAndSwap(false, true) {
+		return
+	}
+	defer a.gitRunning.Store(false)
+	config := a.Config()
+	if !a.client.Connected() || len(config.GitRoots) == 0 {
+		return
+	}
+
+	discovery := git.DiscoverDetailed(ctx, config.GitRoots, 0)
+	a.mu.Lock()
+	a.repos = discovery.Repos
+	a.mu.Unlock()
+	// The scan already knows which roots yielded nothing; the next heartbeat
+	// reports them without looking at the filesystem again.
+	a.diagnostics.NoteGitRoots(discovery.MissingRoots)
+
+	batch := []protocol.RepoSnapshot{}
+	bytes := 0
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		frame := protocol.NewReposFrame(time.Now().Unix())
+		frame.Repos = batch
+		a.client.Send(frame)
+		batch = []protocol.RepoSnapshot{}
+		bytes = 0
+	}
+	for _, repo := range discovery.Repos {
+		if ctx.Err() != nil {
+			// Shutting down. Whatever is already batched has nowhere to go.
+			return
+		}
+		snapshot := git.CollectRepoSnapshot(ctx, git.SnapshotOptions{
+			Path:          repo.Path,
+			Name:          repo.Name,
+			Limit:         config.GitLimit,
+			DetailBudget:  config.GitDetailBudget,
+			Ledger:        a.ledger,
+			StatusFileCap: config.StatusFileCap,
+			BodyMaxChars:  config.BodyMaxChars,
+		})
+		batch = append(batch, snapshot)
+		bytes += estimateBytes(snapshot)
+		if len(batch) >= repoFrameMaxCount || bytes >= repoFrameMaxBytes {
+			flush()
+		}
+	}
+	flush()
+}
+
+// detailPass answers an explicit request for specific commits (a click in the
+// UI) with a PARTIAL snapshot — details only, no refs and no commit rows. Those
+// rows have not changed since the last pass and the server already has them.
+func (a *Agent) detailPass(ctx context.Context, repoPath string, shas []string) {
+	repo, known := a.findRepo(repoPath)
+	if !known {
+		// The path came from the server. Answering it would mean running git in a
+		// directory this agent never discovered.
+		a.logger.Warn("Ignoring detail request for unknown repo", log.F("repoPath", repoPath))
+		return
+	}
+	snapshot := git.CollectDetailSnapshot(ctx, git.DetailOptions{
+		Path:         repo.Path,
+		Name:         repo.Name,
+		Shas:         shas,
+		Ledger:       a.ledger,
+		BodyMaxChars: a.Config().BodyMaxChars,
+	})
+	frame := protocol.NewReposFrame(time.Now().Unix())
+	frame.Repos = []protocol.RepoSnapshot{snapshot}
+	a.client.Send(frame)
+}
+
+// findRepo looks a request up against what the last scan actually found.
+func (a *Agent) findRepo(path string) (git.DiscoveredRepo, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, repo := range a.repos {
+		if repo.Path == path {
+			return repo, true
+		}
+	}
+	return git.DiscoveredRepo{}, false
+}
+
+// estimateBytes is a cheap stand-in for the encoded size of a snapshot: the
+// patch lines dominate it by orders of magnitude, and the point is only to
+// decide when to flush a batch, not to predict the frame to the byte.
+func estimateBytes(snapshot protocol.RepoSnapshot) int {
+	bytes := 512
+	for _, detail := range snapshot.Details {
+		for _, file := range detail.Files {
+			for _, line := range file.Lines {
+				bytes += len(line) + 1
+			}
+		}
+	}
+	return bytes
+}

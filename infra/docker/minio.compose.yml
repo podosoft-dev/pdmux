@@ -1,0 +1,35 @@
+# MinIO for local S3-compatible object storage — development only (in production
+# point S3_* at a real S3-compatible service). Part of the `dev` profile; add it with:
+#
+#   docker compose -f infra/docker/docker-compose.yml -f infra/docker/minio.compose.yml --profile dev up -d
+#
+# Console: http://localhost:9001  (S3 API: http://localhost:9000)
+services:
+  minio:
+    image: minio/minio:latest
+    profiles: ["dev"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-podokit}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-podokitsecret}
+    ports:
+      - "${S3_PORT:-9000}:9000"
+      - "${S3_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+
+  # Waits for MinIO, then creates the bucket and exits.
+  minio-init:
+    image: minio/mc:latest
+    profiles: ["dev"]
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 ${S3_ACCESS_KEY_ID:-podokit} ${S3_SECRET_ACCESS_KEY:-podokitsecret}; do echo 'waiting for minio'; sleep 1; done;
+      mc mb -p local/${S3_BUCKET:-podokit};
+      echo 'bucket ready';
+      exit 0"
+
+volumes:
+  minio-data:

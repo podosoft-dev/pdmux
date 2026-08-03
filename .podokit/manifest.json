@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 2,
+  "podokitVersion": "0.16.4",
+  "template": "fullstack-nest-svelte",
+  "packageManager": "npm",
+  "answers": {
+    "projectName": "pdmux",
+    "packageManager": "npm"
+  },
+  "modules": [
+    {
+      "name": "mailer",
+      "order": 0,
+      "addedWith": "0.13.0"
+    },
+    {
+      "name": "auth",
+      "order": 1,
+      "addedWith": "0.13.0"
+    },
+    {
+      "name": "object-storage-s3",
+      "order": 2,
+      "addedWith": "0.13.0"
+    },
+    {
+      "name": "admin-dashboard",
+      "order": 3,
+      "addedWith": "0.13.0",
+      "appliedMigrations": [
+        "admin-route-group"
+      ]
+    },
+    {
+      "name": "audit-log",
+      "order": 4,
+      "addedWith": "0.13.0"
+    },
+    {
+      "name": "api-key-auth",
+      "order": 5,
+      "addedWith": "0.13.0"
+    },
+    {
+      "name": "redis",
+      "order": 6,
+      "addedWith": "0.13.0"
+    },
+    {
+      "name": "sse",
+      "order": 7,
+      "addedWith": "0.13.0"
+    },
+    {
+      "name": "bullmq",
+      "order": 8,
+      "addedWith": "0.13.0"
+    },
+    {
+      "name": "rate-limit",
+      "order": 9,
+      "addedWith": "0.13.0"
+    },
+    {
+      "name": "logging",
+      "order": 10,
+      "addedWith": "0.13.0"
+    }
+  ],
+  "ownedGlobs": [
+    "apps/web/src/routes/**",
+    "apps/web/src/lib/components/ui/**",
+    "apps/web/src/lib/i18n/locales/**",
+    "apps/web/src/lib/i18n/catalogs/app/**",
+    "apps/api/src/app.extensions.ts",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".agents/**",
+    ".claude/**",
+    ".cursor/**",
+    ".github/copilot-instructions.md",
+    ".mcp.json",
+    "compose.dev.yaml",
+    "Dockerfile.dev",
+    ".dockerignore",
+    ".devcontainer/**",
+    ".env.docker",
+    "infra/traefik/**",
+    ".podokit/dev.json",
+    "tests/playwright.projects.cjs",
+    "apps/web/vite.config.ts",
+    "apps/web/src/routes/account/+page.server.ts",
+    "apps/web/Dockerfile",
+    "apps/web/src/lib/server/ws-upgrade.js",
+    "apps/web/src/lib/server/ws-upgrade.test.js"
+  ],
+  "managedOverrides": [
+    ".claude/skills/podokit-configure-auth/**",
+    "apps/web/src/routes/(app)/+layout.server.ts",
+    "apps/web/src/routes/(admin)/admin/account/+page.server.ts",
+    "apps/web/src/routes/(admin)/admin/audit/+page.server.ts",
+    "apps/web/src/routes/(admin)/admin/organizations/+page.server.ts",
+    "apps/web/src/routes/(admin)/admin/sessions/+page.server.ts",
+    "apps/web/src/routes/(admin)/admin/settings/+page.server.ts",
+    "apps/web/src/routes/(admin)/admin/users/+page.server.ts",
+    "apps/web/src/routes/(auth)/login/+page.server.ts",
+    "apps/web/src/routes/(auth)/signup/+page.server.ts",
+    "apps/web/src/routes/account/+page.server.ts",
+    "apps/web/src/routes/setup-2fa/+page.server.ts",
+    "apps/web/src/lib/components/ui/input/input.svelte",
+    "apps/web/src/routes/(admin)/+layout.server.ts"
+  ]
+}

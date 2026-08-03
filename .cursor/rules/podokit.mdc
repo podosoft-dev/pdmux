@@ -1,0 +1,11 @@
+---
+description: PodoKit project conventions (stack, commands, code style, tooling)
+alwaysApply: true
+---
+
+The conventions for this project are documented in [`AGENTS.md`](../../AGENTS.md)
+at the repository root. Follow them: web runs on :5001 and api on :5002; use
+shadcn-svelte components and the shared `DataTable`/`TableToolbar` for lists;
+Svelte 5 runes only; branch on the error `code`, not the message; keep strings in
+i18n; and respect the `.podokit/` file-ownership tiers (never hand-edit
+`// podokit:` fenced regions or `src/lib/components/ui/**`).

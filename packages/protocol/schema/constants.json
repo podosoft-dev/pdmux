@@ -1,0 +1,24 @@
+{
+  "$comment": "GENERATED FILE — do not hand-edit. Derived from packages/protocol/src/index.ts; regenerate with `npm run schema:build -w @pdmux/protocol`.",
+  "AGENT_CLOSE_HOST_DELETED": 4004,
+  "AGENT_CLOSE_HOST_DISABLED": 4002,
+  "AGENT_CLOSE_REPLACED": 4000,
+  "AGENT_CLOSE_TOKEN_REVOKED": 4003,
+  "AGENT_KEY_HEADER": "x-api-key",
+  "AGENT_WS_PATH": "/agent/ws",
+  "DIFF_CAPS": {
+    "maxBytes": 200000,
+    "maxFileLines": 800,
+    "maxLineChars": 500
+  },
+  "EXEC_OUTPUT_MAX": 64000,
+  "MIN_SUPPORTED_AGENT": "0.1.0-0",
+  "PROTOCOL_VERSION": 1,
+  "TERMINAL_WS_PATH": "/terminal/ws",
+  "_generated": {
+    "command": "npm run schema:build -w @pdmux/protocol",
+    "doNotEdit": true,
+    "generator": "packages/protocol/scripts/build-schema.mjs",
+    "source": "packages/protocol/src/index.ts"
+  }
+}

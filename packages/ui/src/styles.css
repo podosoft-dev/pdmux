@@ -1,0 +1,2200 @@
+/*
+ * @pdmux/ui structural stylesheet.
+ *
+ * WHY THIS FILE EXISTS AT ALL: a mount host with no rule of its own broke an entire
+ * page once — the flex chain stopped at an unstyled wrapper, so every box below grew
+ * to its content height, the commit list never became a scroll container and the
+ * detail panel rendered thousands of pixels below the fold. DOM assertions saw
+ * nothing wrong because the content was always there. So the rules that bind these
+ * components to the viewport ship WITH them and are not left to the host page.
+ *
+ * Theming: every colour reads a Tailwind v4 semantic token with a hard fallback, so
+ * the components inherit an app's theme when one exists and stay legible when it
+ * does not. Utility classes on the components themselves cover the rest; a Tailwind
+ * app should add `@source "../node_modules/@pdmux/ui/dist";` so they are generated.
+ */
+
+.pdmux {
+	--pdmux-bg: var(--color-background, #f4f5f7);
+	--pdmux-fg: var(--color-foreground, #1c1f24);
+	--pdmux-card: var(--color-card, #ffffff);
+	--pdmux-line: var(--color-border, #dfe3e8);
+	--pdmux-muted: var(--color-muted-foreground, #6b7280);
+	--pdmux-accent: var(--color-primary, #2563eb);
+	--pdmux-hot: #dc2626;
+	--pdmux-low: #b91c1c;
+	/*
+	 * Reachability. Deliberately NOT the same reds as `--pdmux-hot`/`--pdmux-low`: those mean
+	 * "this gauge is nearly spent", and a host being unreachable is a different kind of bad.
+	 * All three are re-picked for dark mode below — these would glare on the dark card.
+	 *
+	 * ⚠ RE-MEASURED FOR A STROKE. They painted an 8px filled disc and now they paint a 1.3px
+	 * line, where area was doing half the work; the note here used to claim "roughly 4.5:1"
+	 * for the pair and measurement disagreed. Against the white card: green was 3.3:1 and the
+	 * grey 2.5:1 — the grey under the 3:1 WCAG floor for a graphic outright, and the green
+	 * scraping it in the state every healthy host is in. 5.0 / 4.8 / 4.8 now, and the grey is
+	 * still visibly the muted one, which is the whole point of `unknown`.
+	 */
+	--pdmux-ok: #15803d;
+	--pdmux-down: #dc2626;
+	--pdmux-idle: #6b7280;
+	/*
+	 * shadcn's vocabulary, read the way the rest of this file reads a theme.
+	 *
+	 * ⚠ TWO NAMES PER TOKEN, ON PURPOSE. Tailwind v4 only emits the theme variables its
+	 * generated utilities actually reference, and a shadcn app declares its palette twice:
+	 * once as `--popover`/`--accent`/… on `:root` (always emitted) and again as
+	 * `--color-*` inside `@theme inline` (emitted only when used). Measured on this very
+	 * dashboard: `--color-popover` resolved and `--color-accent` did NOT. Reading only the
+	 * `--color-*` half would silently drop back to the hard-coded grey on a themed app —
+	 * which is the failure this indirection exists to prevent — so each token tries the
+	 * Tailwind name, then the raw shadcn name, then a literal.
+	 *
+	 * `--pdmux-accent` above is NOT this: it is shadcn's `--primary` (the brand fill).
+	 * shadcn's `--accent` is the hover surface, hence the separate `--pdmux-hover`.
+	 */
+	--pdmux-popover: var(--color-popover, var(--popover, #ffffff));
+	--pdmux-popover-fg: var(--color-popover-foreground, var(--popover-foreground, #1c1f24));
+	--pdmux-hover: var(--color-accent, var(--accent, #f3f4f6));
+	--pdmux-hover-fg: var(--color-accent-foreground, var(--accent-foreground, #1c1f24));
+	--pdmux-input: var(--color-input, var(--input, #dfe3e8));
+	--pdmux-ring: var(--color-ring, var(--ring, #9ca3af));
+	/* shadcn's radius scale. `--radius` is the app's one knob; sm/md are derived from it
+	   exactly as `@theme inline` derives `--radius-sm`/`--radius-md`. */
+	--pdmux-radius: var(--radius, 0.625rem);
+	--pdmux-radius-md: calc(var(--pdmux-radius) - 2px);
+	--pdmux-radius-sm: calc(var(--pdmux-radius) - 4px);
+	/* The terminal's own background, mirrored from `TERMINAL_THEME.background` in
+	   adapters/terminal-surface.ts (see that comment for where the palette comes from).
+	   Deliberately NOT a semantic token and NOT overridden in dark mode: a terminal is a
+	   terminal in either scheme, and this value only exists to equal what xterm paints. */
+	--pdmux-term-bg: #2b2b2b;
+	--pdmux-row: 24px;
+	color: var(--pdmux-fg);
+	font: 14px/1.5 system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+	.pdmux {
+		--pdmux-bg: var(--color-background, #14171c);
+		--pdmux-fg: var(--color-foreground, #e6e9ef);
+		--pdmux-card: var(--color-card, #1c2029);
+		--pdmux-line: var(--color-border, #2b313c);
+		--pdmux-muted: var(--color-muted-foreground, #9aa3b2);
+		--pdmux-popover: var(--color-popover, var(--popover, #1c2029));
+		--pdmux-popover-fg: var(--color-popover-foreground, var(--popover-foreground, #e6e9ef));
+		--pdmux-hover: var(--color-accent, var(--accent, #262c37));
+		--pdmux-hover-fg: var(--color-accent-foreground, var(--accent-foreground, #e6e9ef));
+		--pdmux-input: var(--color-input, var(--input, #333a47));
+		--pdmux-ring: var(--color-ring, var(--ring, #6b7280));
+		/* Lifted toward the light end: the 600-weight light-mode pair reads as muddy on
+		   `--pdmux-card` at #1c2029, and a stroked glyph has even less area than the 8px dot
+		   this note was first written for. Same reason the grey goes the OPPOSITE way from
+		   its light-mode twin: #6b7280 measures 3.4:1 here, so the dark card gets the pale
+		   one (6.4:1) and the white card gets the dark one. */
+		--pdmux-ok: #4ade80;
+		--pdmux-down: #f87171;
+		--pdmux-idle: #9ca3af;
+	}
+}
+
+/* `[hidden]` is a UA rule, so any author `display:` below would defeat it. Forcing
+   it once is the fix for a popover that stayed on screen no matter what. */
+.pdmux [hidden] {
+	display: none !important;
+}
+
+/* --- shell ---------------------------------------------------------------- */
+
+/*
+ * MOBILE FIRST, AND EVERY CHILD PLACED BY ROLE. Both halves are bug fixes, both measured.
+ *
+ * (1) The stacked layout used to be an override inside `@media (max-width: 899px)`, and
+ *     it LOST. `.pdmux-shell[data-sidebar='hidden'][data-dock='open']` is specificity
+ *     (0,3,0) while the media block's selectors were (0,2,0), and `@media` adds none — so
+ *     two of the four toggle combinations kept the five-column desktop template on a
+ *     phone (measured at 390px: `0px 0px 0px 6px 420px`, i.e. the terminals had no column
+ *     at all and the dock had a 420px track inside a 390px window). The phone layout is
+ *     now the BASE and the desktop layout a `min-width` override: below the breakpoint
+ *     there is no competing rule to lose to.
+ *
+ * (2) Placement was 100% automatic — five children on `/`, three on `/hosts` — against a
+ *     two-row template. The dock therefore landed in an IMPLICIT third row sized `auto`,
+ *     the commit list gave that row its intrinsic height, and the terminals'
+ *     `minmax(0,1fr)` collapsed: rows `320.7px 0px 523.3px`, pane grid 366x0, dock
+ *     390x523. Adding a track would not fix that; owning every track does. Each child now
+ *     declares its role (`data-pdmux-region`, `data-pdmux-sidebar`, `data-pdmux-handle`)
+ *     and the fallback for an unknown child is the region cell — never a new row.
+ */
+.pdmux-shell {
+	box-sizing: border-box;
+	/* `dvh` follows a mobile browser's collapsing toolbars but NOT its keyboard: on iOS
+	   the keyboard leaves the layout viewport untouched, and on Android the default is to
+	   resize only the visual viewport. An app that tracks `visualViewport` feeds the
+	   visible height in as `--pdmux-vh`; without one, `100dvh` is what every existing
+	   measurement assumes. */
+	height: var(--pdmux-vh, 100dvh);
+	overflow: hidden;
+	/* Pull-to-refresh reloads the page — on this app that throws away whatever the user
+	   was doing. Rubber-banding a page that never scrolls is also just noise. */
+	overscroll-behavior: none;
+	display: grid;
+	background: var(--pdmux-bg);
+	/* One region on screen, plus the tab bar. Both tracks explicit. */
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: minmax(0, 1fr) auto;
+}
+
+/* `grid-area`, not `grid-row`: the column has to be pinned too, or a second child starts
+   a second column. */
+.pdmux-shell > * {
+	min-width: 0;
+	min-height: 0;
+	grid-area: 1 / 1;
+}
+
+.pdmux-shell > [data-pdmux-region='tabs'] {
+	grid-area: 2 / 1;
+}
+
+/* A 6px splitter is not a touch target, and a phone has no columns to split. DIRECT
+   CHILDREN ONLY: the same class is worn by the commit detail's own row splitter inside
+   the dock, and the old blanket rule froze that too — the detail could not be resized on
+   a phone at all. */
+.pdmux-shell > [data-pdmux-handle] {
+	display: none;
+}
+
+/* Exactly one region is on screen. The others keep their DOM, their sockets and their
+   scrollback — this is a `display` switch, not an unmount, because a `shell` target dies
+   with its pane and an attached session loses its scrollback. */
+.pdmux-shell > [data-pdmux-sidebar],
+.pdmux-shell > [data-pdmux-region='terminal'],
+.pdmux-shell > [data-pdmux-region='dock'],
+.pdmux-shell > [data-pdmux-region='page'] {
+	display: none;
+}
+
+.pdmux-shell[data-view='hosts'] > [data-pdmux-sidebar],
+.pdmux-shell[data-view='terminal'] > [data-pdmux-region='terminal'],
+.pdmux-shell[data-view='git'] > [data-pdmux-region='dock'],
+.pdmux-shell[data-view='page'] > [data-pdmux-region='page'],
+/* No `data-view` at all — first paint before hydration, or a consuming app that has not
+   adopted the tab bar: show what the shell is for. */
+.pdmux-shell:not([data-view]) > [data-pdmux-region='terminal'],
+.pdmux-shell:not([data-view]) > [data-pdmux-region='page'] {
+	display: flex;
+}
+
+/* While the software keyboard is up, the tab bar is screen spent on navigation nobody is
+   doing. */
+.pdmux-shell[data-keyboard='open'] > [data-pdmux-region='tabs'] {
+	display: none;
+}
+
+/* --- shell: tablet and desktop (unchanged behaviour) ---------------------- */
+
+/*
+ * Sidebar | handle | terminals | handle | dock. The last two tracks are 0-wide until the
+ * dock opens, so toggling narrows the grid instead of re-creating it — re-creating would
+ * reconnect every terminal.
+ *
+ * The breakpoint is one number in two languages: `SHELL_STACK_MAX_WIDTH` in `@pdmux/core`
+ * and this query. A package contract test compares them, because the app reads the JS
+ * side to decide single-pane rendering and one pixel of drift means the CSS shows a 3x3
+ * grid the code believes is one cell.
+ */
+@media (min-width: 900px) {
+	.pdmux-shell {
+		grid-template-columns: var(--pdmux-left, 300px) 6px minmax(0, 1fr) 0 0;
+		grid-template-rows: minmax(0, 1fr);
+	}
+
+	/*
+	 * The dock's track YIELDS before the terminals do.
+	 *
+	 * `--pdmux-right` is a width the user chose on some window — often a wide external
+	 * monitor — and it is persisted. Taken literally on a narrower viewport (a laptop,
+	 * a half-screen window, a debug tool emulating one), sidebar + dock are fixed
+	 * spans and `minmax(0, 1fr)` hands the terminals whatever is left, which can be
+	 * nearly nothing: measured on 2026-07-27, a 751px dock on a 1280px viewport left
+	 * 217px for SIX terminals — 59px each, unreadable, reported as "the layout is
+	 * jumbled". The terminals are the product, so it is the dock that gives way:
+	 * clamp() caps its track at what the viewport can spare after the sidebar, two
+	 * 6px handles and a 300px floor for the terminal region. On any window where the
+	 * saved width fits, clamp() resolves to exactly that width and nothing changes.
+	 *
+	 * The STORED preference is untouched — this is display-time only, so the dock is
+	 * back at its chosen width the moment the window is again wide enough.
+	 */
+	.pdmux-shell[data-dock='open'] {
+		grid-template-columns:
+			var(--pdmux-left, 300px) 6px minmax(0, 1fr) 6px
+			clamp(0px, calc(100% - var(--pdmux-left, 300px) - 312px), var(--pdmux-right, 420px));
+	}
+
+	.pdmux-shell[data-sidebar='hidden'] {
+		grid-template-columns: 0 0 minmax(0, 1fr) 0 0;
+	}
+
+	.pdmux-shell[data-sidebar='hidden'][data-dock='open'] {
+		grid-template-columns:
+			0 0 minmax(0, 1fr) 6px
+			clamp(0px, calc(100% - 306px), var(--pdmux-right, 420px));
+	}
+
+	/* ⚠ This reset must come BEFORE the per-child columns below, or the shorthand wipes
+	   them. The five tracks belong to the five roles BY NAME, so what a route renders
+	   (three children on `/hosts`, five on `/`) can no longer decide who gets which. */
+	.pdmux-shell > * {
+		grid-area: 1 / auto;
+	}
+
+	.pdmux-shell > [data-pdmux-sidebar] {
+		grid-column: 1;
+	}
+
+	.pdmux-shell > [data-pdmux-handle][data-pdmux-edge='leading'] {
+		grid-column: 2;
+	}
+
+	.pdmux-shell > [data-pdmux-region='terminal'],
+	.pdmux-shell > [data-pdmux-region='page'] {
+		grid-column: 3;
+	}
+
+	.pdmux-shell > [data-pdmux-handle][data-pdmux-edge='trailing'] {
+		grid-column: 4;
+	}
+
+	.pdmux-shell > [data-pdmux-region='dock'] {
+		grid-column: 5;
+	}
+
+	.pdmux-shell > [data-pdmux-handle] {
+		display: block;
+	}
+
+	/* `data-view` is a phone concept: every region is on screen here. */
+	.pdmux-shell > [data-pdmux-sidebar],
+	.pdmux-shell > [data-pdmux-region='terminal'],
+	.pdmux-shell > [data-pdmux-region='dock'],
+	.pdmux-shell > [data-pdmux-region='page'] {
+		display: flex;
+	}
+
+	.pdmux-shell > [data-pdmux-region='tabs'] {
+		display: none;
+	}
+
+	/* Collapsing the column must also stop the sidebar from PAINTING and from being
+	   clicked: a zero-width track alone left its padding and content drawn under the
+	   terminal grid, and the two overlapped (reported). Its splitter goes quiet with it —
+	   a 6px drag handle over the terminals resizes something invisible.
+
+	   `visibility: hidden`, not `display: none`: role-based placement has since made
+	   removal safe here too, but TC-PDUI-145 encodes hard-won behaviour (the panes must
+	   take the freed width and keep a column of their own), so this stays as measured. */
+	.pdmux-shell[data-sidebar='hidden'] > [data-pdmux-sidebar],
+	.pdmux-shell[data-sidebar='hidden'] > [data-pdmux-handle][data-pdmux-edge='leading'] {
+		visibility: hidden;
+		overflow: hidden;
+		padding: 0;
+		border: 0;
+	}
+}
+
+/* --- composer (phones) ---------------------------------------------------- */
+
+/* A normal input, deliberately: this is the one place on the screen where the platform's
+   IME behaves — candidates, jamo assembly, autocorrect off. 16px so iOS does not zoom. */
+.pdmux-composer {
+	flex: none;
+	border-top: 1px solid var(--pdmux-line);
+	background: var(--pdmux-card);
+	padding: 4px;
+}
+
+.pdmux-composer-form {
+	display: flex;
+	gap: 4px;
+	align-items: stretch;
+}
+
+.pdmux-composer-input {
+	flex: 1;
+	min-width: 0;
+	min-height: 40px;
+	padding: 0 8px;
+	border: 1px solid var(--pdmux-line);
+	border-radius: 6px;
+	background: var(--pdmux-bg);
+	color: var(--pdmux-fg);
+	font: inherit;
+	font-size: 16px;
+}
+
+.pdmux-composer-put,
+.pdmux-composer-send {
+	flex: none;
+	min-height: 40px;
+	padding: 0 10px;
+	border: 1px solid var(--pdmux-line);
+	border-radius: 6px;
+	background: var(--pdmux-bg);
+	color: var(--pdmux-fg);
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.pdmux-composer-send {
+	background: var(--pdmux-accent);
+	border-color: var(--pdmux-accent);
+	color: var(--pdmux-card);
+	font-weight: 600;
+}
+
+/* --- soft-keyboard helper row --------------------------------------------- */
+
+/* Sits inside the pane, under the terminal, so it is the last thing above the software
+   keyboard. Sized for fingertips because it only renders where there is one. */
+.pdmux-keys {
+	flex: none;
+	display: flex;
+	gap: 4px;
+	padding: 4px;
+	border-top: 1px solid var(--pdmux-line);
+	background: var(--pdmux-card);
+}
+
+.pdmux-key {
+	flex: 1;
+	min-width: 0;
+	min-height: 40px;
+	border: 1px solid var(--pdmux-line);
+	border-radius: 6px;
+	background: var(--pdmux-bg);
+	color: var(--pdmux-fg);
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+	/* A held key must not select its own label — the gesture belongs to the terminal. */
+	user-select: none;
+}
+
+/* Ctrl LATCHES, so its state has to be visible: a user who cannot see the latch cannot
+   tell an armed Ctrl from a mis-tap. */
+.pdmux-key[aria-pressed='true'] {
+	background: var(--pdmux-accent);
+	border-color: var(--pdmux-accent);
+	color: var(--pdmux-card);
+}
+
+/* --- view tabs (phones) --------------------------------------------------- */
+
+/* The bar is only laid out on a phone (the desktop block hides it), so the sizes here are
+   fingertip sizes without a media query: 48px of row plus the home-bar inset. */
+.pdmux-tabs {
+	display: flex;
+	align-items: stretch;
+	border-top: 1px solid var(--pdmux-line);
+	background: var(--pdmux-card);
+	/* iOS home bar / Android gesture bar. Zero when the page is not edge-to-edge, which
+	   is the current state and is correct — the browser already keeps us inside the safe
+	   area. It costs nothing to be ready for `viewport-fit=cover`. */
+	padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pdmux-tab {
+	flex: 1;
+	min-height: 48px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	border: 0;
+	background: none;
+	color: var(--pdmux-muted);
+	font: inherit;
+	font-size: 11px;
+	cursor: pointer;
+	/* No 300ms tap delay, no double-tap zoom on a navigation button. */
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.pdmux-tab-icon {
+	font-size: 16px;
+	line-height: 1;
+}
+
+.pdmux-tab[aria-current='page'] {
+	color: var(--pdmux-accent);
+	/* An inset line rather than a border so the row does not shift by a pixel when the
+	   selection moves. */
+	box-shadow: inset 0 2px 0 0 var(--pdmux-accent);
+}
+
+/* Landscape on a phone leaves ~390px of height, so the bar goes single-line. */
+@media (max-width: 899px) and (max-height: 480px) {
+	.pdmux-tab {
+		flex-direction: row;
+		gap: 6px;
+		min-height: 40px;
+	}
+}
+
+/* --- sidebar -------------------------------------------------------------- */
+
+.pdmux-sidebar {
+	overflow: auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	/* ASYMMETRIC ON PURPOSE, and it is what makes the column LOOK symmetric.
+	   `scrollbar-gutter: stable` reserves the scrollbar's width OUTSIDE the content box,
+	   so a plain `padding: 16px` does not render as 16px on both sides: measured at
+	   1440px, every card and the control row ended 32px clear of the column's right edge
+	   against 16px on its left. It was always there and became impossible to miss once
+	   the account avatar sat flush at the end of that row.
+	   `thin` pins the gutter at 11px (measured; `auto` reserves 16 here), so 5px is what
+	   is left to spend on padding. THE TWO NUMBERS ARE ONE NUMBER — change one and the
+	   other has to move with it. `(pointer: coarse)` puts the full 16px back, because an
+	   overlay scrollbar reserves nothing to make up the difference. */
+	padding: 16px 5px 16px 16px;
+	border-right: 1px solid var(--pdmux-line);
+	background: var(--pdmux-bg);
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+}
+
+/* The footer slot sits at the bottom of the column and STAYS there: `margin-top:auto`
+   pushes it down when the fleet is short, `sticky` keeps it reachable when the fleet
+   overflows, and the negative margins let it bleed across the column's padding so
+   cards scroll underneath it rather than beside it. */
+.pdmux-sidebar-foot {
+	position: sticky;
+	bottom: -16px;
+	/* Each margin cancels the padding on its own side, and the right one is 5px because
+	   that is what the padding there is — see `.pdmux-sidebar`. `-16px` would bleed 11px
+	   into the scrollbar's gutter and put the footer under the thumb. */
+	margin: auto -5px -16px -16px;
+	padding: 8px 16px;
+	background: var(--pdmux-bg);
+	border-top: 1px solid var(--pdmux-line);
+}
+
+.pdmux-handle {
+	cursor: col-resize;
+	background: var(--pdmux-line);
+	touch-action: none;
+}
+
+.pdmux-handle:hover,
+.pdmux-handle[data-dragging='true'] {
+	background: var(--pdmux-accent);
+}
+
+/* --- card ----------------------------------------------------------------- */
+
+.pdmux-card {
+	background: var(--pdmux-card);
+	border: 1px solid var(--pdmux-line);
+	border-radius: 10px;
+	padding: 14px;
+	font-size: 12px;
+}
+
+/* The last tile in the column: a card's box, drawn as an outline so it reads as a SLOT
+   rather than as a host that has gone quiet. `background: none` matters for that — filled,
+   it looked like a card whose values had all failed to arrive.
+   ⚠ The BOX is repeated here rather than shared by putting `.pdmux-card` on the element:
+   two geometry specs walk `.pdmux-card` and demand a host name and a reachability glyph
+   from each hit, so wearing that class made a tile that has neither into a broken card.
+   Four declarations of duplication is the cheap half of that trade. */
+.pdmux-card-add {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	/* It never shrinks to share the column with a tall fleet: it is a control, and a
+	   control squeezed to a few pixels cannot be hit. */
+	flex: none;
+	width: 100%;
+	padding: 14px;
+	border: 1px dashed var(--pdmux-line);
+	border-radius: 10px;
+	background: none;
+	color: var(--pdmux-muted);
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.pdmux-card-add:hover,
+.pdmux-card-add:focus-visible {
+	border-color: var(--pdmux-accent);
+	color: var(--pdmux-fg);
+}
+
+.pdmux-card-add-mark {
+	font-size: 16px;
+	line-height: 1;
+}
+
+.pdmux-card-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 15px;
+	font-weight: 600;
+	/* Lets the name shrink instead of pushing the dot and the cog out of the card. */
+	min-width: 0;
+}
+
+/*
+ * The host name is ONE line, always.
+ *
+ * There was no rule here at all, which is two bugs rather than one: a multi-word label
+ * wrapped and grew the card, and a single long unbroken token overflowed it — a flex item
+ * defaults to `min-width: auto`, so the span refused to shrink below its content and shoved
+ * the ⚙ past the edge. `min-width: 0` is the load-bearing half; the ellipsis is the polish.
+ * The full name stays reachable through the element's `title`.
+ */
+.pdmux-card-head [data-pdmux-name] {
+	flex: 1;
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pdmux-badge {
+	font-size: 12px;
+	font-weight: 600;
+	padding: 2px 8px;
+	border-radius: 999px;
+	color: #fff;
+	background: #9ca3af;
+}
+
+/*
+ * Reachability, as a GLYPH beside the ⚙ instead of a word.
+ *
+ * ⚠ THREE STATES, NOT TWO, AND NEVER COLOUR ALONE. The header used to carry a busy/idle
+ * chip and it was dropped for restating the agent count in colour — but the same note kept
+ * the stopped/unknown chip deliberately: "without it a card whose every value is a dash
+ * looks broken instead of switched off". Whatever sits here has to carry that meaning, so
+ * `unknown` (disabled — nobody is asking) stays distinct from `offline` (asked, no answer),
+ * and every one of them carries its state name in `title` + `aria-label` for anyone who
+ * cannot separate the hues.
+ *
+ * ⚠ THIS WAS AN 8px COLOURED DISC AND IT WAS WRONG. Reported as looking odd next to the
+ * ⚙, and it was: a pinhead beside a 16px icon, on a row where every other mark is a
+ * drawing. It also leaned its entire meaning on hue — the three states were three colours
+ * and nothing else, with the name reachable only by hovering. A shape is legible at a
+ * glance and survives greyscale, so the states are now three silhouettes at the ⚙'s own
+ * 16px: joined link, parted link, dashed link.
+ *
+ * The colour therefore moves from `background` to `color`, which is what the stroke reads.
+ * A card is not a control, so there is no hover or focus state here — this is a readout.
+ */
+.pdmux-state-dot {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* The ⚙'s glyph size, not the ⚙'s 36px button box: that button is oversized on purpose,
+	   for a fingertip. Nobody presses this, so it is the drawing that has to match. */
+	inline-size: 16px;
+	block-size: 16px;
+	color: var(--pdmux-idle);
+}
+
+.pdmux-state-dot svg {
+	inline-size: 100%;
+	block-size: 100%;
+}
+
+.pdmux-state-dot[data-pdmux-reach='online'] {
+	color: var(--pdmux-ok);
+}
+
+.pdmux-state-dot[data-pdmux-reach='offline'] {
+	color: var(--pdmux-down);
+}
+
+/* `unknown` draws the JOINED link and dashes it, rather than the parted one: the host is
+   not reported as disconnected, it is not being asked. Same path, so the difference from
+   `online` is a texture and the difference from `offline` is a whole shape. */
+.pdmux-state-dot[data-pdmux-reach='unknown'] svg {
+	stroke-dasharray: 3 2.5;
+}
+
+/*
+ * The card's settings trigger — a ghost icon button in shadcn's terms.
+ *
+ * It was a 13px `⚙` in 2px of padding, measured at 16x17: a quarter of the area of the
+ * smallest button this app's own registry ships, with no hover or focus state to say it
+ * was a control at all. Sizes here are that registry's, not invented ones: 36px is
+ * `size="icon-lg"` (`size-9`), and the touch block at the end of this file takes it to
+ * 44px on a coarse pointer, which is the size a fingertip actually hits.
+ *
+ * ⚠ THE NEGATIVE MARGINS ARE LOAD-BEARING, and they are why a bigger target costs
+ * nothing. A 36px button in a header whose text line is ~23px would add 13px to EVERY
+ * card in the column. Pulling it 6px into the card's own 14px padding (the same trick
+ * shadcn's card actions use with `-me-2`) leaves the header 24px tall, so the fleet
+ * column grows by one pixel per card while the target more than doubles.
+ */
+.pdmux-cog {
+	flex: none;
+	margin-inline-start: auto;
+	margin-block: -6px;
+	margin-inline-end: -6px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	inline-size: 36px;
+	block-size: 36px;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--pdmux-muted);
+	cursor: pointer;
+	border-radius: var(--pdmux-radius-md);
+	transition:
+		background-color 0.12s ease,
+		color 0.12s ease;
+}
+
+.pdmux-cog:hover {
+	background: var(--pdmux-hover);
+	color: var(--pdmux-hover-fg);
+}
+
+/* `:focus-visible`, never `:focus` — a mouse click on a popover trigger should not leave
+   a ring behind on the card it opened from. */
+.pdmux-cog:focus-visible {
+	outline: none;
+	color: var(--pdmux-fg);
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--pdmux-ring) 50%, transparent);
+}
+
+/* Clicks belong to the button; without this the target of a click is sometimes a path
+   inside the icon, which `event.currentTarget` handles but hit-testing does not. */
+.pdmux-cog svg {
+	inline-size: 16px;
+	block-size: 16px;
+	pointer-events: none;
+}
+
+.pdmux-widget {
+	list-style: none;
+	margin: 8px 0 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	white-space: nowrap;
+	color: var(--pdmux-muted);
+}
+
+.pdmux-row {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+}
+
+.pdmux-row b {
+	color: var(--pdmux-fg);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+.pdmux-row b.pdmux-hot {
+	color: var(--pdmux-hot);
+	font-weight: 700;
+}
+
+.pdmux-row b.pdmux-low {
+	color: var(--pdmux-low);
+	font-weight: 700;
+}
+
+.pdmux-agent-label {
+	flex: none;
+	width: 44px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pdmux-agent-count {
+	flex: none;
+	width: 18px;
+	text-align: right;
+}
+
+.pdmux-metric-label {
+	flex: none;
+	width: 34px;
+}
+
+.pdmux-metric-value {
+	flex: none;
+	width: 34px;
+	text-align: right;
+}
+
+.pdmux-gauge-wrap {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 3px;
+}
+
+/* `flex:1 1 0` + `width:100%`, never `flex:1 1 auto`: an <svg> with a viewBox has an
+   intrinsic width (height x aspect) that becomes the flex item's min-content
+   contribution — two gauges per row pushed a card past the sidebar and the whole
+   sidebar scrolled sideways. */
+.pdmux-gauge,
+.pdmux-spark {
+	flex: 1 1 0;
+	width: 100%;
+	min-width: 0;
+	display: block;
+	overflow: hidden;
+}
+
+.pdmux-gauge {
+	height: 8px;
+	border-radius: 4px;
+}
+
+.pdmux-spark {
+	height: 14px;
+}
+
+.pdmux-gauge .pdmux-track {
+	fill: var(--pdmux-line);
+}
+
+.pdmux-gauge .pdmux-fill {
+	fill: var(--pdmux-accent);
+}
+
+.pdmux-gauge .pdmux-fill.pdmux-low {
+	fill: var(--pdmux-low);
+}
+
+.pdmux-stale .pdmux-gauge,
+.pdmux-stale .pdmux-metric-value {
+	opacity: 0.45;
+}
+
+.pdmux-spark .pdmux-line {
+	fill: none;
+	stroke: var(--pdmux-accent);
+	stroke-width: 1;
+	vector-effect: non-scaling-stroke;
+}
+
+.pdmux-spark .pdmux-area {
+	fill: var(--pdmux-accent);
+	fill-opacity: 0.16;
+	stroke: none;
+}
+
+.pdmux-spark .pdmux-line.pdmux-hot {
+	stroke: var(--pdmux-hot);
+}
+
+.pdmux-spark .pdmux-area.pdmux-hot {
+	fill: var(--pdmux-hot);
+	fill-opacity: 0.22;
+}
+
+.pdmux-spark .pdmux-guide {
+	stroke: var(--pdmux-muted);
+	stroke-width: 1;
+	stroke-dasharray: 2 2;
+	opacity: 0.35;
+	vector-effect: non-scaling-stroke;
+}
+
+.pdmux-launcher {
+	margin-top: 12px;
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.pdmux-launcher select {
+	flex: 1 1 auto;
+	min-width: 0;
+	font: inherit;
+	font-size: 12px;
+	padding: 4px 6px;
+	border-radius: 6px;
+	border: 1px solid var(--pdmux-line);
+	background: var(--pdmux-card);
+	color: var(--pdmux-fg);
+}
+
+.pdmux-launcher button {
+	flex: 0 0 auto;
+	font: inherit;
+	font-size: 12px;
+	padding: 4px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	background: var(--pdmux-accent);
+	border: 1px solid var(--pdmux-accent);
+	color: #fff;
+}
+
+.pdmux-launcher select:disabled,
+.pdmux-launcher button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+/* --- popovers ------------------------------------------------------------- */
+
+.pdmux-popover {
+	position: fixed;
+	z-index: 50;
+	/* `dvh`, not `vh`: with a mobile browser's URL bar showing, `vh` is the LARGER
+	   viewport, so a "70%" popover can be taller than the screen. */
+	max-height: 70dvh;
+	overflow: auto;
+	padding: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	/* shadcn's popover surface: its own token, not the card's. They hold the same value
+	   in the default palette, which is exactly why the wrong one goes unnoticed until a
+	   theme separates them. */
+	background: var(--pdmux-popover);
+	color: var(--pdmux-popover-fg);
+	/*
+	 * The app's own floating surface, restated rather than imported.
+	 *
+	 * ⚠ THIS PANEL LOOKED LIKE A DIFFERENT PRODUCT. Everything else that floats in the
+	 * consuming app is shadcn's `DropdownMenu`, whose content is
+	 * `ring-1 ring-foreground/10 rounded-lg shadow-md text-sm` — this had a 1px border,
+	 * a 35%-opacity 24px shadow, `rounded-md` and 12px text, and side by side with the
+	 * user menu it read as a foreign widget.
+	 *
+	 * ⚠ A RING, NOT A BORDER, and the reason is geometric rather than cosmetic: an
+	 * inset shadow adds no width, so the viewport clamp — which measures `offsetWidth`
+	 * — keeps working unchanged. A 1px border on each side would have shifted every
+	 * position this component computes.
+	 *
+	 * The package still depends on nothing: this is the shadcn VOCABULARY expressed in
+	 * the tokens `--pdmux-*` already resolve (COMPONENTS.md §0, "the design vocabulary is
+	 * shadcn's, the dependency is not").
+	 */
+	border-radius: var(--pdmux-radius);
+	box-shadow:
+		inset 0 0 0 1px color-mix(in oklab, var(--pdmux-fg) 10%, transparent),
+		0 4px 6px -1px rgb(0 0 0 / 10%),
+		0 2px 4px -2px rgb(0 0 0 / 10%);
+	font-size: 14px;
+	/*
+	 * A fade, and DELIBERATELY NOT the menu's zoom.
+	 *
+	 * ⚠ A SCALE ON THIS PANEL BREAKS ITS OWN CONTRACT. Its geometry is the contract —
+	 * 32px preference rows on a fine pointer, 44px on a coarse one, and a position
+	 * clamped so it never leaves the viewport. `getBoundingClientRect` reports the
+	 * TRANSFORMED box, so during the animation a 32px row measures 30px: measured here
+	 * as exactly that, and it failed TC-PDUI-167 the first time this animation was
+	 * added. Anything that reads a size — a spec, an assistive technology, the clamp's
+	 * own next frame — would be reading a lie for 100ms.
+	 *
+	 * Opacity changes no box, so the panel still stops appearing out of nowhere.
+	 */
+	animation: pdmux-popover-in 100ms ease-out;
+}
+
+@keyframes pdmux-popover-in {
+	from {
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pdmux-popover {
+		animation: none;
+	}
+}
+
+.pdmux-popover-title {
+	font-weight: 600;
+	font-size: 13px;
+}
+
+/*
+ * --- card settings panel ---------------------------------------------------
+ *
+ * Scoped to its own `data-pdmux-popover` value rather than added to `.pdmux-popover`,
+ * because the terminal target picker is the other user of that class and its rows are a
+ * different shape. What is shared above is the surface (token, radius, shadow, clamp);
+ * what is below is this panel's rhythm.
+ *
+ * The panel pays its padding per SECTION instead of once around everything, so the rules
+ * between sections can run edge to edge — a separator inset by the container's padding
+ * reads as a stray line rather than as a division. Same reason shadcn's menu separator
+ * is `-mx-1`.
+ */
+.pdmux-popover[data-pdmux-popover='card-settings'] {
+	padding: 0;
+	gap: 0;
+}
+
+.pdmux-popover-head {
+	padding: 12px 12px 10px;
+}
+
+.pdmux-popover-head .pdmux-popover-title {
+	font-size: 14px;
+	line-height: 1.35;
+	/* A host label is user input and can be one unbroken 40-character token. */
+	overflow-wrap: anywhere;
+}
+
+/* One quiet line under the name: whether the machine is answering, and when it last
+   did. It replaced five reference rows that the host's own page already carries. */
+.pdmux-popover-sub {
+	margin-block-start: 2px;
+	font-size: 12px;
+	color: var(--pdmux-muted);
+}
+
+.pdmux-popover-rule {
+	flex: none;
+	block-size: 1px;
+	background: var(--pdmux-line);
+}
+
+/* Reference data, so it is quiet: `text-xs` and a muted key column. */
+[data-pdmux-details] {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	column-gap: 12px;
+	row-gap: 5px;
+	padding: 10px 12px;
+	font-size: 12px;
+}
+
+/*
+ * `display: contents` so every row shares ONE grid, and the values line up down the
+ * panel. They used to be independent flex rows over a 56px key column — a width picked
+ * for "Address" that a translation is free to overrun (this dashboard's Korean label
+ * for "last seen" does), and when it did, that row's value stepped out of the column.
+ */
+.pdmux-kv {
+	display: contents;
+}
+
+.pdmux-kv .pdmux-k {
+	color: var(--pdmux-muted);
+	white-space: nowrap;
+}
+
+.pdmux-kv .pdmux-v {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+/* A menu-ish list: 4px of padding around rows that carry their own, so the hover
+   highlight is a rounded row inset from the panel edge. */
+.pdmux-popover-widgets {
+	display: flex;
+	flex-direction: column;
+	padding: 4px;
+}
+
+.pdmux-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	min-block-size: 32px;
+	padding: 4px 8px;
+	border-radius: var(--pdmux-radius-sm);
+	font-size: 14px;
+	cursor: pointer;
+	transition: background-color 0.12s ease;
+}
+
+.pdmux-toggle:hover {
+	background: var(--pdmux-hover);
+	color: var(--pdmux-hover-fg);
+}
+
+/* The switch is the only focusable thing in the row, so the row is what has to light up
+   — a ring around a 32x18 control inside a full-width label reads as an orphan. */
+.pdmux-toggle:has(:focus-visible) {
+	background: var(--pdmux-hover);
+	color: var(--pdmux-hover-fg);
+}
+
+.pdmux-toggle-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/*
+ * A checkbox painted as shadcn's Switch, to the pixel (`h-[1.15rem] w-8`, a `size-4`
+ * thumb travelling `100% - 2px`).
+ *
+ * ⚠ IT IS STILL A NATIVE CHECKBOX. This package's contract is that `svelte` is its only
+ * peer dependency, and shadcn-svelte is not a library to depend on — it is source copied
+ * into an application, and its Switch reaches bits-ui underneath. So the look is
+ * borrowed and the element is not: the input keeps its checked state, its keyboard
+ * behaviour and its label association for free, and `role="switch"` in the markup makes
+ * what a reader hears match what they see.
+ *
+ * ⚠ Sized in px, never `em`. The touch block at the end of this file forces every
+ * `.pdmux input` to 16px (iOS zooms the whole 100dvh grid otherwise), which would
+ * inflate an em-sized switch by a seventh on exactly the screens it has least room on.
+ */
+.pdmux-switch {
+	appearance: none;
+	-webkit-appearance: none;
+	flex: none;
+	margin: 0;
+	display: inline-flex;
+	align-items: center;
+	inline-size: 32px;
+	block-size: 18px;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 999px;
+	background: var(--pdmux-input);
+	box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
+	cursor: pointer;
+	transition: background-color 0.15s ease;
+}
+
+.pdmux-switch::before {
+	content: '';
+	display: block;
+	inline-size: 16px;
+	block-size: 16px;
+	border-radius: 999px;
+	background: var(--pdmux-bg);
+	transition: transform 0.15s ease;
+	transform: translateX(0);
+}
+
+.pdmux-switch:checked {
+	background: var(--pdmux-accent);
+}
+
+.pdmux-switch:checked::before {
+	transform: translateX(calc(100% - 2px));
+}
+
+.pdmux-switch:focus-visible {
+	outline: none;
+	border-color: var(--pdmux-ring);
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--pdmux-ring) 50%, transparent);
+}
+
+/*
+ * The app's slot. Still unstyled — whatever the consumer renders here arrives with its
+ * own looks — but no longer unplaced: the rule above it and the padding around it are
+ * this panel's rhythm, and every consumer would otherwise re-derive them (ours did,
+ * with a `border-t mt-1 pt-2` of its own that only matched by luck).
+ */
+[data-pdmux-popover-acts] {
+	padding: 10px 12px 12px;
+}
+
+.pdmux-chiprow {
+	display: flex;
+	gap: 4px;
+	flex-wrap: wrap;
+}
+
+.pdmux-chip,
+.pdmux-btn,
+.pdmux-ico,
+.pdmux-pick-row {
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+	background: var(--pdmux-card);
+	color: var(--pdmux-fg);
+	border: 1px solid var(--pdmux-line);
+	border-radius: 6px;
+	padding: 4px 9px;
+}
+
+.pdmux-chip[aria-pressed='true'],
+.pdmux-btn[aria-pressed='true'] {
+	background: var(--pdmux-accent);
+	border-color: var(--pdmux-accent);
+	color: #fff;
+}
+
+.pdmux-pick-row {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+	text-align: left;
+}
+
+.pdmux-meta {
+	color: var(--pdmux-muted);
+	font-size: 11px;
+}
+
+.pdmux-ico {
+	padding: 1px 5px;
+	line-height: 1.3;
+}
+
+.pdmux-ico[disabled] {
+	opacity: 0.35;
+	cursor: default;
+}
+
+/* --- terminal grid -------------------------------------------------------- */
+
+.pdmux-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-height: 0;
+	min-width: 0;
+	padding: 10px 12px 12px;
+}
+
+/* flex:1 + min-height:0 = the grid takes every remaining pixel of the column, which
+   is the whole point: a fixed-height box left 6% of the viewport unused. */
+.pdmux-grid {
+	flex: 1;
+	min-height: 0;
+	display: grid;
+	gap: 8px;
+	grid-template-columns: repeat(var(--pdmux-cols, 2), minmax(0, 1fr));
+	grid-auto-rows: 1fr;
+}
+
+/*
+ * Below the stack breakpoint, ONE cell — decided by CSS, not by whoever rendered.
+ *
+ * The narrow-screen projection is JavaScript (`soloLayout`), so everything the server
+ * renders is a guess about the device: request hints cover a real phone, but a resized
+ * window or a responsive-mode tab sends desktop headers and got the full split — a 3x3
+ * flashing on screen and collapsing to one pane at hydration, on every refresh.
+ *
+ * The grid therefore marks the anchor cell (`data-pdmux-stack`, TerminalGrid) and this
+ * rule shows exactly that cell whenever the viewport is narrow, whatever HTML arrived:
+ * a wrong server guess now PAINTS RIGHT and hydration changes nothing visible. After
+ * hydration the projected window has a single cell, everything is marked anchor, and
+ * these rules are inert. Must stay AFTER `.pdmux-grid` above — same specificity, order
+ * decides. 899px = SHELL_STACK_MAX_WIDTH − 1 (the package contract test pins the pair).
+ */
+@media (max-width: 899px) {
+	.pdmux-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.pdmux-grid > [data-pdmux-stack='rest'] {
+		display: none;
+	}
+}
+
+.pdmux-pane {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+	border: 1px solid var(--pdmux-line);
+	border-radius: 8px;
+	background: var(--pdmux-card);
+}
+
+.pdmux-pane[hidden] {
+	display: none;
+}
+
+.pdmux-pane-empty {
+	border-style: dashed;
+	background: transparent;
+}
+
+.pdmux-pane-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 6px;
+	font-size: 11px;
+	background: var(--pdmux-bg);
+	cursor: grab;
+	user-select: none;
+	touch-action: none;
+}
+
+.pdmux-pane.pdmux-dragging {
+	opacity: 0.45;
+}
+
+/* Focus lives on the FRAME, never over the terminal.
+   An overlay — even a faint one — is both unreadable and unclickable, which is exactly
+   how a stuck drag dim got reported as "the terminal is broken". Border colour plus a
+   1px outline inset INSIDE the box: two accent pixels on the edge, no change to the
+   pane's geometry, nothing painted over the surface (and an outline is not hit-tested,
+   so `elementFromPoint` still reaches the terminal). A zoomed pane reads the same way
+   because it already behaves as the active one (it drops the click guard too). */
+.pdmux-pane.pdmux-focused {
+	border-color: var(--pdmux-accent);
+	outline: 1px solid var(--pdmux-accent);
+	outline-offset: -2px;
+}
+
+/* After focus, so a pane that is both keeps the louder, transient drop marker. */
+.pdmux-pane.pdmux-drop {
+	outline: 2px solid var(--pdmux-accent);
+	outline-offset: -2px;
+}
+
+.pdmux-pane-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pdmux-pane-acts {
+	display: flex;
+	gap: 2px;
+	flex: none;
+}
+
+/* This is the colour BEHIND the canvas, and it has to equal the terminal's own
+   background: xterm re-measures and repaints on every resize, and any mismatch shows as
+   a seam/flash of the wrong colour along the edge being dragged. `.pdmux-pane-surface`
+   is transparent on purpose — the xterm host sits on top of this box, so painting it
+   twice would just be a second place to forget to update. */
+.pdmux-pane-body {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	background: var(--pdmux-term-bg);
+}
+
+.pdmux-pane-surface {
+	position: absolute;
+	inset: 0;
+}
+
+/* --- the terminal's own scrollbar ----------------------------------------------
+   REPORTED: "there is no scrollbar on a terminal pane", on the desktop and on the phone.
+   With `scrollback: 5000` there are up to 5000 lines behind the pane and nothing said so.
+
+   WHERE THE SCROLLBAR CAN EVEN BE: xterm scrolls a `.xterm-viewport` (`overflow-y: scroll`,
+   absolutely filling `.xterm`) and paints `.xterm-screen` OVER it — `Terminal.ts` appends the
+   viewport first and the screen second, both positioned, so the screen wins the stacking
+   order. xterm knows this and reserves a gutter the screen does not cover: `Viewport.ts`
+   measures `viewportElement.offsetWidth - scrollArea.offsetWidth` ONCE when the pane opens
+   and falls back to `FALLBACK_SCROLL_BAR_WIDTH = 15` when that is 0, and `FitAddon` then
+   subtracts it when choosing `cols`. Measured on a pane: a 19px empty strip. So there was
+   always room — nothing was drawn in it.
+
+   WHY NOTHING WAS DRAWN: the scrollbar was the platform's, and xterm never named it, so it
+   was whatever the engine gives an unstyled `overflow-y: scroll` box. On every engine this
+   product was measured on that is an OVERLAY scrollbar: it takes no layout and paints only
+   while the box is being scrolled. Measured `offsetWidth - clientWidth` on a plain
+   `overflow-y: scroll` div — **0** on a Pixel 7 AND **0** on desktop Chromium (dpr 1), which
+   is also why xterm's own measurement hits its 15px fallback rather than reading a width.
+
+   ⚠ `::-webkit-scrollbar` DOES NOT OPT OUT OF THAT. It is often said to, and it does not
+   here: the same div measured 0 with `::-webkit-scrollbar { width: 10px }`, 0 with
+   `scrollbar-width`/`scrollbar-color`, and 0 with both, on the phone and on the desktop
+   alike. So no declaration in this file can make the terminal's scrollbar take layout, and
+   nothing below should be read as promising a reserved strip of its own.
+
+   WHAT IS THEREFORE LOAD-BEARING: `scrollbar-color`, which Blink honours for an overlay
+   scrollbar (>= 121) — the live viewport computes `rgb(182, 189, 201) rgba(0, 0, 0, 0)`, so
+   the thumb that appears on a drag/wheel is this product's grey rather than the engine's
+   default, and the track is transparent so nothing is painted while nothing is happening.
+   The `::-webkit-*` rules are the classic-scrollbar path for a platform whose scrollbars ARE
+   laid out (a Linux/Windows desktop with overlay scrollbars off, an embedded webview); they
+   are the pair `.pdmux-graph-list` below already relies on, so both scrollers answer to the
+   same two declarations instead of one inventing its own.
+
+   IDLE = UNOBTRUSIVE, without a media query: no thumb is painted while
+   `scrollHeight <= clientHeight`, and with a transparent track that means a pane with no
+   history behind it shows nothing at all. A thumb appearing IS the "there is history here"
+   signal.
+
+   ⚠ WHAT NO SCROLLBAR RULE CAN FIX, and the reason this is only half the story: xterm keeps
+   NO scrollback in the alternate buffer (`common/buffer/BufferSet.ts:44` builds the alt
+   buffer with `hasScrollback = false`, and `Buffer.ts:92` returns false for it), and a pane
+   pointed at a session runs `tmux new -A -s <name>`, which lives in that buffer. Measured on
+   such a pane: `scrollHeight` 579, `clientHeight` 579 — the viewport is not scrollable, so
+   there is nothing for any scrollbar to represent, and the history the user is after is
+   tmux's rather than xterm's. That is why the wheel is translated into keys there, and why
+   `terminal-surface.ts` does the same for a finger.
+
+   COLOUR: the same `#b6bdc9` thumb, 6px radius and 2px-transparent-border/`content-box` inset
+   as `.pdmux-graph-list` below — this is that vocabulary, not a new one. It is one value for
+   light AND dark on purpose: this scrollbar sits on the terminal surface, which is pinned to
+   `--pdmux-term-bg` (= `TERMINAL_THEME.background`) in both themes, so a thumb keyed to the
+   page theme would be the thing that broke in one of them.
+
+   10px is chosen to fit INSIDE the strip xterm already reserves (measured 19px on the phone,
+   17px on the desktop), so on a platform that does lay its scrollbar out the thumb lands in
+   space no glyph is painted in. */
+.pdmux .xterm-viewport {
+	scrollbar-width: thin;
+	scrollbar-color: #b6bdc9 transparent;
+}
+
+.pdmux .xterm-viewport::-webkit-scrollbar {
+	width: 10px;
+}
+
+.pdmux .xterm-viewport::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.pdmux .xterm-viewport::-webkit-scrollbar-thumb {
+	background: #b6bdc9;
+	border-radius: 6px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+/*
+ * The click guard, now a KEYBOARD affordance only.
+ *
+ * ⚠ `pointer-events: none` IS THE FIX, NOT A TIDY-UP. This box is `inset: 0` over the
+ * terminal, and without that line it won the hit test on every unfocused pane — xterm
+ * never received the `mousedown`, so a drag selected nothing and there was nothing to
+ * copy. Not cancelled: occluded. The comment that used to sit here said "it must let a
+ * DRAG through, or nothing can be selected" and the rule underneath it did not.
+ *
+ * Click-to-zoom moved to pointer listeners on `.pdmux-pane-body`, which observe the
+ * gesture instead of intercepting it (xterm registers no pointer listeners at all, so
+ * nothing is taken from it). What stays here is the accessible name and a tab stop:
+ * a keyboard activation still fires `click` with pointer events switched off.
+ */
+.pdmux-guard {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	/* No `cursor` any more: a box that is never hit-tested never sets one, and putting
+	   `zoom-in` on the pane instead would be a lie — the text under it is now selectable,
+	   and xterm's own `text` cursor over the screen is the honest signal. */
+	background: transparent;
+	border: 0;
+	padding: 0;
+}
+
+/* It is still reachable by Tab, so it still has to show where the focus is. */
+.pdmux-guard:focus-visible {
+	outline: 2px solid var(--pdmux-accent);
+	outline-offset: -3px;
+}
+
+.pdmux-cell-button {
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	border: 0;
+	background: transparent;
+	color: var(--pdmux-muted);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.pdmux-unreachable .pdmux-pane-body::after {
+	content: attr(data-message);
+	position: absolute;
+	inset: 0;
+	/* The second full-bleed overlay in this box. Generated content hit-tests as the
+	   element that made it, so without this it takes the pointer for the whole pane —
+	   the same way the click guard used to, and just as invisibly. A message is for
+	   reading; the text underneath it stays selectable when the host comes back. */
+	pointer-events: none;
+	display: grid;
+	place-items: center;
+	color: var(--pdmux-muted);
+	font-size: 12px;
+	background: var(--pdmux-card);
+}
+
+/* --- commit graph --------------------------------------------------------- */
+
+.pdmux-graph {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	flex: 1;
+	background: var(--pdmux-card);
+}
+
+/* Refs panel │ graph. A row inside the graph column, so each side scrolls itself and
+   neither can lengthen the page. */
+.pdmux-graph-body {
+	container: pdmux-graph / inline-size;
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+/* The list scrolls, the detail does not move: both need an explicit min-height:0 or
+   they grow to their content and push each other out of the viewport. */
+.pdmux-graph-list {
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: auto;
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+}
+
+.pdmux-graph-list::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.pdmux-graph-list::-webkit-scrollbar-thumb {
+	background: #b6bdc9;
+	border-radius: 6px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+.pdmux-graph-rows {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+}
+
+.pdmux-graph-svg {
+	position: absolute;
+	left: 0;
+	top: 0;
+	pointer-events: none;
+}
+
+.pdmux-graph-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	height: var(--pdmux-row);
+	/* A row is a FIXED height, so anything that wraps inside it lands on top of the next
+	   commit. Reported on a phone: a narrowed date column wrapped its own text and covered
+	   the row below. Clipping here is the guarantee; the shorter formats are the courtesy. */
+	overflow: hidden;
+	padding-left: var(--pdmux-graph-w, 60px);
+	border: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	font-size: 12px;
+	text-align: left;
+	cursor: pointer;
+	width: 100%;
+}
+
+.pdmux-graph-row:hover {
+	background: var(--pdmux-card);
+}
+
+/* Selection must not look like hover. Both used to paint `--pdmux-bg` — the column's
+   own background — so the row whose detail is open below was indistinguishable from
+   the row the pointer happened to be over, and from every other row (reported: "I
+   cannot tell which commit I am looking at"). Three signals, because one is fragile:
+   a tinted band, an accent bar at the leading edge, and a heavier subject. The bar is
+   an inset shadow rather than a border so the row does not shift by 3px when picked,
+   which would nudge the lane graph out of alignment with its own rows. */
+.pdmux-graph-row[aria-current='true'],
+.pdmux-graph-row[aria-current='true']:hover {
+	background: color-mix(in srgb, var(--pdmux-accent) 18%, transparent);
+	box-shadow: inset 3px 0 0 0 var(--pdmux-accent);
+}
+
+.pdmux-graph-row[aria-current='true'] .pdmux-graph-subject {
+	font-weight: 600;
+}
+
+.pdmux-graph-subject {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pdmux-graph-row.pdmux-wip .pdmux-graph-subject {
+	color: #b45309;
+	font-style: italic;
+}
+
+.pdmux-graph-author {
+	flex: none;
+	width: 110px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--pdmux-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pdmux-graph-date {
+	flex: none;
+	width: 112px;
+	color: var(--pdmux-muted);
+	font-variant-numeric: tabular-nums;
+	/* Never wrap: the row cannot grow, so a second line would overlap the next commit. */
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pdmux-graph-sha {
+	flex: none;
+	width: 60px;
+	color: var(--pdmux-muted);
+	font-family: ui-monospace, monospace;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pdmux-graph-chips {
+	flex: none;
+	display: flex;
+	gap: 3px;
+}
+
+.pdmux-graph-chip {
+	font-size: 10px;
+	padding: 0 5px;
+	border-radius: 999px;
+	border: 1px solid var(--pdmux-line);
+}
+
+.pdmux-graph-chip[data-kind='head'] {
+	background: #16a34a;
+	border-color: #16a34a;
+	color: #fff;
+}
+
+.pdmux-graph-chip[data-kind='local'] {
+	color: #16a34a;
+}
+
+.pdmux-graph-chip[data-kind='remote'] {
+	color: #2563eb;
+}
+
+.pdmux-graph-chip[data-kind='tag'] {
+	color: #ca8a04;
+}
+
+.pdmux-edge {
+	fill: none;
+	stroke-width: 1.6;
+}
+
+.pdmux-edge[data-open='true'] {
+	opacity: 0.35;
+}
+
+.pdmux-edge[data-dashed='true'] {
+	stroke-dasharray: 3 3;
+}
+
+.pdmux-dot {
+	stroke-width: 1.6;
+}
+
+.pdmux-dot[data-kind='uncommitted'] {
+	stroke-dasharray: 2 2;
+}
+
+/* Bounded so a long patch cannot push the list out of the viewport. */
+.pdmux-detail {
+	flex: none;
+	/* Content height until the user drags the handle, then their number — capped either
+	   way, because the graph above it must keep a usable column and the page itself must
+	   never scroll (ARCHITECTURE §7). */
+	max-height: 45%;
+	min-height: 140px;
+	/* ⚠ The panel is a SCROLL CONTAINER. It is capped at a share of the column, so a patch
+	   longer than the cap is only reachable by scrolling here. */
+	overflow: auto;
+	padding: 8px;
+	border-top: 1px solid var(--pdmux-line);
+	font-size: 12px;
+	scrollbar-gutter: stable;
+}
+
+/*
+ * While the patch is still on its way, hold the height the panel is ABOUT to take.
+ *
+ * WHY: the panel opened at `min-height` and grew to the cap when the answer arrived —
+ * measured 140px -> 360px, between 45ms and 180ms after the click and varying per commit
+ * (a stored patch answers at once, one still being collected does not). That is a SECOND
+ * shrink of the commit list, so the list scrolled again after the click already looked
+ * finished, and only sometimes. Reserving the space means the list shrinks once, when the
+ * click happens, and nothing moves afterwards.
+ *
+ * Not applied once the user has dragged the handle: an explicit height cannot grow, so
+ * there is nothing to reserve.
+ */
+.pdmux-detail[data-pdmux-awaiting]:not([data-pdmux-sized]) {
+	height: 45%;
+}
+
+/* A resized panel is allowed more of the column than a content-sized one — the user
+   asked for it — but still not all of it. */
+.pdmux-detail[data-pdmux-sized='true'] {
+	max-height: 75%;
+}
+
+/* "Still being collected" is a wait, not a complaint: it has to look like something is
+   happening, or a static grey line reads as the same dead end as "not collected". */
+.pdmux-meta[data-pdmux-state='collecting'] {
+	animation: pdmux-detail-wait 1.4s ease-in-out infinite;
+}
+
+@keyframes pdmux-detail-wait {
+	50% {
+		opacity: 0.45;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pdmux-meta[data-pdmux-state='collecting'] {
+		animation: none;
+	}
+}
+
+/* The wait ended without the patch. A pulse forever is not an answer, so the panel says
+   so plainly and puts the next move in the user's hands. */
+.pdmux-detail-retry {
+	margin-top: 6px;
+	font: inherit;
+	font-size: 11px;
+	padding: 3px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	background: var(--pdmux-card);
+	border: 1px solid var(--pdmux-line);
+	color: var(--pdmux-fg);
+}
+
+/* The row handle: full width, a few px tall, and it must not be draggable when the
+   panel is closed — a handle that resizes something invisible is a trap. */
+.pdmux-handle[data-pdmux-axis='y'] {
+	cursor: row-resize;
+	min-height: 6px;
+}
+
+.pdmux-diff {
+	border: 1px solid var(--pdmux-line);
+	border-radius: 6px;
+	overflow: hidden;
+	margin-top: 6px;
+}
+
+.pdmux-diff-head {
+	padding: 3px 6px;
+	background: var(--pdmux-bg);
+	border-bottom: 1px solid var(--pdmux-line);
+	font-family: ui-monospace, monospace;
+}
+
+.pdmux-patch {
+	margin: 0;
+	padding: 4px 6px;
+	overflow-x: auto;
+	font-family: ui-monospace, monospace;
+	font-size: 11px;
+}
+
+.pdmux-patch span {
+	display: block;
+	white-space: pre;
+}
+
+.pdmux-patch span[data-kind='add'] {
+	background: rgb(22 163 74 / 13%);
+	color: #15803d;
+}
+
+.pdmux-patch span[data-kind='del'] {
+	background: rgb(220 38 38 / 12%);
+	color: #b91c1c;
+}
+
+.pdmux-patch span[data-kind='hunk'] {
+	color: #2563eb;
+	background: var(--pdmux-bg);
+}
+
+.pdmux-patch span[data-kind='meta'] {
+	color: var(--pdmux-muted);
+}
+
+@media (prefers-color-scheme: dark) {
+	.pdmux-patch span[data-kind='add'] {
+		color: #4ade80;
+	}
+	.pdmux-patch span[data-kind='del'] {
+		color: #f87171;
+	}
+}
+
+/* --- refs panel ----------------------------------------------------------- */
+
+/* Its own scroll container: a repository with hundreds of tags must not lengthen the
+   page (the graph and the detail panel own the rest of the viewport). */
+.pdmux-refs {
+	flex: none;
+	/* Wide enough for `release/2026-07-25` before ellipsis, never more than a third of
+	   a dock column — the graph is what the user came for. */
+	width: clamp(150px, 34%, 260px);
+	min-width: 0;
+	min-height: 0;
+	overflow: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 8px;
+	border-right: 1px solid var(--pdmux-line);
+	background: var(--pdmux-bg);
+	font-size: 12px;
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+}
+
+/* Collapse only when the GRAPH's own column is too narrow to carry both. This was a
+   `@media (max-width: 640px)` rule, which measures the viewport — the wrong box
+   entirely: on a wide screen it never fired, and it could never have protected a
+   420px dock. A container query asks the question that matters.
+
+   The number is measured, not guessed. The graph column is ~321px wide at the default
+   dock width, and a dock dragged to its `DOCK_WIDTH_MIN` (260) leaves ~240px. The panel
+   takes `clamp(150px, 34%, 260px)`, so at 240px the graph would be left with ~90px —
+   unreadable. 260px is the line between those two measurements: visible at every dock
+   width a person can actually choose, gone only when the column cannot seat both.
+   A first attempt used 420px and hid the panel at the default width, which is how the
+   feature stayed invisible for a third round of "it still is not showing". */
+@container pdmux-graph (max-width: 260px) {
+	.pdmux-refs {
+		display: none;
+	}
+}
+
+.pdmux-refs-head {
+	padding-bottom: 6px;
+	margin-bottom: 2px;
+	border-bottom: 1px solid var(--pdmux-line);
+}
+
+.pdmux-refs-branch {
+	font-weight: 600;
+}
+
+.pdmux-refs-branch[data-detached='true'] {
+	color: var(--pdmux-hot);
+}
+
+.pdmux-refs-up {
+	display: flex;
+	gap: 5px;
+	align-items: baseline;
+	font-size: 11px;
+	color: var(--pdmux-muted);
+}
+
+.pdmux-refs-up-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pdmux-refs-up-state {
+	flex: none;
+	font-variant-numeric: tabular-nums;
+}
+
+.pdmux-refs-up[data-gone='true'] .pdmux-refs-up-state {
+	color: var(--pdmux-hot);
+}
+
+/* Ellipsis at the END, not `direction: rtl`: showing a path's tail that way is a bidi
+   trick that moves its leading "/" to the other end (measured — `/home/x` rendered as
+   `home/x/`). The whole path is in the title attribute instead. */
+.pdmux-refs-path {
+	font-size: 10px;
+	color: var(--pdmux-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pdmux-refs-title {
+	margin: 6px 0 0;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--pdmux-muted);
+}
+
+.pdmux-refs-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.pdmux-ref {
+	display: flex;
+	gap: 5px;
+	align-items: baseline;
+}
+
+.pdmux-ref-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Same palette as the row chips, so a name means the same thing in both places. */
+.pdmux-ref[data-kind='local'] .pdmux-ref-name {
+	color: #16a34a;
+}
+
+.pdmux-ref[data-kind='remote'] .pdmux-ref-name {
+	color: #2563eb;
+}
+
+.pdmux-ref[data-kind='tag'] .pdmux-ref-name {
+	color: #ca8a04;
+}
+
+.pdmux-ref-div {
+	flex: none;
+	color: #b45309;
+	font-variant-numeric: tabular-nums;
+}
+
+/* Louder than a divergence count on purpose: the branch is here, its upstream is not. */
+.pdmux-ref-gone {
+	flex: none;
+	font-size: 10px;
+	padding: 0 4px;
+	border-radius: 999px;
+	background: var(--pdmux-hot);
+	color: #fff;
+}
+
+.pdmux-ref-sha {
+	flex: none;
+	color: var(--pdmux-muted);
+	font-family: ui-monospace, monospace;
+}
+
+.pdmux-refs-note {
+	margin: 2px 0 0;
+	font-size: 10px;
+	color: var(--pdmux-muted);
+}
+
+/* ⚠ THIS BLOCK MUST STAY LAST IN THE FILE.
+   Its selectors weigh exactly as much as the desktop rules it overrides (`.pdmux-refs`,
+   `.pdmux-graph-date`, `.pdmux-detail[data-pdmux-sized]`), so the cascade is decided by
+   source order alone. Placed earlier it silently lost: measured on a phone, the refs panel
+   was still a third of the dock's width and the date column still 112px. */
+
+/* --- narrow screens: the git tab ------------------------------------------ */
+
+/* The dock is the whole width of a phone, and the refs panel took a third of it —
+   measured at 390px it left the graph 240px, the width the container query already calls
+   unreadable. Stacked instead of beside: both are usable, the `⑂` toggle still means
+   something, and the desktop (a 420px dock, above this query) is untouched. */
+@media (max-width: 899px) {
+	.pdmux-graph-body {
+		flex-direction: column;
+	}
+
+	.pdmux-refs {
+		width: auto;
+		max-height: 38%;
+		border-right: 0;
+		border-bottom: 1px solid var(--pdmux-line);
+	}
+
+	/* 110px author + 112px date + 60px sha + the lane gutter left the SUBJECT about 24px
+	   at 390px — the one column a person actually reads. The author goes first; the date
+	   keeps enough for a short form. */
+	.pdmux-graph-author {
+		display: none;
+	}
+
+	/* Sized for `MM/DD` — the exact minute is in the detail panel, and the subject is what
+	   a person actually reads on a phone. */
+	.pdmux-graph-date {
+		width: 44px;
+	}
+
+	/* A resized detail may take more of a phone's dock than of a desktop's: there is no
+	   second column to trade against. */
+	.pdmux-detail[data-pdmux-sized='true'] {
+		max-height: 85%;
+	}
+}
+
+/* --- touch ergonomics ------------------------------------------------------ */
+
+/* ⚠ ALSO LAST IN THE FILE, and for the same reason as the block above: these override
+   component rules of equal weight, so source order is what makes them win.
+ *
+ * WIDTH DECIDES LAYOUT, POINTER DECIDES SIZE. The 900px query above chooses what is on
+ * screen; this one chooses how big it is to a fingertip. Keeping the two apart is what
+ * lets a touchscreen laptop have finger-sized controls without being given a phone's
+ * layout, and a 500px desktop window a phone's layout without 44px buttons. */
+@media (pointer: coarse) {
+	/* iOS zooms the WHOLE PAGE when it focuses a control under 16px — and this page is a
+	   100dvh grid, so the zoom leaves the shell's bottom edge off screen. */
+	.pdmux input,
+	.pdmux select,
+	.pdmux textarea,
+	/* The sneaky one: xterm's real input is an off-screen textarea, it inherits 14px, and
+	   it is focused on EVERY tap into a terminal. */
+	.pdmux .xterm-helper-textarea {
+		font-size: max(16px, 1em);
+	}
+
+	/* ⚠ DO NOT pin this textarea's position. xterm moves it to follow the cursor
+	   (`_syncTextArea`), and a composing IME anchors its marked text and candidate list to
+	   wherever that element is — forcing `left: 0` puts the Korean/Japanese composition UI
+	   in the wrong place and fights an inline style on every render. If the layout viewport
+	   ever lurches sideways on focus, fix it where it happens (the shell clamps its own
+	   scroll) rather than by moving the terminal's input. */
+
+	/* 44px is the smallest target a finger hits reliably; these were measured at 18x20. */
+	.pdmux-ico,
+	.pdmux-chip,
+	.pdmux-btn,
+	.pdmux-cog,
+	.pdmux-pick-row {
+		min-width: 44px;
+		min-height: 44px;
+	}
+
+	.pdmux-launcher select,
+	.pdmux-launcher button {
+		min-height: 44px;
+	}
+
+	/* The settings panel is read on a phone more than anywhere else — it is where a card's
+	   widgets get turned off when the column is too tall to scan. A 32px menu row and
+	   whatever height the consumer's button happens to be are both under the line. */
+	.pdmux-toggle {
+		min-block-size: 44px;
+	}
+
+	[data-pdmux-popover-acts] button {
+		min-height: 44px;
+	}
+
+	/* A 24px commit row is a coin-toss between two commits.
+	   ⚠ Raise the VARIABLE, never `.pdmux-graph-row`'s height on its own. The lane SVG is an
+	   absolute overlay sized from the same row height, and overriding only the rule left it
+	   `24n` tall above a `40n` list: the lanes and dots ran out about 60% of the way down and
+	   everything below scrolled into blank gutter. One definition, both readers. */
+	.pdmux {
+		--pdmux-row: 40px;
+	}
+
+	/* A 6px splitter cannot be grabbed with a finger, and on a phone it is the only way to
+	   make the commit detail taller. Padding rather than height, so the grip still LOOKS
+	   thin. */
+	.pdmux-handle[data-pdmux-axis='y'] {
+		min-height: 20px;
+		padding: 7px 0;
+		background-clip: content-box;
+	}
+
+	/* No 300ms tap delay, no double-tap zoom, no blue flash, no long-press callout on
+	   anything that is a control. */
+	.pdmux-ico,
+	.pdmux-btn,
+	.pdmux-chip,
+	.pdmux-key,
+	.pdmux-tab,
+	.pdmux-cell-button,
+	.pdmux-pane-head {
+		touch-action: manipulation;
+		-webkit-tap-highlight-color: transparent;
+		-webkit-touch-callout: none;
+	}
+
+	/* Reserving 10px of gutter for a scrollbar that is an overlay on every touch platform
+	   is 10px taken from the content. */
+	.pdmux-sidebar,
+	.pdmux-graph-list,
+	.pdmux-detail,
+	.pdmux-refs {
+		scrollbar-gutter: auto;
+	}
+
+	/* …and with no gutter reserved, the 5px the sidebar spends on its right padding is
+	   the WHOLE right gap rather than the remainder of one. Give the 16px back. */
+	.pdmux-sidebar {
+		padding-right: 16px;
+	}
+
+	.pdmux-sidebar-foot {
+		margin-right: -16px;
+	}
+}
+
+/* Four 44px controls in a pane header is right when ONE pane owns the screen and absurd
+   for nine of them, so the header is the one thing scoped to both axes. */
+@media (max-width: 899px) and (pointer: coarse) {
+	.pdmux-pane-head {
+		min-height: 44px;
+		font-size: 13px;
+	}
+
+	.pdmux-pane-head .pdmux-ico {
+		min-width: 44px;
+		min-height: 40px;
+	}
+}
+
+/* --- terminal key row: the page turn -------------------------------------- */
+/*
+ * The button that turns the row to the next set of keys.
+ *
+ * Same cell size as a key, on purpose: it is marked apart by `data-pdmux-keyset-next`
+ * rather than by width, because a wider cell here is width taken from the arrows, which
+ * are what a finger hits most. There is no popover to style any more — the row IS the
+ * panel, and that is the whole point (see `TerminalKeyBar`).
+ */
+.pdmux-key-cycle {
+	font-weight: 600;
+}
+
+/*
+ * The name of the set that is showing, for a screen reader only.
+ *
+ * ⚠ NOT `display: none` AND NOT `visibility: hidden` — either drops it from the
+ * accessibility tree, which is the one place this text exists to be. A sighted user reads
+ * the set off the key faces; without this a blind user turns the page and hears nothing.
+ */
+.pdmux-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* --- terminal history sheet ---------------------------------------------- */
+
+.pdmux-history-back {
+	position: fixed;
+	inset: 0;
+	z-index: 60;
+	background: rgb(0 0 0 / 45%);
+}
+
+/*
+ * A sheet, not a popover: this is a reading surface and it wants the width. Centred and
+ * clamped to the viewport on both axes — the pane it belongs to may be a 200px cell in a
+ * 3x3 grid, and anchoring to that would make the output narrower than the terminal.
+ */
+.pdmux-history {
+	position: fixed;
+	z-index: 61;
+	inset: 5dvh 50% auto auto;
+	transform: translateX(50%);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: min(860px, calc(100vw - 24px));
+	max-height: 90dvh;
+	padding: 10px;
+	border: 1px solid var(--pdmux-line);
+	border-radius: var(--pdmux-radius-md);
+	background: var(--pdmux-popover);
+	color: var(--pdmux-popover-fg);
+	box-shadow: 0 18px 48px rgb(0 0 0 / 28%);
+}
+
+.pdmux-history .pdmux-popover-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.pdmux-history .pdmux-popover-head .pdmux-ico:first-of-type {
+	margin-inline-start: auto;
+}
+
+/*
+ * `pre` with wrapping ON. A terminal line can be 200 columns and this sheet is narrower
+ * than that on a phone; without the wrap the whole block scrolls sideways and the reader
+ * loses the left edge, which is where the prompt is.
+ */
+.pdmux-history-body {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	margin: 0;
+	padding: 8px;
+	border-radius: var(--pdmux-radius-sm);
+	background: var(--pdmux-term-bg);
+	color: #d2d2d2;
+	font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	scrollbar-width: thin;
+}
+
+.pdmux-history-text {
+	margin: 0;
+	font: inherit;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	/* Selectable: copying a stack trace out of here is half the reason it exists. */
+	user-select: text;
+}

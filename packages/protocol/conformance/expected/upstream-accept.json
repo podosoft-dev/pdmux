@@ -1,0 +1,304 @@
+{
+	"generatedBy": "packages/protocol/scripts/build-expected.mjs",
+	"cases": "conformance/cases/upstream-accept.json",
+	"protocolVersion": 1,
+	"accepted": {
+		"heartbeat-minimal": {
+			"heartbeat": {
+				"diagnostics": [],
+				"resource": {
+					"cpuPct": null,
+					"diskPct": null,
+					"diskTotalBytes": null,
+					"diskUsedBytes": null,
+					"load1": null,
+					"memPct": null,
+					"memTotalBytes": null,
+					"memUsedBytes": null,
+					"uptimeSec": null
+				},
+				"services": [],
+				"sessions": [],
+				"ts": 1784000000,
+				"usage": []
+			},
+			"type": "heartbeat"
+		},
+		"heartbeat-zero-is-not-null": {
+			"heartbeat": {
+				"diagnostics": [],
+				"resource": {
+					"cpuPct": 0,
+					"diskPct": null,
+					"diskTotalBytes": null,
+					"diskUsedBytes": null,
+					"load1": 0,
+					"memPct": 61,
+					"memTotalBytes": null,
+					"memUsedBytes": null,
+					"uptimeSec": null
+				},
+				"services": [],
+				"sessions": [],
+				"ts": 1784000000,
+				"usage": [
+					{
+						"processes": 0,
+						"provider": "claude",
+						"ts": 1784000000,
+						"windows": [
+							{
+								"key": "session",
+								"remainingPct": null,
+								"resetsAt": null,
+								"usedPct": 0
+							},
+							{
+								"key": "weekly",
+								"remainingPct": null,
+								"resetsAt": null,
+								"usedPct": null
+							}
+						]
+					}
+				]
+			},
+			"type": "heartbeat"
+		},
+		"heartbeat-unknown-field-stripped": {
+			"heartbeat": {
+				"diagnostics": [],
+				"resource": {
+					"cpuPct": 12,
+					"diskPct": null,
+					"diskTotalBytes": null,
+					"diskUsedBytes": null,
+					"load1": null,
+					"memPct": null,
+					"memTotalBytes": null,
+					"memUsedBytes": null,
+					"uptimeSec": null
+				},
+				"services": [],
+				"sessions": [],
+				"ts": 1784000000,
+				"usage": []
+			},
+			"type": "heartbeat"
+		},
+		"hello-without-update": {
+			"hello": {
+				"address": "",
+				"agentVersion": "0.1.0-dev.3+g1a2b3c",
+				"arch": "amd64",
+				"capabilities": [
+					"metrics",
+					"sessions",
+					"terminal",
+					"git"
+				],
+				"hostname": "build-01",
+				"os": "linux",
+				"protocolVersion": 1,
+				"update": {
+					"canRestart": false,
+					"restartMode": "none"
+				}
+			},
+			"type": "hello"
+		},
+		"repos-minimal": {
+			"repos": [
+				{
+					"commits": [],
+					"details": [],
+					"error": null,
+					"head": {
+						"ahead": null,
+						"behind": null,
+						"branch": null,
+						"detached": false,
+						"sha": null,
+						"upstream": null
+					},
+					"limit": 300,
+					"name": "pdmux",
+					"partial": false,
+					"path": "/srv/pdmux",
+					"pending": 0,
+					"refs": [],
+					"truncated": false,
+					"ts": 1784000000,
+					"uncommitted": null,
+					"workingDiff": null
+				}
+			],
+			"ts": 1784000000,
+			"type": "repos"
+		},
+		"repos-uncommitted-null-vs-clean": {
+			"repos": [
+				{
+					"commits": [],
+					"details": [],
+					"error": "fatal: detected dubious ownership",
+					"head": {
+						"ahead": null,
+						"behind": null,
+						"branch": null,
+						"detached": false,
+						"sha": null,
+						"upstream": null
+					},
+					"limit": 300,
+					"name": "unreadable",
+					"partial": false,
+					"path": "/srv/unreadable",
+					"pending": 0,
+					"refs": [],
+					"truncated": false,
+					"ts": 1784000000,
+					"uncommitted": null,
+					"workingDiff": null
+				},
+				{
+					"commits": [],
+					"details": [],
+					"error": null,
+					"head": {
+						"ahead": null,
+						"behind": null,
+						"branch": null,
+						"detached": false,
+						"sha": null,
+						"upstream": null
+					},
+					"limit": 300,
+					"name": "pdmux",
+					"partial": false,
+					"path": "/srv/pdmux",
+					"pending": 0,
+					"refs": [],
+					"truncated": false,
+					"ts": 1784000000,
+					"uncommitted": {
+						"conflicts": 0,
+						"dropped": 0,
+						"files": [],
+						"staged": 0,
+						"submodules": 0,
+						"total": 0,
+						"unstaged": 0,
+						"untracked": 0
+					},
+					"workingDiff": null
+				}
+			],
+			"ts": 1784000000,
+			"type": "repos"
+		},
+		"repos-status-letters-absent": {
+			"repos": [
+				{
+					"commits": [],
+					"details": [],
+					"error": null,
+					"head": {
+						"ahead": null,
+						"behind": null,
+						"branch": null,
+						"detached": false,
+						"sha": null,
+						"upstream": null
+					},
+					"limit": 300,
+					"name": "pdmux",
+					"partial": false,
+					"path": "/srv/pdmux",
+					"pending": 0,
+					"refs": [],
+					"truncated": false,
+					"ts": 1784000000,
+					"uncommitted": {
+						"conflicts": 0,
+						"dropped": 0,
+						"files": [
+							{
+								"path": "packages/protocol/src/index.ts",
+								"x": " ",
+								"y": "M"
+							}
+						],
+						"staged": 0,
+						"submodules": 0,
+						"total": 1,
+						"unstaged": 1,
+						"untracked": 0
+					},
+					"workingDiff": null
+				}
+			],
+			"ts": 1784000000,
+			"type": "repos"
+		},
+		"repos-status-letters-empty-string": {
+			"repos": [
+				{
+					"commits": [],
+					"details": [],
+					"error": null,
+					"head": {
+						"ahead": null,
+						"behind": null,
+						"branch": null,
+						"detached": false,
+						"sha": null,
+						"upstream": null
+					},
+					"limit": 300,
+					"name": "pdmux",
+					"partial": false,
+					"path": "/srv/pdmux",
+					"pending": 0,
+					"refs": [],
+					"truncated": false,
+					"ts": 1784000000,
+					"uncommitted": {
+						"conflicts": 0,
+						"dropped": 0,
+						"files": [
+							{
+								"path": "packages/protocol/src/index.ts",
+								"x": "",
+								"y": "M"
+							}
+						],
+						"staged": 0,
+						"submodules": 0,
+						"total": 1,
+						"unstaged": 1,
+						"untracked": 0
+					},
+					"workingDiff": null
+				}
+			],
+			"ts": 1784000000,
+			"type": "repos"
+		},
+		"update-status-minimal": {
+			"type": "updateStatus",
+			"update": {
+				"code": null,
+				"commandId": "3f1a6d18-6f0f-4e9a-9c1e-2d1a2b3c4d5e",
+				"currentVersion": "0.1.0",
+				"message": "",
+				"phase": "accepted",
+				"progressPct": null,
+				"sessionPanes": 0,
+				"shellPanes": 0,
+				"targetVersion": null
+			}
+		}
+	},
+	"rejected": {}
+}

@@ -1,0 +1,274 @@
+{
+  "description": "The table both languages read for parseSemver / compareSemver. Unlike the frame corpus, these expectations are HAND-WRITTEN from the SemVer spec: here the spec is the authority, so a disagreement is a bug in the implementation, not a stale expectation. Comparison rows are also asserted in reverse (compare(b, a) must be the negation), so antisymmetry never has to be spelled out twice.",
+  "parse": [
+    {
+      "id": "release",
+      "input": "1.0.0",
+      "expect": {
+        "major": 1,
+        "minor": 0,
+        "patch": 0,
+        "prerelease": [],
+        "build": []
+      },
+      "why": "The baseline: a release has an EMPTY prerelease list, which is what makes it sort above every prerelease of the same core."
+    },
+    {
+      "id": "dev-build",
+      "input": "0.1.0-dev.3+g1a2b3c",
+      "expect": {
+        "major": 0,
+        "minor": 1,
+        "patch": 0,
+        "prerelease": [
+          "dev",
+          "3"
+        ],
+        "build": [
+          "g1a2b3c"
+        ]
+      },
+      "why": "What an agent built from a working tree actually reports. It must parse, because a host that cannot be read is exactly the host somebody needs to update."
+    },
+    {
+      "id": "prerelease-and-build",
+      "input": "1.0.0-rc.1+g1a2b3c",
+      "expect": {
+        "major": 1,
+        "minor": 0,
+        "patch": 0,
+        "prerelease": [
+          "rc",
+          "1"
+        ],
+        "build": [
+          "g1a2b3c"
+        ]
+      },
+      "why": "Build metadata must be split off FIRST: the + sits after the -, so stripping in the other order swallows the build into the prerelease and gives rc.1+g1a2b3c as one identifier."
+    },
+    {
+      "id": "build-only",
+      "input": "1.0.0+build1",
+      "expect": {
+        "major": 1,
+        "minor": 0,
+        "patch": 0,
+        "prerelease": [],
+        "build": [
+          "build1"
+        ]
+      },
+      "why": "Build metadata carries but never sorts - this parses as a plain release with the metadata kept for display."
+    },
+    {
+      "id": "prerelease-two-identifiers",
+      "input": "1.0.0-alpha.beta",
+      "expect": {
+        "major": 1,
+        "minor": 0,
+        "patch": 0,
+        "prerelease": [
+          "alpha",
+          "beta"
+        ],
+        "build": []
+      },
+      "why": "A prerelease is a LIST of dot-separated identifiers, not one string; comparison walks it element by element."
+    },
+    {
+      "id": "prerelease-alphanumeric-leading-zero",
+      "input": "1.0.0-0a",
+      "expect": {
+        "major": 1,
+        "minor": 0,
+        "patch": 0,
+        "prerelease": [
+          "0a"
+        ],
+        "build": []
+      },
+      "why": "0a is ALPHANUMERIC, so the no-leading-zeros rule does not apply to it - the pair with 1.0.0-01 below is the whole point: one is valid, the other is not."
+    },
+    {
+      "id": "prerelease-numeric-zero",
+      "input": "1.2.3-0",
+      "expect": {
+        "major": 1,
+        "minor": 2,
+        "patch": 3,
+        "prerelease": [
+          "0"
+        ],
+        "build": []
+      },
+      "why": "0 is a legal numeric identifier; only a LEADING zero on a longer number is not."
+    },
+    {
+      "id": "invalid-leading-zero-core",
+      "input": "01.0.0",
+      "expect": null,
+      "why": "01 is not a SemVer number. Accepting it invites two readings of the same version, and a lenient parser on one side of the wire is a silent disagreement."
+    },
+    {
+      "id": "invalid-two-part",
+      "input": "1.0",
+      "expect": null,
+      "why": "The core is exactly three numbers - no coercion to 1.0.0. A parser that pads is a parser the other language has to copy exactly."
+    },
+    {
+      "id": "invalid-four-part",
+      "input": "1.2.3.4",
+      "expect": null,
+      "why": "The other side of the same rule: a fourth component is not a patch revision, it is an unparseable string."
+    },
+    {
+      "id": "invalid-empty-prerelease",
+      "input": "1.0.0-",
+      "expect": null,
+      "why": "A trailing dash promises a prerelease and delivers an empty identifier."
+    },
+    {
+      "id": "invalid-empty-identifier",
+      "input": "1.0.0-a..b",
+      "expect": null,
+      "why": "An empty identifier between two dots has no ordering against anything - splitting on dots without checking each piece is how a port ends up comparing ''."
+    },
+    {
+      "id": "invalid-numeric-leading-zero-prerelease",
+      "input": "1.0.0-01",
+      "expect": null,
+      "why": "A NUMERIC prerelease identifier keeps the no-leading-zeros rule, because it is compared as a number and 01 would tie with 1."
+    },
+    {
+      "id": "invalid-v-prefix",
+      "input": "v1.2.3",
+      "expect": null,
+      "why": "The v belongs to tag names, not to versions. A port that strips it silently accepts a string this one rejects, and the two sides then disagree about which build is newer."
+    },
+    {
+      "id": "invalid-second-plus",
+      "input": "1.0.0+build+extra",
+      "expect": null,
+      "why": "Only the FIRST + is a separator; a second one is not a legal identifier character, so the whole string fails rather than parsing to build ['build+extra']."
+    },
+    {
+      "id": "invalid-empty-build",
+      "input": "1.0.0+",
+      "expect": null,
+      "why": "Same rule on the build side: a separator with nothing after it is an empty identifier."
+    },
+    {
+      "id": "invalid-leading-space",
+      "input": " 1.2.3",
+      "expect": null,
+      "why": "Nothing is trimmed. Whitespace means the value came from somewhere unparsed, and guessing what it meant is worse than a grey 'unknown' badge."
+    },
+    {
+      "id": "invalid-empty-string",
+      "input": "",
+      "expect": null,
+      "why": "An agent that reports no version at all reads as unknown - never as 0.0.0, which would sort BELOW every real build and mark the host outdated forever."
+    }
+  ],
+  "compare": [
+    {
+      "id": "prerelease-below-release",
+      "a": "1.0.0-alpha",
+      "b": "1.0.0",
+      "expect": -1,
+      "why": "A prerelease precedes the release it leads to. Comparing only the numeric core would call these equal and never offer the update."
+    },
+    {
+      "id": "numeric-identifier-below-alphanumeric",
+      "a": "1.0.0-alpha.1",
+      "b": "1.0.0-alpha.beta",
+      "expect": -1,
+      "why": "Numeric identifiers always have LOWER precedence than alphanumeric ones (SemVer 11.4.3) - a plain string compare would say '1' > 'b' is false but for the wrong reason, and gets the next row wrong too."
+    },
+    {
+      "id": "fewer-identifiers-first",
+      "a": "1.0.0-alpha",
+      "b": "1.0.0-alpha.1",
+      "expect": -1,
+      "why": "When every shared identifier is equal, the LONGER list wins. This is the rule a port forgets after it has compared the shared prefix."
+    },
+    {
+      "id": "build-metadata-ignored",
+      "a": "1.0.0+build1",
+      "b": "1.0.0+build2",
+      "expect": 0,
+      "why": "Build metadata is NOT part of precedence (SemVer 10). These are the same version - which is why the update path pins a sha256 as well as a version."
+    },
+    {
+      "id": "patch-numeric-not-lexical",
+      "a": "1.0.10",
+      "b": "1.0.9",
+      "expect": 1,
+      "why": "10 > 9. Compared as strings, '1.0.10' < '1.0.9' - a fleet on 1.0.10 would be told it is outdated and offered a downgrade."
+    },
+    {
+      "id": "minor-numeric-not-lexical",
+      "a": "1.10.0",
+      "b": "1.9.0",
+      "expect": 1,
+      "why": "The same trap one component to the left, where it survives longer because it needs ten minor releases to show up."
+    },
+    {
+      "id": "prerelease-number-numeric-not-lexical",
+      "a": "1.0.0-alpha.10",
+      "b": "1.0.0-alpha.9",
+      "expect": 1,
+      "why": "And once more inside the prerelease: numeric identifiers compare as NUMBERS, so alpha.10 is newer than alpha.9."
+    },
+    {
+      "id": "numeric-prerelease-below-word",
+      "a": "1.0.0-1",
+      "b": "1.0.0-alpha",
+      "expect": -1,
+      "why": "The precedence rule stated on its own: any numeric identifier sorts below any alphanumeric one, regardless of value."
+    },
+    {
+      "id": "identifier-ascii-order",
+      "a": "1.0.0-Alpha",
+      "b": "1.0.0-alpha",
+      "expect": -1,
+      "why": "Alphanumeric identifiers compare in ASCII order, where every upper-case letter sorts before every lower-case one. A case-insensitive or locale-aware compare would return 0 here and lose the ordering entirely."
+    },
+    {
+      "id": "identical",
+      "a": "1.0.0",
+      "b": "1.0.0",
+      "expect": 0,
+      "why": "Equality has to be exactly 0, because 'current' on a card is the absence of a difference, not a small one."
+    },
+    {
+      "id": "dev-builds-of-one-prerelease",
+      "a": "0.1.0-dev.3+g1a2b3c",
+      "b": "0.1.0-dev.10+gffffff",
+      "expect": -1,
+      "why": "Two real dev builds: the commit in the build metadata is ignored, and dev.3 loses to dev.10 numerically."
+    },
+    {
+      "id": "dev-build-below-release",
+      "a": "0.1.0-dev.3+g1a2b3c",
+      "b": "0.1.0",
+      "expect": -1,
+      "why": "A host running a dev build of a version IS behind that version's release - the case that decides whether a developer machine shows an update button."
+    },
+    {
+      "id": "unparseable-has-no-order",
+      "a": "1.0.0",
+      "b": "banana",
+      "expect": null,
+      "why": "No ordering exists against something that did not parse. Returning -1 or 0 here would either nag a host forever or call it current on no evidence."
+    },
+    {
+      "id": "alphanumeric-leading-digit-above-numeric",
+      "a": "1.0.0-0a",
+      "b": "1.0.0-9",
+      "expect": 1,
+      "why": "The one shape that separates 'numeric ranks below alphanumeric' from a plain byte compare: digits sort below letters in ASCII, so every other row in this table passes by accident with strings.Compare. '0a' is alphanumeric (leading zero is fine there) and therefore OUTRANKS the numeric '9'."
+    }
+  ]
+}

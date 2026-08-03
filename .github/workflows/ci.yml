@@ -1,0 +1,222 @@
+name: ci
+
+# Everything here runs without a database, a browser or a network: the unit
+# suites use fakes and fixtures on purpose, so a pull request gets an answer in
+# a couple of minutes. The parts that genuinely need a live stack (Playwright
+# e2e, the opt-in browser geometry specs) are separate jobs you can enable once
+# the repository has runners with the resources for them.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ${{ fromJSON(vars.PODOKIT_RUNNER || '["ubuntu-latest"]') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The packages are built first because the apps consume their compiled
+      # output — a type error here should fail as itself, not as a confusing
+      # module-resolution error three jobs later.
+      - name: build packages
+        run: |
+          npm run build -w @pdmux/protocol
+          npm run build -w @pdmux/core
+          npm run build -w @pdmux/ui
+          npm run build -w @pdmux/mcp
+
+      # The host agent is NOT here: it is a Go module (agent/), not an npm
+      # workspace, and this job has no Go toolchain. It is built and checked by
+      # the `agent-binaries` job below.
+      - name: build apps
+        run: |
+          npm run build -w pdmux-api
+          npm run build -w pdmux-web
+
+      - name: lint
+        run: npm run lint --workspaces --if-present
+
+      - name: unit tests
+        run: npm test --workspaces --if-present
+
+      # Requirements traceability is NOT checked here, and that is deliberate rather
+      # than an omission. Its two halves live in different repositories now: the
+      # declaration is prose held alongside this repository and the implementation is
+      # the `[TC-…]` tags in the specs below. This job checks out only the product
+      # repository, so the matrices are simply absent. The check runs from there
+      # instead, and those tools refuse to pass when they cannot find the matrices,
+      # so it fails loudly
+      # rather than quietly reporting nothing to do.
+
+      # This product was generalised from a private tool. A single leftover
+      # hostname would be an information disclosure, so the check is a gate.
+      - name: generalization audit
+        run: npm run audit:generic
+
+  # The agent ships as a binary a host downloads and runs, so its version is not a
+  # label — it is what a host compares itself against to decide whether it is out of
+  # date. These two jobs check that the number stays honest in both directions.
+  agent-version:
+    name: agent version bump
+    # ⚠ THIS USED TO BE PULL REQUESTS ONLY, on the assumption that a push to main had
+    # already been through it on the PR that produced it. This repository takes direct
+    # commits to main, so that gate never once ran — and eight commits changed the
+    # agent's non-test source while AgentVersion stayed at 0.1.6. The committed
+    # SHA256SUMS then described a binary nobody was serving, and two hosts running
+    # byte-different builds both read `current` on the dashboard, because the verdict
+    # compares version strings.
+    runs-on: ${{ fromJSON(vars.PODOKIT_RUNNER || '["ubuntu-latest"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The diff needs the base commit, which a shallow clone does not have.
+          fetch-depth: 0
+
+      # A change to the agent or to the contract it speaks, released under the version
+      # that is already published, is invisible: hosts compare versions, see equality
+      # and never fetch the new build. So the bump is the release, and this is the gate.
+      - name: agent or contract changed ⇒ AgentVersion bumped
+        env:
+          # A pull request has a base; a push has the commit before it. Neither exists
+          # on the first push of a branch (`before` is all zeroes) or after a force
+          # push, and the step below skips rather than failing on a comparison it
+          # cannot make — a gate that fails for a reason unrelated to the rule is a
+          # gate people start ignoring.
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No comparable base (first push, or a force push). Skipping."
+            exit 0
+          fi
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "Base $BASE is not in this checkout. Skipping."
+            exit 0
+          fi
+
+          # Files that provably cannot end up inside the binary are excluded: the Go
+          # toolchain never compiles `_test.go` or anything under `testdata/` into a
+          # non-test build, and the protocol package's test corpus is read only by
+          # tests. Bumping for those would publish a version whose binary is
+          # byte-identical to the last one — every host downloading the same bytes
+          # again, which is the same dishonesty pointing the other way.
+          changed=$(git diff --name-only "$BASE" HEAD -- agent packages/protocol \
+            | grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/)' \
+            || true)
+
+          if [ -z "$changed" ]; then
+            echo "No agent or contract source changed; no bump required."
+            exit 0
+          fi
+
+          echo "Changed:"; echo "$changed" | sed 's/^/  /'
+
+          read_version() {
+            git show "$1:agent/internal/cli/version.go" 2>/dev/null \
+              | sed -n 's/^[[:space:]]*\(var\|const\)[[:space:]]\{1,\}AgentVersion[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\2/p'
+          }
+          before=$(read_version "$BASE")
+          after=$(read_version HEAD)
+
+          if [ -z "$after" ]; then
+            echo "::error file=agent/internal/cli/version.go::Could not read AgentVersion at HEAD."
+            exit 1
+          fi
+          if [ "$before" = "$after" ]; then
+            echo "::error file=agent/internal/cli/version.go::agent/** or packages/protocol/** changed, but AgentVersion is still ${after}. A host compares versions to decide whether to update, so an unbumped release never reaches anyone."
+            exit 1
+          fi
+
+          echo "AgentVersion ${before:-<absent>} -> ${after}"
+
+  agent-binaries:
+    name: agent binaries
+    runs-on: ${{ fromJSON(vars.PODOKIT_RUNNER || '["ubuntu-latest"]') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # `go-version-file` keeps the toolchain pinned by agent/go.mod, which is also
+      # what apps/web/Dockerfile's agent stage pins — a different Go patch produces a
+      # different binary, and the update path compares sha256.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      # Not part of `npm run build`: the other jobs have no Go toolchain. This is the
+      # one place the four release artifacts are actually produced in CI, so it is
+      # also the only place their honesty can be checked.
+      - name: build release artifacts
+        run: npm run build:agent
+
+      # THE FAILURE THIS PREVENTS: a manifest advertising 1.5.0 beside a binary that
+      # reports 1.4.0. Every host then updates, still reports 1.4.0, is still "behind",
+      # and updates again — forever. It is silent at build time because `-ldflags -X`
+      # says nothing when it fails to apply (it cannot write a `const`, only a `var`),
+      # which is exactly how this was found.
+      # The release directory keeps EVERY published version -- a version that is
+      # deleted can no longer be named by an intentional downgrade. So `find` here
+      # returned one path only until the second release was committed, and then
+      # returned three and handed jq a filename with newlines in it. This job had
+      # failed on that ever since, which meant both honesty checks were dead exactly
+      # when they mattered. Address the one directory this build just wrote, named by
+      # the same source the build script reads.
+      - name: locate the release this build produced
+        id: release
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^var AgentVersion = "\(.*\)"$/\1/p' agent/internal/cli/version.go)
+          if [ -z "$version" ]; then
+            echo "::error file=agent/internal/cli/version.go::cannot read AgentVersion"
+            exit 1
+          fi
+          dir="apps/web/static/agent/${version}"
+          if [ ! -f "$dir/manifest.json" ]; then
+            echo "::error::npm run build:agent did not write ${dir}/manifest.json"
+            exit 1
+          fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: the shipped binary reports the version the manifest promises
+        run: |
+          set -euo pipefail
+          manifest=${{ steps.release.outputs.dir }}/manifest.json
+          promised=$(jq -r .version "$manifest")
+          artifact=apps/web/static$(jq -r '.artifacts[] | select(.os == "linux" and .arch == "amd64") | .path' "$manifest")
+
+          chmod +x "$artifact"
+          reported=$("$artifact" --version)
+
+          echo "manifest: $promised"
+          echo "binary:   $reported"
+          if [ "$promised" != "$reported" ]; then
+            echo "::error::manifest.json promises ${promised} but the linux/amd64 binary reports ${reported}. Every host would update to it and still read as outdated."
+            exit 1
+          fi
+
+      # The manifest's other promise. An operator verifies a download against
+      # SHA256SUMS by hand, so the two files must agree with the bytes and each other.
+      - name: checksums match the bytes
+        run: |
+          set -euo pipefail
+          cd "${{ steps.release.outputs.dir }}"
+          sha256sum -c SHA256SUMS
+          jq -r '.artifacts[] | "\(.sha256)  \(.path | split("/") | last)"' manifest.json > manifest.sums
+          diff SHA256SUMS manifest.sums

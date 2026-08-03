@@ -1,0 +1,146 @@
+{
+	"description": "Server -> agent frames the Go agent must REFUSE. These are the boundary where a compromised or buggy server meets a host: the session name becomes a `tmux new -A -s` argument, and the config bounds are what stop a server abusing a machine it does not own. A refused frame is logged and dropped; the connection stays up, because the one thing you must always be able to do to a broken agent is talk to it.",
+	"cases": [
+		{
+			"id": "terminal-session-space",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "A space splits one shell argument into two - the narrow character class is the control that keeps a session name from ever becoming a second argument.",
+			"frame": {
+				"type": "terminal",
+				"frame": { "type": "open", "termId": "t-01", "target": { "session": "a b" } }
+			}
+		},
+		{
+			"id": "terminal-session-shell-metachar",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "`;` ends a command and starts another; if this name ever reached a shell string it would run rm -rf as whoever owns the agent.",
+			"frame": {
+				"type": "terminal",
+				"frame": { "type": "open", "termId": "t-01", "target": { "session": "a;rm -rf /" } }
+			}
+		},
+		{
+			"id": "terminal-session-command-substitution",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "`$(...)` executes before the outer command even runs, so substitution has to be refused at the contract rather than escaped downstream.",
+			"frame": {
+				"type": "terminal",
+				"frame": { "type": "open", "termId": "t-01", "target": { "session": "$(id)" } }
+			}
+		},
+		{
+			"id": "terminal-session-path-traversal",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "A session name is also used to build state paths; `../` would walk out of the directory the agent owns.",
+			"frame": {
+				"type": "terminal",
+				"frame": { "type": "open", "termId": "t-01", "target": { "session": "../etc" } }
+			}
+		},
+		{
+			"id": "terminal-session-too-long",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "33 characters, every one of them legal - this case isolates the 32-character bound from the character class, so a port cannot pass by checking only the alphabet.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "open",
+					"termId": "t-01",
+					"target": { "session": "session-name-that-is-thirty-three" }
+				}
+			}
+		},
+		{
+			"id": "terminal-open-without-target",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "target has no default of its own - only its fields do. An open frame with no target at all is a malformed request, not a request for defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": { "type": "open", "termId": "t-01" }
+			}
+		},
+		{
+			"id": "welcome-host-id-not-uuid",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "hostId is the identity everything the agent stores is keyed by; accepting a free-form string would let a typo silently create a second host.",
+			"frame": {
+				"type": "welcome",
+				"hostId": "host-1",
+				"config": {}
+			}
+		},
+		{
+			"id": "update-sha256-uppercase",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "The pin is lower-case hex. Go's %X (or strings.ToUpper) produces a hash that fails this pattern, and the update stops here rather than after the download - which is the cheap place to fail.",
+			"frame": {
+				"type": "update",
+				"update": {
+					"commandId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+					"version": "0.2.0",
+					"artifactPath": "/agent/releases/0.2.0/pdmux-agent-linux-amd64",
+					"sha256": "9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08",
+					"bytes": 12582912,
+					"os": "linux",
+					"arch": "amd64"
+				}
+			}
+		},
+		{
+			"id": "update-sha256-truncated",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "63 characters. A hash that is merely close is not a pin, and a prefix match would accept any digest sharing the first 63 nibbles.",
+			"frame": {
+				"type": "update",
+				"update": {
+					"commandId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+					"version": "0.2.0",
+					"artifactPath": "/agent/releases/0.2.0/pdmux-agent-linux-amd64",
+					"sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a0",
+					"bytes": 12582912,
+					"os": "linux",
+					"arch": "amd64"
+				}
+			}
+		},
+		{
+			"id": "config-heartbeat-sec-zero",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "heartbeatSec is bounded 1..3600. Zero is a busy loop that pins a core on someone else's machine, and the bound is what limits what a compromised server can push.",
+			"frame": {
+				"type": "config",
+				"config": { "heartbeatSec": 0 }
+			}
+		},
+		{
+			"id": "config-git-limit-too-large",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "gitLimit is bounded 10..2000. 99999 asks the host to walk its whole history every pass - refused for the same reason as above, and refused as a WHOLE frame so no half-applied config survives.",
+			"frame": {
+				"type": "config",
+				"config": { "gitLimit": 99999 }
+			}
+		},
+		{
+			"id": "unknown-frame-type",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "An unknown frame TYPE is rejected even though an unknown FIELD is stripped: the reader cannot guess what an unrecognised command means, so it logs it, drops it, and keeps the connection - never closes it, and never guesses.",
+			"frame": {
+				"type": "reboot",
+				"ts": 1784000000
+			}
+		}
+	]
+}

@@ -1,0 +1,170 @@
+{
+	"description": "Agent -> server frames the contract must ACCEPT, and the normalised value it must produce. The normalised form is what the server stores and the browser renders, so a Go port that fills a field differently is not 'slightly off' - it changes what an operator reads on the card.",
+	"cases": [
+		{
+			"id": "heartbeat-minimal",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "The smallest legal heartbeat: a host that can only read its clock still produces a full object - resource all-null (measurement failed) and four empty arrays, never zeros.",
+			"frame": {
+				"type": "heartbeat",
+				"heartbeat": { "ts": 1784000000 }
+			}
+		},
+		{
+			"id": "heartbeat-zero-is-not-null",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "0 and null are different measurements in the same frame: an idle CPU reads 0, an unavailable one reads null, and a usage window with no reading keeps both polarities null rather than drawing an empty gauge.",
+			"frame": {
+				"type": "heartbeat",
+				"heartbeat": {
+					"ts": 1784000000,
+					"resource": { "cpuPct": 0, "memPct": 61, "load1": 0 },
+					"usage": [
+						{
+							"provider": "claude",
+							"processes": 0,
+							"ts": 1784000000,
+							"windows": [
+								{ "key": "session", "usedPct": 0 },
+								{ "key": "weekly" }
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"id": "heartbeat-unknown-field-stripped",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "Forward compatibility in the server's direction: a newer agent reporting a field this server has never heard of is accepted and the field is dropped - at the envelope, in the payload and inside a nested object alike - so an upgraded fleet never needs the server upgraded first.",
+			"frame": {
+				"type": "heartbeat",
+				"agentTime": 1784000123,
+				"heartbeat": {
+					"ts": 1784000000,
+					"gpuPct": 71,
+					"resource": { "cpuPct": 12, "thermalThrottled": true }
+				}
+			}
+		},
+		{
+			"id": "hello-without-update",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "Every agent built before remote update omits the field, and the default has to read 'no': canRestart false, restartMode none - offering the button to a host that cannot restart itself leaves it dead after the swap.",
+			"frame": {
+				"type": "hello",
+				"hello": {
+					"protocolVersion": 1,
+					"agentVersion": "0.1.0-dev.3+g1a2b3c",
+					"hostname": "build-01",
+					"os": "linux",
+					"arch": "amd64",
+					"capabilities": ["metrics", "sessions", "terminal", "git"]
+				}
+			}
+		},
+		{
+			"id": "repos-minimal",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "A repo the agent has only just found: limit falls back to 300 commits, head is an object of nulls, and uncommitted stays null - 'not measured yet', which is not the same as 'clean'.",
+			"frame": {
+				"type": "repos",
+				"ts": 1784000000,
+				"repos": [
+					{
+						"path": "/srv/pdmux",
+						"name": "pdmux",
+						"ts": 1784000000
+					}
+				]
+			}
+		},
+		{
+			"id": "repos-uncommitted-null-vs-clean",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "The same distinction inside one frame: a repo whose status could not be read carries uncommitted null, a repo that was read and is clean carries all-zero counters. Collapsing null into zero reports every broken checkout as clean.",
+			"frame": {
+				"type": "repos",
+				"ts": 1784000000,
+				"repos": [
+					{
+						"path": "/srv/unreadable",
+						"name": "unreadable",
+						"ts": 1784000000,
+						"error": "fatal: detected dubious ownership"
+					},
+					{
+						"path": "/srv/pdmux",
+						"name": "pdmux",
+						"ts": 1784000000,
+						"uncommitted": {}
+					}
+				]
+			}
+		},
+		{
+			"id": "repos-status-letters-absent",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "porcelain letters default to a SPACE, not an empty string: ' M' means 'unstaged modification', and the space carries that meaning in the index column.",
+			"frame": {
+				"type": "repos",
+				"ts": 1784000000,
+				"repos": [
+					{
+						"path": "/srv/pdmux",
+						"name": "pdmux",
+						"ts": 1784000000,
+						"uncommitted": {
+							"unstaged": 1,
+							"total": 1,
+							"files": [{ "path": "packages/protocol/src/index.ts", "y": "M" }]
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "repos-status-letters-empty-string",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "The hazard the case above exists to expose: Go's zero string passes max(1) and is stored AS an empty string, so the same file arrives with x '' instead of ' ' and no error is raised anywhere. Omit the field; do not send \"\".",
+			"frame": {
+				"type": "repos",
+				"ts": 1784000000,
+				"repos": [
+					{
+						"path": "/srv/pdmux",
+						"name": "pdmux",
+						"ts": 1784000000,
+						"uncommitted": {
+							"unstaged": 1,
+							"total": 1,
+							"files": [{ "path": "packages/protocol/src/index.ts", "x": "", "y": "M" }]
+						}
+					}
+				]
+			}
+		},
+		{
+			"id": "update-status-minimal",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "The first frame of a remote update: only the command id, the phase and what is running right now are required - progress, target, code and the pane counts default so a phase can be reported before any of them is known.",
+			"frame": {
+				"type": "updateStatus",
+				"update": {
+					"commandId": "3f1a6d18-6f0f-4e9a-9c1e-2d1a2b3c4d5e",
+					"phase": "accepted",
+					"currentVersion": "0.1.0"
+				}
+			}
+		}
+	]
+}

@@ -1,0 +1,29 @@
+# Example only. See README.md in this directory; `podo deploy` renders its own.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: podokit
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: api }
+  template:
+    metadata:
+      labels: { app: api }
+    spec:
+      containers:
+        - name: api
+          # Placeholder. Use one immutable, stable SemVer tag for api and web.
+          image: ghcr.io/example/podokit-api:v0.0.0
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef: { name: app-config }
+            - secretRef: { name: app-secrets }
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 3000 }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 15

@@ -1,0 +1,23 @@
+# Example only. See infra/k3s/README.md; `podo deploy` renders its own.
+# BullMQ worker — runs the same API image with the worker entrypoint.
+# It has no HTTP server, so there is no Service or Ingress.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: podokit
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: worker }
+  template:
+    metadata:
+      labels: { app: worker }
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/example/podokit-api:v0.0.0
+          command: ["node", "dist/main-worker"]
+          envFrom:
+            - configMapRef: { name: app-config }
+            - secretRef: { name: app-secrets }

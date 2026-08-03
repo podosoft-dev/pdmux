@@ -1,0 +1,132 @@
+{
+	"description": "Agent -> server frames the contract must REFUSE. Every case here is a frame a naive Go port emits by accident, and refusing it costs a whole feature: a rejected hello never registers the host, a rejected heartbeat loses the card, a rejected repos frame freezes the git graph. The reader logs and drops the frame; it never closes the connection.",
+	"cases": [
+		{
+			"id": "hello-capabilities-null",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "A nil Go slice marshals to null, and .default([]) only fills undefined - so the agent that forgot to allocate its capability slice never registers at all.",
+			"frame": {
+				"type": "hello",
+				"hello": {
+					"protocolVersion": 1,
+					"agentVersion": "0.1.0",
+					"hostname": "build-01",
+					"os": "linux",
+					"arch": "amd64",
+					"capabilities": null
+				}
+			}
+		},
+		{
+			"id": "hello-update-null",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "Same nil trap one level up: a *AgentUpdateAbility left nil marshals to null, and agentUpdateAbilitySchema.default({}) does not cover null - omit the field instead.",
+			"frame": {
+				"type": "hello",
+				"hello": {
+					"protocolVersion": 1,
+					"agentVersion": "0.1.0",
+					"hostname": "build-01",
+					"os": "linux",
+					"arch": "amd64",
+					"update": null
+				}
+			}
+		},
+		{
+			"id": "hello-unknown-capability",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "An unknown enum MEMBER is fatal where an unknown FIELD is stripped - a newer agent inventing a capability vanishes from the dashboard, which is why update ability shipped as its own object instead.",
+			"frame": {
+				"type": "hello",
+				"hello": {
+					"protocolVersion": 1,
+					"agentVersion": "0.2.0",
+					"hostname": "build-01",
+					"os": "linux",
+					"arch": "amd64",
+					"capabilities": ["metrics", "containers"]
+				}
+			}
+		},
+		{
+			"id": "heartbeat-resource-null",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "A nil *Resource marshals to null and takes the ENTIRE heartbeat down with it; a host that cannot measure itself must send an object of nulls, not a null object.",
+			"frame": {
+				"type": "heartbeat",
+				"heartbeat": {
+					"ts": 1784000000,
+					"resource": null
+				}
+			}
+		},
+		{
+			"id": "heartbeat-cpu-out-of-range",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "Percentages are 0..100; a per-core sum (400% on a 4-core box) is a unit bug, and storing it would draw a gauge nobody can read.",
+			"frame": {
+				"type": "heartbeat",
+				"heartbeat": {
+					"ts": 1784000000,
+					"resource": { "cpuPct": 140 }
+				}
+			}
+		},
+		{
+			"id": "heartbeat-cpu-fractional",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "percent is .int(): a Go float64 CPU reading marshalled straight through (42.5) loses every heartbeat until someone rounds it, and the failure is silent on the agent side.",
+			"frame": {
+				"type": "heartbeat",
+				"heartbeat": {
+					"ts": 1784000000,
+					"resource": { "cpuPct": 42.5 }
+				}
+			}
+		},
+		{
+			"id": "diagnostic-message-too-long",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "message is capped at 512 characters (this one is 513): a diagnostic carrying a whole stderr dump would push the payload - and the failure - into every heartbeat.",
+			"frame": {
+				"type": "heartbeat",
+				"heartbeat": {
+					"ts": 1784000000,
+					"diagnostics": [
+						{
+							"level": "error",
+							"code": "git.missing",
+							"message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+						}
+					]
+				}
+			}
+		},
+		{
+			"id": "repos-limit-zero",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "limit is .positive().default(300), so Go's zero value rejects the whole repos frame - the git graph then stops updating with nothing on screen to say why.",
+			"frame": {
+				"type": "repos",
+				"ts": 1784000000,
+				"repos": [
+					{
+						"path": "/srv/pdmux",
+						"name": "pdmux",
+						"ts": 1784000000,
+						"limit": 0
+					}
+				]
+			}
+		}
+	]
+}

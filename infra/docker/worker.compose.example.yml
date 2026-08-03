@@ -1,0 +1,19 @@
+# Example: run the BullMQ worker as its own service.
+#
+# The default infra/docker/docker-compose.yml is dev infra (PostgreSQL + Redis)
+# only, with the app running on the host. For a fully containerized deployment,
+# build the API image and run the worker entrypoint against it — for example:
+#
+#   docker compose -f infra/docker/docker-compose.yml -f infra/docker/worker.compose.example.yml up -d
+services:
+  worker:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/main-worker"]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    depends_on:
+      redis:
+        condition: service_healthy

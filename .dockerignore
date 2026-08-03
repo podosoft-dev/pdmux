@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.svelte-kit
+**/.svelte-kit
+.git
+*.log
+# A local `npm run build:agent` leaves ~30MB here. The image builds its own copy in
+# the `agent` stage, so shipping the host's would only bloat the build context — and
+# risk baking in whatever a developer happened to have lying around.
+apps/web/static/agent

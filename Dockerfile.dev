@@ -1,0 +1,57 @@
+# Development image for the PodoKit monorepo (web + api).
+# Dependencies and source are baked in; `docker compose watch` syncs your
+# edits into the running container so the native file watchers fire.
+
+# EVERY workspace manifest has to come along, not just the two apps — and they are
+# collected rather than listed.
+#
+# npm resolves `@pdmux/protocol` to a workspace only when that workspace's
+# package.json is present; with just the apps copied it asks the registry instead and
+# the install dies on `404 '@pdmux/protocol@*' is not in this registry`, from a
+# command that succeeds on the host. Naming each package in its own COPY fixes
+# today's list and leaves the next package to fail the same way — which is exactly
+# what the production images were changed to collect manifests for (see
+# apps/web/Dockerfile, and incident 1 in the deployment record).
+FROM node:22-bookworm-slim AS manifests
+WORKDIR /src
+COPY . .
+RUN mkdir -p /app \
+    && cp package.json /app/ \
+    && find . -name package.json -not -path "*/node_modules/*" \
+         -exec sh -c 'mkdir -p "/app/$(dirname "$1")" && cp "$1" "/app/$1"' _ {} \;
+
+FROM node:22-bookworm-slim
+
+# git for the toolchain (editors, AI agents); build tools for native modules.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git python3 make g++ ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install workspace dependencies (cached unless a package.json changes).
+# NB: the host package-lock.json is intentionally NOT copied — a lockfile
+# generated on macOS/Windows prunes platform-specific optional deps and can drop
+# packages (e.g. @swc/cli) on linux. Resolving fresh in-container avoids that.
+COPY --from=manifests /app ./
+RUN npm install
+
+# Baked source (kept in sync during development by `docker compose watch`).
+COPY . .
+
+# The apps import @pdmux/{protocol,core,ui} from their built dist/, and .dockerignore
+# keeps the host's dist out of the build context — so build them inside the image.
+# Without this the API starts and dies on MODULE_NOT_FOUND for a package whose symlink
+# is right there: the link resolves, the file behind it was never compiled.
+#
+# Only the packages: the apps are served by their dev servers, not from a build
+# output. `docker compose watch` syncs app source only, so a change under packages/*
+# needs this image rebuilt rather than a container restart.
+RUN if [ -d packages ]; then \
+      for manifest in packages/*/package.json; do \
+        [ -e "$manifest" ] || continue; \
+        npm run build --if-present --workspace "$(dirname "$manifest")"; \
+      done; \
+    fi
+
+EXPOSE 5001 5002
