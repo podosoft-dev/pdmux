@@ -81,3 +81,23 @@ export function assertCanManageFleet(session: ScopedSession): void {
   if (isPersonalScope(session)) return;
   throw new ForbiddenException("Admins only");
 }
+
+/**
+ * The strongest MCP token this session may mint.
+ *
+ * ⚠ IT IS `assertCanManageFleet` EXPRESSED AS A CEILING, NOT A SECOND RULE. A fleet
+ * token is a credential that acts as this person later and without a browser, so the
+ * question "may they grant it the power to change the fleet" has to have the same
+ * answer as "may they change the fleet". Writing the condition out a second time is
+ * how the two come to disagree, and the disagreement would be a privilege-escalation
+ * path: a member of an organization who cannot rename a host in the dashboard would
+ * otherwise mint a token that can.
+ *
+ * A member who is not an administrator still gets a read-only token, which is the
+ * useful part for them — "which of my machines is offline" needs no authority at all.
+ */
+export function mcpCeilingFor(session: ScopedSession): "read" | "admin" {
+  if (isAdmin(session)) return "admin";
+  if (isPersonalScope(session)) return "admin";
+  return "read";
+}
