@@ -32,6 +32,7 @@
   import { causeMessage } from "$lib/dashboard/wording";
   import type { McpTokenPolicy, McpTokenView, MintedMcpToken } from "$lib/dashboard/types";
   import { fmt, getI18n } from "$lib/i18n";
+  import ShellBreadcrumb from "$lib/dashboard/components/shell-breadcrumb.svelte";
 
   const i18n = getI18n();
   const ENV_VAR = "PDMUX_MCP_TOKEN";
@@ -141,6 +142,11 @@
     return { text: i18n.t.dash.mcpTokens.live, variant: "secondary" };
   }
 
+  const crumbs = $derived([
+    { label: i18n.t.dash.title, href: "/", testId: "open-dashboard" },
+    { label: i18n.t.dash.mcpTokens.title },
+  ]);
+
   const columns = [
     { key: "label", label: i18n.t.dash.mcpTokens.colLabel, sortable: true },
     { key: "keyPrefix", label: i18n.t.dash.mcpTokens.colToken },
@@ -154,11 +160,24 @@
 
 <svelte:head><title>{i18n.t.dash.mcpTokens.title}</title></svelte:head>
 
-<div class="flex flex-col gap-4 p-4" data-testid="mcp-tokens">
-  <header>
-    <h1 class="text-lg font-semibold">{i18n.t.dash.mcpTokens.title}</h1>
+<!--
+  ⚠ `data-pdmux-region="page"` AND ITS OWN SCROLL, like every other full-screen route.
+  The shell places its children BY ROLE, so a div without the attribute is not placed at
+  all — and without `min-h-0 overflow-y-auto` a grid child refuses to shrink below its
+  content, so everything past the first card was simply cut off with no way to reach it.
+  Measured on the deployed screen: the token list existed and could not be scrolled to.
+-->
+<div
+  class="flex min-h-0 flex-col gap-4 overflow-y-auto p-6"
+  data-testid="mcp-tokens"
+  data-pdmux-region="page"
+>
+  <ShellBreadcrumb {crumbs} label={i18n.t.dash.breadcrumbLabel} />
+
+  <div>
+    <h1 class="text-2xl font-semibold">{i18n.t.dash.mcpTokens.title}</h1>
     <p class="text-muted-foreground text-sm">{i18n.t.dash.mcpTokens.blurb}</p>
-  </header>
+  </div>
 
   <Card.Root>
     <Card.Header>

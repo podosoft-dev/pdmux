@@ -108,6 +108,38 @@ test.describe("coding CLI access", () => {
   });
 
   /**
+   * ⚠ THE SHELL PLACES ITS CHILDREN BY ROLE, AND SCROLLING IS NOT AUTOMATIC.
+   *
+   * This screen shipped as a bare `<div>`: no `data-pdmux-region`, so the shell had
+   * nowhere to put it, and no scroll container, so as a grid child it refused to
+   * shrink below its content. Everything past the endpoint card was cut off with no
+   * way to reach it — the token list was in the DOM and could not be scrolled to,
+   * which is why every other assertion in this file passed while the screen was
+   * unusable. Reported from the deployment.
+   */
+  test("[TC-PDMCP-103] is placed by the shell, and everything below the fold can be reached", async ({ page }) => {
+    await page.route(POLICY, (route) => route.fulfill({ json: { ceiling: "admin", enabled: true } }));
+    await page.route(TOKENS, (route) => route.fulfill({ json: [] }));
+
+    await ready(page, "/access");
+
+    const panel = page.locator("[data-testid='mcp-tokens']");
+    await expect(panel).toHaveAttribute("data-pdmux-region", "page");
+
+    // The way back. Every other full-screen route carries one; this one did not, so
+    // the only exit was the browser's own back button.
+    const crumb = page.locator("[data-testid='open-dashboard']");
+    await expect(crumb).toBeVisible();
+    await expect(crumb).toHaveAttribute("href", "/");
+
+    // ⚠ THE ASSERTION IS AFTER SCROLLING, because the failure was that scrolling did
+    // nothing. A visibility check alone passes on a `<div>` that simply overflows its
+    // parent: the node is painted, just not anywhere a person can get to.
+    await panel.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+    await expect(page.locator("[data-testid='mcp-token-form']")).toBeInViewport();
+  });
+
+  /**
    * The block a person copies is the single most likely thing on this screen to end
    * up committed, so it carries the environment variable's NAME and nothing else.
    *
