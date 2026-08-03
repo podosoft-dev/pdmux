@@ -2,7 +2,8 @@
   "pdmux": {
     "card": {
       "settings": "card settings",
-      "settingsFor": "card settings"
+      "settingsFor": "card settings",
+      "update": "update agent"
     },
     "cell": {
       "assign": "Assign a terminal to this cell",
@@ -222,7 +223,10 @@
       "bulkDeleted": "Deleted {count} hosts",
       "bulkDeleteFailed": "{count} hosts could not be deleted",
       "selectAll": "Select all",
-      "probation": "It is committed once the new binary proves it can connect; if it cannot, the agent rolls itself back."
+      "probation": "It is committed once the new binary proves it can connect; if it cannot, the agent rolls itself back.",
+      "cardUpdate": "Update available — {version}",
+      "cardUpdateIncompatible": "Incompatible — update to {version}",
+      "cardUpdating": "Updating — {phase}"
     },
     "breadcrumbLabel": "Breadcrumb",
     "clickAction": {
@@ -396,6 +400,10 @@
         "sweep": {
           "title": "Host sweep",
           "blurb": "Deleting hosts that have gone silent. It is off unless you turn it on, and it is the only setting on this page that destroys anything."
+        },
+        "access": {
+          "title": "Fleet-wide CLI tokens",
+          "blurb": "A token minted on the Coding CLI access screen reaches every host in this fleet, not one machine. Host-by-host keys are unaffected."
         }
       },
       "field": {
@@ -454,6 +462,10 @@
         "staleHostRetentionDays": {
           "label": "Delete a host after (days of silence)",
           "why": "0 turns this off, and off is how it ships. Any other number lets the server DELETE a host that has not reported in for that long, taking its agent tokens, enrollment codes, services and collected history with it. That machine is then refused until somebody registers it again and re-runs the installer."
+        },
+        "mcpUserTokens": {
+          "label": "Allow fleet-wide tokens",
+          "hint": "Off by default. Turning it off does NOT revoke anything: existing tokens stop working immediately and start again if it is turned back on."
         }
       },
       "sweep": {

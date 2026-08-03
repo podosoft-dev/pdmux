@@ -31,7 +31,7 @@ import {
   serviceOptions,
   uncommittedSummary,
 } from "@pdmux/core";
-import type { HostDetail, HostResources, HostState, HostSummary, PickerHost, RepoHead } from "@pdmux/ui";
+import type { HostDetail, HostResources, HostState, HostSummary, HostUpdateMark, PickerHost, RepoHead } from "@pdmux/ui";
 import type {
   GraphCommitRow,
   HostServiceView,
@@ -60,8 +60,14 @@ export function hostState(host: Pick<HostView, "enabled" | "online">): HostState
   return host.online ? "online" : "offline";
 }
 
-export function hostSummary(host: HostView): HostSummary {
-  return { id: host.id, name: host.label, state: hostState(host) };
+/**
+ * `update` arrives already composed rather than being derived here, because the
+ * sentence needs `fmt()` and the app's catalogue, and this file is the mapping layer
+ * rather than the wording one. Absent by default: a card with nothing to say draws
+ * no row at all.
+ */
+export function hostSummary(host: HostView, update: HostUpdateMark | null = null): HostSummary {
+  return { id: host.id, name: host.label, state: hostState(host), update };
 }
 
 /** Hosts as the terminal grid needs them (label -> name, sessions passed through). */

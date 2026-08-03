@@ -129,6 +129,54 @@ export function offersUpdate(state: AgentVersionState): boolean {
   return state === "outdated" || state === "unknown" || state === "incompatible";
 }
 
+/** What the sidebar card shows, or nothing at all. */
+export type CardUpdate =
+  | { kind: "offer" | "urgent"; version: string }
+  | { kind: "busy"; phase: UpdateStatus["phase"]; version: string | null };
+
+/**
+ * Whether a host card says anything about its agent, and what.
+ *
+ * This file exists so "the two screens that show them cannot drift into two
+ * different answers"; the sidebar is the third, so the rule lives here rather than
+ * in a component.
+ *
+ * ⚠ DO NOT REACH FOR `updateSkip()`. That is the BATCH policy and it excludes every
+ * `unknown` host — "a batch declines to guess. Its own row menu still offers it".
+ * Using it here would strand exactly the hosts that have no other way out, which is
+ * the opposite of what `offersUpdate` is documented to do.
+ *
+ * ⚠ THE ORDER OF THE RULES IS THE DESIGN, and rule 2 before rule 3 is the one worth
+ * defending: `restarting` IS the probation window — the agent is being replaced and
+ * its heartbeat can lapse. Checking `online` first would make the mark blink out at
+ * the exact moment the operator is watching it work.
+ */
+export function cardUpdate(host: HostView): CardUpdate | null {
+  // Nobody is asking this machine anything; the card's own mark already says so.
+  if (!host.enabled) return null;
+
+  if (updateInFlight(host.lastUpdate)) {
+    return { kind: "busy", phase: host.lastUpdate?.phase ?? "accepted", version: host.lastUpdate?.targetVersion ?? null };
+  }
+
+  // The card already reads "stopped". An update offer beside that contradicts it.
+  if (!host.online) return null;
+
+  if (!offersUpdate(host.agentVersionState)) return null;
+
+  // ⚠ THIS IS WHAT SPLITS THE TWO MEANINGS OF `unknown` (an unreadable version, and
+  // nothing published for this platform — `semver.ts` conflates them). With no
+  // target there is nothing to name, so the popover's one job would render "→ —"
+  // and the button would earn AGENT_RELEASE_UNAVAILABLE. In a column whose whole
+  // budget is one short line, a mark that cannot say where it leads is noise.
+  if (!host.latestAgentVersion) return null;
+
+  return {
+    kind: host.agentVersionState === "incompatible" ? "urgent" : "offer",
+    version: host.latestAgentVersion,
+  };
+}
+
 /**
  * Which states may be swept up in a BATCH.
  *

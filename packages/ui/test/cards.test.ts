@@ -83,6 +83,111 @@ describe('[TC-PDUI-001] a host card renders only the widgets its preferences all
 		expect(onOpenSettings).toHaveBeenCalledWith('h1', expect.anything());
 	});
 
+	/**
+	 * ⚠ THE ABSENCE IS THE ASSERTION. A row that always rendered would be the deleted
+	 * busy/idle chip returning by the front door — the whole reason that chip went is
+	 * that it spent card height restating something already on screen. A fleet with
+	 * nothing to update must pay nothing.
+	 */
+	it('says nothing about the agent when there is nothing to say', () => {
+		const { container } = render(HostCard, {
+			props: { host: { id: 'h1', name: 'alpha', state: 'online' }, agents: AGENTS, services: SERVICES },
+		});
+		expect(container.querySelector('[data-pdmux-update]')).toBeNull();
+		// And it is still not the class that test above forbids.
+		expect(container.querySelector('.pdmux-badge')).toBeNull();
+	});
+
+	it('offers an update as a word, not as a colour, and hands back the anchor', () => {
+		const onUpdateAgent = vi.fn();
+		const { container } = render(HostCard, {
+			props: {
+				host: { id: 'h1', name: 'alpha', state: 'online', update: { kind: 'offer', label: 'Update available — 0.1.7' } },
+				agents: AGENTS,
+				services: SERVICES,
+				onUpdateAgent,
+			},
+		});
+
+		const control = container.querySelector('button.pdmux-card-update');
+		expect(control).not.toBeNull();
+		// The state travels in the accessible name as well as the visible text, so the
+		// card still works in greyscale and to a screen reader — the rule the
+		// reachability mark survived by and the chip did not.
+		expect(control?.getAttribute('aria-label')).toBe('Update available — 0.1.7');
+		expect(control?.getAttribute('title')).toBe('Update available — 0.1.7');
+		expect(control?.textContent).toContain('0.1.7');
+
+		fireEvent.click(control as HTMLElement);
+		expect(onUpdateAgent).toHaveBeenCalledWith('h1', expect.anything());
+	});
+
+	/**
+	 * The `onAddHost` law: a control that leads to a 403 is worse than no control. A
+	 * member who cannot update anything is shown nothing to press.
+	 */
+	it('draws no control when the caller cannot act', () => {
+		const { container } = render(HostCard, {
+			props: {
+				host: { id: 'h1', name: 'alpha', state: 'online', update: { kind: 'offer', label: 'Update available — 0.1.7' } },
+				agents: AGENTS,
+				services: SERVICES,
+			},
+		});
+		expect(container.querySelector('[data-pdmux-update]')).toBeNull();
+	});
+
+	/**
+	 * ⚠ NOT A DISABLED BUTTON. "Disabled" is a promise the DOM can be talked out of —
+	 * by a stray `removeAttribute`, by a library, by a future refactor. A readout that
+	 * is not a button cannot be pressed twice because there is nothing to press.
+	 */
+	it('reports a job in flight without offering a second one', () => {
+		const onUpdateAgent = vi.fn();
+		const { container } = render(HostCard, {
+			props: {
+				host: { id: 'h1', name: 'alpha', state: 'online', update: { kind: 'busy', label: 'Updating — restarting' } },
+				agents: AGENTS,
+				services: SERVICES,
+				onUpdateAgent,
+			},
+		});
+
+		const mark = container.querySelector('[data-pdmux-update="busy"]');
+		expect(mark).not.toBeNull();
+		expect(container.querySelector('button.pdmux-card-update')).toBeNull();
+		expect(mark?.getAttribute('role')).toBe('img');
+		// No percentage: `updateProgressPct` only counts while downloading and pins to
+		// 100 for the rest, so a number here would sit frozen where nobody watches it.
+		expect(mark?.textContent).not.toMatch(/%/);
+	});
+
+	/**
+	 * ⚠ THREE SHAPES, NOT ONE SHAPE IN THREE COLOURS. This is the assertion that fails
+	 * when somebody "simplifies" the icons — the same guard `joinedBar` gives the
+	 * reachability mark, and the reason that mark survived while the chip did not.
+	 * `urgent` is not a red `offer`: outdated is advisory, incompatible means the host
+	 * already cannot talk to this server.
+	 */
+	it('draws a different silhouette for each kind', () => {
+		const paths = (kind: 'offer' | 'urgent' | 'busy'): string => {
+			const { container } = render(HostCard, {
+				props: {
+					host: { id: 'h1', name: 'alpha', state: 'online', update: { kind, label: `mark ${kind}` } },
+					agents: AGENTS,
+					services: SERVICES,
+					onUpdateAgent: vi.fn(),
+				},
+			});
+			return [...(container.querySelector('[data-pdmux-update]')?.querySelectorAll('path') ?? [])]
+				.map((path) => path.getAttribute('d'))
+				.join('|');
+		};
+
+		const drawings = new Set([paths('offer'), paths('urgent'), paths('busy')]);
+		expect(drawings.size).toBe(3);
+	});
+
 	it('hides a widget the preferences switch off, and marks a stopped host', () => {
 		const prefs = { ...cardPrefs({}, 'h1'), resources: false };
 		const { container } = render(HostCard, {

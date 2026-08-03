@@ -36,6 +36,7 @@
 		footer?: Snippet;
 		onOpenService?: (url: string, hostId: string) => void;
 		onOpenSettings?: (hostId: string, anchor: HTMLElement) => void;
+		onUpdateAgent?: (hostId: string, anchor: HTMLElement) => void;
 		/**
 		 * Offer "add a host" as the LAST tile in the column, cards or no cards.
 		 *
@@ -57,6 +58,7 @@
 		footer,
 		onOpenService,
 		onOpenSettings,
+		onUpdateAgent,
 		onAddHost,
 	}: Props = $props();
 
@@ -80,6 +82,7 @@
 				{t}
 				{onOpenService}
 				{onOpenSettings}
+				{onUpdateAgent}
 			/>
 		{/each}
 	{:else}

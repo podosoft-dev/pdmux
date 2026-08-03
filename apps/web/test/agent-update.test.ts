@@ -11,6 +11,7 @@ import type { GridCell } from "@pdmux/core";
 import type { UpdateStatus } from "@pdmux/protocol";
 import {
   bulkEligible,
+  cardUpdate,
   bulkSelectable,
   bulkTarget,
   canaryNeeded,
@@ -506,5 +507,71 @@ describe("[TC-PDHOST-023] the percentage stops where it stops meaning something"
     expect(updateProgressPct(status("done", 100))).toBeNull();
     expect(updateProgressPct(status("failed", 100))).toBeNull();
     expect(updateProgressPct(null)).toBeNull();
+  });
+});
+
+/**
+ * What a SIDEBAR card says, which is a third screen asking the same question — and
+ * the reason this file exists rather than the logic living in a component.
+ */
+describe("cardUpdate", () => {
+  it("offers an update for a host that is behind", () => {
+    expect(cardUpdate(host())).toEqual({ kind: "offer", version: "0.2.0" });
+  });
+
+  it("says nothing when there is nothing to say", () => {
+    expect(cardUpdate(host({ agentVersionState: "current" }))).toBeNull();
+    // `ahead` is a developer on a local build; "update" would silently downgrade them.
+    expect(cardUpdate(host({ agentVersionState: "ahead" }))).toBeNull();
+    // A disabled host is not being asked anything; the card's mark already says so.
+    expect(cardUpdate(host({ enabled: false }))).toBeNull();
+    // Offline already reads "stopped"; an update offer beside it contradicts that.
+    expect(cardUpdate(host({ online: false }))).toBeNull();
+  });
+
+  it("marks an incompatible agent differently from a merely old one", () => {
+    // Outdated is advisory; incompatible means the host is already unable to talk to
+    // this server, so the two must not draw the same shape.
+    expect(cardUpdate(host({ agentVersionState: "incompatible" }))?.kind).toBe("urgent");
+  });
+
+  /**
+   * ⚠ THE ORDERING CLAIM, AND THE ONE A NAIVE IMPLEMENTATION GETS WRONG. `restarting`
+   * IS the probation window: the agent is being replaced and its heartbeat can lapse,
+   * so a host in flight is very often offline at that exact moment. Checking `online`
+   * first would make the mark blink out while the operator is watching it work.
+   */
+  it("reports a job in flight even when the host has gone quiet", () => {
+    const inFlight = host({
+      online: false,
+      lastUpdate: { phase: "restarting", targetVersion: "0.2.0" } as UpdateStatus,
+    });
+    expect(cardUpdate(inFlight)).toEqual({ kind: "busy", phase: "restarting", version: "0.2.0" });
+  });
+
+  /**
+   * ⚠ `unknown` IS TWO SITUATIONS SHARING ONE STATE (an unreadable version, and
+   * nothing published for this platform). Splitting them on whether a target exists
+   * is what keeps the card honest: a mark that cannot name where it leads would
+   * render "→ —" and earn AGENT_RELEASE_UNAVAILABLE if pressed.
+   */
+  it("offers a way out of an unreadable version, but not out of an unpublished platform", () => {
+    expect(cardUpdate(host({ agentVersionState: "unknown", agentVersion: null }))).toEqual({
+      kind: "offer",
+      version: "0.2.0",
+    });
+    expect(cardUpdate(host({ agentVersionState: "unknown", latestAgentVersion: null }))).toBeNull();
+  });
+
+  /**
+   * ⚠ NOT `updateSkip()`. That is the BATCH rule — it excludes every `unknown` host
+   * because "a batch declines to guess" — and delegating to it here would strand
+   * exactly the hosts with no other way out. This test is what fails if somebody
+   * "simplifies" the two into one.
+   */
+  it("does not inherit the batch rule's refusal to guess", () => {
+    const unreadable = host({ agentVersionState: "unknown", agentVersion: null });
+    expect(updateSkip(unreadable)).toBe("unknown");
+    expect(cardUpdate(unreadable)).not.toBeNull();
   });
 });

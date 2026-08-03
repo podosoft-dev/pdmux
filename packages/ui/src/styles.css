@@ -653,6 +653,75 @@
  * shadcn's card actions use with `-me-2`) leaves the header 24px tall, so the fleet
  * column grows by one pixel per card while the target more than doubles.
  */
+/* The agent-update row: a fourth conditional body widget, never a header glyph.
+   The header's width is the scarce resource — the name truncates there — and the
+   body already carries three rows like this one, so it costs the header nothing.
+
+   ⚠ NOT `.pdmux-badge`. That class is the remnant of the deleted busy/idle chip and
+   `cards.test.ts` asserts a rendered card does not contain it. Reusing it would
+   break that test AND quietly re-introduce the thing it was deleted for. */
+.pdmux-card-update {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	inline-size: 100%;
+	min-inline-size: 0;
+	padding: 5px 8px;
+	margin: 0;
+	border: 0;
+	border-radius: var(--pdmux-radius-md);
+	background: none;
+	font: inherit;
+	font-size: 12px;
+	text-align: start;
+	color: var(--pdmux-accent, var(--pdmux-fg));
+	cursor: pointer;
+	transition:
+		background-color 0.12s ease,
+		color 0.12s ease;
+}
+
+/* The `busy` readout is not a control: no pointer, no hover, out of the tab order
+   because it is not a button at all. */
+.pdmux-card-update[data-pdmux-update='busy'] {
+	color: var(--pdmux-muted);
+	cursor: default;
+}
+
+.pdmux-card-update[data-pdmux-update='urgent'] {
+	color: var(--pdmux-down, var(--pdmux-fg));
+}
+
+.pdmux-card-update:is(button):hover {
+	background: var(--pdmux-hover);
+}
+
+.pdmux-card-update:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--pdmux-ring) 50%, transparent);
+}
+
+.pdmux-card-update svg {
+	flex: none;
+	inline-size: 14px;
+	block-size: 14px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	pointer-events: none;
+}
+
+/* The label truncates rather than wrapping: a card that grows a line taller when a
+   version string is long would shuffle every card below it. */
+.pdmux-card-update span {
+	min-inline-size: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .pdmux-cog {
 	flex: none;
 	margin-inline-start: auto;
@@ -2013,6 +2082,12 @@
 	.pdmux-cog,
 	.pdmux-pick-row {
 		min-width: 44px;
+		min-height: 44px;
+	}
+
+	/* The update row is full-width already, so only its height needs the fingertip
+	   rule — `min-width: 44px` on a block element would do nothing. */
+	.pdmux-card-update {
 		min-height: 44px;
 	}
 

@@ -10,10 +10,28 @@ import type { GridSession } from '@pdmux/core';
 /** Reachability as a card shows it. `unknown` is deliberately distinct from offline. */
 export type HostState = 'online' | 'offline' | 'unknown';
 
+/**
+ * What a card says about its agent, if anything.
+ *
+ * ⚠ A SHAPE AND A NAME, NEVER A VERSION STRING OR A PHASE ENUM. The package has no
+ * interpolation (`Translate` takes a key and a fallback, nothing else) and no
+ * business knowing what semver is; the app composes the sentence, the card draws it.
+ * That is the same seam `CardSettingsPopover.status` already uses.
+ */
+export type HostUpdateKind = 'offer' | 'urgent' | 'busy';
+
+export interface HostUpdateMark {
+	kind: HostUpdateKind;
+	/** The whole line, already translated and interpolated. Never colour alone. */
+	label: string;
+}
+
 export interface HostSummary {
 	id: string;
 	name: string;
 	state?: HostState;
+	/** Absent means the card draws nothing — it is not a row that renders empty. */
+	update?: HostUpdateMark | null;
 }
 
 export interface HostResources {

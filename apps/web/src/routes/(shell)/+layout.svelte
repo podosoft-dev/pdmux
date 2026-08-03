@@ -31,7 +31,7 @@
   import { toast } from "svelte-sonner";
   import { Button } from "$lib/components/ui/button";
   import { Toaster } from "$lib/components/ui/sonner";
-  import { formatDateTime, getI18n } from "$lib/i18n";
+  import { fmt, formatDateTime, getI18n } from "$lib/i18n";
   import HostFormDialog from "$lib/dashboard/components/host-form-dialog.svelte";
   import ShellUserMenu from "$lib/dashboard/components/shell-user-menu.svelte";
   import { dismissOnOutside } from "$lib/dashboard/popover-dismiss.svelte";
@@ -45,6 +45,11 @@
     metricsFeed,
     serviceOptionsFor,
   } from "$lib/dashboard/map";
+  import { cardUpdate, paneSlots } from "$lib/dashboard/agent-update";
+  import { agentUpdateApi } from "$lib/dashboard/api";
+  import { agentUpdateMessage } from "$lib/dashboard/wording";
+  import AgentUpdateConfirm from "$lib/dashboard/components/agent-update-confirm.svelte";
+  import type { HostUpdateMark } from "@pdmux/ui";
   import { uiTranslate } from "$lib/dashboard/ui-i18n";
   import type { HostView } from "$lib/dashboard/types";
   import type { LayoutData } from "./$types";
@@ -91,9 +96,31 @@
     monthly: i18n.t.dash.usageWindow.monthly,
   });
 
+  /**
+   * The card's one line, composed here because this is the only place that has both
+   * the verdict (`cardUpdate`) and the catalogue (`fmt`). The package receives a
+   * shape and a sentence, never a version string it would have to format.
+   */
+  function updateMark(host: HostView): HostUpdateMark | null {
+    if (!data.canManage) return null;
+    const verdict = cardUpdate(host);
+    if (!verdict) return null;
+    if (verdict.kind === "busy") {
+      return {
+        kind: "busy",
+        // The phase word, never a percentage: `updateProgressPct` is only meaningful
+        // while downloading and pins to 100 for the rest, so a number here would sit
+        // frozen inside a tooltip nobody watches.
+        label: fmt(i18n.t.dash.agent.cardUpdating, { phase: i18n.t.dash.agent.phase[verdict.phase as keyof typeof i18n.t.dash.agent.phase] }),
+      };
+    }
+    const key = verdict.kind === "urgent" ? i18n.t.dash.agent.cardUpdateIncompatible : i18n.t.dash.agent.cardUpdate;
+    return { kind: verdict.kind, label: fmt(key, { version: verdict.version }) };
+  }
+
   const cards = $derived(
     shell.feed.hosts.map((host) => ({
-      host: hostSummary(host),
+      host: hostSummary(host, updateMark(host)),
       agents: agentRowsFor(host, shell.providers, shell.feed.now),
       resources: hostResources(host, freshById.get(host.id)),
       history: shell.feed.history[host.id] ?? null,
@@ -168,6 +195,34 @@
     () => settings !== null,
     () => (settings = null),
   );
+
+  // --- agent update popover -------------------------------------------------
+  // Same seam as the ⚙ above: the card emits (hostId, anchor) and the app owns the
+  // panel, because `@pdmux/ui` cannot import shadcn and must not learn to.
+  let updating = $state<{ hostId: string; anchor: { x: number; y: number } } | null>(null);
+  const updatingHost = $derived(shell.feed.hosts.find((host) => host.id === updating?.hostId) ?? null);
+
+  function openUpdate(hostId: string, element: HTMLElement): void {
+    const rect = element.getBoundingClientRect();
+    updating = { hostId, anchor: { x: rect.left, y: rect.bottom } };
+  }
+
+  dismissOnOutside(
+    () => updating !== null,
+    () => (updating = null),
+  );
+
+  async function runUpdate(host: HostView): Promise<void> {
+    try {
+      await agentUpdateApi.host(host.id);
+      updating = null;
+      // The same GET /hosts the sidebar already reads carries every phase after this,
+      // so there is nothing to poll separately.
+      await shell.feed.refresh();
+    } catch (error) {
+      toast.error(agentUpdateMessage(error, i18n.t));
+    }
+  }
 
   // --- adding and removing a host, in the column itself ---------------------
   /**
@@ -247,6 +302,7 @@
     {t}
     onOpenService={(url: string) => window.open(url, "_blank", "noopener")}
     onOpenSettings={openSettings}
+  onUpdateAgent={data.canManage ? openUpdate : undefined}
     onAddHost={data.canManage ? () => (addOpen = true) : undefined}
   >
     {#snippet header()}
@@ -392,6 +448,26 @@
     onToggle={(widget: CardWidget) => settingsHost && shell.toggleWidget(settingsHost.id, widget)}
     onClose={() => (settings = null)}
   />
+{/if}
+
+{#if updating && updatingHost}
+  <!--
+    ⚠ `stopPropagation` IS LOAD-BEARING. `dismissOnOutside` listens on the document,
+    and re-rendering detaches the node that was clicked — without this, pressing a
+    button inside the panel reads as a click outside it and the panel closes before
+    the handler runs.
+  -->
+  <div
+    class="bg-popover text-popover-foreground fixed z-50 w-72 space-y-3 rounded-md border p-3 shadow-md"
+    style={`left:${Math.min(updating.anchor.x, (typeof window === "undefined" ? 1024 : window.innerWidth) - 300)}px;top:${updating.anchor.y + 4}px`}
+    data-testid="agent-update-popover"
+    role="dialog"
+    aria-label={fmt(i18n.t.dash.agent.updateTitle, { label: updatingHost.label })}
+    onclickcapture={(event) => event.stopPropagation()}
+  >
+    <p class="text-sm font-medium">{updatingHost.label}</p>
+    <AgentUpdateConfirm host={updatingHost} slots={paneSlots(shell.layout.slots)} onCancel={() => (updating = null)} onConfirm={runUpdate} />
+  </div>
 {/if}
 
 <!-- Mounted by the shell, so adding and removing never move the screen underneath.

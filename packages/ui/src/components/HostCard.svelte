@@ -42,6 +42,8 @@
 		t?: Translate;
 		onOpenService?: (url: string, hostId: string) => void;
 		onOpenSettings?: (hostId: string, anchor: HTMLElement) => void;
+		/** Absent = no control is drawn, even when `host.update` says one is offered. */
+		onUpdateAgent?: (hostId: string, anchor: HTMLElement) => void;
 	}
 
 	let {
@@ -57,6 +59,7 @@
 		t,
 		onOpenService,
 		onOpenSettings,
+		onUpdateAgent,
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -181,5 +184,63 @@
 		<div data-pdmux-widget="links">
 			<ServiceLauncher options={services} disabled={offline} {t} onOpen={(url) => onOpenService?.(url, host.id)} />
 		</div>
+	{/if}
+
+	<!--
+		⚠ A BODY ROW, NOT A HEADER GLYPH. The header is the scarce resource — the name
+		truncates there and the busy/idle chip was deleted for spending it — but the
+		body already carries three conditional rows, so a fourth costs the header
+		nothing.
+
+		⚠ AND IT IS CONDITIONAL, WHICH IS HALF THE DESIGN. A row that always rendered
+		would be the deleted chip returning by the front door; a fleet with nothing to
+		update pays no pixels at all.
+
+		⚠ THE WORD CARRIES THE STATE, NOT THE COLOUR. `label` is the whole sentence and
+		it is also the accessible name, so the card still works in greyscale and to a
+		screen reader — the rule the reachability mark survived by and the chip did not.
+	-->
+	{#if host.update}
+		{#if host.update.kind === 'busy'}
+			<!--
+				⚠ NOT A DISABLED BUTTON. A second POST is impossible because there is no
+				control here at all, which is a stronger promise than one the DOM can be
+				talked out of.
+			-->
+			<div
+				class="pdmux-card-update"
+				data-pdmux-widget="update"
+				data-pdmux-update="busy"
+				role="img"
+				aria-label={host.update.label}
+				title={host.update.label}
+			>
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6" /></svg>
+				<span>{host.update.label}</span>
+			</div>
+		{:else if onUpdateAgent}
+			<button
+				class="pdmux-card-update"
+				data-pdmux-widget="update"
+				data-pdmux-update={host.update.kind}
+				type="button"
+				aria-label={host.update.label}
+				title={host.update.label}
+				onclick={(event) => onUpdateAgent(host.id, event.currentTarget as HTMLElement)}
+			>
+				{#if host.update.kind === 'urgent'}
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><path d="M10.3 4.3 2.6 18a1.5 1.5 0 0 0 1.3 2.2h16.2a1.5 1.5 0 0 0 1.3-2.2L13.7 4.3a1.5 1.5 0 0 0-2.6 0Z" /><path
+							d="M12 9v4"
+						/><path d="M12 17h.01" /></svg
+					>
+				{:else}
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M4 21h16" /></svg
+					>
+				{/if}
+				<span>{host.update.label}</span>
+			</button>
+		{/if}
 	{/if}
 </article>

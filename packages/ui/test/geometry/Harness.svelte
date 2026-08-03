@@ -52,7 +52,19 @@
 	);
 
 	const cards = hosts.map((host) => ({
-		host: { id: host.id, name: host.name, state: 'online' as const },
+		host: {
+			id: host.id,
+			name: host.name,
+			state: 'online' as const,
+			// ⚠ ON THE LONG-NAME CARD DELIBERATELY. That name is one unbreakable token and
+			// is the shape that pushed the ⚙ off the edge before the header had a
+			// truncation rule; putting the update row on the same card is what makes the
+			// existing overflow probes cover the new widget for free.
+			update:
+				host.id === 'h2'
+					? { kind: 'offer' as const, label: 'Update available — 0.1.7' }
+					: null,
+		},
 		agents: agentRows(
 			[{ provider: 'claude', processes: 2, ts: seconds, windows: [{ key: 'session', remainingPct: 82 }] }],
 			['claude', 'codex'],
@@ -94,7 +106,7 @@
 >
 	<!-- `onAddHost` is supplied so the column carries its trailing tile here too: it is the
 	     last thing in the scroll content, and the geometry checks measure that content. -->
-	<HostSidebar {cards} now={seconds} onAddHost={() => {}} />
+	<HostSidebar {cards} now={seconds} onAddHost={() => {}} onUpdateAgent={() => {}} />
 	<SplitHandle onCommit={(delta) => (layout = setSidebarWidth(layout, layout.sidebarWidth + delta))} />
 	<div class="pdmux pdmux-panel">
 		<TerminalGrid

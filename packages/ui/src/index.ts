@@ -48,4 +48,14 @@ export type { TerminalSurface, TerminalSurfaceFactory } from './adapters/termina
 export { identityTranslate, translator } from './i18n.js';
 export type { Translate } from './i18n.js';
 export type { ShellViewTab } from './components/ShellViewTabs.svelte';
-export type { HostDetail, HostResources, HostState, HostSummary, PickerHost, PickerTarget, RepoHead } from './types.js';
+export type {
+	HostDetail,
+	HostResources,
+	HostState,
+	HostSummary,
+	HostUpdateKind,
+	HostUpdateMark,
+	PickerHost,
+	PickerTarget,
+	RepoHead,
+} from './types.js';
