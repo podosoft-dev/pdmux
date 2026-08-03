@@ -15,6 +15,27 @@ test.use({ storageState: e2eAdminState });
 /** Any real key starts like this; a fixture must never match it by accident. */
 const KEY_SHAPE = /pdmux_mcp_[A-Za-z0-9_-]{20}/;
 
+/**
+ * Open the connection card, because it is a disclosure and it ships CLOSED.
+ *
+ * ⚠ THESE TESTS USED TO SKIP THIS, AND TWO OF THEM PASSED ANYWAY. `toHaveText` and
+ * `toContainText` read `textContent` and do not require visibility, so the copy
+ * assertions were being made against a section nobody could see — they were green
+ * while measuring markup rather than a screen. Only the `toBeVisible()` in
+ * TC-PDMCP-100 and the first `click()` in TC-PDMCP-102 ever noticed.
+ *
+ * The card is closed by default on purpose (its own comment says so, and the "N
+ * keys" summary beside the title is what makes that honest), so opening it is what
+ * a person does — and doing it here is what makes the rest of the file measure what
+ * they would actually be looking at.
+ */
+async function openConnection(page: import("@playwright/test").Page): Promise<void> {
+  const section = page.locator("[data-testid='agent-access']");
+  if (await section.isVisible()) return;
+  await page.locator("[data-testid='host-connection-toggle']").click();
+  await expect(section).toBeVisible();
+}
+
 test.describe.serial("pdmux agent connection", () => {
   /**
    * A REAL host, because the detail page's loader runs on the SERVER and
@@ -71,8 +92,7 @@ test.describe.serial("pdmux agent connection", () => {
     await page.route(`**/api/hosts/${hostId}/mcp-keys`, (route) => route.fulfill({ json: [] }));
 
     await ready(page, `/hosts/${hostId}`);
-    const section = page.locator("[data-testid='agent-access']");
-    await expect(section).toBeVisible();
+    await openConnection(page);
 
     // The endpoint is the URL a person pastes; it has to be the public origin.
     await expect(page.locator("[data-testid='agent-endpoint']")).toContainText("/mcp");
@@ -106,6 +126,7 @@ test.describe.serial("pdmux agent connection", () => {
     await page.route(`**/api/hosts/${hostId}/mcp-keys`, (route) => route.fulfill({ json: [] }));
 
     await ready(page, `/hosts/${hostId}`);
+    await openConnection(page);
 
     // ⚠ THE DIFFERENCE FROM THE INSTALL DIALOG. That one runs before any agent has
     // connected, so it can only offer a choice and default to Linux. Here the host
@@ -152,6 +173,7 @@ test.describe.serial("pdmux agent connection", () => {
     });
 
     await ready(page, `/hosts/${hostId}`);
+    await openConnection(page);
     await page.locator("[data-testid='agent-key-create']").click();
 
     // The one and only render of the plaintext.
@@ -164,7 +186,11 @@ test.describe.serial("pdmux agent connection", () => {
 
     // ...and it is gone. The row names the key by its prefix, which is not enough
     // to reconstruct anything, and the full value is nowhere on the page.
-    const row = page.locator("[data-testid='agent-key-row']").first();
+    //
+    // ⚠ THE LIST IS A `DataTable` NOW, and `agent-key-row` went with the hand-rolled
+    // divs it replaced. The assertion never noticed because it was never reached —
+    // the test died earlier, on a section it had not opened.
+    const row = page.locator("[data-testid='agent-key-list'] tbody tr").first();
     await expect(row).toContainText("pdmux_mcp_ZZZZexam");
     expect(await page.locator("body").innerText()).not.toContain(plaintext);
   });
