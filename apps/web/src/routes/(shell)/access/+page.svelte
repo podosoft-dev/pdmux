@@ -50,7 +50,13 @@
   let expiresInDays = $state(90);
   let tier = $state<Tier>("operate");
   let sort = $state<SortState>({ key: "createdAt", dir: "desc" });
-  let page = $state(0);
+  /**
+   * ⚠ ONE-BASED. `DataTable` pages with `slice((page - 1) * perPage, page * perPage)`,
+   * so a zero here is `slice(-10, 0)` — an empty array for any list, which the table
+   * then reports as "no tokens yet". Every token on this screen was invisible, and
+   * the screen looked completely healthy while it happened.
+   */
+  let page = $state(1);
 
   const endpoint = $derived(typeof window === "undefined" ? "" : `${window.location.origin}/mcp`);
   const rank = (value: Tier): number => TIERS.indexOf(value);
