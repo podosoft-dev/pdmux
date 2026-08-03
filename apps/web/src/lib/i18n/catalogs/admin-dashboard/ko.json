@@ -375,7 +375,9 @@
     "close": "닫기",
     "back": "뒤로",
     "noProviders": "아직 추가된 공급자가 없습니다.",
-    "socialCardDesc": "Google, GitHub, Apple 등 OAuth 공급자로 로그인."
+    "socialCardDesc": "Google, GitHub, Apple 등 OAuth 공급자로 로그인.",
+    "mcpEnabled": "MCP (Model Context Protocol)",
+    "mcpEnabledDesc": "코딩 CLI 가 토큰으로 /mcp 를 통해 pdmux 에 닿게 합니다. 끄면 /mcp 가 모든 호출자에게 404 로 답합니다 — 호스트 키도 fleet 토큰도 마찬가지입니다. 토큰이 폐기되지는 않고, 다시 켜면 다시 동작합니다."
   },
   "dashboard": {
     "title": "대시보드",

@@ -13,6 +13,9 @@ import type {
   AgentEnrollmentView,
   AgentTokenView,
   McpKeyView,
+  McpTokenPolicy,
+  McpTokenView,
+  MintedMcpToken,
   MintedMcpKey,
   AgentUpdateCommand,
   CreatedHost,
@@ -240,4 +243,19 @@ export const mcpKeysApi = {
     api.post<MintedMcpKey>(`/hosts/${hostId}/mcp-keys`, input),
   revoke: (hostId: string, id: string): Promise<McpKeyView> =>
     api.del<McpKeyView>(`/hosts/${hostId}/mcp-keys/${id}`),
+};
+
+/**
+ * The credential that reaches a whole fleet.
+ *
+ * ⚠ NO HOST ID ANYWHERE. The scope comes from the session, and a person sees and
+ * revokes their own tokens in the scope they are currently in — there is no path
+ * that lists somebody else's, and no parameter that could ask for one.
+ */
+export const mcpTokensApi = {
+  policy: (): Promise<McpTokenPolicy> => api.get<McpTokenPolicy>("/account/mcp-tokens/policy"),
+  list: (): Promise<McpTokenView[]> => api.get<McpTokenView[]>("/account/mcp-tokens"),
+  mint: (input: { label: string; expiresInDays: number; tier: string }): Promise<MintedMcpToken> =>
+    api.post<MintedMcpToken>("/account/mcp-tokens", input),
+  revoke: (id: string): Promise<McpTokenView> => api.del<McpTokenView>(`/account/mcp-tokens/${id}`),
 };

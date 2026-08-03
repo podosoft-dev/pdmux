@@ -332,6 +332,14 @@
     it had no sortable headers, no consistent empty state and no footer, and it
     drifted from every other list in the product for free.
   -->
+  <!-- The two credentials are easy to confuse, and confusing them means minting a
+       fleet-wide one when a machine-scoped one was wanted. One line, here, where
+       somebody is already thinking about it. -->
+  <p class="text-muted-foreground text-xs">
+    {fmt(i18n.t.dash.mcp.fleetHint, { label: host.label })}
+    <a class="underline" href="/access" data-testid="agent-fleet-link">{i18n.t.dash.mcpTokens.title}</a>
+  </p>
+
   <div data-testid="agent-key-list">
     {#if loading}
       <p class="text-muted-foreground text-sm">{i18n.t.dash.mcp.loading}</p>

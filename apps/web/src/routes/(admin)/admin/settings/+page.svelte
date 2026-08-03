@@ -18,7 +18,11 @@
   import type { Capabilities } from "@podosoft/podokit-api-client";
   import type { AuthConfigView, SocialProviderView } from "./+page.server";
 
-  let { data }: { data: { capabilities: Capabilities; authConfig: AuthConfigView | null; require2fa: boolean } } = $props();
+  let {
+    data,
+  }: {
+    data: { capabilities: Capabilities; authConfig: AuthConfigView | null; require2fa: boolean; mcpEnabled: boolean };
+  } = $props();
   const i18n = getI18n();
   const caps = $derived(data.capabilities);
   const ac = $derived(data.authConfig);
@@ -26,7 +30,9 @@
   type EditableFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "oidcProvider";
   // require2fa is a policy flag stored alongside the feature flags but not part of
   // the typed Capabilities, so it is toggled but never read from `caps`.
-  type ToggleFlag = EditableFlag | "require2fa";
+  // Policy flags that are not part of the published `Capabilities` type, so they
+  // are toggled through the same endpoint but read from `data` rather than `caps`.
+  type ToggleFlag = EditableFlag | "require2fa" | "mcpEnabled";
   type ServerKey = "requireEmailVerification" | "requireSignupApproval" | "hibp" | "allowDelete" | "auditLog";
 
   // Every card renders from this one shape, so they share size and structure: a
@@ -221,6 +227,15 @@
       status: { on: data.require2fa, label: data.require2fa ? i18n.t.settings.enabled : i18n.t.settings.disabled },
       // Only meaningful when 2FA itself is on; disabled otherwise.
       toggle: { checked: data.require2fa, disabled: saving || !caps.twoFactor, onChange: (v) => toggleFlag("require2fa", v) },
+    },
+    {
+      key: "flag-mcpEnabled",
+      name: i18n.t.settings.mcpEnabled,
+      desc: i18n.t.settings.mcpEnabledDesc,
+      status: { on: data.mcpEnabled, label: data.mcpEnabled ? i18n.t.settings.enabled : i18n.t.settings.disabled },
+      // Not in the typed `Capabilities`, so it is read from `data` rather than `caps`
+      // — the same shape require2fa uses above.
+      toggle: { checked: data.mcpEnabled, disabled: saving, onChange: (v) => toggleFlag("mcpEnabled", v) },
     },
     {
       key: "session-idle-timeout",

@@ -682,11 +682,86 @@
       "collapse": "코딩 CLI 연결 접기",
       "keyPrefix": "키",
       "keyStatus": "상태",
-      "keyActions": ""
+      "keyActions": "",
+      "fleetHint": "이 키는 {label} 에만 닿습니다. fleet 전체에 닿는 토큰은"
     },
     "table": {
       "prevPage": "이전",
       "nextPage": "다음"
+    },
+    "mcpTokens": {
+      "title": "Coding CLI 접근",
+      "blurb": "토큰은 Codex·Claude Code 가 이 fleet 전체와 일하게 합니다 — 기기 하나가 아니라 당신이 볼 수 있는 모든 호스트입니다. 기기 하나만 필요하면 그 호스트 페이지의 키를 씁니다.",
+      "endpointTitle": "MCP 엔드포인트",
+      "envHint": "토큰은 당신의 환경변수 {envVar} 에 둡니다. 커밋하지 않습니다.",
+      "copyConfig": "설정 복사",
+      "newTitle": "새 토큰",
+      "labelField": "이름",
+      "expiryField": "만료",
+      "tierField": "권한",
+      "days": "{days}일",
+      "aboveCeiling": "이 fleet 을 바꾸는 토큰은 fleet 관리자만 발급할 수 있습니다. 지금 권한으로는 읽기 전용까지입니다.",
+      "canDo": "\"{tier}\" 가 할 수 있는 것",
+      "create": "토큰 발급",
+      "listTitle": "내 토큰",
+      "loading": "불러오는 중…",
+      "empty": "아직 토큰이 없습니다.",
+      "revoke": "폐기",
+      "live": "사용 중",
+      "revoked": "폐기됨",
+      "expired": "만료됨",
+      "expiringSoon": "곧 만료",
+      "reduced": "{tier} 로 축소됨",
+      "colLabel": "이름",
+      "colToken": "토큰",
+      "colTier": "권한",
+      "colStatus": "상태",
+      "colLastUsed": "마지막 사용",
+      "colExpires": "만료",
+      "createdTitle": "토큰이 발급되었습니다",
+      "createdHint": "지금 복사하세요. 전체 값은 다시 보이지 않습니다.",
+      "createdEnvHint": "CLI 가 도는 환경의 {envVar} 에 넣습니다.",
+      "createdReach": "이 토큰은 이 fleet 전체에 작용합니다. 비밀번호처럼 다루세요.",
+      "copyToken": "토큰 복사",
+      "tier": {
+        "read": {
+          "name": "읽기 전용",
+          "can": [
+            "호스트 목록과 상세·지표·세션·서비스·git 저장소·CLI 사용량 읽기"
+          ],
+          "cannot": [
+            "명령 실행",
+            "무엇이든 변경",
+            "어떤 자격증명도 만들거나 폐기"
+          ]
+        },
+        "operate": {
+          "name": "운영",
+          "can": [
+            "읽기 전용이 하는 것 전부",
+            "호스트 등록과 설치 명령 발급",
+            "호스트 이름·태그 변경, 비활성화",
+            "호스트에서 명령 실행"
+          ],
+          "cannot": [
+            "호스트·서비스·저장소 삭제",
+            "fleet 설정 변경",
+            "어떤 자격증명도 만들거나 폐기 — 이 종류의 토큰 포함"
+          ]
+        },
+        "admin": {
+          "name": "관리자",
+          "can": [
+            "운영이 하는 것 전부",
+            "호스트 삭제 — 매번 confirm 이 필요하고, 없으면 무엇이 지워지는지만 알려줍니다",
+            "fleet 설정 변경"
+          ],
+          "cannot": [
+            "어떤 자격증명도 만들거나 폐기 — 이 종류의 토큰 포함",
+            "이 fleet 밖의 호스트에 닿기"
+          ]
+        }
+      }
     }
   }
 }

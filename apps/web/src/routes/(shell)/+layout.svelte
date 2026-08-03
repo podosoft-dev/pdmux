@@ -28,6 +28,7 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import ServerIcon from "@lucide/svelte/icons/server";
   import SlidersIcon from "@lucide/svelte/icons/sliders-horizontal";
+  import KeyRoundIcon from "@lucide/svelte/icons/key-round";
   import { toast } from "svelte-sonner";
   import { Button } from "$lib/components/ui/button";
   import { Toaster } from "$lib/components/ui/sonner";
@@ -139,6 +140,7 @@
   // `/settings` is the FLEET's settings, not the installation's — those are `/admin/*`
   // and live outside this shell entirely, so there is no prefix to disambiguate here.
   const onSettings = $derived(page.url.pathname.startsWith("/settings"));
+  const onAccess = $derived(page.url.pathname.startsWith("/access"));
 
   // --- narrow screens: one region at a time ---------------------------------
   // Three regions side by side need about 1000px. Below that they were stacked and the
@@ -389,6 +391,20 @@
             <SlidersIcon class="size-3.5" aria-hidden="true" />
           </Button>
         {/if}
+        <!-- Not gated on `canManage`: a read-only token is exactly what a member who
+             cannot change anything still wants, so the door has to be open to them. -->
+        <Button
+          href="/access"
+          variant="ghost"
+          size="sm"
+          class="text-muted-foreground hover:text-foreground size-7 w-fit px-1.5 text-xs aria-[current=page]:text-foreground aria-[current=page]:bg-accent"
+          title={i18n.t.dash.mcpTokens.title}
+          aria-label={i18n.t.dash.mcpTokens.title}
+          data-testid="nav-access"
+          aria-current={onAccess ? "page" : undefined}
+        >
+          <KeyRoundIcon class="size-3.5" aria-hidden="true" />
+        </Button>
         <div class="ms-auto flex items-center gap-0.5">
           <LanguageSwitch />
           <ThemeToggle />

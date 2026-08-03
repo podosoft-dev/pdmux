@@ -682,11 +682,86 @@
       "collapse": "Hide coding CLI access",
       "keyPrefix": "Key",
       "keyStatus": "State",
-      "keyActions": ""
+      "keyActions": "",
+      "fleetHint": "This key reaches only {label}. For a token that reaches the whole fleet, see"
     },
     "table": {
       "prevPage": "Previous",
       "nextPage": "Next"
+    },
+    "mcpTokens": {
+      "title": "Coding CLI access",
+      "blurb": "A token lets Codex or Claude Code work with THIS FLEET — every host you can see, not one machine. For a single machine, use that host's own page.",
+      "endpointTitle": "MCP endpoint",
+      "envHint": "Put the token in {envVar} in your own environment. Never commit it.",
+      "copyConfig": "Copy config",
+      "newTitle": "New token",
+      "labelField": "Label",
+      "expiryField": "Expires",
+      "tierField": "Permission",
+      "days": "{days} days",
+      "aboveCeiling": "Only a fleet administrator can create a token that changes this fleet. Yours is read-only.",
+      "canDo": "What \"{tier}\" can do",
+      "create": "Create token",
+      "listTitle": "Your tokens",
+      "loading": "Loading…",
+      "empty": "No tokens yet.",
+      "revoke": "Revoke",
+      "live": "Live",
+      "revoked": "Revoked",
+      "expired": "Expired",
+      "expiringSoon": "Expiring soon",
+      "reduced": "Reduced to {tier}",
+      "colLabel": "Label",
+      "colToken": "Token",
+      "colTier": "Permission",
+      "colStatus": "State",
+      "colLastUsed": "Last used",
+      "colExpires": "Expires",
+      "createdTitle": "Token created",
+      "createdHint": "Copy it now. The full value is never shown again.",
+      "createdEnvHint": "Set it as {envVar} in the environment your CLI runs in.",
+      "createdReach": "This token can act across this whole fleet. Treat it like a password.",
+      "copyToken": "Copy token",
+      "tier": {
+        "read": {
+          "name": "Read only",
+          "can": [
+            "List hosts; read detail, metrics, sessions, services, git repos and CLI usage"
+          ],
+          "cannot": [
+            "Run any command",
+            "Change anything at all",
+            "Create or revoke ANY credential"
+          ]
+        },
+        "operate": {
+          "name": "Operate",
+          "can": [
+            "Everything Read only can",
+            "Register a host and mint its install command",
+            "Rename, re-tag or disable a host",
+            "Run commands on a host"
+          ],
+          "cannot": [
+            "Delete a host, a service or a repo",
+            "Change fleet settings",
+            "Create or revoke ANY credential, including this kind of token"
+          ]
+        },
+        "admin": {
+          "name": "Admin",
+          "can": [
+            "Everything Operate can",
+            "Delete a host — each deletion needs confirm, and without it the tool only describes what it would destroy",
+            "Change fleet settings"
+          ],
+          "cannot": [
+            "Create or revoke ANY credential, including this kind of token",
+            "Reach any host outside this fleet"
+          ]
+        }
+      }
     }
   }
 }

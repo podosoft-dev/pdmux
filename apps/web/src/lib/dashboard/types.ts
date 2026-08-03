@@ -387,3 +387,47 @@ export interface McpKeyView {
 export interface MintedMcpKey extends McpKeyView {
   key: string;
 }
+
+/**
+ * The credential that reaches a WHOLE FLEET, as `/access` shows it.
+ *
+ * Separate from `McpKeyView` rather than a widened version of it, for the reason the
+ * tables are separate: a host key costs you one machine and this costs you every
+ * machine you can see. A shape that could be either would invite a screen that
+ * treated them as the same thing.
+ */
+export interface McpTokenView {
+  id: string;
+  label: string;
+  keyPrefix: string;
+  tier: "read" | "operate" | "admin";
+  /**
+   * What it would get if presented right now, or `null` when its owner has lost the
+   * scope. Different from `tier` means the person was demoted after minting it —
+   * showing only the granted tier would be a promise the server no longer keeps.
+   */
+  effectiveTier: "read" | "operate" | "admin" | null;
+  expiresAt: string;
+  expiringSoon: boolean;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+/** `POST /account/mcp-tokens` — the one and only render of the plaintext. */
+export interface MintedMcpToken extends McpTokenView {
+  token: string;
+}
+
+/**
+ * What the screen may offer, answered by the SERVER.
+ *
+ * The page loader could work the ceiling out from the session, and then there would
+ * be two copies of "who may grant what" — the drift showing up as a form offering a
+ * tier the API then refuses.
+ */
+export interface McpTokenPolicy {
+  ceiling: "read" | "operate" | "admin";
+  tiers: readonly ("read" | "operate" | "admin")[];
+  expiryDays: readonly number[];
+}

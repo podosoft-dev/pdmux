@@ -38,5 +38,19 @@ export const load: PageServerLoad = async ({ locals, fetch }) => {
   } catch {
     /* default off */
   }
-  return { authConfig, require2fa };
+  // Whether this server answers /mcp at all — same shape as require2fa, and for the
+  // same reason: it is policy rather than a typed Capability, and that type lives in
+  // a published package this repo cannot extend.
+  //
+  // ⚠ THIS IS THE DISPLAY PATH ONLY. Enforcement reads the same row through a
+  // short-TTL pool query in `mcp/mcp-enabled.ts`, because SettingsService caches per
+  // process and a switch honoured by one replica is not a switch.
+  let mcpEnabled = true;
+  try {
+    const res = await fetch("/api/account/mcp-enabled");
+    if (res.ok) mcpEnabled = ((await res.json()) as { mcpEnabled?: boolean }).mcpEnabled !== false;
+  } catch {
+    /* default on — a failed read must not read as "MCP is off" */
+  }
+  return { authConfig, require2fa, mcpEnabled };
 };
