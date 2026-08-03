@@ -38,7 +38,18 @@ export type FleetNumberKey = (typeof FLEET_NUMBER_KEYS)[number];
 export const FLEET_LIST_KEYS = ["gitRoots", "usageProviders"] as const;
 export type FleetListKey = (typeof FLEET_LIST_KEYS)[number];
 
-export type FleetSettingKey = FleetNumberKey | FleetListKey;
+/**
+ * The settings that are simply on or off.
+ *
+ * ⚠ THE FIRST OF ITS KIND ON THIS SCREEN, so the bounds machinery does not apply:
+ * `parseNumberField` and `NUMBER_BOUNDS` are about numbers, and a checkbox has no
+ * out-of-range state to refuse. It still has to be in `FLEET_FIELD_GROUPS`, because
+ * a setting nobody put on the screen is a setting with no way to change it.
+ */
+export const FLEET_TOGGLE_KEYS = ["mcpUserTokens"] as const;
+export type FleetToggleKey = (typeof FLEET_TOGGLE_KEYS)[number];
+
+export type FleetSettingKey = FleetNumberKey | FleetListKey | FleetToggleKey;
 
 export interface NumberBounds {
   min: number;
@@ -93,9 +104,12 @@ export const FLEET_SETTING_FALLBACK: FleetSettingsView & { staleHostRetentionDay
   // 0 = never remove a host automatically, and shipping any other number would delete
   // machines nobody pointed at on the schedule of an upgrade. See the API's comment.
   staleHostRetentionDays: 0,
+  // Off for the same reason as the line above: an upgrade must not hand a fleet a
+  // credential shape it never asked for.
+  mcpUserTokens: false,
 };
 
-export type FleetGroupId = "cadence" | "history" | "caps" | "lists" | "sweep";
+export type FleetGroupId = "cadence" | "history" | "caps" | "lists" | "sweep" | "access";
 
 export interface FleetGroup {
   id: FleetGroupId;
@@ -119,6 +133,9 @@ export const FLEET_FIELD_GROUPS: readonly FleetGroup[] = [
   { id: "caps", keys: ["gitLimit", "gitDetailBudget", "statusFileCap", "bodyMaxChars", "terminalBufferBytes"] },
   { id: "lists", keys: ["gitRoots", "usageProviders"] },
   { id: "sweep", keys: ["staleHostRetentionDays"] },
+  // Its own group for the same reason the sweep has one: this is not another
+  // collection knob, it decides who can reach every machine in the fleet at once.
+  { id: "access", keys: ["mcpUserTokens"] },
 ];
 
 /** Why a field cannot be sent. The screen turns each into a sentence beside the input. */
@@ -181,6 +198,9 @@ export function draftFrom(settings: FleetSettingsView): FleetDraft {
     metricStepSec: String(settings.metricStepSec),
     metricRetentionDays: String(settings.metricRetentionDays),
     staleHostRetentionDays: String(savedNumber(settings, "staleHostRetentionDays")),
+    // Booleans ride as text so the draft stays one shape; the API stores them the
+    // same way (`String(value)` out, `value === "true"` in).
+    mcpUserTokens: String(settings.mcpUserTokens),
     gitRoots: listText(settings.gitRoots),
     usageProviders: listText(settings.usageProviders),
   };
@@ -229,6 +249,11 @@ export function reviewDraft(saved: FleetSettingsView, draft: FleetDraft): DraftR
       continue;
     }
     if (parsed.value !== savedNumber(saved, key)) patch[key] = parsed.value;
+  }
+
+  for (const key of FLEET_TOGGLE_KEYS) {
+    const next = draft[key] === "true";
+    if (next !== saved[key]) patch[key] = next;
   }
 
   for (const key of FLEET_LIST_KEYS) {

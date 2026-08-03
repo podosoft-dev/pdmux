@@ -346,6 +346,8 @@ export interface FleetSettingsView {
    * `fleet-settings.ts` is the single place that turns the absence into `0`.
    */
   staleHostRetentionDays?: number;
+  /** Whether this fleet accepts fleet-wide MCP tokens. Host-scoped keys are unaffected. */
+  mcpUserTokens: boolean;
 }
 
 /**

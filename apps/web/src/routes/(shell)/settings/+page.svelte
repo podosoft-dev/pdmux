@@ -97,7 +97,9 @@
   ]);
 
   /** Every group but the sweep — that one is drawn apart, at the bottom. */
-  const REGULAR_GROUPS = FLEET_FIELD_GROUPS.filter((group) => group.id !== "sweep");
+  // The sweep and the access group are drawn by hand below: one deletes machines and
+  // the other decides who can reach all of them, so neither is "another field".
+  const REGULAR_GROUPS = FLEET_FIELD_GROUPS.filter((group) => group.id !== "sweep" && group.id !== "access");
   const SWEEP_KEY = "staleHostRetentionDays";
 
   // Split by kind rather than branching inside the loop: `filter` with a type predicate
@@ -229,6 +231,41 @@
       </Card.Content>
     </Card.Root>
   {/each}
+
+  <!--
+    FLEET-WIDE CLI TOKENS.
+
+    Drawn apart for the same reason the sweep is: every setting in the cards above
+    changes what is collected or how long it is kept, and this one decides whether a
+    credential exists that reaches EVERY machine here at once — including hosts a
+    colleague registered.
+
+    ⚠ THE WARNING IS THE POINT OF THE CARD. "Off" reading as "revoked" is the
+    misunderstanding that costs somebody a credential they believed was dead, so the
+    screen says plainly that turning it off stops tokens working and does not destroy
+    them.
+  -->
+  <Card.Root class="shrink-0" data-testid="fleet-group-access">
+    <Card.Header>
+      <Card.Title>{i18n.t.dash.fleet.group.access.title}</Card.Title>
+      <Card.Description>{i18n.t.dash.fleet.group.access.blurb}</Card.Description>
+    </Card.Header>
+    <Card.Content class="grid gap-3">
+      <label class="flex items-start gap-3 text-sm">
+        <input
+          type="checkbox"
+          class="border-input mt-0.5 size-4 rounded"
+          checked={draft.mcpUserTokens === "true"}
+          data-testid="fleet-mcp-user-tokens"
+          onchange={(event) => (draft.mcpUserTokens = String(event.currentTarget.checked))}
+        />
+        <span>
+          <span class="font-medium">{i18n.t.dash.fleet.field.mcpUserTokens.label}</span>
+          <span class="text-muted-foreground block">{i18n.t.dash.fleet.field.mcpUserTokens.hint}</span>
+        </span>
+      </label>
+    </Card.Content>
+  </Card.Root>
 
   <!--
     THE SWEEP, APART FROM EVERYTHING ABOVE IT.

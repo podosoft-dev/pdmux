@@ -14,6 +14,7 @@ import {
   FLEET_NUMBER_BOUNDS,
   FLEET_NUMBER_KEYS,
   FLEET_SETTING_FALLBACK,
+  FLEET_TOGGLE_KEYS,
   armsHostSweep,
   draftFrom,
   hostsPastWindow,
@@ -61,14 +62,19 @@ function apiBounds(source: string): Record<string, { min: number; max: number }>
   return out;
 }
 
-function apiDefaults(source: string): Record<string, number | string[]> {
+function apiDefaults(source: string): Record<string, number | boolean | string[]> {
   const body = declarationBody(source, "FLEET_SETTING_DEFAULTS");
-  const out: Record<string, number | string[]> = {};
+  const out: Record<string, number | boolean | string[]> = {};
   for (const match of body.matchAll(/^\s{2}(\w+):\s*(.+?),\s*$/gm)) {
     const raw = match[2]!.trim();
+    // Booleans arrived with the first on/off setting on this screen; before that
+    // every default was a number or a list, and reading `false` as a number made the
+    // comparison NaN rather than a mismatch — a failure that says nothing useful.
     out[match[1]!] = raw.startsWith("[")
       ? (JSON.parse(raw) as string[])
-      : asNumber(raw);
+      : raw === "true" || raw === "false"
+        ? raw === "true"
+        : asNumber(raw);
   }
   return out;
 }
@@ -220,7 +226,7 @@ describe("[TC-PDWEB-022] the screen's bounds and its field list still match the 
     // A setting missing from `FLEET_FIELD_GROUPS` is a setting with no way to change
     // it — the defect this whole screen exists to fix, reintroduced one field at a time.
     const grouped = FLEET_FIELD_GROUPS.flatMap((group) => group.keys);
-    expect([...grouped].sort()).toEqual([...FLEET_NUMBER_KEYS, ...FLEET_LIST_KEYS].sort());
+    expect([...grouped].sort()).toEqual([...FLEET_NUMBER_KEYS, ...FLEET_LIST_KEYS, ...FLEET_TOGGLE_KEYS].sort());
     expect(new Set(grouped).size).toBe(grouped.length);
     expect([...grouped].sort()).toEqual(Object.keys(apiDefaults(source)).sort());
   });
