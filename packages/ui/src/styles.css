@@ -467,13 +467,20 @@
 	   `thin` pins the gutter at 11px (measured; `auto` reserves 16 here), so 5px is what
 	   is left to spend on padding. THE TWO NUMBERS ARE ONE NUMBER — change one and the
 	   other has to move with it. `(pointer: coarse)` puts the full 16px back, because an
-	   overlay scrollbar reserves nothing to make up the difference. */
+	   overlay scrollbar reserves nothing to make up the difference.
+
+	   ⚠ THE 1px `border-right` BELOW IS NOT PART OF THIS SUM, and a measurement that
+	   includes it will read the right gap as 17 against a left of 16. The gap a person
+	   sees runs from the card to the border, not past it — `[TC-PDUI-195]` spent a
+	   while looking like a padding bug because it compared a left edge without the
+	   border to a right edge with it. */
 	padding: 16px 5px 16px 16px;
 	border-right: 1px solid var(--pdmux-line);
 	background: var(--pdmux-bg);
 	scrollbar-gutter: stable;
 	scrollbar-width: thin;
 }
+
 
 /* The footer slot sits at the bottom of the column and STAYS there: `margin-top:auto`
    pushes it down when the fleet is short, `sticky` keeps it reachable when the fleet

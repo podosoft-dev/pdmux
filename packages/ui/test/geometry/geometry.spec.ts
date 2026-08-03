@@ -162,9 +162,14 @@ test.describe('pdmux ui geometry', () => {
 			const card = side.querySelector('[data-pdmux-host]') as HTMLElement;
 			const sr = side.getBoundingClientRect();
 			const cr = card.getBoundingClientRect();
+			// ⚠ THE BORDER IS NOT PART OF THE GAP. `getBoundingClientRect().right`
+			// includes the column's 1px right border while its `.left` has no border to
+			// include, so comparing the two raw distances reads a symmetric column as
+			// 1px out. The gap a person sees runs from the card to the border.
+			const borderRight = parseFloat(getComputedStyle(side).borderRightWidth) || 0;
 			return {
 				left: Math.round(cr.left - sr.left),
-				right: Math.round(sr.right - cr.right),
+				right: Math.round(sr.right - borderRight - cr.right),
 				gutter: side.offsetWidth - side.clientWidth,
 			};
 		});
