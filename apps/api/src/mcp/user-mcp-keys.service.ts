@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, Repository } from "typeorm";
 
@@ -40,6 +40,15 @@ export interface MintedMcpToken extends McpTokenView {
   token: string;
 }
 
+/**
+ * How coarse `lastUsedAt` is allowed to be.
+ *
+ * The endpoint is stateless, so "once per authentication" is once per TOOL CALL. The
+ * column answers "was this credential used, and roughly when" — a question a minute's
+ * resolution answers exactly as well as a millisecond's, for a fraction of the writes.
+ */
+const TOUCH_INTERVAL_MS = 60_000;
+
 /** What a presented fleet token resolves to. */
 export interface McpUserIdentity {
   keyId: string;
@@ -73,6 +82,8 @@ function view(row: UserMcpKey, effectiveTier: McpTier | null): McpTokenView {
 
 @Injectable()
 export class UserMcpKeysService {
+  private readonly logger = new Logger(UserMcpKeysService.name);
+
   constructor(
     @InjectRepository(UserMcpKey) private readonly tokens: Repository<UserMcpKey>,
     private readonly authority: McpAuthorityService,
@@ -162,9 +173,17 @@ export class UserMcpKeysService {
     const ceiling = await this.authority.ceilingFor(row.userId, row.organizationId);
     if (ceiling === null) return null;
 
-    // One write per authentication, not per tool call: the endpoint is stateless and
-    // a busy agent would otherwise write on every request.
-    void this.tokens.update({ id: row.id }, { lastUsedAt: new Date() });
+    // ⚠ FIRE-AND-FORGET, BUT NEVER UNCAUGHT. `void` on a rejected promise is an
+    // unhandled rejection, and node's default for that is to TERMINATE — so a
+    // transient write failure on this one non-essential column would take the API
+    // down while the read that matters had already succeeded.
+    //
+    // ⚠ AND IT IS THROTTLED, because this endpoint is STATELESS: there is no session,
+    // so every tool call authenticates and would otherwise write. A model polling
+    // `host_detail` while an install finishes writes once every two seconds, forever.
+    // A minute's resolution answers the only question the column is asked ("was this
+    // credential used, and roughly when") at a fraction of the cost.
+    this.touch(row.id, row.lastUsedAt);
     return {
       keyId: row.id,
       userId: row.userId,
@@ -172,5 +191,13 @@ export class UserMcpKeysService {
       tier: row.tier,
       effectiveTier: minTier(row.tier, ceiling),
     };
+  }
+
+  /** Records use at minute resolution, and swallows a failure rather than crashing. */
+  private touch(id: string, lastUsedAt: Date | null): void {
+    if (lastUsedAt !== null && Date.now() - lastUsedAt.getTime() < TOUCH_INTERVAL_MS) return;
+    void this.tokens.update({ id }, { lastUsedAt: new Date() }).catch((error: unknown) => {
+      this.logger.warn(`Failed to record MCP credential use id=${id}: ${String(error)}`);
+    });
   }
 }

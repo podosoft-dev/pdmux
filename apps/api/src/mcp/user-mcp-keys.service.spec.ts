@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import "reflect-metadata";
 import type { DataSource } from "typeorm";
 
@@ -205,6 +205,45 @@ describe("[TC-PDMCP-053] authority is re-derived on every authentication", () =>
     await expect(active.tokens.authenticate(active.token)).resolves.toBeNull();
   });
 
+  /**
+   * ⚠ "ON EVERY AUTHENTICATION" IS TRUE WITHIN A BOUND, AND THE BOUND IS THE POINT.
+   *
+   * The ceiling is cached for `McpAuthorityService.TTL_MS`, so a demotion takes
+   * effect within that window rather than instantly — the same staleness the app
+   * already accepts for `require2fa`, and the reason two database reads do not ride
+   * on the highest-frequency authenticated surface in the product.
+   *
+   * Every other test here builds a fresh service, so none of them touch the cached
+   * path: a cache keyed wrongly — on the user alone, say, so a second scope answered
+   * with the first one's ceiling — would pass all of them.
+   */
+  it("serves a cached ceiling inside the window and a fresh one after it", async () => {
+    const world = fakeAuthDataSource(adminWorld);
+    const reads = jest.spyOn(world, "query");
+    const authority = new McpAuthorityService(world);
+
+    expect(await authority.ceilingFor(USER, ORG)).toBe("admin");
+    const afterFirst = reads.mock.calls.length;
+    expect(await authority.ceilingFor(USER, ORG)).toBe("admin");
+    expect(reads.mock.calls.length).toBe(afterFirst);
+
+    // A DIFFERENT SCOPE IS A DIFFERENT ANSWER. Sharing an entry across scopes would
+    // hand this caller the ceiling it holds somewhere else.
+    expect(await authority.ceilingFor(USER, "org-other")).toBeNull();
+    expect(reads.mock.calls.length).toBeGreaterThan(afterFirst);
+
+    // Past the window it asks again — so a demotion lands, late but on its own.
+    const later = Date.now() + 4_000;
+    jest.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      const before = reads.mock.calls.length;
+      await authority.ceilingFor(USER, ORG);
+      expect(reads.mock.calls.length).toBeGreaterThan(before);
+    } finally {
+      jest.spyOn(Date, "now").mockRestore();
+    }
+  });
+
   it("refuses a token whose owner no longer exists", async () => {
     const { tokens, token } = await mintedIn({}, "read");
     await expect(tokens.authenticate(token)).resolves.toBeNull();
@@ -212,6 +251,23 @@ describe("[TC-PDMCP-053] authority is re-derived on every authentication", () =>
 });
 
 describe("[TC-PDMCP-053] a token reaches only its own scope and its own owner", () => {
+  /**
+   * ⚠ THE WRITE THAT MUST NOT BE ABLE TO KILL THE PROCESS. `lastUsedAt` is
+   * bookkeeping — the read that decides the request already succeeded — but a bare
+   * `void` on a rejected promise is an unhandled rejection, and node's default for
+   * that is to terminate. So a blip on one non-essential column would take the API
+   * down.
+   */
+  it("still authenticates when recording the use fails", async () => {
+    const ctx = context(adminWorld);
+    const minted = await ctx.tokens.mint(ORG, USER, mintInput);
+    jest.spyOn(ctx.rows, "update").mockRejectedValue(new Error("write timeout"));
+
+    await expect(ctx.tokens.authenticate(minted.token)).resolves.not.toBeNull();
+    // And the rejection was handled: an unhandled one fails the run on the next tick.
+    await new Promise((resolve) => setImmediate(resolve));
+  });
+
   it("refuses an unrecognised, revoked or expired credential the same way", async () => {
     const ctx = context(adminWorld);
     const minted = await ctx.tokens.mint(ORG, USER, mintInput);
