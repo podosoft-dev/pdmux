@@ -1086,14 +1086,20 @@ test.describe("agent updates on the sidebar", () => {
   const OUTDATED = mockHost("mock-behind", { agentVersion: "1.4.0", agentVersionState: "outdated" });
   const CURRENT = mockHost("mock-newest", { agentVersion: "1.5.0", agentVersionState: "current" });
 
-  async function withHosts(page: Page, hosts: MockHost[]): Promise<{ updates: string[] }> {
-    const updates: string[] = [];
+  /**
+   * ⚠ THE BODY IS RECORDED, NOT ONLY THE URL. The version travels in the body, so a
+   * request that named no version at all was indistinguishable from one that pinned
+   * the version the popover had just shown — and the unpinned one lets the server
+   * resolve whatever is newest when it lands.
+   */
+  async function withHosts(page: Page, hosts: MockHost[]): Promise<{ updates: { url: string; body: unknown }[] }> {
+    const updates: { url: string; body: unknown }[] = [];
     await page.route("**/api/hosts", async (route) => {
       if (route.request().method() !== "GET") return route.fallback();
       await route.fulfill({ json: hosts });
     });
     await page.route("**/api/hosts/*/agent/update", async (route) => {
-      updates.push(route.request().url());
+      updates.push({ url: route.request().url(), body: route.request().postDataJSON() as unknown });
       await route.fulfill({ json: { commandId: "c1", hostId: "h", version: "1.5.0" } });
     });
     return { updates };
@@ -1132,7 +1138,11 @@ test.describe("agent updates on the sidebar", () => {
 
     await popover.getByTestId("agent-update-confirm").click();
     await expect.poll(() => updates.length).toBe(1);
-    expect(updates[0]).toContain(OUTDATED.id as string);
+    expect(updates[0]?.url).toContain(OUTDATED.id as string);
+    // ⚠ AND IT NAMES THE VERSION THAT WAS ON SCREEN. Without it the server picks the
+    // newest at the moment the request lands, so a release published while the popover
+    // was open ships a binary the person never saw.
+    expect(updates[0]?.body).toMatchObject({ version: OUTDATED.latestAgentVersion as string });
   });
 
   test("[TC-PDUI-202] reports a job in flight without offering a second one", async ({ page }) => {

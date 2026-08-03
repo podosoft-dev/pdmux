@@ -216,7 +216,11 @@
 
   async function runUpdate(host: HostView): Promise<void> {
     try {
-      await agentUpdateApi.host(host.id);
+      // ⚠ PIN THE VERSION THE POPOVER SHOWED. Omitting it lets the server resolve the
+      // latest at the moment the request lands, so a release published between opening
+      // the confirmation and pressing it deploys a binary nobody agreed to — a
+      // confirmation that does not bind what it confirms. `/hosts` already pins.
+      await agentUpdateApi.host(host.id, { version: host.latestAgentVersion });
       updating = null;
       // The same GET /hosts the sidebar already reads carries every phase after this,
       // so there is nothing to poll separately.
