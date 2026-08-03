@@ -67,6 +67,8 @@ import { AgentTokensService } from "./agent-tokens.service";
   ],
   // The registry is what a terminal relay needs: one hostId -> socket map, one
   // sendToHost. Exported so the browser side can be wired without reaching in.
-  exports: [AgentRegistryService, AgentTokensService, AgentEnrollmentsService, AgentExecService],
+  // `AgentUpdateService` is exported for the MCP fleet surface, which offers the same
+  // update the dashboard does rather than reimplementing the canary rule beside it.
+  exports: [AgentRegistryService, AgentTokensService, AgentEnrollmentsService, AgentExecService, AgentUpdateService],
 })
 export class AgentsModule {}

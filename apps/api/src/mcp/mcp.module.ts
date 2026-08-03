@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 
 import { AgentsModule } from "../agents/agents.module";
+import { FleetModule } from "../fleet/fleet.module";
 import { GitModule } from "../git/git.module";
 import { HostsModule } from "../hosts/hosts.module";
 import { MetricsModule } from "../metrics/metrics.module";
@@ -32,6 +33,9 @@ import { UserMcpTokensController } from "./user-mcp-tokens.controller";
     TypeOrmModule.forFeature([HostMcpKey, UserMcpKey]),
     HostsModule,
     AgentsModule,
+    // The per-scope switch for fleet tokens is a fleet setting, and the controller
+    // reads it before serving one.
+    FleetModule,
     MetricsModule,
     GitModule,
   ],
