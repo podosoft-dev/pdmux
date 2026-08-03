@@ -284,6 +284,12 @@ const extraRoots = process.argv.reduce((acc, arg, i) => {
 const OPERATIONAL = [
 	/^\.claude\//,
 	/^docs\/workspace\//,
+	// The deployment profile IS the operational record — a docker context, an endpoint
+	// fingerprint, the address it binds to. Naming them is the file's entire purpose,
+	// and it lives in the workspace precisely so the public repository does not carry
+	// it. (Found by a fresh clone rather than by this checkout: the audit scans TRACKED
+	// files, so a new directory is invisible until the commit that adds it.)
+	/^deploy\//,
 	/^CLAUDE\.md$/,
 	/^AGENTS\.md$/,
 	/^check\.sh$/,
