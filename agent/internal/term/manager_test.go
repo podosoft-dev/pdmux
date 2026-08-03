@@ -141,35 +141,84 @@ func openManager(t *testing.T, maxPendingBytes int, flushInterval time.Duration)
 }
 
 func TestManagerOutput(t *testing.T) {
-	t.Run("[TC-PDTERM-024] coalesces a burst of writes into one output frame", func(t *testing.T) {
-		h := openManager(t, MaxPendingBytes, 50*time.Millisecond)
+	/**
+	 * ⚠ THE FIRST BYTE IS NOT THE ONE TO COALESCE. A remote terminal has no local
+	 * echo, so the character somebody just typed appears only after it has been to
+	 * the host and back — measured at ~55 ms on the live deployment, the same as ssh
+	 * to that machine. Holding it for the flush interval on top of that spent a third
+	 * of the budget buffering a byte with nothing to buffer it against.
+	 *
+	 * The interval here is a whole second so the assertion cannot be read as timing
+	 * noise: before the leading-edge flush, nothing arrived until that second was up.
+	 */
+	t.Run("[TC-PDTERM-024] answers a quiet pane at once, without holding the byte", func(t *testing.T) {
+		h := openManager(t, MaxPendingBytes, time.Second)
 		ready, ok := h.sent()[0].(*protocol.TerminalReady)
 		if !ok || ready.TermID != "t1" || ready.Pid == nil || *ready.Pid != 4242 {
 			t.Fatalf("first frame = %#v, want ready", h.sent()[0])
 		}
-		for i := 0; i < 50; i++ {
-			h.pty.emit(fmt.Sprintf("chunk-%d ", i))
-		}
-		waitFor(t, ptyTimeout, "the flush", h.hasOutput)
-
-		outputs := h.outputs()
-		if len(outputs) != 1 {
-			t.Fatalf("%d output frames, want one — the burst was not coalesced", len(outputs))
-		}
-		if !strings.Contains(outputs[0].Data, "chunk-0 ") || !strings.Contains(outputs[0].Data, "chunk-49 ") {
-			t.Fatalf("frame lost part of the burst: %q", outputs[0].Data)
-		}
-		if outputs[0].Dropped != 0 {
-			t.Fatalf("dropped = %d on a pane well under its cap", outputs[0].Dropped)
+		h.pty.emit("x")
+		waitFor(t, 300*time.Millisecond, "the echo, well inside the flush interval", h.hasOutput)
+		if got := h.outputs()[0].Data; got != "x" {
+			t.Fatalf("first frame = %q, want the byte on its own", got)
 		}
 	})
 
+	t.Run("[TC-PDTERM-024] coalesces the rest of a burst instead of framing each write", func(t *testing.T) {
+		h := openManager(t, MaxPendingBytes, 50*time.Millisecond)
+		for i := 0; i < 50; i++ {
+			h.pty.emit(fmt.Sprintf("chunk-%d ", i))
+		}
+		// Wait for the whole burst rather than for the first frame: the leading edge
+		// means output exists immediately, and a check that stopped there would be
+		// asserting against a burst still in flight.
+		waitFor(t, ptyTimeout, "the whole burst", func() bool {
+			joined := ""
+			for _, output := range h.outputs() {
+				joined += output.Data
+			}
+			return strings.Contains(joined, "chunk-49 ")
+		})
+
+		outputs := h.outputs()
+		// ⚠ THE POINT IS THE RATIO, NOT THE NUMBER ONE. Fifty writes must not become
+		// fifty frames — that is what would spend the socket on framing overhead. The
+		// leading edge costs exactly one extra frame per burst, and this is the
+		// assertion that would catch coalescing being lost altogether.
+		if len(outputs) > 3 {
+			t.Fatalf("%d output frames for 50 writes, want the burst coalesced", len(outputs))
+		}
+		joined := ""
+		for _, output := range outputs {
+			joined += output.Data
+			if output.Dropped != 0 {
+				t.Fatalf("dropped = %d on a pane well under its cap", output.Dropped)
+			}
+		}
+		if !strings.Contains(joined, "chunk-0 ") || !strings.Contains(joined, "chunk-49 ") {
+			t.Fatalf("frames lost part of the burst: %q", joined)
+		}
+	})
+
+	/**
+	 * ⚠ THE INTERVAL IS LONG ON PURPOSE, so the producer is GUARANTEED to outrun the
+	 * flush. It used to be 10 ms, which was fine while every byte waited for the
+	 * timer — the ten writes always piled up together. With the leading-edge flush
+	 * the backlog is smaller by design, and at 10 ms the writes could land in
+	 * separate windows, each under the cap: the test then failed about a third of the
+	 * time, reporting "dropped nothing" for an implementation that was correct.
+	 *
+	 * Half a second makes the pile-up a fact rather than a race. The first write goes
+	 * out on the leading edge; the other nine have to share one window and 64 bytes.
+	 */
 	t.Run("[TC-PDTERM-025] caps what is in flight and reports the loss out of band", func(t *testing.T) {
-		h := openManager(t, 64, 10*time.Millisecond)
+		h := openManager(t, 64, 500*time.Millisecond)
 		for i := 0; i < 10; i++ {
 			h.pty.emit(strings.Repeat("x", 50))
 		}
-		waitFor(t, ptyTimeout, "the flush", h.hasOutput)
+		waitFor(t, ptyTimeout, "the window to close on the capped remainder", func() bool {
+			return len(h.outputs()) >= 2
+		})
 
 		total := 0
 		for _, output := range h.outputs() {
@@ -187,11 +236,14 @@ func TestManagerOutput(t *testing.T) {
 	})
 
 	t.Run("[TC-PDTERM-027] counts the loss once per flush, and a quiet pane reports zero", func(t *testing.T) {
-		h := openManager(t, 64, 10*time.Millisecond)
+		// Same reason as TC-PDTERM-025 above: the pile-up has to be certain, not likely.
+		h := openManager(t, 64, 500*time.Millisecond)
 		for i := 0; i < 10; i++ {
 			h.pty.emit(strings.Repeat("y", 50))
 		}
-		waitFor(t, ptyTimeout, "the flush", h.hasOutput)
+		waitFor(t, ptyTimeout, "the window to close on the capped remainder", func() bool {
+			return len(h.outputs()) >= 2
+		})
 
 		announced := 0
 		for _, output := range h.outputs() {

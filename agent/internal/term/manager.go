@@ -6,7 +6,10 @@
 // browser-facing terminals:
 //   - COALESCE. A `yes` loop or a big build emits thousands of tiny writes per
 //     second; one frame each would spend the whole socket on framing overhead.
-//     Output is buffered and flushed on a short interval instead.
+//     Output is buffered and flushed on a short interval instead — but the FIRST
+//     chunk after a quiet moment goes out immediately, because on a terminal with
+//     no local echo that chunk is usually the character somebody just typed. See
+//     `pump`.
 //   - CAP WHAT IS IN FLIGHT. If the producer outruns the socket, the buffer is
 //     the thing that grows without bound. Past the cap the OLDEST bytes go (a
 //     terminal's value is in its most recent output) and the drop is announced in
@@ -322,9 +325,24 @@ func (m *Manager) pump(termID string, t *terminal) {
 	output := t.pty.Output()
 	exit := t.pty.Exit()
 
-	// A one-shot timer armed by the first byte after an idle moment, exactly like
-	// the TypeScript's setTimeout: the coalescing window starts when output
-	// starts, so a single keystroke echo is not held for a full interval.
+	// A one-shot timer armed by the first byte after an idle moment.
+	//
+	// ⚠ LEADING EDGE: THE FIRST CHUNK GOES OUT BEFORE THE TIMER, NOT AFTER IT. The
+	// comment that used to stand here claimed the window starting with the output
+	// meant "a single keystroke echo is not held for a full interval" — and had it
+	// exactly backwards. Arming the window on the first byte and flushing at its end
+	// IS holding that byte for the full interval, so every echoed character paid the
+	// whole 20 ms.
+	//
+	// That is not a rounding error on this path, because a remote terminal has NO
+	// LOCAL ECHO: the character a person just typed appears only after it has crossed
+	// to the host and come back. Measured on this deployment, that round trip is
+	// ~55 ms — the same as ssh to the same machine — so 20 ms was a third of the
+	// budget, spent buffering one byte that had nothing to coalesce with.
+	//
+	// Coalescing keeps doing its job, because its job is about the SECOND byte
+	// onward: a `yes` loop or a build still collapses into one frame per interval
+	// rather than thousands. What changes is that a quiet pane answers at once.
 	var timer *time.Timer
 	var tick <-chan time.Time
 	stopTimer := func() {
@@ -345,6 +363,10 @@ func (m *Manager) pump(termID string, t *terminal) {
 			}
 			t.push(chunk, m.BufferBytes())
 			if tick == nil {
+				// Nothing was pending, so this chunk is the start of a burst — or it is
+				// the whole of it, which is what an echoed keystroke looks like. Send it
+				// now and let the window cover whatever follows.
+				m.flush(termID, t)
 				timer = time.NewTimer(m.flushInterval)
 				tick = timer.C
 			}
