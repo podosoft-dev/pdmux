@@ -265,7 +265,6 @@ export class ApiFleetGateway implements PdmuxFleetGateway {
   }
 
   async updateFleetPlan(hostIds: string[], version: string): Promise<DestroyPlan> {
-    this.deps.audit({ tool: "fleet_agent_update", metadata: { dryRun: true, confirmed: false, hosts: hostIds.length, version } });
     // Named, not counted: the scope check is what makes the count honest, and a host
     // in another scope must not appear in a list of what is about to change.
     const reachable: string[] = [];
@@ -273,6 +272,15 @@ export class ApiFleetGateway implements PdmuxFleetGateway {
       const host = await this.deps.hosts.get(this.scope, hostId);
       reachable.push(host.label);
     }
+    // ⚠ AFTER THE SCOPE CHECK, AND THE COUNT IS THE REACHABLE ONE. Auditing first
+    // recorded what was ASKED FOR — so a call naming a host in somebody else's scope
+    // wrote that id into this caller's own trail, which is a fact they were refused
+    // the right to learn. `deleteHostPlan` already resolved the host before auditing;
+    // this is the same order.
+    this.deps.audit({
+      tool: "fleet_agent_update",
+      metadata: { dryRun: true, confirmed: false, hosts: reachable.length, version },
+    });
     return {
       willDestroy: [
         {

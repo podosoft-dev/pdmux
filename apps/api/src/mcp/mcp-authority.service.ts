@@ -28,6 +28,19 @@ import type { McpTier } from "./mcp-tier";
  * the clearest signal a model can get — `tools/list` is rebuilt per request from the
  * effective tier.
  */
+/**
+ * Has a ban's deadline already passed?
+ *
+ * No deadline means the ban does not lift. An unreadable one is treated as still in
+ * force: the only two answers are "keep them out" and "let them in", and guessing
+ * wrong in the second direction is the one that matters.
+ */
+function banHasLifted(banExpires: Date | string | null): boolean {
+  if (banExpires === null) return false;
+  const at = banExpires instanceof Date ? banExpires.getTime() : Date.parse(banExpires);
+  return Number.isFinite(at) && at <= Date.now();
+}
+
 @Injectable()
 export class McpAuthorityService {
   /**
@@ -37,6 +50,9 @@ export class McpAuthorityService {
    * which anybody notices a permission change.
    */
   private static readonly TTL_MS = 3_000;
+
+  /** Only sweep once the map is big enough for sweeping to be worth a loop. */
+  private static readonly SWEEP_AT = 64;
 
   private readonly cache = new Map<string, { at: number; ceiling: McpTier | null }>();
 
@@ -61,7 +77,24 @@ export class McpAuthorityService {
 
     const ceiling = await this.compute(userId, scopeId);
     this.cache.set(key, { at: now, ceiling });
+    this.evictStale(now);
     return ceiling;
+  }
+
+  /**
+   * Drop entries nobody can still be served from.
+   *
+   * The map is bounded by real people — an entry only appears once a token row has
+   * already matched — so it was never going to grow without limit. But nothing ever
+   * removed the entry for a deleted user or a revoked token either, and "small and
+   * permanent" in a process that runs for months is still a leak. Sweeping only when
+   * the map is worth sweeping keeps this off the hot path.
+   */
+  private evictStale(now: number): void {
+    if (this.cache.size < McpAuthorityService.SWEEP_AT) return;
+    for (const [key, entry] of this.cache) {
+      if (now - entry.at >= McpAuthorityService.TTL_MS) this.cache.delete(key);
+    }
   }
 
   private async compute(userId: string, scopeId: string): Promise<McpTier | null> {
@@ -88,13 +121,18 @@ export class McpAuthorityService {
     const rows = (await this.dataSource.query(
       'SELECT "role", "banned", "banExpires" FROM "user" WHERE "id" = $1 LIMIT 1',
       [userId],
-    )) as { role: string | null; banned: boolean | null; banExpires: Date | null }[];
+    )) as { role: string | null; banned: boolean | null; banExpires: Date | string | null }[];
     const row = rows[0];
     if (!row) return null;
     // ⚠ A BAN CAN EXPIRE. Treating `banned` alone as final would keep somebody out
     // after their suspension ended, which reads as a broken token rather than a
     // policy — and the column exists precisely because bans are meant to lift.
-    if (row.banned && (!row.banExpires || row.banExpires.getTime() > Date.now())) return null;
+    //
+    // ⚠ AND THE DEADLINE IS NORMALISED RATHER THAN ASSUMED. `pg` maps timestamptz to
+    // a Date today, but this is a raw query against a table another migrator owns:
+    // a driver or a type-parser change that handed back a string would make
+    // `.getTime()` throw, and a throw here fails the request rather than the ban.
+    if (row.banned && !banHasLifted(row.banExpires)) return null;
     return { role: row.role };
   }
 

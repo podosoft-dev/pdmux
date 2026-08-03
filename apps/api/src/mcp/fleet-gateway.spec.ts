@@ -222,6 +222,30 @@ describe("what the audit trail records", () => {
     expect(entries[1]?.metadata).toMatchObject({ dryRun: false, confirmed: true });
   });
 
+  /**
+   * ⚠ A REFUSED ATTEMPT MUST NOT WRITE A FOREIGN HOST ID INTO THIS CALLER'S TRAIL.
+   * The plan used to audit what was ASKED FOR, before the scope check — so naming a
+   * machine in somebody else's fleet put its id in a record this person can read,
+   * which is the fact they were just refused.
+   */
+  it("does not record a fleet plan that named a host outside the scope", async () => {
+    const { gateway, audit } = context();
+
+    await expect(gateway.updateFleetPlan([MINE, THEIRS], "0.1.8")).rejects.toBeInstanceOf(AppException);
+
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("counts only the hosts it could actually reach", async () => {
+    const { gateway, audit } = context();
+
+    await gateway.updateFleetPlan([MINE], "0.1.8");
+
+    expect((audit.mock.calls[0] as unknown[])[0]).toMatchObject({
+      metadata: { dryRun: true, confirmed: false, hosts: 1 },
+    });
+  });
+
   it("does not record a read", async () => {
     const { gateway, audit } = context();
     await gateway.detail(MINE);

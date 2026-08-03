@@ -183,6 +183,28 @@ describe("authority is re-derived on every authentication", () => {
     await expect(lapsed.tokens.authenticate(lapsed.token)).resolves.not.toBeNull();
   });
 
+  /**
+   * The column is a `timestamptz` on a table another migrator owns, read through a
+   * raw query. `pg` hands back a Date today; a driver or type-parser change that
+   * handed back a string used to make the comparison throw, which fails the request
+   * rather than the ban.
+   */
+  it("reads a ban deadline the driver gave it as text", async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const lapsed = await mintedIn(
+      { users: { [USER]: { role: "admin", banned: true, banExpires: past as unknown as Date } }, members: [[USER, ORG]] },
+      "operate",
+    );
+    await expect(lapsed.tokens.authenticate(lapsed.token)).resolves.not.toBeNull();
+
+    const future = new Date(Date.now() + 60_000).toISOString();
+    const active = await mintedIn(
+      { users: { [USER]: { role: "admin", banned: true, banExpires: future as unknown as Date } }, members: [[USER, ORG]] },
+      "operate",
+    );
+    await expect(active.tokens.authenticate(active.token)).resolves.toBeNull();
+  });
+
   it("refuses a token whose owner no longer exists", async () => {
     const { tokens, token } = await mintedIn({}, "read");
     await expect(tokens.authenticate(token)).resolves.toBeNull();
