@@ -76,6 +76,13 @@ export interface PdmuxHostGateway {
   services(): Promise<unknown>;
   usage(): Promise<unknown>;
   repos(): Promise<unknown>;
+  /**
+   * What minting would retire, or `null` when nothing is live.
+   *
+   * Read-only and separate from `enrollment()` for the same reason as every other
+   * plan/act pair: so a recording fake can prove a dry run never mutated.
+   */
+  enrollmentPlan(): Promise<DestroyPlan | null>;
   /** Mints a fresh enrollment code, retiring any live one, exactly as the dialog does. */
   enrollment(): Promise<EnrollmentOffer>;
   /** Rejected when the key is read-only, or when the agent cannot run commands. */

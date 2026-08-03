@@ -148,15 +148,49 @@ function registerHostTools(
     () => call(() => gateway.repos()),
   );
 
-  server.registerTool(
-    "host_install_command",
-    {
-      description:
-        "Mint a fresh single-use enrollment code for this host and return the finished install command to run ON the host. Use when host_detail says no agent is connected. It does NOT run anything: installing means a shell on the target machine, and that belongs to the person at it. Minting retires any previous code.",
-      inputSchema: {},
-    },
-    () => call(() => gateway.enrollment()),
-  );
+  /**
+   * ⚠ WRITE, NOT READ — AND IT WAS REGISTERED FOR EVERY KEY UNTIL 2026-08-03.
+   *
+   * Minting is two mutations wearing one name. It RETIRES the host's live code, so a
+   * read-only key could void an install a colleague is part-way through; and the code
+   * it returns is redeemable for an AGENT token, which outlives the MCP key that
+   * produced it — revoking the leaked key afterwards does not take it back.
+   *
+   * The rule "a key can never mint another key" survives, because an agent token is a
+   * machine's credential for a host this key already reaches. What did not survive is
+   * "read-only" meaning read-only. Fleet mode had it right from the start: `operate`,
+   * plus confirm when a code is live. This is the same gate on the same operation.
+   */
+  if (options.canRun) {
+    server.registerTool(
+      "host_install_command",
+      {
+        description:
+          "Mint a fresh single-use enrollment code for this host and return the finished install command to run ON the host. Use when host_detail says no agent is connected. It does NOT run anything: installing means a shell on the target machine, and that belongs to the person at it. Minting retires any live code, so this asks for confirm when one exists.",
+        inputSchema: { confirm: z.boolean().default(false) },
+      },
+      (input) =>
+        guard(() =>
+          destructive(
+            "host_install_command",
+            input,
+            () => gateway.enrollmentPlan(),
+            () => gateway.enrollment(),
+          ),
+        ),
+    );
+  } else {
+    // Registered-and-refusing, the same shape as `run_command` below: a tool that
+    // silently does not exist teaches a model to invent a way around it.
+    server.registerTool(
+      "host_install_command",
+      {
+        description: "Unavailable: this key is read-only. Minting an enrollment code retires the host's live code and yields a credential that outlives this key, so it needs a read-write key.",
+        inputSchema: { confirm: z.boolean().default(false) },
+      },
+      () => call(() => Promise.reject(Object.assign(new Error("This key cannot mint an enrollment code"), { code: "MCP_KEY_READ_ONLY" }))),
+    );
+  }
 
   // Registered even for a read-only key, so the refusal is an answer the model
   // can read rather than a tool that mysteriously does not exist.

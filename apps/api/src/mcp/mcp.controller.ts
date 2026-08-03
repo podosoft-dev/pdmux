@@ -16,6 +16,7 @@ import { MetricsService } from "../metrics/metrics.service";
 import { ApiFleetGateway } from "./fleet-gateway";
 import { ApiHostGateway } from "./host-gateway";
 import { recordAudit } from "../audit/audit-events";
+import type { McpIdentity } from "./host-mcp-keys.service";
 import { McpAuthService } from "./mcp-auth.service";
 import { mcpEnabled } from "./mcp-enabled";
 import type { McpUserIdentity } from "./user-mcp-keys.service";
@@ -138,7 +139,11 @@ export class McpController {
       const host = await this.hosts.get(identity.organizationId, identity.hostId);
       server = createPdmuxMcpServer({
         mode: "host",
-        gateway: new ApiHostGateway(identity, shared),
+        gateway: new ApiHostGateway(identity, {
+          ...shared,
+          audit: (entry) =>
+            this.recordHostToolAudit(request, identity, host.label, entry),
+        }),
         hostLabel: host.label,
         canRun: identity.scopes.includes("write"),
       });
@@ -183,6 +188,30 @@ export class McpController {
    * ⚠ THE DRY-RUN BRANCH IS AUDITED TOO. "Somebody's agent tried to delete a host"
    * is precisely the line an operator wants and the one it is most tempting to skip.
    */
+  /**
+   * The host-mode half of the same trail.
+   *
+   * ⚠ `actorId` IS NULL AND THAT IS HONEST. A host key belongs to a machine's
+   * connection, not to a person — nobody signed in — so the entry names the KEY
+   * instead. An invented actor would be worse than an absent one.
+   */
+  private recordHostToolAudit(
+    request: Request,
+    identity: McpIdentity,
+    hostLabel: string,
+    entry: { tool: string; metadata?: Record<string, unknown> },
+  ): void {
+    void recordAudit({
+      action: `mcp.tool.${entry.tool}`,
+      actorId: null,
+      targetType: "host",
+      targetId: identity.hostId,
+      targetLabel: hostLabel,
+      ip: request.ip ?? null,
+      metadata: { via: "mcp", mode: "host", keyId: identity.keyId, scopes: identity.scopes, ...entry.metadata },
+    });
+  }
+
   private recordToolAudit(
     request: Request,
     identity: McpUserIdentity,

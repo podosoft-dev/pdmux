@@ -102,6 +102,13 @@ A token's tier says what it was granted. Three things decide what it can actuall
    organization keeps fleet-wide access until the token expires — for a year-long token,
    a year.
 
+   ⚠ **Within a bound of a few seconds, not instantly.** The ceiling is cached per
+   (user, scope) for `McpAuthorityService.TTL_MS` — the same staleness the app already
+   accepts for `require2fa`, and the reason two extra reads do not ride on the highest-
+   frequency authenticated surface here. So a demotion lands within that window rather
+   than on the next call. Revocation is not affected: that is a row this endpoint reads
+   every time, uncached.
+
    Losing authority **downgrades** rather than revokes. Authority loss is often
    transient (a membership row missing mid-migration, a role being reshuffled), and
    revoking on a transient condition is destructive and unrecoverable on re-promotion. A
@@ -122,12 +129,18 @@ they do not have.
 A tool requires `confirm: true` when its effect **cannot be undone by calling this same
 surface again**.
 
+⚠ **This table applies to BOTH modes.** Host mode registered `host_install_command`
+for every key and gated nothing until 2026-08-03 — so a read-only key could retire a
+live code, and nothing was written to the audit trail. Fleet mode had it right; host
+mode now matches, and host-mode mutations are audited against the key (`actorId` is
+null, because a host key belongs to a machine's connection and not to a person).
+
 | tool | gated | why |
 |---|---|---|
 | `host_delete` | always | cascades tokens, keys, services and history; the machine is refused until re-enrolled |
 | `fleet_agent_update` | always | N machines each replace their binary and exit, and there is no downgrade tool |
 | `host_agent_update` | only with `force` | the plain path is one machine and the agent restores itself if the new binary cannot connect |
-| `host_install_command` | only when a code is live | minting retires the previous code, voiding an install somebody is part-way through |
+| `host_install_command` | only when a code is live | minting retires the previous code, voiding an install somebody is part-way through. It also needs **write** (`operate`) in both modes: the code it returns is redeemable for an agent token that outlives the credential that minted it |
 | `host_update` | no | reversible by calling again, including `enabled: false` |
 | `run_command` | no | arbitrary, so it cannot be pre-classified — and a confirmation on every call is a rubber stamp the model learns to pass |
 

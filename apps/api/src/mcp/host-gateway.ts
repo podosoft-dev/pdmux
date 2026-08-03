@@ -1,4 +1,4 @@
-import type { EnrollmentOffer, ExecOutcome, HostSummary, PdmuxHostGateway } from "@pdmux/mcp";
+import type { DestroyPlan, EnrollmentOffer, ExecOutcome, HostSummary, PdmuxHostGateway } from "@pdmux/mcp";
 
 import { AgentEnrollmentsService } from "../agents/agent-enrollments.service";
 import { AgentExecService } from "../agents/agent-exec.service";
@@ -29,6 +29,12 @@ export class ApiHostGateway implements PdmuxHostGateway {
       enrollments: AgentEnrollmentsService;
       exec: AgentExecService;
       origin: string;
+      /**
+       * ⚠ HOST MODE HAD NO AUDIT AT ALL UNTIL 2026-08-03, and one of its tools
+       * retires a live enrollment code. "Somebody's key voided the install I was
+       * half-way through" was answerable by nothing.
+       */
+      audit: (entry: { tool: string; metadata?: Record<string, unknown> }) => void;
     },
   ) {}
 
@@ -85,8 +91,36 @@ export class ApiHostGateway implements PdmuxHostGateway {
     return this.deps.git.listRepos(this.scope, this.hostId);
   }
 
+  /**
+   * ⚠ READ-ONLY, AND A SEPARATE METHOD FROM `enrollment()`. A flagged version of one
+   * method could not be shown never to mutate; two methods can, and are.
+   */
+  async enrollmentPlan(): Promise<DestroyPlan | null> {
+    const live = await this.deps.enrollments.current(this.scope, this.hostId);
+    if (!live) return null;
+    this.deps.audit({ tool: "host_install_command", metadata: { dryRun: true, confirmed: false } });
+    return {
+      willDestroy: [
+        {
+          type: "enrollment-code",
+          count: 1,
+          note: "a live code for this host — minting a new one retires it, so an install somebody is part-way through will fail",
+        },
+      ],
+      reversible: false,
+      retryWith: { confirm: true },
+    };
+  }
+
   async enrollment(): Promise<EnrollmentOffer> {
+    // The tool refuses a read-only key before reaching this; this is the second half
+    // of the same rule and the one that survives a refactor — the same pairing `run`
+    // already has below.
+    if (!this.identity.scopes.includes("write")) {
+      throw Object.assign(new Error("This key cannot mint an enrollment code"), { code: "MCP_KEY_READ_ONLY" });
+    }
     const minted = await this.deps.enrollments.create(this.scope, this.hostId, null);
+    this.deps.audit({ tool: "host_install_command", metadata: { confirmed: true } });
     return {
       code: minted.code,
       expiresAt: minted.expiresAt,

@@ -68,6 +68,12 @@ function fakeGateway(): PdmuxHostGateway & { calls: string[] } {
     services: () => note("services", []),
     usage: () => note("usage", []),
     repos: () => note("repos", []),
+    enrollmentPlan: () =>
+      note("enrollmentPlan", {
+        willDestroy: [{ type: "enrollment-code", count: 1 }],
+        reversible: false,
+        retryWith: { confirm: true },
+      }),
     enrollment: () =>
       note("enrollment", {
         code: "pdmxe_AAAAA-BBBBB-CCCCC-DDDDD",
@@ -245,6 +251,41 @@ describe("[TC-PDMCP-071] a read-only key keeps the surface and loses the power",
     expect(JSON.stringify(result.content)).toContain("MCP_KEY_READ_ONLY");
     // And it never reached the host.
     expect(gateway.calls).not.toContain("run");
+  });
+
+  /**
+   * ⚠ MINTING IS A MUTATION WEARING A READ-ONLY NAME, and it was reachable by every
+   * key until 2026-08-03. It retires the host's live code — so a leaked read-only key
+   * could void a colleague's half-finished install — and hands back something
+   * redeemable for an AGENT token, which outlives the key that minted it. Revoking the
+   * key afterwards does not take that back.
+   */
+  it("[TC-PDMCP-071] refuses to mint an enrollment code, and never reaches the host", async () => {
+    const { client, gateway } = await connect(false);
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("host_install_command");
+
+    const result = await client.callTool({ name: "host_install_command", arguments: {} });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("MCP_KEY_READ_ONLY");
+    expect(gateway.calls).not.toContain("enrollment");
+    // Not even the read-only half: a refused key learns nothing about the host.
+    expect(gateway.calls).not.toContain("enrollmentPlan");
+  });
+
+  it("[TC-PDMCP-071] describes what minting would retire before a write key does it", async () => {
+    const { client, gateway } = await connect(true);
+
+    const dry = await client.callTool({ name: "host_install_command", arguments: {} });
+    expect(dry.isError).toBeFalsy();
+    expect(JSON.stringify(dry.content)).toContain("dry-run");
+    // The plan ran; the mutator did not. That pairing is the whole point of two methods.
+    expect(gateway.calls).toContain("enrollmentPlan");
+    expect(gateway.calls).not.toContain("enrollment");
+
+    const done = await client.callTool({ name: "host_install_command", arguments: { confirm: true } });
+    expect(done.isError).toBeFalsy();
+    expect(gateway.calls).toContain("enrollment");
   });
 
   it("[TC-PDMCP-071] leaves reading alone", async () => {
