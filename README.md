@@ -159,8 +159,8 @@ takes a host id, so there is no way to point it at another.
 
 **An account token**, issued on **Coding CLI access**, reaches every host you can see, at one of
 three permission levels: read-only, operate (register a host, update an agent, run commands) or
-admin (delete, fleet settings). It expires, it is revocable, and every change it makes is in the
-audit log.
+admin (delete a host, roll an update across several). It expires, it is revocable, and every change
+it makes is in the audit log.
 
 ```
 Codex   codex mcp add pdmux --url <origin>/mcp --bearer-token-env-var PDMUX_MCP_TOKEN

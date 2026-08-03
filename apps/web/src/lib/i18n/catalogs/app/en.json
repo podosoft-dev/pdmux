@@ -745,7 +745,7 @@
           ],
           "cannot": [
             "Delete a host, a service or a repo",
-            "Change fleet settings",
+            "Roll an update across several hosts at once",
             "Create or revoke ANY credential, including this kind of token"
           ]
         },
@@ -754,10 +754,11 @@
           "can": [
             "Everything Operate can",
             "Delete a host — each deletion needs confirm, and without it the tool only describes what it would destroy",
-            "Change fleet settings"
+            "Roll one agent build out to several hosts at once"
           ],
           "cannot": [
             "Create or revoke ANY credential, including this kind of token",
+            "Change fleet settings — no tier has a tool for it; use the dashboard",
             "Reach any host outside this fleet"
           ]
         }
