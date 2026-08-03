@@ -468,18 +468,24 @@
 
 {#if updating && updatingHost}
   <!--
-    ⚠ `stopPropagation` IS LOAD-BEARING. `dismissOnOutside` listens on the document,
-    and re-rendering detaches the node that was clicked — without this, pressing a
-    button inside the panel reads as a click outside it and the panel closes before
-    the handler runs.
+    ⚠ `onclick`, NOT `onclickcapture`. `dismissOnOutside` listens on the document, so
+    the panel has to stop its own clicks from reaching it — but stopping them in the
+    CAPTURE phase stops them before they reach the button inside, and the button then
+    does nothing at all. Measured: the popover opened, showed the right version, and
+    the confirm button was inert. Bubble phase lets the target handle it first and
+    stops it on the way out, which is what was wanted.
   -->
   <div
     class="bg-popover text-popover-foreground fixed z-50 w-72 space-y-3 rounded-md border p-3 shadow-md"
     style={`left:${Math.min(updating.anchor.x, (typeof window === "undefined" ? 1024 : window.innerWidth) - 300)}px;top:${updating.anchor.y + 4}px`}
     data-testid="agent-update-popover"
     role="dialog"
+    tabindex="-1"
     aria-label={fmt(i18n.t.dash.agent.updateTitle, { label: updatingHost.label })}
-    onclickcapture={(event) => event.stopPropagation()}
+    onclick={(event) => event.stopPropagation()}
+    onkeydown={(event) => {
+      if (event.key === "Escape") updating = null;
+    }}
   >
     <p class="text-sm font-medium">{updatingHost.label}</p>
     <AgentUpdateConfirm host={updatingHost} slots={paneSlots(shell.layout.slots)} onCancel={() => (updating = null)} onConfirm={runUpdate} />
