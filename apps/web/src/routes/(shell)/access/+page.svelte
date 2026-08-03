@@ -122,7 +122,11 @@
     if (token.revokedAt) return { text: i18n.t.dash.mcpTokens.revoked, variant: "destructive" };
     if (new Date(token.expiresAt).getTime() <= Date.now())
       return { text: i18n.t.dash.mcpTokens.expired, variant: "outline" };
-    if (token.effectiveTier && token.effectiveTier !== token.tier)
+    // ⚠ `null` MEANS THE OWNER HAS NO STANDING IN THIS SCOPE AT ALL, so the token
+    // authenticates as nothing. Falling through to "Live" below would tell somebody a
+    // credential works when it has already stopped.
+    if (token.effectiveTier === null) return { text: i18n.t.dash.mcpTokens.noAccess, variant: "destructive" };
+    if (token.effectiveTier !== token.tier)
       return {
         text: fmt(i18n.t.dash.mcpTokens.reduced, { tier: i18n.t.dash.mcpTokens.tier[token.effectiveTier].name }),
         variant: "outline",
@@ -236,7 +240,13 @@
         </div>
 
         <div class="flex justify-end">
-          <Button type="submit" disabled={busy || label.trim().length === 0} data-testid="mcp-token-create">
+          <!-- Disabled while the policy is still loading: the tier defaults to `operate`, and
+               submitting before the ceiling is known would ask for a tier the server then
+               refuses. The server is still the authority; this only stops the pointless 403. -->
+          <Button
+            type="submit"
+            disabled={loading || busy || policy === null || label.trim().length === 0}
+            data-testid="mcp-token-create">
             {i18n.t.dash.mcpTokens.create}
           </Button>
         </div>
