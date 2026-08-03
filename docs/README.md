@@ -8,6 +8,7 @@ to the rules they produced — so a future reader can weigh a rule instead of gu
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | why push rather than pull, why the terminal is same-origin, read-only git, the component split, verifying by geometry |
 | [`CONTRACTS.md`](CONTRACTS.md) | the agent↔server protocol (additions only), enrollment and remote-update frames |
+| [`MCP.md`](MCP.md) | the two credentials an AI CLI can hold, what each reaches, and which guarantees changed shape when fleet-wide access arrived |
 | [`OPERATIONS.md`](OPERATIONS.md) | deployment shape, agent onboarding, retention, backups, states you see often |
 | [`AGENT_GO.md`](AGENT_GO.md) | the Go agent's layout, generated versus hand-written, the `go generate` procedure |
 | [`USAGE-COLLECTION.md`](USAGE-COLLECTION.md) | ⚠ coding-CLI usage — **the one collector that leans on somebody else's format**. Why the CLI is not executed, and how to find the format again when it moves |

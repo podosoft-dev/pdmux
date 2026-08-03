@@ -16,8 +16,15 @@ whether its agent is connected, and what that agent can do.
 
 - `online: false` → the machine has no agent yet. Go to **Installing the agent**.
 - `online: true` but `capabilities` has no `exec` → the agent is too old to run
-  commands. `run_command` will refuse with `HOST_EXEC_UNSUPPORTED`; the update is
-  a button in the dashboard, not something you can do from here.
+  commands. `run_command` will refuse with `HOST_EXEC_UNSUPPORTED`. Updating it is
+  a dashboard action, or an `operate` account token — see `pdmux-fleet`.
+
+## If your credential is an account token instead
+
+A token minted on **Coding CLI access** reaches every host in the fleet, and its
+tools all take a `hostId`. You are on that surface if `pdmux_whoami` answers; call
+`hosts_list` before anything that names a machine. Read `pdmux-fleet` — the rules
+there are different, and one of them decides whether you behave correctly.
 
 ## Installing the agent
 

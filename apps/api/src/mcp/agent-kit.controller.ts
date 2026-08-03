@@ -29,7 +29,7 @@ import { buildZip, type ZipEntry } from "./zip";
  */
 
 /** Bumped by hand when a skill changes; a person pins this in their notes. */
-const AGENT_KIT_VERSION = "0.1.0";
+const AGENT_KIT_VERSION = "0.2.0";
 
 interface Kit {
   bytes: Buffer;
@@ -111,7 +111,10 @@ if (targets.length === 0) {
 
 for (const target of targets) {
   await mkdir(target, { recursive: true });
-  for (const skill of ["pdmux-onboard", "pdmux-operate"]) {
+  // ⚠ THE LIST IS HARDCODED, so a skill added to the package and not to this array
+  // ships in nothing and nobody notices — the kit is still a valid zip, it is just
+  // missing a third of itself.
+  for (const skill of ["pdmux-onboard", "pdmux-operate", "pdmux-fleet"]) {
     const destination = join(target, skill);
     if (!force && (await exists(destination))) {
       console.log(\`skip  \${destination} (already there; pass --force to replace)\`);

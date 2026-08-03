@@ -36,6 +36,12 @@ repositories and usage, and — if the key has write access — run commands.
 
 ## What you cannot do from here
 
-Create a host. A person registers a machine in the dashboard and hands you its
-key; a credential that could register more machines would be a credential that
-grows its own scope. There is no such tool, so there is nothing to try.
+**With a host key** (`pdmux_mcp_…`): create a host. That key is bound to one
+machine and no tool takes a host id, so there is nothing to try. If you need to
+register machines, the person needs to give you an account token instead — see
+`pdmux-fleet`.
+
+**With either credential**: create or revoke another credential. There is no such
+tool at any level, and there will not be one — a credential that could mint
+credentials turns one leak into a foothold that revoking the original does not
+close.

@@ -13,9 +13,6 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "pdmux-mcp": "./dist/stdio.js"
-  },
   "files": [
     "dist"
   ],

@@ -145,18 +145,46 @@ node tools/demo-agent.mjs --list-profiles     # build · db · laptop
 
 ## AI CLI를 pdmux에 붙이기
 
-호스트 상세 화면에서 그 호스트 전용 API 키를 발급하면, 그 기기에서 도는 AI CLI가 MCP로 pdmux를 읽을 수
-있습니다. 저장소를 열지 않고도 호스트 상태를 확인하고 명령을 돌릴 수 있습니다.
+AI CLI가 MCP로 pdmux를 다룰 수 있습니다 — 호스트 상태를 읽고, 명령을 돌리고, 기기를 등록하는 것까지
+저장소를 열지 않고 됩니다. 자격증명은 두 종류이고, 차이는 어디까지 닿느냐입니다.
+
+**호스트 키**는 호스트 상세 화면에서 발급하고 그 기기 하나에만 닿습니다. 그 모드에서는 어떤 도구도
+호스트 id를 인자로 받지 않으므로 다른 기기를 지목할 방법이 없습니다.
+
+**계정 토큰**은 **Coding CLI 접근** 화면에서 발급하고, 볼 수 있는 모든 호스트에 세 등급 중 하나로
+닿습니다: 읽기 전용, 운영(호스트 등록·에이전트 업데이트·명령 실행), 관리자(삭제·fleet 설정). 만료되고,
+폐기할 수 있고, 바꾼 것은 전부 감사 로그에 남습니다.
 
 ```
-Codex   codex mcp add pdmux --url <origin>/mcp --bearer-token-env-var PDMUX_MCP_KEY
+Codex   codex mcp add pdmux --url <origin>/mcp --bearer-token-env-var PDMUX_MCP_TOKEN
 Claude  {"mcpServers":{"pdmux":{"type":"http","url":"<origin>/mcp",
-          "headers":{"Authorization":"Bearer ${PDMUX_MCP_KEY}"}}}}
+          "headers":{"Authorization":"Bearer ${PDMUX_MCP_TOKEN}"}}}}
 ```
 
-키의 범위는 호스트 하나입니다. 어떤 도구도 호스트 id를 인자로 받지 않으므로 다른 기기를 지목할 방법이
-없고, 호스트를 만드는 도구도 없습니다. 복사되는 설정에는 평문 키가 들어가지 않고 환경변수 이름만
-들어갑니다. 설정 블록은 저장소에 커밋되기 쉬운 자리이기 때문입니다.
+**둘 다 다른 자격증명을 만들지 못합니다.** 두 번 읽을 만한 문장입니다 — 자격증명을 만들 수 있는
+자격증명은 한 번의 유출을 원본을 폐기해도 닫히지 않는 발판으로 바꿉니다. 복사되는 설정에는 평문이 아니라
+환경변수 이름이 들어갑니다. 설정 블록은 저장소에 커밋되기 쉬운 자리이기 때문입니다.
+
+### pdmux는 호스트에 접속하지 않습니다
+
+에이전트가 나가고, 들어오는 것은 없습니다. 호스트의 `address`는 운영자 참고용일 뿐이고 — pdmux가 그리로
+연결을 여는 일은 없습니다. 그래서 기기에서 **실행되어야 하는** 것은 이 도구들이 명령을 건네주고 AI가
+자기 ssh로 실행합니다. 닿을 수 없으면 사용자에게 묻습니다. pdmux는 ssh 자격증명을 갖지 않고, 갖게 되면
+이 아키텍처가 딛고 선 성질이 사라집니다.
+
+그래서 "호스트를 추가하고 에이전트를 설치해줘"는 한 단계가 아니라 세 단계입니다.
+
+```
+1. host_create { label: "build-01", address: "build-01.internal" }
+      → 호스트와, 15분 뒤 만료되는 1회용 설치 명령
+2. AI가 자기 셸에서 실행:
+      ssh <대상> 'curl -fsSL <origin>/install.sh | PDMUX_CODE=pdmxe_… sh -s -- --user'
+3. host_detail { hostId }  → 몇 초 뒤 online: true
+```
+
+3번은 생략할 수 없습니다. 설치 스크립트는 에이전트의 첫 핸드셰이크 **전에** 끝나므로 종료 코드 0이
+접속됐다는 뜻이 아닙니다. 도구 전체 목록, 파괴적 작업의 확인 절차, 오류 코드는
+[docs/MCP.md](docs/MCP.md)에 있습니다.
 
 ## 저장소 구조
 
@@ -213,6 +241,7 @@ UI 테스트는 DOM만 보지 않고 **기하**를 잽니다. 목록이 실제�
 | | |
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 왜 pull이 아니라 push인지, 터미널을 동일 출처로 만든 이유, 읽기 전용 git을 구조로 강제하는 법, UI를 기하로 검증하는 이유 |
+| [MCP.md](docs/MCP.md) | 자격증명 두 종류, `hostId`가 왜 인자가 됐고 무엇이 그 보장을 대신하는지, 파괴적 도구가 왜 실행 전에 설명하는지 |
 | [CONTRACTS.md](docs/CONTRACTS.md) | 에이전트↔서버 프로토콜. 봉투, 등록, 원격 업데이트, 그리고 추가만 허용하는 규칙 |
 | [OPERATIONS.md](docs/OPERATIONS.md) | 배포, 에이전트 온보딩, 보존, 백업과 복구, 증상별 대처표 |
 | [AGENT_GO.md](docs/AGENT_GO.md) | 에이전트 구조, 생성물과 손으로 쓴 것의 구분, `go generate` 절차 |

@@ -150,19 +150,50 @@ implementations are held to one contract by `packages/protocol/conformance`.
 
 ## Connecting an AI CLI to pdmux
 
-Issue an API key from a host's detail page and the AI CLI running on that machine can read pdmux over
-MCP, checking host state and running commands without opening this repository.
+An AI CLI can drive pdmux over MCP — reading host state, running commands, registering machines —
+without opening this repository. There are two credentials, and the difference is how far each one
+reaches.
+
+**A host key**, issued from a host's detail page, reaches that one machine. No tool in that mode
+takes a host id, so there is no way to point it at another.
+
+**An account token**, issued on **Coding CLI access**, reaches every host you can see, at one of
+three permission levels: read-only, operate (register a host, update an agent, run commands) or
+admin (delete, fleet settings). It expires, it is revocable, and every change it makes is in the
+audit log.
 
 ```
-Codex   codex mcp add pdmux --url <origin>/mcp --bearer-token-env-var PDMUX_MCP_KEY
+Codex   codex mcp add pdmux --url <origin>/mcp --bearer-token-env-var PDMUX_MCP_TOKEN
 Claude  {"mcpServers":{"pdmux":{"type":"http","url":"<origin>/mcp",
-          "headers":{"Authorization":"Bearer ${PDMUX_MCP_KEY}"}}}}
+          "headers":{"Authorization":"Bearer ${PDMUX_MCP_TOKEN}"}}}}
 ```
 
-A key is scoped to one host. No tool takes a host id, so there is no way to point it at another
-machine, and no tool creates a host either. The configuration you copy contains an environment
-variable name rather than the key itself, because a config block is the thing most likely to end up
-committed.
+**Neither can create another credential.** That is the line worth reading twice: a credential that
+could mint credentials would turn one leak into a foothold that revoking the original does not close.
+The configuration you copy carries an environment variable name rather than the secret, because a
+config block is the thing most likely to end up committed.
+
+### pdmux never connects to a host
+
+The agent dials out; nothing dials in. A host's `address` is operator context only — free-form text
+pdmux never opens a connection to. So when something has to run **on** a machine, these tools hand
+the AI the exact command and the AI runs it over its own ssh, asking you for access if it does not
+already have it. pdmux holds no ssh credentials, and adding them would undo the property the whole
+architecture is built on.
+
+That makes "add a host and install the agent" three steps rather than one:
+
+```
+1. host_create { label: "build-01", address: "build-01.internal" }
+      → the host, plus a single-use install command that expires in 15 minutes
+2. the AI runs it, from its own shell:
+      ssh <destination> 'curl -fsSL <origin>/install.sh | PDMUX_CODE=pdmxe_… sh -s -- --user'
+3. host_detail { hostId }  → online: true, a few seconds later
+```
+
+Step 3 is not optional: the installer exits before the agent's first handshake, so exit code 0 does
+not mean connected. The full tool list, the confirmation protocol for anything destructive, and the
+error codes are in [docs/MCP.md](docs/MCP.md).
 
 ## Repository layout
 
@@ -218,6 +249,7 @@ same "clicking does nothing" bug three times while every DOM query insisted the 
 | | |
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Why push instead of pull, why the terminal is same-origin, how read-only git is enforced, why the UI is verified by geometry |
+| [MCP.md](docs/MCP.md) | The two credentials, why `hostId` became a parameter and what replaced the guarantee it removed, and why a destructive tool describes before it acts |
 | [CONTRACTS.md](docs/CONTRACTS.md) | The agent↔server protocol: envelopes, enrollment, remote update, and the additions-only rule |
 | [OPERATIONS.md](docs/OPERATIONS.md) | Deployment, agent onboarding, retention, backup and recovery, and a table of symptoms |
 | [AGENT_GO.md](docs/AGENT_GO.md) | The agent's layout, what is generated versus hand-written, and the `go generate` procedure |
