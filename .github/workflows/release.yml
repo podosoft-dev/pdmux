@@ -5,40 +5,40 @@
 # It stops at the push, because rolling out requires confirming a plan hash and that
 # approval belongs to a person.
 #
-# ── Which runner, and what it costs ──────────────────────────────────────────────
+# ── Two architectures, built natively ────────────────────────────────────────────
 #
-# GitHub-hosted runners are free for PUBLIC repositories only. In a PRIVATE
-# repository every minute is metered against the account's included Actions minutes
-# and billed beyond them -- and image builds are the most expensive job most
-# projects run. A self-hosted runner consumes no Actions minutes at all, whatever
-# the repository's visibility.
+# amd64 and arm64 are both first-class here: a host is as likely to be an Apple
+# Silicon laptop or a Graviton box as an x86 server, and `docker compose up` on the
+# wrong one fails with "no matching manifest" before anything explains why.
 #
-# So the runner is a variable rather than a constant:
+# They are built on NATIVE runners rather than by QEMU emulation under one runner.
+# The difference is not small: this image compiles a Go toolchain's worth of agent
+# binaries and a SvelteKit build, and emulated arm64 turns a 15-minute job into an
+# hour or more. Two native jobs run in parallel, so the wall clock stays where it was.
 #
-#   PODOKIT_RUNNER   repository or organization variable, a JSON array of labels.
-#                    Unset -> ["ubuntu-latest"], which is right for a public
-#                    repository and costs money in a private one.
-#                    Self-hosted example: ["self-hosted","Linux","X64"]
+#   linux/amd64   ubuntu-latest
+#   linux/arm64   ubuntu-24.04-arm   (GitHub-hosted, free on public repositories)
 #
-# Set it before the first tag if this repository is private. Nothing here warns you
-# when you have not: the workflow succeeds either way, and the difference shows up
-# on a bill.
+# Each job pushes an image WITHOUT a tag, identified only by its digest, and the
+# `manifest` job then joins the two digests into one tag. That ordering matters: a
+# tag pushed per architecture would have each job overwrite the other's, and the last
+# one to finish would decide which architecture the tag means.
 #
-# ── The other two variables ──────────────────────────────────────────────────────
+# ⚠ SELF-HOSTED RUNNERS ARE DELIBERATELY NOT USED. They were, while this repository
+# was private, because GitHub-hosted minutes are metered there. On a PUBLIC
+# repository the minutes are free, and a self-hosted runner becomes a liability
+# rather than a saving — see GitHub's own warning about untrusted code reaching a
+# machine you own. `PODOKIT_RUNNER` is no longer read; the labels above are literal.
+#
+# ── Variables ────────────────────────────────────────────────────────────────────
 #
 #   PODOKIT_DEPLOY_PROFILE   which .podokit/deploy/<name>.json names the image
 #                            repositories. Unset -> production.
-#   PODOKIT_IMAGE_PLATFORM   the architecture the deployment target runs.
-#                            Unset -> linux/amd64. Building for the wrong one
-#                            produces "exec format error" at rollout, after the
-#                            migration has already run.
 #
-# ── Secrets ──────────────────────────────────────────────────────────────────────
-#
-#   REGISTRY_USERNAME / REGISTRY_PASSWORD   credentials for the registry named by
-#   the profile. A robot or deploy account is enough, but note that some registries
-#   refuse to let a robot CREATE a repository -- push the first tag of a new
-#   repository with an account that can, or create it in the registry first.
+# `PODOKIT_IMAGE_PLATFORM` is gone with the same change: the platform is no longer a
+# choice, it is both of them. So is `REGISTRY_USERNAME`/`REGISTRY_PASSWORD` — the
+# images go to this repository's own package registry and `GITHUB_TOKEN` is the
+# credential.
 
 name: release
 
@@ -52,18 +52,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  images:
-    # ⚠ BOTH OF THESE ARE LOAD-BEARING. Without `packages: write` the ghcr push is a
-    # 403 that reads like a credential problem, and the credential is the token these
-    # lines grant. Without `contents: write` attaching the agent binaries to the
-    # release fails the same way, at the very end of a job that already pushed images.
-    permissions:
-      contents: write
-      packages: write
-    # One job builds both images rather than a matrix of two. A self-hosted pool is
-    # usually small, and fanning out here takes runners away from every other
-    # repository that shares it for no wall-clock gain on a multi-core machine.
-    runs-on: ${{ fromJSON(vars.PODOKIT_RUNNER || '["ubuntu-latest"]') }}
+  # Verify once, on one architecture. The suites are type-checks and unit tests over
+  # portable code; running them twice would double the wall clock to re-answer a
+  # question that does not depend on the machine. What IS architecture-dependent —
+  # that the image builds and that the binaries inside it match — is checked below.
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.profile.outputs.api }}
+      web: ${{ steps.profile.outputs.web }}
+      registry: ${{ steps.profile.outputs.registry }}
+      tag: ${{ steps.profile.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
 
@@ -126,6 +125,24 @@ jobs:
         env:
           PROFILE: ${{ vars.PODOKIT_DEPLOY_PROFILE }}
 
+  build:
+    needs: verify
+    # ⚠ `packages: write` IS LOAD-BEARING. Without it the ghcr push is a 403 that
+    # reads like a credential problem, and the credential is the token this grants.
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
       - uses: docker/setup-buildx-action@v3
 
       # ⚠ NO REGISTRY SECRET. The images go to this repository's own package
@@ -135,31 +152,105 @@ jobs:
       # publishes somewhere else only edits one JSON file.
       - uses: docker/login-action@v3
         with:
-          registry: ${{ steps.profile.outputs.registry }}
+          registry: ${{ needs.verify.outputs.registry }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push the API image
+      # ⚠ `push-by-digest` MEANS NO TAG IS WRITTEN HERE, AND THAT IS THE POINT. Both
+      # architectures publish into the same repository; whichever wrote the tag last
+      # would silently be the one the tag resolves to. The `manifest` job joins the
+      # two digests instead, which is the only step that makes a tag mean anything.
+      #
+      # `provenance: false` for the same reason: an attestation manifest attaches
+      # itself to the index, and `imagetools create` over per-architecture digests
+      # would then produce an index whose entries disagree about what they describe.
+      - name: Build and push the API image by digest
+        id: api
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/api/Dockerfile
-          platforms: ${{ vars.PODOKIT_IMAGE_PLATFORM || 'linux/amd64' }}
-          push: true
-          tags: ${{ steps.profile.outputs.api }}:${{ steps.profile.outputs.tag }}
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,scope=api,mode=max
+          platforms: linux/${{ matrix.arch }}
+          provenance: false
+          outputs: type=image,name=${{ needs.verify.outputs.api }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=api-${{ matrix.arch }}
+          cache-to: type=gha,scope=api-${{ matrix.arch }},mode=max
 
-      - name: Build and push the web image
+      - name: Build and push the web image by digest
+        id: web
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/web/Dockerfile
-          platforms: ${{ vars.PODOKIT_IMAGE_PLATFORM || 'linux/amd64' }}
-          push: true
-          tags: ${{ steps.profile.outputs.web }}:${{ steps.profile.outputs.tag }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,scope=web,mode=max
+          platforms: linux/${{ matrix.arch }}
+          provenance: false
+          outputs: type=image,name=${{ needs.verify.outputs.web }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=web-${{ matrix.arch }}
+          cache-to: type=gha,scope=web-${{ matrix.arch }},mode=max
+
+      # The digest travels as a FILENAME rather than as file content: two matrix jobs
+      # writing the same path is what `merge-multiple` resolves badly, and empty files
+      # named after their digest merge without conflict.
+      - name: Hand the digests to the manifest job
+        run: |
+          mkdir -p /tmp/digests/api /tmp/digests/web
+          api='${{ steps.api.outputs.digest }}'
+          web='${{ steps.web.outputs.digest }}'
+          [ -n "$api" ] && [ -n "$web" ] || { echo "::error::build-push-action reported no digest"; exit 1; }
+          touch "/tmp/digests/api/${api#sha256:}" "/tmp/digests/web/${web#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [verify, build]
+    # ⚠ BOTH OF THESE ARE LOAD-BEARING. `packages: write` for the manifest push;
+    # without `contents: write`, attaching the agent binaries to the release fails the
+    # same way, at the very end of a job that has already published both images.
+    permissions:
+      contents: write
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digests-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.verify.outputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # This is where the tag starts existing. `imagetools create` writes a manifest
+      # LIST pointing at both architectures' digests, so `docker pull` picks the right
+      # one and the wrong-architecture failure stops being possible.
+      - name: Join the per-architecture digests into one tag
+        run: |
+          set -euo pipefail
+          tag='${{ needs.verify.outputs.tag }}'
+          join() {
+            local repo="$1" dir="/tmp/digests/$2" refs=()
+            # Two digests, one per architecture. Fewer means a build job was skipped
+            # and the tag would quietly become single-architecture again — the exact
+            # failure this whole file is arranged to prevent, so refuse it loudly.
+            for d in "$dir"/*; do refs+=("${repo}@sha256:$(basename "$d")"); done
+            [ "${#refs[@]}" -eq 2 ] || { echo "::error::expected 2 digests for $repo, found ${#refs[@]}"; exit 1; }
+            docker buildx imagetools create -t "${repo}:${tag}" "${refs[@]}"
+            docker buildx imagetools inspect "${repo}:${tag}"
+          }
+          join '${{ needs.verify.outputs.api }}' api
+          join '${{ needs.verify.outputs.web }}' web
 
       # ⚠ THE BINARIES ARE PUBLISHED IN ADDITION, NOT INSTEAD. An agent fetches its
       # update from the server it authenticated against and nowhere else: the contract
@@ -171,9 +262,6 @@ jobs:
       # So the server keeps serving `/agent/<v>/…` out of its own image, unchanged, and
       # these assets exist for the other reader — somebody who found the repository and
       # wants the binary and its checksums the ordinary way.
-      #
-      # Both copies are built from this commit, so their sha256 must match. If they ever
-      # differ that is not noise, it is reproducibility breaking.
       - name: Set up Go for the agent build
         uses: actions/setup-go@v5
         with:
@@ -197,8 +285,45 @@ jobs:
           dir="apps/web/static/agent/$version"
           [ -d "$dir" ] || { echo "::error::build-agent-binaries.mjs produced no $dir"; exit 1; }
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Agent $version" >> "$GITHUB_STEP_SUMMARY"
           sed 's/^/    /' "$dir/SHA256SUMS" >> "$GITHUB_STEP_SUMMARY"
+
+      # ⚠ THREE COPIES OF ONE BINARY NOW EXIST, AND THEY MUST BE THE SAME BYTES. The
+      # release asset (built here), the copy inside the amd64 web image, and the copy
+      # inside the arm64 web image are all compiled from this commit — the agent build
+      # is reproducible on purpose (`-trimpath`, `-buildvcs=false`, a Go version pinned
+      # by `go.mod` and by the Dockerfile's base tag), so the checksums have to agree.
+      #
+      # This is worth a step of its own because of what a mismatch would MEAN. An agent
+      # verifies its update against the sha256 the server hands it, and the server hands
+      # out whatever is in ITS image. If the two architectures' images carried different
+      # binaries under one version, which bytes a host received would depend on which
+      # architecture happened to serve the request — and a version number would have
+      # stopped identifying anything. That already happened once with 0.1.6.
+      #
+      # `docker create` does not run the container, so pulling the foreign architecture
+      # needs no emulation; the file is copied out of a container that never started.
+      - name: Check both architectures carry the same agent binaries
+        run: |
+          set -euo pipefail
+          web='${{ needs.verify.outputs.web }}:${{ needs.verify.outputs.tag }}'
+          version='${{ steps.agent.outputs.version }}'
+          for arch in amd64 arm64; do
+            docker pull -q --platform "linux/$arch" "$web"
+            cid="$(docker create --platform "linux/$arch" "$web")"
+            docker cp "$cid:/app/apps/web/build/client/agent/$version/SHA256SUMS" "/tmp/sums-$arch"
+            docker rm -f "$cid" >/dev/null
+          done
+          if ! diff -u "/tmp/sums-amd64" "/tmp/sums-arm64"; then
+            echo "::error::The two architectures' web images carry DIFFERENT agent $version binaries."
+            exit 1
+          fi
+          if ! diff -u "/tmp/sums-amd64" "${{ steps.agent.outputs.dir }}/SHA256SUMS"; then
+            echo "::error::The release assets differ from the agent $version binaries inside the images."
+            exit 1
+          fi
+          echo "Agent $version is identical in both images and in the release assets." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Attach them to the release
         uses: softprops/action-gh-release@v2
@@ -210,7 +335,7 @@ jobs:
 
       - name: Report what to deploy
         run: |
-          echo "Pushed ${{ steps.profile.outputs.api }}:${{ steps.profile.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Pushed ${{ steps.profile.outputs.web }}:${{ steps.profile.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed ${{ needs.verify.outputs.api }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed ${{ needs.verify.outputs.web }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo 'Roll out with `podo deploy plan --profile <name> --release ${{ steps.profile.outputs.tag }}`, then apply the printed hash.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Roll out with `podo deploy plan --profile <name> --release ${{ needs.verify.outputs.tag }}`, then apply the printed hash.' >> "$GITHUB_STEP_SUMMARY"
