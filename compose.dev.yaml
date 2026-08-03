@@ -59,6 +59,14 @@ services:
         - { action: sync, path: ./apps/web/static, target: /app/apps/web/static }
         - { action: sync+restart, path: ./apps/web/vite.config.ts, target: /app/apps/web/vite.config.ts }
         - { action: rebuild, path: ./apps/web/package.json }
+        # ⚠ REBUILD, NOT SYNC, AND THE PACKAGES HAD NO RULE AT ALL UNTIL THIS LINE.
+        # The app imports `@pdmux/*` through their built `dist/`, which `.dockerignore`
+        # keeps out of the image and the Dockerfile builds inside it — so syncing the
+        # source would leave the app running the OLD build with NEW sources beside it,
+        # which is exactly the state that cost an afternoon: the sidebar's new markup
+        # was in the repo, in the local dist, and nowhere the container could see.
+        # Editing a package is rare and rebuilding is the only thing that is honest.
+        - { action: rebuild, path: ./packages }
 
   api:
     build:
@@ -80,6 +88,9 @@ services:
         - { action: sync+restart, path: ./apps/api/src, target: /app/apps/api/src }
         - { action: sync, path: ./apps/api/scripts, target: /app/apps/api/scripts }
         - { action: rebuild, path: ./apps/api/package.json }
+        # Same reason as the web service: the API imports `@pdmux/protocol` and
+        # `@pdmux/mcp` from their built output, which only exists inside the image.
+        - { action: rebuild, path: ./packages }
 
   worker:
     # started only with the bullmq / job-progress modules: --profile queue
