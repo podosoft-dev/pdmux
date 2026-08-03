@@ -3,6 +3,7 @@ import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { clickUntil, ready } from "../helpers/hydration";
 import { openSidebar } from "../helpers/shell";
 import { e2eAdminState, userState } from "../helpers/accounts";
+import { mockHost, mockUpdate, type MockHost } from "../helpers/fleet";
 
 /**
  * Host administration from the screen: the fleet is data in the product, not a
@@ -25,44 +26,6 @@ const label = `e2e-host-${Date.now().toString().slice(-6)}`;
 const enrollLabel = `e2e-host-enroll-${Date.now().toString().slice(-6)}`;
 
 /**
- * A fleet row as `GET /hosts` returns it.
- *
- * The five version states cannot all be produced by real agents on one machine —
- * `ahead` needs a build newer than anything published and `incompatible` needs a
- * different wire contract — so the states themselves are served from a route mock.
- * The BEHAVIOUR under test is what the screen does with each one, which is exactly
- * what a fabricated row can drive.
- */
-type MockHost = Record<string, unknown>;
-function mockHost(label: string, overrides: MockHost = {}): MockHost {
-  return {
-    id: `00000000-0000-4000-8000-${label.replace(/\W/g, "").slice(-12).padStart(12, "0")}`,
-    label,
-    address: "10.9.9.9",
-    agentAddress: null,
-    description: null,
-    tags: [],
-    sortOrder: 0,
-    enabled: true,
-    agentVersion: "1.4.0",
-    latestAgentVersion: "1.5.0",
-    agentVersionState: "outdated",
-    lastUpdate: null,
-    os: "linux",
-    arch: "amd64",
-    capabilities: [],
-    lastSeenAt: new Date().toISOString(),
-    online: true,
-    connected: true,
-    resource: null,
-    sessions: [],
-    usage: [],
-    services: [],
-    ...overrides,
-  };
-}
-
-/**
  * A `lastSeenAt` that far in the past.
  *
  * Fractional days on purpose: a whole number lands exactly on a day boundary, and
@@ -73,20 +36,6 @@ function daysAgoIso(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-/** An `updateStatus` frame as the agent reports it, with the pane counts that matter. */
-function mockUpdate(shellPanes: number, sessionPanes: number): MockHost {
-  return {
-    commandId: "5f1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d",
-    phase: "done",
-    progressPct: null,
-    currentVersion: "1.4.0",
-    targetVersion: "1.4.0",
-    code: null,
-    message: "",
-    shellPanes,
-    sessionPanes,
-  };
-}
 
 // Its own account, host and agent (see `E2E_ADMIN`): these specs write the dashboard
 // layout, and sharing an account with a person rearranges their screen mid-session.

@@ -1,8 +1,9 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { expectOnScreen, expectScrollable, expectViewportBound } from "../helpers/geometry";
 import { clickUntil, ready } from "../helpers/hydration";
 import { openSidebar } from "../helpers/shell";
 import { e2eAdminState } from "../helpers/accounts";
+import { mockHost, mockUpdate, type MockHost } from "../helpers/fleet";
 
 /**
  * The dashboard shell, measured rather than queried.
@@ -1065,5 +1066,93 @@ test.describe.serial("pdmux shell fleet controls", () => {
 
     // Leave the grid as the rest of the run expects to find it.
     await putLayout(request, { slots: JSON.parse(original) as unknown[] });
+  });
+});
+
+/**
+ * The sidebar's agent-update mark.
+ *
+ * ⚠ THE ASSERTION THE FEATURE EXISTS FOR IS THE NEGATIVE ONE IN 2. A badge wired
+ * straight to the API would satisfy every other check here — it would appear on the
+ * right hosts, it would update the right machine, and it would have skipped the
+ * confirmation the user asked for. "No request has been made yet" is the only line
+ * that notices.
+ *
+ * Fabricated rows rather than real hosts: the states are the point, and a real agent
+ * on this machine cannot produce them. The sidebar reads the same `GET /hosts` the
+ * table does, so mocking it drives the cards.
+ */
+/**
+ * ⚠ UNTAGGED ON PURPOSE. TC ids are allocated centrally and no declared id covers
+ * the sidebar's update mark yet; an invented one would collide silently, because
+ * `trace:check` verifies declared→tagged and not that a tag is unique. See the
+ * allocation request in `docs/testing/traceability/pdui.md`.
+ */
+test.describe("agent updates on the sidebar", () => {
+  const OUTDATED = mockHost("mock-behind", { agentVersion: "1.4.0", agentVersionState: "outdated" });
+  const CURRENT = mockHost("mock-newest", { agentVersion: "1.5.0", agentVersionState: "current" });
+
+  async function withHosts(page: Page, hosts: MockHost[]): Promise<{ updates: string[] }> {
+    const updates: string[] = [];
+    await page.route("**/api/hosts", async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({ json: hosts });
+    });
+    await page.route("**/api/hosts/*/agent/update", async (route) => {
+      updates.push(route.request().url());
+      await route.fulfill({ json: { commandId: "c1", hostId: "h", version: "1.5.0" } });
+    });
+    return { updates };
+  }
+
+  test("marks only the hosts that have somewhere to go", async ({ page }) => {
+    await withHosts(page, [OUTDATED, CURRENT]);
+    await page.goto("/");
+
+    await expect(page.locator(`[data-pdmux-host="${OUTDATED.id}"] [data-pdmux-update]`)).toHaveAttribute(
+      "data-pdmux-update",
+      "offer",
+    );
+    // Nothing newer exists, so there is nothing to say — and a row that rendered
+    // anyway would be the deleted busy/idle chip returning.
+    await expect(page.locator(`[data-pdmux-host="${CURRENT.id}"] [data-pdmux-update]`)).toHaveCount(0);
+  });
+
+  test("confirms before it acts", async ({ page }) => {
+    const { updates } = await withHosts(page, [OUTDATED]);
+    await page.goto("/");
+
+    await page.locator(`[data-pdmux-host="${OUTDATED.id}"] [data-pdmux-update]`).click();
+
+    const popover = page.getByTestId("agent-update-popover");
+    await expect(popover).toBeVisible();
+    // ⚠ THE LINE THAT PROVES THE FEATURE. Pressing the mark opened a question; it did
+    // not start an update.
+    expect(updates, "opening the popover must not have started an update").toHaveLength(0);
+
+    // What it goes to, and the reassurance that the agent restores itself if the new
+    // binary cannot connect — the thing somebody needs before pressing an
+    // irreversible-looking button.
+    await expect(popover).toContainText("1.5.0");
+    await expect(popover.getByTestId("agent-update-probation")).toBeVisible();
+
+    await popover.getByTestId("agent-update-confirm").click();
+    await expect.poll(() => updates.length).toBe(1);
+    expect(updates[0]).toContain(OUTDATED.id as string);
+  });
+
+  test("reports a job in flight without offering a second one", async ({ page }) => {
+    const busy = mockHost("mock-busy", {
+      agentVersionState: "outdated",
+      lastUpdate: mockUpdate(0, 0, { phase: "restarting", targetVersion: "1.5.0" }),
+    });
+    await withHosts(page, [busy]);
+    await page.goto("/");
+
+    const mark = page.locator(`[data-pdmux-host="${busy.id}"] [data-pdmux-update]`);
+    await expect(mark).toHaveAttribute("data-pdmux-update", "busy");
+    // Not a disabled button — not a button at all, so a second POST is structurally
+    // impossible rather than merely discouraged.
+    await expect(page.locator(`[data-pdmux-host="${busy.id}"] button[data-pdmux-update]`)).toHaveCount(0);
   });
 });
