@@ -70,6 +70,24 @@ async function call(body: () => Promise<unknown>): Promise<ToolResult> {
   }
 }
 
+/**
+ * The same failure shaping, for a body that already returns a `ToolResult`.
+ *
+ * ⚠ WITHOUT THIS, THE DESTRUCTIVE TOOLS LOSE THEIR ERROR CODE. The SDK does catch a
+ * thrown handler error and answer `isError: true` — but with the MESSAGE only, and
+ * the stable code is the whole reason `failure()` exists ("a model can read a stable
+ * code and correct the call itself"). So `host_delete` on a host in another scope
+ * would answer "Host not found" where every read tool answers
+ * "HOST_NOT_FOUND: Host not found".
+ */
+async function guard(body: () => Promise<ToolResult>): Promise<ToolResult> {
+  try {
+    return await body();
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 function registerHostTools(
   server: McpServer,
   gateway: PdmuxHostGateway,
@@ -421,11 +439,13 @@ function registerFleetTools(
       inputSchema: { hostId: HOST_ID, confirm: z.boolean().default(false) },
     },
     (input) =>
-      destructive(
-        "host_install_command",
-        input,
-        () => gateway.enrollmentPlan(input.hostId),
-        () => gateway.enrollment(input.hostId),
+      guard(() =>
+        destructive(
+          "host_install_command",
+          input,
+          () => gateway.enrollmentPlan(input.hostId),
+          () => gateway.enrollment(input.hostId),
+        ),
       ),
   );
 
@@ -456,11 +476,13 @@ function registerFleetTools(
       if (!input.force) {
         return call(() => gateway.updateAgent(input.hostId, { version: input.version, force: false }));
       }
-      return destructive(
-        "host_agent_update",
-        input,
-        () => gateway.updateAgentPlan(input.hostId, { version: input.version }),
-        () => gateway.updateAgent(input.hostId, { version: input.version, force: true }),
+      return guard(() =>
+        destructive(
+          "host_agent_update",
+          input,
+          () => gateway.updateAgentPlan(input.hostId, { version: input.version }),
+          () => gateway.updateAgent(input.hostId, { version: input.version, force: true }),
+        ),
       );
     },
   );
@@ -495,11 +517,13 @@ function registerFleetTools(
       },
     },
     (input) =>
-      destructive(
-        "fleet_agent_update",
-        input,
-        () => gateway.updateFleetPlan(input.hostIds, input.version),
-        () => gateway.updateFleet(input.hostIds, input.version),
+      guard(() =>
+        destructive(
+          "fleet_agent_update",
+          input,
+          () => gateway.updateFleetPlan(input.hostIds, input.version),
+          () => gateway.updateFleet(input.hostIds, input.version),
+        ),
       ),
   );
 
@@ -511,11 +535,13 @@ function registerFleetTools(
       inputSchema: { hostId: HOST_ID, confirm: z.boolean().default(false) },
     },
     (input) =>
-      destructive(
-        "host_delete",
-        input,
-        () => gateway.deleteHostPlan(input.hostId),
-        () => gateway.deleteHost(input.hostId),
+      guard(() =>
+        destructive(
+          "host_delete",
+          input,
+          () => gateway.deleteHostPlan(input.hostId),
+          () => gateway.deleteHost(input.hostId),
+        ),
       ),
   );
 }

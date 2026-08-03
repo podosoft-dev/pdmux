@@ -399,6 +399,37 @@ describe("[TC-PDMCP-071] a destructive tool describes before it acts", () => {
   });
 });
 
+describe("[TC-PDMCP-072] a destructive tool fails with a code like every other tool", () => {
+  /**
+   * ⚠ THE SDK CATCHES A THROWN HANDLER ERROR AND KEEPS ONLY THE MESSAGE. Every read
+   * tool goes through `call()`, which prefixes the stable code; the destructive ones
+   * return a `ToolResult` directly and so bypassed it, answering "Host not found"
+   * where everything else answers "HOST_NOT_FOUND: Host not found". A model that
+   * branches on the code — which is what this package tells it to do — would have had
+   * nothing to branch on exactly where the stakes are highest.
+   */
+  it("[TC-PDMCP-072] carries the code when the plan itself is refused", async () => {
+    const gateway = fakeFleetGateway();
+    gateway.deleteHostPlan = () =>
+      Promise.reject(Object.assign(new Error("Host not found"), { code: "HOST_NOT_FOUND" }));
+    const server = createPdmuxMcpServer({
+      mode: "fleet",
+      gateway,
+      scopeLabel: "my fleet",
+      origin: "https://pdmux.example.test",
+      tier: "admin",
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "contract", version: "1.0.0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    const result = await client.callTool({ name: "host_delete", arguments: { hostId: HOST_A } });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("HOST_NOT_FOUND");
+  });
+});
+
 describe("[TC-PDMCP-071] asking for more is returned, never thrown", () => {
   it("[TC-PDMCP-071] answers an empty host_create with what it needs", async () => {
     const { client, gateway } = await connectFleet("operate");
