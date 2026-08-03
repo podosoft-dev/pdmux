@@ -135,7 +135,7 @@ const NAMED: [string, (g: ApiFleetGateway, hostId: string) => Promise<unknown>][
   ["run", (g, h) => g.run(h, { command: "id", args: [] })],
 ];
 
-describe("a fleet token reaches only its own scope", () => {
+describe("[TC-PDMCP-055] a fleet token reaches only its own scope", () => {
   it.each(NAMED)("%s refuses a host in another scope", async (_name, call) => {
     const { gateway } = context();
     await expect(call(gateway, THEIRS)).rejects.toBeInstanceOf(AppException);
@@ -156,7 +156,7 @@ describe("a fleet token reaches only its own scope", () => {
   });
 });
 
-describe("a dry run cannot change anything", () => {
+describe("[TC-PDMCP-055] a dry run cannot change anything", () => {
   it("plans a deletion without calling remove", async () => {
     const { gateway, hosts } = context();
 
@@ -184,7 +184,7 @@ describe("a dry run cannot change anything", () => {
   });
 });
 
-describe("what the audit trail records", () => {
+describe("[TC-PDMCP-055] what the audit trail records", () => {
   it("records a mutation with the token and tier, and no arguments from the command line", async () => {
     const { gateway, audit } = context();
 
@@ -256,7 +256,7 @@ describe("what the audit trail records", () => {
   });
 });
 
-describe("the effective tier is what gates, not the granted one", () => {
+describe("[TC-PDMCP-055] the effective tier is what gates, not the granted one", () => {
   it("refuses run_command for a token whose owner has been demoted to read", async () => {
     const { gateway } = context({ ...IDENTITY, tier: "admin", effectiveTier: "read" });
 

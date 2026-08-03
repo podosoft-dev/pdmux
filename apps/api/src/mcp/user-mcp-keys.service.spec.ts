@@ -52,7 +52,7 @@ const memberWorld = { users: { [USER]: { role: "user" } }, members: [[USER, ORG]
 
 const mintInput = { label: "my laptop", expiresInDays: 90 as const, tier: "operate" as const };
 
-describe("a fleet token is shown once and stored as a hash", () => {
+describe("[TC-PDMCP-052] a fleet token is shown once and stored as a hash", () => {
   let ctx: ReturnType<typeof context>;
   beforeEach(() => {
     ctx = context(adminWorld);
@@ -93,7 +93,7 @@ describe("a fleet token is shown once and stored as a hash", () => {
   });
 });
 
-describe("the tier a person may grant is capped by their own authority", () => {
+describe("[TC-PDMCP-052] the tier a person may grant is capped by their own authority", () => {
   it("lets an administrator grant every tier", async () => {
     const ctx = context(adminWorld);
     for (const tier of ["read", "operate", "admin"] as const) {
@@ -135,7 +135,7 @@ describe("the tier a person may grant is capped by their own authority", () => {
  * not frozen with it. Everything here describes what happens AFTER the moment the
  * ceiling was first checked — which is the whole life of the credential.
  */
-describe("authority is re-derived on every authentication", () => {
+describe("[TC-PDMCP-053] authority is re-derived on every authentication", () => {
   async function mintedIn(world: Parameters<typeof fakeAuthDataSource>[0], tier: "read" | "operate" | "admin") {
     const ctx = context(adminWorld);
     const minted = await ctx.tokens.mint(ORG, USER, { ...mintInput, tier });
@@ -211,7 +211,7 @@ describe("authority is re-derived on every authentication", () => {
   });
 });
 
-describe("a token reaches only its own scope and its own owner", () => {
+describe("[TC-PDMCP-053] a token reaches only its own scope and its own owner", () => {
   it("refuses an unrecognised, revoked or expired credential the same way", async () => {
     const ctx = context(adminWorld);
     const minted = await ctx.tokens.mint(ORG, USER, mintInput);

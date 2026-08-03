@@ -514,7 +514,7 @@ describe("[TC-PDHOST-023] the percentage stops where it stops meaning something"
  * What a SIDEBAR card says, which is a third screen asking the same question — and
  * the reason this file exists rather than the logic living in a component.
  */
-describe("cardUpdate", () => {
+describe("[TC-PDWEB-028] cardUpdate", () => {
   it("offers an update for a host that is behind", () => {
     expect(cardUpdate(host())).toEqual({ kind: "offer", version: "0.2.0" });
   });

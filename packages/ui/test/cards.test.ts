@@ -83,6 +83,67 @@ describe('[TC-PDUI-001] a host card renders only the widgets its preferences all
 		expect(onOpenSettings).toHaveBeenCalledWith('h1', expect.anything());
 	});
 
+
+	it('hides a widget the preferences switch off, and marks a stopped host', () => {
+		const prefs = { ...cardPrefs({}, 'h1'), resources: false };
+		const { container } = render(HostCard, {
+			props: { host: { id: 'h1', name: 'alpha', state: 'offline' }, agents: AGENTS, prefs, services: SERVICES },
+		});
+		expect(container.querySelector('[data-pdmux-widget="resources"]')).toBeNull();
+		expect(container.querySelector('[data-pdmux-widget="agents"]')).not.toBeNull();
+		const dot = container.querySelector('.pdmux-state-dot');
+		expect(dot?.getAttribute('data-pdmux-reach')).toBe('offline');
+		// ⚠ NEVER COLOUR ALONE. The state name has to survive for a reader who cannot
+		// separate the hues — that is the whole reason the word chip was kept when the
+		// busy/idle one was dropped.
+		expect(dot?.getAttribute('aria-label')).toBe('stopped');
+		expect(dot?.getAttribute('title')).toBe('stopped');
+		// ⚠ AND NOT THE SAME PICTURE AS `online`. The colour swap is the accent; the link is
+		// PARTED, which is what stays legible in greyscale and at a glance.
+		expect(joinedBar(dot)).toBe(false);
+		// Offline means every URL on the host is dead, so the launcher is disabled.
+		expect((container.querySelector('.pdmux-launcher select') as HTMLSelectElement).disabled).toBe(true);
+	});
+
+	it('keeps disabled distinct from unreachable', () => {
+		// `unknown` is a disabled host — nobody is asking it anything. Collapsing it into
+		// `offline` would report a switched-off machine as a broken one.
+		const { container } = render(HostCard, {
+			props: { host: { id: 'h1', name: 'alpha', state: 'unknown' }, agents: AGENTS, services: SERVICES },
+		});
+		const dot = container.querySelector('.pdmux-state-dot');
+		expect(dot?.getAttribute('data-pdmux-reach')).toBe('unknown');
+		expect(dot?.getAttribute('aria-label')).toBe('unknown');
+		// It draws the JOINED link and the stylesheet dashes it: a host nobody is asking is
+		// not being reported as disconnected. The dash is a texture on the same path, which
+		// is why the shape here matches `online` and not `offline` — and why the browser
+		// spec, not this one, is where the dashing itself is checked (jsdom loads no CSS).
+		expect(joinedBar(dot)).toBe(true);
+	});
+
+	it('keeps a long host name on one line and reachable in full', () => {
+		// The header had no rule for the name at all: a multi-word label wrapped and grew
+		// the card, and one long unbroken token overflowed it (a flex item defaults to
+		// `min-width: auto`, so the span would not shrink).
+		const name = 'ip-10-0-12-233.ap-northeast-2.compute.internal';
+		const { container } = render(HostCard, { props: { host: { id: 'h1', name, state: 'online' } } });
+		const label = container.querySelector('[data-pdmux-name]') as HTMLElement;
+		// Truncation hides the text, so the full value must stay somewhere reachable.
+		expect(label.getAttribute('title')).toBe(name);
+		expect(label.textContent).toBe(name);
+	});
+});
+
+/**
+ * The mark that says an agent is behind — the one place a person looking at the
+ * sidebar all day learns a release happened.
+ *
+ * ⚠ THESE USED TO SIT UNDER `[TC-PDUI-001]`, WHICH IS ABOUT PREFERENCES. The row is
+ * not preference-driven, so the declaration that was counting them said nothing about
+ * what they measure — the drift the matrix exists to catch, hiding inside a tag that
+ * made the gate pass.
+ */
+describe('[TC-PDUI-202] a host card says when its agent has somewhere to go', () => {
 	/**
 	 * ⚠ THE ABSENCE IS THE ASSERTION. A row that always rendered would be the deleted
 	 * busy/idle chip returning by the front door — the whole reason that chip went is
@@ -186,55 +247,6 @@ describe('[TC-PDUI-001] a host card renders only the widgets its preferences all
 
 		const drawings = new Set([paths('offer'), paths('urgent'), paths('busy')]);
 		expect(drawings.size).toBe(3);
-	});
-
-	it('hides a widget the preferences switch off, and marks a stopped host', () => {
-		const prefs = { ...cardPrefs({}, 'h1'), resources: false };
-		const { container } = render(HostCard, {
-			props: { host: { id: 'h1', name: 'alpha', state: 'offline' }, agents: AGENTS, prefs, services: SERVICES },
-		});
-		expect(container.querySelector('[data-pdmux-widget="resources"]')).toBeNull();
-		expect(container.querySelector('[data-pdmux-widget="agents"]')).not.toBeNull();
-		const dot = container.querySelector('.pdmux-state-dot');
-		expect(dot?.getAttribute('data-pdmux-reach')).toBe('offline');
-		// ⚠ NEVER COLOUR ALONE. The state name has to survive for a reader who cannot
-		// separate the hues — that is the whole reason the word chip was kept when the
-		// busy/idle one was dropped.
-		expect(dot?.getAttribute('aria-label')).toBe('stopped');
-		expect(dot?.getAttribute('title')).toBe('stopped');
-		// ⚠ AND NOT THE SAME PICTURE AS `online`. The colour swap is the accent; the link is
-		// PARTED, which is what stays legible in greyscale and at a glance.
-		expect(joinedBar(dot)).toBe(false);
-		// Offline means every URL on the host is dead, so the launcher is disabled.
-		expect((container.querySelector('.pdmux-launcher select') as HTMLSelectElement).disabled).toBe(true);
-	});
-
-	it('keeps disabled distinct from unreachable', () => {
-		// `unknown` is a disabled host — nobody is asking it anything. Collapsing it into
-		// `offline` would report a switched-off machine as a broken one.
-		const { container } = render(HostCard, {
-			props: { host: { id: 'h1', name: 'alpha', state: 'unknown' }, agents: AGENTS, services: SERVICES },
-		});
-		const dot = container.querySelector('.pdmux-state-dot');
-		expect(dot?.getAttribute('data-pdmux-reach')).toBe('unknown');
-		expect(dot?.getAttribute('aria-label')).toBe('unknown');
-		// It draws the JOINED link and the stylesheet dashes it: a host nobody is asking is
-		// not being reported as disconnected. The dash is a texture on the same path, which
-		// is why the shape here matches `online` and not `offline` — and why the browser
-		// spec, not this one, is where the dashing itself is checked (jsdom loads no CSS).
-		expect(joinedBar(dot)).toBe(true);
-	});
-
-	it('keeps a long host name on one line and reachable in full', () => {
-		// The header had no rule for the name at all: a multi-word label wrapped and grew
-		// the card, and one long unbroken token overflowed it (a flex item defaults to
-		// `min-width: auto`, so the span would not shrink).
-		const name = 'ip-10-0-12-233.ap-northeast-2.compute.internal';
-		const { container } = render(HostCard, { props: { host: { id: 'h1', name, state: 'online' } } });
-		const label = container.querySelector('[data-pdmux-name]') as HTMLElement;
-		// Truncation hides the text, so the full value must stay somewhere reachable.
-		expect(label.getAttribute('title')).toBe(name);
-		expect(label.textContent).toBe(name);
 	});
 });
 

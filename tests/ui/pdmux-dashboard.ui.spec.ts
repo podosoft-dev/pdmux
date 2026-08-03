@@ -1082,12 +1082,6 @@ test.describe.serial("pdmux shell fleet controls", () => {
  * on this machine cannot produce them. The sidebar reads the same `GET /hosts` the
  * table does, so mocking it drives the cards.
  */
-/**
- * ⚠ UNTAGGED ON PURPOSE. TC ids are allocated centrally and no declared id covers
- * the sidebar's update mark yet; an invented one would collide silently, because
- * `trace:check` verifies declared→tagged and not that a tag is unique. See the
- * allocation request in `docs/testing/traceability/pdui.md`.
- */
 test.describe("agent updates on the sidebar", () => {
   const OUTDATED = mockHost("mock-behind", { agentVersion: "1.4.0", agentVersionState: "outdated" });
   const CURRENT = mockHost("mock-newest", { agentVersion: "1.5.0", agentVersionState: "current" });
@@ -1105,7 +1099,7 @@ test.describe("agent updates on the sidebar", () => {
     return { updates };
   }
 
-  test("marks only the hosts that have somewhere to go", async ({ page }) => {
+  test("[TC-PDUI-202] marks only the hosts that have somewhere to go", async ({ page }) => {
     await withHosts(page, [OUTDATED, CURRENT]);
     await page.goto("/");
 
@@ -1118,7 +1112,7 @@ test.describe("agent updates on the sidebar", () => {
     await expect(page.locator(`[data-pdmux-host="${CURRENT.id}"] [data-pdmux-update]`)).toHaveCount(0);
   });
 
-  test("confirms before it acts", async ({ page }) => {
+  test("[TC-PDUI-202] confirms before it acts", async ({ page }) => {
     const { updates } = await withHosts(page, [OUTDATED]);
     await page.goto("/");
 
@@ -1141,7 +1135,7 @@ test.describe("agent updates on the sidebar", () => {
     expect(updates[0]).toContain(OUTDATED.id as string);
   });
 
-  test("reports a job in flight without offering a second one", async ({ page }) => {
+  test("[TC-PDUI-202] reports a job in flight without offering a second one", async ({ page }) => {
     const busy = mockHost("mock-busy", {
       agentVersionState: "outdated",
       lastUpdate: mockUpdate(0, 0, { phase: "restarting", targetVersion: "1.5.0" }),
