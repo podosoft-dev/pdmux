@@ -6,7 +6,7 @@ import { GitDock } from "../src/lib/dashboard/git-dock.svelte";
  * the first one for both. Between first paint and the repository response there is
  * nothing in `repos`, so the panel announced "No repositories collected on this host
  * yet" — a verdict on a question it had not put — for roughly 600ms after every refresh,
- * across a column several hundred pixels wide. The UI half of REQ-PDGIT-002.
+ * across a column several hundred pixels wide.
  */
 const deferred = <T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (e: unknown) => void } => {
   let resolve!: (value: T) => void;

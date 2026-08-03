@@ -1,6 +1,5 @@
 # Coding-CLI usage collection — the part that leans on somebody else's format
 
-Requirements: REQ-PDAGENT-024 · REQ-PDAGENT-025
 Implementation: `agent/internal/usage/` · Symptom-by-symptom: [`OPERATIONS.md`](OPERATIONS.md) §5
 
 > ⚠ **This document exists for one reason: the format read here is not ours.**

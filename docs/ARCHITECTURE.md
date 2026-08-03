@@ -238,8 +238,8 @@ the UI** — no more editing constants in a script.
 Scope here is the active organisation, and **the user themselves when there is none**
 (`personal:<userId>`). In an installation that does not use organisations — which is most of them
 today — that means the host list is effectively **per user**, which is why registering your own
-machine does not need an administrator. An organisation fleet is shared, so its rules differ
-(REQ-PDADMIN-002).
+machine does not need an administrator. An organisation fleet is shared, so its rules differ —
+there, only an administrator changes it.
 
 ---
 
@@ -380,7 +380,7 @@ lists exist only as narrow exceptions, and those projects explicitly warn that t
 at scale. Even the tool that handles remote shells expresses "this person may open a shell on that
 machine" **through labels and roles, not a table keyed by node id**.
 
-**So the answer is moving the host** (REQ-PDHOST-014). Correcting the owner adds no new concept and
+**So the answer is moving the host.** Correcting the owner adds no new concept and
 solves exactly the observed problem. Why moving does not disturb the agent was already in place —
 tokens, services, repositories and metrics all hang off `hostId` and follow the row, and the scope is
 re-read where it is used, so from the next heartbeat it picks up the new scope's settings. No

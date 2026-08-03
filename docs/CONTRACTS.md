@@ -107,7 +107,7 @@ server → agent : welcome | config | terminal | ping | collect | commitDetail |
   arrives through the ordinary ingest path). To stop polling from multiplying, the same
   (host, repoPath, sha) is sent once until an answer arrives, forgotten after 30 seconds,
   capped at 50 in flight per host (= the per-frame sha cap), and nothing at all is sent to a
-  disconnected host. Details: REQ-PDGIT-005.
+  disconnected host.
 - `detailAck` tells the agent **which shas the server already has**. Details are immutable per
   sha, so this keeps a restarted agent from spending its pass budget reproducing patches that
   are already stored.

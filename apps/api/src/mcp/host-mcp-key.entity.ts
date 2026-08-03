@@ -15,7 +15,7 @@ import type { McpKeyScope } from "./host-mcp-key.crypto";
  * project concept and registration is per person, so the host is the only boundary
  * there is: everything this key can read or run is reached through `hostId`, and a
  * request naming another host is answered 404 rather than 403 (403 confirms the id
- * exists — REQ-PDHOST-002).
+ * exists).
  *
  * WHY IT HAS AN EXPIRY WHEN `AgentToken` DOES NOT: an agent token belongs to a
  * machine that would stop working if its credential lapsed, and rotating it is an

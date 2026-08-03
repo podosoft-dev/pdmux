@@ -9,6 +9,6 @@
  * agent's SemVer (`agent/internal/cli/version.go`, published in the release
  * manifest) against what that host reports. Showing this number there would mark
  * every host outdated the moment the web app alone is released — which is the whole
- * reason the two are separate (REQ-PDAGENT-020).
+ * reason the two are separate.
  */
 export const APP_VERSION: string = __PDMUX_VERSION__;

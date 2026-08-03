@@ -56,7 +56,7 @@ test.describe("[TC-PDADMIN-021] a member registers their own machine", () => {
   /**
    * The half that must NOT change. Widening who may write did not widen who may see:
    * a foreign host still answers 404 rather than 403, because 403 confirms the id
-   * exists (REQ-PDHOST-002).
+   * exists.
    */
   test("cannot see or touch another account's host", async ({ playwright }) => {
     const admin = await signedIn(playwright, ADMIN);

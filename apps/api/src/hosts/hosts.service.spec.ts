@@ -341,7 +341,7 @@ describe("HostsService", () => {
  * Registration happens under whichever account the person was signed in as, so a
  * machine routinely lands in the wrong one. These pin the correction — and that it
  * is a correction, not a share: the row moves whole, and nothing about the agent
- * changes (REQ-PDHOST-014).
+ * changes.
  */
 describe("[TC-PDHOST-016] moving a host to another account", () => {
   const SCOPE_B = "personal:user-b";
@@ -405,7 +405,7 @@ describe("[TC-PDHOST-016] moving a host to another account", () => {
     const { service } = build([], { "b@example.com": "user-b" });
     const host = await service.create(ORG_A, { label: "build-01" });
 
-    // 404, not 403 — telling B that the id exists is the leak REQ-PDHOST-002 exists
+    // 404, not 403 — telling B that the id exists is the leak the scope filter exists
     // to prevent, and moving is no exception to it.
     await expectAppException(service.move(ORG_B, host.id, "b@example.com"), "HOST_NOT_FOUND");
     expect((await service.get(ORG_A, host.id)).organizationId).toBe(ORG_A);

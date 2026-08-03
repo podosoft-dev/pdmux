@@ -881,8 +881,8 @@
       ⚠ THREE OF THESE USED TO EXIST ONLY IN THE CARD'S ⚙ POPOVER. Editing a host,
       disabling it and deleting it were reachable from a 260px panel beside the
       sidebar and from nowhere else on this page — so the page that is named after
-      the host could not change it. The popover is an entry point (pdui.md
-      REQ-PDUI-008), and an irreversible action is not an entry.
+      the host could not change it. The popover is an entry point,
+      and an irreversible action is not an entry.
 
       ⚠ SO THESE FIVE STAY VISIBLE. It is tempting to fold this card away with
       the rest of the page's weight, but TC-PDUI-182 asserts `host-edit`,

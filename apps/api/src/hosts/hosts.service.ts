@@ -414,14 +414,14 @@ export class HostsService {
    * WHY MOVING RATHER THAN SHARING: registration happens under whichever account
    * the person was signed in as, so a machine routinely lands in the wrong one —
    * and the answer to that is to correct the owner, not to invent a per-host
-   * access list. See REQ-PDHOST-014 for why sharing is the expensive shape here
+   * access list. Sharing is the expensive shape here
    * (`metricStepSec` is applied when the sample is WRITTEN, so there is exactly
    * one stream per host and no per-viewer answer to give).
    *
    * ⚠ NOTHING ABOUT THE AGENT CHANGES. Tokens, services, repositories and samples
    * all hang off `hostId`, so they follow the row; the credential stays valid and
-   * the socket is deliberately left open (REQ-PDHOST-014). The scope is re-read
-   * where it is used (REQ-PDHOST-013), so the next heartbeat simply lands in the
+   * the socket is deliberately left open. The scope is re-read
+   * where it is used rather than captured on the socket, so the next heartbeat lands in the
    * new scope's settings.
    */
   async move(organizationId: string, id: string, targetEmail: string): Promise<Host> {

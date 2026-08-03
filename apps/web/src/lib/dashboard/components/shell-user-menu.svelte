@@ -129,7 +129,7 @@
     </DropdownMenu.Item>
     <!-- Which pdmux this is. It belongs here rather than on a card because it is the
          SERVER's version, not any host's — a host's agent has its own, and the two
-         are released independently (REQ-PDAGENT-020).
+         are released independently.
 
          No i18n key: the content is a proper noun and a SemVer, so there is nothing
          to translate and a key would only add four identical strings. `Label` and

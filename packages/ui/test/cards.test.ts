@@ -255,7 +255,7 @@ describe('[TC-PDUI-005] the settings popover toggles one card', () => {
 		 * agent version, os/arch, last seen and a copyable `ssh` line, then six action
 		 * buttons — and all but the three switches were a second copy of the host's own
 		 * page, two of them down to the same testid. A 260px panel beside a card is an
-		 * entry point, not a container (pdui.md REQ-PDUI-002); this keeps it one.
+		 * entry point, not a container; this keeps it one.
 		 */
 		const { container } = render(CardSettingsPopover, {
 			props: { hostName: 'alpha', prefs: { agents: true, resources: true, links: true } },

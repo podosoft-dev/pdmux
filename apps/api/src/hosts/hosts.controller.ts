@@ -107,7 +107,7 @@ export class HostsController {
    *
    * ⚠ ONLY OUT OF YOUR OWN SCOPE. `hosts.get(resolveScopeId(session), id)` inside
    * the service is the gate — a host you cannot see answers 404, not 403, exactly
-   * as every other route does (REQ-PDHOST-002).
+   * as every other route does — a 403 would confirm the id exists.
    */
   @Post(":id/move")
   @Audit("host.move", (req, result) => ({

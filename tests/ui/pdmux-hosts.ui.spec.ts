@@ -176,7 +176,7 @@ test.describe.serial("pdmux hosts", () => {
 
     // ⚠ THE RULE THIS SPEC EXISTS FOR. Folding the page's weight is only allowed
     // where it does not bury the five actions that manage the host — burying them
-    // is the bug the previous release fixed (pdui.md REQ-PDUI-008), and it would
+    // is the bug the previous release fixed, and it would
     // be very easy to "tidy" this card away next.
     for (const id of ["host-edit", "host-install", "host-toggle-enabled", "host-move-open", "host-remove"]) {
       await expect(page.locator(`[data-testid='${id}']`)).toBeVisible();

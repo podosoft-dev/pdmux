@@ -8,7 +8,7 @@
 	 *  2. the trigger counts as "inside", or the opener closes what it just opened;
 	 *  3. the box is clamped to the viewport, or opening it near an edge puts it
 	 *     off screen.
-	 * ⚠ IT IS AN ENTRY POINT, NOT A CONTAINER (pdui.md REQ-PDUI-002). It grew to fifteen
+	 * ⚠ IT IS AN ENTRY POINT, NOT A CONTAINER. It grew to fifteen
 	 * rows — five reference values and six actions — and all but the switches were a
 	 * second copy of the host page. Two of them were the same testid as the buttons on
 	 * that page. What is left is what a 260px panel beside a card is for: flip a widget,

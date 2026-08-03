@@ -46,7 +46,7 @@ This is not taste; the properties differ:
 
 ⚠ **Putting a dev server on a public URL hands those properties straight to people.** That
 happened: on a phone the screen "appeared briefly and then 500'd", and no server-side action
-reached it. Requirement REQ-PDWEB-015 holds the chain and the contract.
+reached it. The table above is the whole of the reason.
 
 If you must check something from a phone during development, do it **knowing that**; it does not
 make it a deployment shape. From the moment a release is in someone's hands it is the container in

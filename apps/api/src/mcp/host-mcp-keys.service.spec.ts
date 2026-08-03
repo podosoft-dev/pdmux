@@ -107,7 +107,7 @@ describe("[TC-PDMCP-051] a key reaches its own host and nothing else", () => {
 
   it("[TC-PDMCP-051] cannot be minted or listed for a host in another scope", async () => {
     const host = await ctx.hosts.create(ORG_A, { label: "build-01" });
-    // 404, not 403: 403 would confirm the id exists (REQ-PDHOST-002).
+    // 404, not 403: 403 would confirm the id exists.
     await expect(ctx.keys.mint(ORG_B, host.id, mintInput, null)).rejects.toBeInstanceOf(AppException);
     await expect(ctx.keys.list(ORG_B, host.id)).rejects.toBeInstanceOf(AppException);
   });

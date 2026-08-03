@@ -17,7 +17,7 @@ import { McpController } from "./mcp.controller";
  *
  * It imports `HostsModule` rather than the host repository so every lookup goes
  * through `HostsService.get(scope, id)` — the single gate that makes "there is no
- * scope-free read of a host" true (REQ-PDHOST-002).
+ * scope-free read of a host" true.
  */
 @Module({
   imports: [TypeOrmModule.forFeature([HostMcpKey]), HostsModule, AgentsModule, MetricsModule, GitModule],
