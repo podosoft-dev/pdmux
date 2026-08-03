@@ -100,11 +100,12 @@ VM이든 똑같이 붙습니다. NAT 뒤에 있어도 상관없습니다.
 base=https://raw.githubusercontent.com/podosoft-dev/pdmux/main/infra/docker
 curl -fsSLO "$base/selfhost.compose.yml"
 curl -fsSL  "$base/selfhost.env.example" -o .env
-$EDITOR .env        # 서비스할 도메인과, 파일이 요구하는 비밀값 네 개
+$EDITOR .env        # 도메인, 본인 이메일, 그리고 파일이 요구하는 비밀값 네 개
 docker compose -f selfhost.compose.yml --env-file .env up -d
 ```
 
-`https://<도메인>`을 열고 가입하면 `ADMIN_EMAILS`에 적힌 주소로 가입한 첫 계정이 관리자가 됩니다.
+`https://<도메인>`을 열고 가입합니다. **`ADMIN_EMAILS`에 적어 둔 주소로 가입해야 합니다** — 그것이
+관리자가 되는 조건이고, 다른 주소로 가입하면 일반 사용자가 되는데 화면에는 그 이유가 나오지 않습니다.
 HTTPS는 취향이 아닙니다. 세션 쿠키와 에이전트 토큰이 그 위로 오가고, 호스트가 실행할 설치 명령에는
 게이트웨이가 알려 준 오리진이 그대로 박힙니다. 그래서 compose 파일에 Caddy가 함께 들어 있고, 인증서는
 알아서 받아 갱신합니다.

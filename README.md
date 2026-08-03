@@ -104,12 +104,13 @@ Graviton instance pulls a native image.
 base=https://raw.githubusercontent.com/podosoft-dev/pdmux/main/infra/docker
 curl -fsSLO "$base/selfhost.compose.yml"
 curl -fsSL  "$base/selfhost.env.example" -o .env
-$EDITOR .env        # the domain to serve, and the four secrets it asks for
+$EDITOR .env        # the domain, your email, and the four secrets it asks for
 docker compose -f selfhost.compose.yml --env-file .env up -d
 ```
 
-Open `https://<your domain>` and register — the first account matching `ADMIN_EMAILS` becomes the
-administrator. HTTPS is not a preference here: session cookies and agent tokens ride on it, and the
+Open `https://<your domain>` and register. **Sign up with the address you put in `ADMIN_EMAILS`** —
+that is what makes an account an administrator, and an account that registers with any other address
+is an ordinary user with no sign on screen saying why. HTTPS is not a preference here: session cookies and agent tokens ride on it, and the
 install command a host runs bakes in whatever origin the gateway reports. So the compose file
 includes Caddy, which obtains and renews the certificate on its own.
 
