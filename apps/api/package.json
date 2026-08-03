@@ -86,6 +86,7 @@
     "testRegex": ".*\\.spec\\.ts$",
     "moduleNameMapper": {
       "^@pdmux/protocol$": "<rootDir>/../../../packages/protocol/src/index.ts",
+      "^@pdmux/mcp$": "<rootDir>/testing/pdmux-mcp.stub.ts",
       "^@thallesp/nestjs-better-auth$": "<rootDir>/testing/nestjs-better-auth.stub.ts",
       "^(\\.{1,2}/.*)\\.js$": "$1"
     },
