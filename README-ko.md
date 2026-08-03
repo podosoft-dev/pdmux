@@ -90,23 +90,29 @@ VM이든 똑같이 붙습니다. NAT 뒤에 있어도 상관없습니다.
 교체한 뒤에도 유예 기간 안에 접속하지 못하면 스스로 이전 바이너리로 되돌립니다. 자세한 내용은
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §2-1에 있습니다.
 
-## 띄우기
+## 설치하기
 
-의존 서비스와 두 앱을 올립니다.
+전부 이미 만들어진 이미지라, 그 머신에는 Docker 말고 필요한 것이 없습니다. Node도 Go도, 이 저장소도
+필요 없습니다. `linux/amd64`와 `linux/arm64` 둘 다 발행하므로 애플 실리콘이나 Graviton 인스턴스도 자기
+아키텍처의 이미지를 그대로 받습니다.
 
 ```bash
-npm install
-cp .env.example .env
-docker compose --env-file .env \
-  -f infra/docker/docker-compose.yml -f infra/docker/minio.compose.yml -p pdmux \
-  up -d postgres redis minio minio-init
-npx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts
-npm run migration:run -w pdmux-api
-npm run dev
+base=https://raw.githubusercontent.com/podosoft-dev/pdmux/main/infra/docker
+curl -fsSLO "$base/selfhost.compose.yml"
+curl -fsSL  "$base/selfhost.env.example" -o .env
+$EDITOR .env        # 서비스할 도메인과, 파일이 요구하는 비밀값 네 개
+docker compose -f selfhost.compose.yml --env-file .env up -d
 ```
 
-web `5001`, api `5002`, Postgres `5440`, Redis `6390`, MinIO `9010`(콘솔 `9011`)입니다. 포트가 겹치면
-`.env`에서 바꿉니다.
+`https://<도메인>`을 열고 가입하면 `ADMIN_EMAILS`에 적힌 주소로 가입한 첫 계정이 관리자가 됩니다.
+HTTPS는 취향이 아닙니다. 세션 쿠키와 에이전트 토큰이 그 위로 오가고, 호스트가 실행할 설치 명령에는
+게이트웨이가 알려 준 오리진이 그대로 박힙니다. 그래서 compose 파일에 Caddy가 함께 들어 있고, 인증서는
+알아서 받아 갱신합니다.
+
+보존 정책·백업, 또는 이 게이트웨이 대신 쓰던 것을 앞에 두는 방법은
+[docs/OPERATIONS.md](docs/OPERATIONS.md) §1에 있습니다.
+
+## 호스트 추가하기
 
 UI에서 호스트를 추가하면 등록 코드가 박힌 설치 명령이 그대로 나옵니다.
 
@@ -115,23 +121,21 @@ curl -fsSL https://<pdmux 주소>/install.sh | sh -s -- --code pdmxe_XXXXX-XXXXX
 ```
 
 대상 머신에 미리 깔아 둘 것은 없습니다. 런타임도 컴파일러도 필요 없습니다. 등록 코드는 1회용이고 15분
-뒤에 만료됩니다. 장기 토큰은 바이너리 안에서 교환해 0600 파일로 바로 쓰기 때문에 셸 히스토리나 `ps`에
-남지 않습니다. `--user`를 붙이면 root 없이 per-user 서비스로 깔립니다. 외부망이 막힌 머신은 토큰을
+뒤에 만료되며, 장기 토큰은 바이너리 안에서 교환해 0600 파일로 바로 쓰기 때문에 셸 히스토리나 `ps`에
+남지 않습니다. `--user`를 붙이면 root 없이 per-user 서비스로 깔리고, 외부망이 막힌 머신은 토큰을
 발급해서 설치합니다([docs/OPERATIONS.md](docs/OPERATIONS.md) §2-4).
 
 호스트에 tmux가 깔려 있으면 세션 목록이 바로 잡힙니다. 없으면 세션 대상 대신 일반 셸만 열 수 있고,
 카드에 그 사실이 표시됩니다.
 
-운영 배포(컨테이너 구성, 게이트웨이, 보존 정책, 백업)는 [docs/OPERATIONS.md](docs/OPERATIONS.md) §1을
-보시면 됩니다.
-
 ### 머신 없이 화면만 보고 싶을 때
 
 `tools/demo-agent.mjs`가 에이전트 쪽 프로토콜을 대신 말해 줍니다. 호스트가 하나도 없어도 대시보드를
-채울 수 있습니다. UI에서 호스트를 만들고 상세 화면에서 토큰을 발급한 뒤 실행합니다.
+채울 수 있습니다. 이 저장소를 받아 둔 자리에서 돌아갑니다. UI에서 호스트를 만들고 상세 화면에서 토큰을
+발급한 뒤 실행합니다.
 
 ```bash
-node tools/demo-agent.mjs --server http://localhost:5001 --token pdmux_… --profile build
+node tools/demo-agent.mjs --server https://<pdmux 주소> --token pdmux_… --profile build
 node tools/demo-agent.mjs --list-profiles     # build · db · laptop
 ```
 
@@ -169,23 +173,37 @@ Claude  {"mcpServers":{"pdmux":{"type":"http","url":"<origin>/mcp",
 
 ## 개발
 
+pdmux를 고칠 때는 이미지를 쓰지 않습니다. 두 앱은 `vite dev`와 `nest start --watch`로 돌고 의존 서비스만
+컨테이너에 두므로, 고친 것이 빌드 없이 화면에 반영됩니다.
+
+```bash
+npm install
+cp .env.example .env
+docker compose --env-file .env \
+  -f infra/docker/docker-compose.yml -f infra/docker/minio.compose.yml -p pdmux \
+  up -d postgres redis minio minio-init
+npx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts
+npm run migration:run -w pdmux-api
+npm run dev
+```
+
+web `5001`, api `5002`, Postgres `5440`, Redis `6390`, MinIO `9010`(콘솔 `9011`)입니다. 포트가 겹치면
+`.env`에서 바꿉니다. 이것이 왜 개발 경로일 뿐 제품을 서비스하는 방법이 아닌지는
+[docs/OPERATIONS.md](docs/OPERATIONS.md) §1-1에 적어 두었습니다.
+
 ```bash
 npm run lint                # 두 앱과 패키지 타입 체크
 npm test                    # 워크스페이스 단위 테스트
 cd agent && go test ./...   # 에이전트는 Go 모듈이라 npm test에 들어가지 않습니다
 npm run test:e2e            # Playwright. 스택이 떠 있어야 합니다
+npm run build:agent         # linux·darwin × amd64·arm64. Go 툴체인이 필요해서
+                            # `npm run build`에는 일부러 넣지 않았습니다
 ```
 
 UI 테스트는 DOM만 보지 않고 **기하**를 잽니다. 목록이 실제로 스크롤 컨테이너인지, 클릭한 패널이 뷰포트
 안에 있는지, 페이지 자체는 밀리지 않는지를 확인합니다. "클릭해도 아무 일도 안 난다"는 같은 버그를 세 번
 고치는 동안 DOM 질의는 매번 "내용은 있다"고 답했기 때문입니다
 ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §7).
-
-에이전트 바이너리 빌드는 Go 툴체인이 필요하고 `npm run build`에는 들어 있지 않습니다.
-
-```bash
-npm run build:agent         # linux·darwin × amd64·arm64, SHA256SUMS와 manifest.json까지
-```
 
 ## 문서
 

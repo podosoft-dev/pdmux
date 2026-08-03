@@ -1,8 +1,8 @@
 # Publishing the images a release deploys
 
 `podo deploy` consumes images. Building them is `.github/workflows/release.yml`,
-which triggers on a `v*.*.*` tag, verifies the commit, builds both images from the
-repository root, and pushes them under that one tag. It does not roll out.
+which triggers on a `v*.*.*` tag, verifies the commit, builds both images for both
+architectures, and publishes them under that one tag. It does not roll out.
 
 ```bash
 git tag v1.2.3
@@ -13,45 +13,62 @@ Then plan and apply as the main skill describes. `podo deploy plan` resolves the
 to an immutable digest, so a tag whose images were never pushed fails there rather
 than half way through a rollout.
 
-## Before the first tag: check the runner
+## What the workflow does, in three jobs
 
-**GitHub-hosted runners are free for public repositories only.** In a private
-repository every minute is metered against the account's included Actions minutes and
-billed beyond them, and image builds are usually the most expensive job a project
-runs. A self-hosted runner consumes no Actions minutes at all.
+| Job | Where | What |
+| --- | --- | --- |
+| `verify` | `ubuntu-latest` | `npm run lint` + `npm test`, and reads the deployment profile for the image repositories. Runs once — the suites are portable code and the answer does not depend on the machine |
+| `build` | `ubuntu-latest` **and** `ubuntu-24.04-arm` | each builds both images NATIVELY for its own architecture and pushes them **by digest, with no tag** |
+| `publish` | `ubuntu-latest` | `docker buildx imagetools create` joins the digests into one manifest list per image, then builds the agent binaries and attaches them to the GitHub release |
 
-The workflow reads the choice from a variable, so it is a setting rather than an edit:
+⚠ **The tag only starts existing in `publish`.** Both architectures push into the same
+repository, so a tag written per architecture would have each job overwrite the
+other's and the last one to finish would silently decide what the tag means. That is
+why `build` uses `push-by-digest=true` and sets `provenance: false` — an attestation
+manifest attaches itself to the index, and `imagetools create` over per-architecture
+digests would then produce an index whose entries disagree about what they describe.
+
+⚠ **`publish` also checks that both architectures' web images carry byte-identical
+agent binaries**, against each other and against the release assets. The agent build
+is reproducible on purpose (`-trimpath`, `-buildvcs=false`, a Go version pinned by
+`go.mod` and by the Dockerfile's base tag), and an agent verifies its update against a
+sha256 the server hands out — so a version whose bytes depended on which architecture
+served the request would identify nothing. A mismatch there is a finding, not noise.
+
+## Variables
 
 | Variable | Unset | Notes |
 | --- | --- | --- |
-| `PODOKIT_RUNNER` | `["ubuntu-latest"]` | JSON array of labels. Self-hosted example: `["self-hosted","Linux","X64"]` |
-| `PODOKIT_DEPLOY_PROFILE` | `production` | which `.podokit/deploy/<name>.json` names the image repositories |
-| `PODOKIT_IMAGE_PLATFORM` | `linux/amd64` | the architecture the **deployment target** runs, not the runner's |
+| `PODOKIT_DEPLOY_PROFILE` | `production` | which `.podokit/deploy/<name>.json` names the image repositories. This repository sets it to `publish` |
 
-Nothing warns when a private repository is still on the default: the workflow
-succeeds either way and the difference appears on a bill. **When asked to set up
-releases, check the repository's visibility first and say which case it is.**
+That is the whole list. `PODOKIT_RUNNER` and `PODOKIT_IMAGE_PLATFORM` are **no longer
+read by `release.yml`** (`ci.yml` still honours `PODOKIT_RUNNER`):
 
-`PODOKIT_IMAGE_PLATFORM` is the other one worth stating out loud. Building for the
-wrong architecture produces `exec format error` at rollout — after the migration has
-already run — and building for the right one on a runner of a different architecture
-works but runs under emulation, which is slow enough to be mistaken for a problem
-with Docker.
+- The runner labels are literal, because the architecture matrix needs specific ones
+  and this repository is public — GitHub-hosted minutes are free here, and a
+  self-hosted runner on a public repository is a machine you own running code you did
+  not write.
+- The platform is no longer a choice; it is both of them. The `exec format error` at
+  rollout that `PODOKIT_IMAGE_PLATFORM` existed to prevent cannot happen now.
 
 ## Secrets
 
-`REGISTRY_USERNAME` and `REGISTRY_PASSWORD`, for the registry named by the profile's
-`release.apiRepository`. A robot or deploy account is enough for pushing, but some
-registries do not let a robot **create** a repository — push the first tag of a new
-repository with an account that can, or create the repository in the registry first.
+**None.** The images go to this repository's own package registry and
+`secrets.GITHUB_TOKEN` is the credential, which is why the jobs declare
+`permissions: packages: write` (and `contents: write`, for attaching the release
+assets). `REGISTRY_USERNAME`/`REGISTRY_PASSWORD` stopped existing when this moved — a
+registry credential that is not stored cannot leak.
 
-Never print either value, and never put one in a profile, a command argument, or a
-report.
+⚠ **A package pushed to ghcr for the first time is PRIVATE even when the repository is
+public.** Visibility does not carry across; it is set once, per package, in that
+package's own settings, and until then `docker pull` fails with a 401 that reads like
+a credential problem on the puller's side.
 
 ## Building by hand
 
-Only when a tag is not the right trigger. Build for the target's architecture, tag
-both images identically, and push before planning:
+Only when a tag is not the right trigger — and note that this produces a
+**single-architecture** image, because assembling the manifest list is the workflow's
+job:
 
 ```bash
 docker build --platform linux/amd64 -f apps/api/Dockerfile -t <api-repository>:v1.2.3 .

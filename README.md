@@ -94,23 +94,29 @@ candidate binary and makes it complete a real handshake; after swapping it stays
 restores the previous binary if it cannot connect in time. The details are in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §2-1.
 
-## Running it
+## Installing it
 
-Bring up the dependencies and both apps:
+Everything is a published image, so the machine needs Docker and nothing else — no Node, no Go, not
+this repository. `linux/amd64` and `linux/arm64` are both published, so an Apple Silicon box or a
+Graviton instance pulls a native image.
 
 ```bash
-npm install
-cp .env.example .env
-docker compose --env-file .env \
-  -f infra/docker/docker-compose.yml -f infra/docker/minio.compose.yml -p pdmux \
-  up -d postgres redis minio minio-init
-npx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts
-npm run migration:run -w pdmux-api
-npm run dev
+base=https://raw.githubusercontent.com/podosoft-dev/pdmux/main/infra/docker
+curl -fsSLO "$base/selfhost.compose.yml"
+curl -fsSL  "$base/selfhost.env.example" -o .env
+$EDITOR .env        # the domain to serve, and the four secrets it asks for
+docker compose -f selfhost.compose.yml --env-file .env up -d
 ```
 
-Web on `5001`, API on `5002`, Postgres `5440`, Redis `6390`, MinIO `9010` (console `9011`). Change
-them in `.env` if they collide.
+Open `https://<your domain>` and register — the first account matching `ADMIN_EMAILS` becomes the
+administrator. HTTPS is not a preference here: session cookies and agent tokens ride on it, and the
+install command a host runs bakes in whatever origin the gateway reports. So the compose file
+includes Caddy, which obtains and renews the certificate on its own.
+
+Retention, backups, or putting your own gateway in front of this one instead:
+[docs/OPERATIONS.md](docs/OPERATIONS.md) §1.
+
+## Adding a host
 
 Add a host in the UI and it hands you the install command with an enrollment code already in it:
 
@@ -118,25 +124,23 @@ Add a host in the UI and it hands you the install command with an enrollment cod
 curl -fsSL https://<your-pdmux>/install.sh | sh -s -- --code pdmxe_XXXXX-XXXXX-XXXXX-XXXXX
 ```
 
-Nothing has to be installed on the target first — no runtime, no compiler. The enrollment code is
-single-use and expires in 15 minutes. The long-lived token is exchanged inside the binary and written
-straight to a 0600 file, so it never reaches your shell history or `ps`. `--user` installs it as a
-per-user service without root. For a machine with no route out, issue a token instead
+Nothing has to be installed on the target first — no runtime, no compiler. The code is single-use and
+expires in 15 minutes, and the long-lived token is exchanged inside the binary straight into a 0600
+file, so it never reaches your shell history or `ps`. `--user` installs a per-user service without
+root; a machine with no route out takes a token instead
 ([docs/OPERATIONS.md](docs/OPERATIONS.md) §2-4).
 
 If the host has tmux, its sessions show up immediately. If not, you can still open a plain shell, and
 the card says so.
 
-For a production deployment — containers, a gateway, retention, backups — see
-[docs/OPERATIONS.md](docs/OPERATIONS.md) §1.
-
-### Trying it without any machines
+### Without any machines
 
 `tools/demo-agent.mjs` speaks the agent side of the protocol, so you can fill a dashboard with no
-hosts at all. Add a host in the UI, mint a token on its detail page, then run:
+hosts at all. It runs from a checkout of this repository: add a host in the UI, mint a token on its
+detail page, then run:
 
 ```bash
-node tools/demo-agent.mjs --server http://localhost:5001 --token pdmux_… --profile build
+node tools/demo-agent.mjs --server https://<your-pdmux> --token pdmux_… --profile build
 node tools/demo-agent.mjs --list-profiles     # build · db · laptop
 ```
 
@@ -176,23 +180,37 @@ behaviour comes out as callbacks, and strings are injected by the consumer.
 
 ## Development
 
+Working on pdmux does not use the images. The two apps run from `vite dev` and `nest start --watch`
+with the dependencies in containers, so an edit is on screen without a build:
+
+```bash
+npm install
+cp .env.example .env
+docker compose --env-file .env \
+  -f infra/docker/docker-compose.yml -f infra/docker/minio.compose.yml -p pdmux \
+  up -d postgres redis minio minio-init
+npx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts
+npm run migration:run -w pdmux-api
+npm run dev
+```
+
+Web on `5001`, API on `5002`, Postgres `5440`, Redis `6390`, MinIO `9010` (console `9011`). Change
+them in `.env` if they collide. Why this is a development path and not a way to serve the product is
+[docs/OPERATIONS.md](docs/OPERATIONS.md) §1-1.
+
 ```bash
 npm run lint                # type-check both apps and the packages
 npm test                    # unit tests for every workspace
 cd agent && go test ./...   # the agent is a Go module, not part of npm test
 npm run test:e2e            # Playwright, against a running stack
+npm run build:agent         # linux/darwin × amd64/arm64 — needs a Go toolchain, and is
+                            # deliberately not part of `npm run build`
 ```
 
 UI tests assert **geometry**, not just the DOM: whether a list really is a scroll container, whether a
 clicked panel is inside the viewport, whether the page itself stays put. That came out of fixing the
 same "clicking does nothing" bug three times while every DOM query insisted the content was there
 ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §7).
-
-Building the agent binaries needs a Go toolchain and is not part of `npm run build`:
-
-```bash
-npm run build:agent         # linux/darwin × amd64/arm64, plus SHA256SUMS and manifest.json
-```
 
 ## Documentation
 
