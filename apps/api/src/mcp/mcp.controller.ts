@@ -7,12 +7,18 @@ import type { Request, Response } from "express";
 
 import { AgentEnrollmentsService } from "../agents/agent-enrollments.service";
 import { AgentExecService } from "../agents/agent-exec.service";
+import { AgentUpdateService } from "../agents/agent-update.service";
 import { GitService } from "../git/git.service";
 import { HostServicesService } from "../hosts/host-services.service";
+import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { HostsService } from "../hosts/hosts.service";
 import { MetricsService } from "../metrics/metrics.service";
+import { ApiFleetGateway } from "./fleet-gateway";
 import { ApiHostGateway } from "./host-gateway";
-import { HostMcpKeysService } from "./host-mcp-keys.service";
+import { recordAudit } from "../audit/audit-events";
+import { McpAuthService } from "./mcp-auth.service";
+import { mcpEnabled } from "./mcp-enabled";
+import type { McpUserIdentity } from "./user-mcp-keys.service";
 
 /**
  * The endpoint a coding CLI on a host connects to.
@@ -27,30 +33,58 @@ import { HostMcpKeysService } from "./host-mcp-keys.service";
  * validated BEFORE the credential is read: a browser on another site can be made
  * to POST here (DNS rebinding against a private address is the case that matters
  * for a self-hosted install), and reading the key first would make the response
- * time depend on whether the key was real. There is a unit test for the ordering,
- * because it is exactly the kind of thing a later refactor tidies away.
+ * time depend on whether the key was real.
+ *
+ * `mcp.controller.spec.ts` holds that order, and the assertion that does the work
+ * is the negative one — a refused request must leave `keys.authenticate` UNCALLED.
+ * Reordering this method still answers 403, so a status-code test would not notice.
+ *
+ * ⚠ That spec needs `@pdmux/mcp` mapped to `testing/pdmux-mcp.stub.ts` in this
+ * package's jest config. The package is ESM and these tests run in jest's CommonJS
+ * runtime, which is what kept this file untested for as long as it was.
  */
 @ApiExcludeController()
 @Controller("mcp")
 @Public()
 export class McpController {
   constructor(
-    private readonly keys: HostMcpKeysService,
+    private readonly auth: McpAuthService,
     private readonly hosts: HostsService,
+    private readonly fleetSettings: FleetSettingsService,
     private readonly hostServices: HostServicesService,
     private readonly metrics: MetricsService,
     private readonly git: GitService,
     private readonly enrollments: AgentEnrollmentsService,
     private readonly exec: AgentExecService,
+    private readonly updates: AgentUpdateService,
   ) {}
 
   @All()
   async handle(@Req() request: Request, @Res() response: Response): Promise<void> {
     this.assertOrigin(request);
 
+    // ⚠ THE INSTALLATION'S KILL SWITCH SITS HERE, ABOVE THE CREDENTIAL, because it
+    // does not depend on one: a disabled endpoint must answer every caller the same
+    // way. Putting it below would make "is MCP on" leak through response timing in
+    // the same way reading the key first would.
+    //
+    // ⚠ 404, NOT 401 OR 403. A 401 with `www-authenticate` tells a client to present
+    // a key, so it retries for ever and the operator reads "bad key" for something
+    // that is not a key problem; 403 says "your credential is insufficient", which is
+    // also false and invites retrying with a better one. `feature-gate.ts` answers a
+    // disabled feature with 404 for the same reason.
+    if (!(await mcpEnabled())) {
+      response.status(404).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "MCP is disabled on this pdmux server" },
+        id: null,
+      });
+      return;
+    }
+
     const presented = McpController.bearer(request);
-    const identity = presented ? await this.keys.authenticate(presented) : null;
-    if (!identity) {
+    const caller = presented ? await this.auth.authenticate(presented) : null;
+    if (!caller) {
       // The header is what an MCP client reads to know it should send a key at all.
       response.setHeader("www-authenticate", 'Bearer realm="pdmux-mcp"');
       throw new UnauthorizedException("Invalid or missing pdmux MCP key");
@@ -68,8 +102,27 @@ export class McpController {
       return;
     }
 
-    const host = await this.hosts.get(identity.organizationId, identity.hostId);
-    const gateway = new ApiHostGateway(identity, {
+    // ⚠ THE PER-SCOPE SWITCH NEEDS THE CREDENTIAL, so it cannot move above it — the
+    // scope comes from the token. Here, and only here, it is safe to be specific:
+    // this caller has already PROVED a valid credential, so naming the reason costs
+    // nothing. The blanket "tell nobody anything" rule is about credentials that did
+    // not resolve.
+    if (caller.kind === "user") {
+      const allowed = (await this.fleetSettings.resolve(caller.identity.organizationId)).mcpUserTokens;
+      if (!allowed) {
+        response.status(403).json({
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Fleet-wide MCP tokens are disabled for this fleet" },
+          id: null,
+        });
+        return;
+      }
+    }
+
+    // ⚠ THIS LOOKUP USED TO BE UNCONDITIONAL, purely to get `hostLabel`. A fleet
+    // token has no single host, so it must stay inside this branch — running it for
+    // one would 404 on a `hostId` that does not exist.
+    const shared = {
       hosts: this.hosts,
       hostServices: this.hostServices,
       metrics: this.metrics,
@@ -77,11 +130,34 @@ export class McpController {
       enrollments: this.enrollments,
       exec: this.exec,
       origin: McpController.publicOrigin(request),
-    });
-    const server = createPdmuxMcpServer(gateway, {
-      hostLabel: host.label,
-      canRun: identity.scopes.includes("write"),
-    });
+    };
+
+    let server;
+    if (caller.kind === "host") {
+      const identity = caller.identity;
+      const host = await this.hosts.get(identity.organizationId, identity.hostId);
+      server = createPdmuxMcpServer({
+        mode: "host",
+        gateway: new ApiHostGateway(identity, shared),
+        hostLabel: host.label,
+        canRun: identity.scopes.includes("write"),
+      });
+    } else {
+      const identity = caller.identity;
+      server = createPdmuxMcpServer({
+        mode: "fleet",
+        gateway: new ApiFleetGateway(identity, {
+          ...shared,
+          updates: this.updates,
+          scopeLabel: identity.organizationId.startsWith("personal:") ? "your machines" : identity.organizationId,
+          audit: (entry) => this.recordToolAudit(request, identity, entry),
+        }),
+        scopeLabel: identity.organizationId.startsWith("personal:") ? "your machines" : identity.organizationId,
+        origin: McpController.publicOrigin(request),
+        // ⚠ EFFECTIVE, never the stored tier — a demoted owner's token weakens here.
+        tier: identity.effectiveTier,
+      });
+    }
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     response.on("close", () => {
       void transport.close();
@@ -89,6 +165,44 @@ export class McpController {
     });
     await server.connect(transport);
     await transport.handleRequest(request, response, request.body);
+  }
+
+  /**
+   * One audit entry per MUTATING tool call.
+   *
+   * ⚠ `@Audit` CANNOT SERVE THIS ENDPOINT, which is why the entries are written by
+   * hand. It is a controller-handler decorator and everything here arrives at one
+   * `@All()`, so it could only ever record "mcp.call" with no idea which tool ran —
+   * and `AuditInterceptor` derives the actor from `getSession()`, which returns
+   * nothing for a bearer credential, so every entry would carry `actorId: null`.
+   *
+   * ⚠ READS ARE NOT AUDITED, deliberately. A model polling `host_detail` every two
+   * seconds while an install finishes would bury the mutations this table exists to
+   * record. `lastUsedAt` on the token already answers "was this credential used".
+   *
+   * ⚠ THE DRY-RUN BRANCH IS AUDITED TOO. "Somebody's agent tried to delete a host"
+   * is precisely the line an operator wants and the one it is most tempting to skip.
+   */
+  private recordToolAudit(
+    request: Request,
+    identity: McpUserIdentity,
+    entry: { tool: string; target?: { type: string; id?: string; label?: string }; metadata?: Record<string, unknown> },
+  ): void {
+    void recordAudit({
+      action: `mcp.tool.${entry.tool}`,
+      actorId: identity.userId,
+      targetType: entry.target?.type ?? null,
+      targetId: entry.target?.id ?? null,
+      targetLabel: entry.target?.label ?? null,
+      ip: request.ip ?? null,
+      metadata: {
+        via: "mcp",
+        tokenId: identity.keyId,
+        tier: identity.tier,
+        effectiveTier: identity.effectiveTier,
+        ...entry.metadata,
+      },
+    });
   }
 
   /**
