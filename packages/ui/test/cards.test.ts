@@ -84,7 +84,7 @@ describe('[TC-PDUI-001] a host card renders only the widgets its preferences all
 	});
 
 
-	it('hides a widget the preferences switch off, and marks a stopped host', () => {
+	it('[TC-PDUI-177] hides a widget the preferences switch off, and marks a stopped host', () => {
 		const prefs = { ...cardPrefs({}, 'h1'), resources: false };
 		const { container } = render(HostCard, {
 			props: { host: { id: 'h1', name: 'alpha', state: 'offline' }, agents: AGENTS, prefs, services: SERVICES },
@@ -105,34 +105,6 @@ describe('[TC-PDUI-001] a host card renders only the widgets its preferences all
 		expect((container.querySelector('.pdmux-launcher select') as HTMLSelectElement).disabled).toBe(true);
 	});
 
-	it('keeps disabled distinct from unreachable', () => {
-		// `unknown` is a disabled host — nobody is asking it anything. Collapsing it into
-		// `offline` would report a switched-off machine as a broken one.
-		const { container } = render(HostCard, {
-			props: { host: { id: 'h1', name: 'alpha', state: 'unknown' }, agents: AGENTS, services: SERVICES },
-		});
-		const dot = container.querySelector('.pdmux-state-dot');
-		expect(dot?.getAttribute('data-pdmux-reach')).toBe('unknown');
-		expect(dot?.getAttribute('aria-label')).toBe('unknown');
-		// It draws the JOINED link and the stylesheet dashes it: a host nobody is asking is
-		// not being reported as disconnected. The dash is a texture on the same path, which
-		// is why the shape here matches `online` and not `offline` — and why the browser
-		// spec, not this one, is where the dashing itself is checked (jsdom loads no CSS).
-		expect(joinedBar(dot)).toBe(true);
-	});
-
-	it('keeps a long host name on one line and reachable in full', () => {
-		// The header had no rule for the name at all: a multi-word label wrapped and grew
-		// the card, and one long unbroken token overflowed it (a flex item defaults to
-		// `min-width: auto`, so the span would not shrink).
-		const name = 'ip-10-0-12-233.ap-northeast-2.compute.internal';
-		const { container } = render(HostCard, { props: { host: { id: 'h1', name, state: 'online' } } });
-		const label = container.querySelector('[data-pdmux-name]') as HTMLElement;
-		// Truncation hides the text, so the full value must stay somewhere reachable.
-		expect(label.getAttribute('title')).toBe(name);
-		expect(label.textContent).toBe(name);
-	});
-});
 
 /**
  * The mark that says an agent is behind — the one place a person looking at the
@@ -248,6 +220,51 @@ describe('[TC-PDUI-202] a host card says when its agent has somewhere to go', ()
 		const drawings = new Set([paths('offer'), paths('urgent'), paths('busy')]);
 		expect(drawings.size).toBe(3);
 	});
+});
+
+/**
+ * ⚠ THE SHAPE IS THE CHANNEL, NOT THE COLOUR — and `unknown` is the case that proves
+ * it. A disabled host is one nobody is asking; collapsing it into `offline` reports a
+ * switched-off machine as a broken one, and a reader who cannot separate the hues gets
+ * nothing at all from a colour swap.
+ *
+ * Declared against `[TC-PDUI-176]`/`[TC-PDUI-177]` in the matrix all along. They sat
+ * under `[TC-PDUI-001]`, which is about preferences, so the tag that answered for them
+ * described something else — and the matrix's own claim that this file covers them was
+ * not true of any tag in it.
+ */
+describe('[TC-PDUI-177] a card says reachability with a picture, not only a colour', () => {
+	it('keeps disabled distinct from unreachable', () => {
+		// `unknown` is a disabled host — nobody is asking it anything. Collapsing it into
+		// `offline` would report a switched-off machine as a broken one.
+		const { container } = render(HostCard, {
+			props: { host: { id: 'h1', name: 'alpha', state: 'unknown' }, agents: AGENTS, services: SERVICES },
+		});
+		const dot = container.querySelector('.pdmux-state-dot');
+		expect(dot?.getAttribute('data-pdmux-reach')).toBe('unknown');
+		expect(dot?.getAttribute('aria-label')).toBe('unknown');
+		// It draws the JOINED link and the stylesheet dashes it: a host nobody is asking is
+		// not being reported as disconnected. The dash is a texture on the same path, which
+		// is why the shape here matches `online` and not `offline` — and why the browser
+		// spec, not this one, is where the dashing itself is checked (jsdom loads no CSS).
+		expect(joinedBar(dot)).toBe(true);
+	});
+
+});
+
+describe('[TC-PDUI-176] a long host name stays on one line and stays readable', () => {
+	it('keeps a long host name on one line and reachable in full', () => {
+		// The header had no rule for the name at all: a multi-word label wrapped and grew
+		// the card, and one long unbroken token overflowed it (a flex item defaults to
+		// `min-width: auto`, so the span would not shrink).
+		const name = 'ip-10-0-12-233.ap-northeast-2.compute.internal';
+		const { container } = render(HostCard, { props: { host: { id: 'h1', name, state: 'online' } } });
+		const label = container.querySelector('[data-pdmux-name]') as HTMLElement;
+		// Truncation hides the text, so the full value must stay somewhere reachable.
+		expect(label.getAttribute('title')).toBe(name);
+		expect(label.textContent).toBe(name);
+	});
+});
 });
 
 describe('[TC-PDUI-002] a gauge row draws remaining budget and omits unreported windows', () => {
