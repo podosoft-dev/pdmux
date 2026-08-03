@@ -22,12 +22,16 @@ function testRequest(input?: {
   apiKey?: string;
   forwarded?: string;
   remoteAddress?: string;
+  path?: string;
+  bearer?: string;
 }): RateLimitRequest {
   const headers: Record<string, string> = {};
   if (input?.apiKey) headers["x-api-key"] = input.apiKey;
   if (input?.forwarded) headers["x-forwarded-for"] = input.forwarded;
+  if (input?.bearer) headers["authorization"] = `Bearer ${input.bearer}`;
   return {
     headers,
+    path: input?.path ?? "/hosts",
     header: (name: string) => headers[name.toLowerCase()],
     socket: { remoteAddress: input?.remoteAddress ?? "10.0.0.9" },
     ip: input?.remoteAddress ?? "10.0.0.9",
@@ -128,5 +132,81 @@ describe("RateLimitIdentity", () => {
     expect(value).toMatch(/^ip:[a-f0-9]{64}$/);
     expect(value).not.toContain("invalid-and-rotating");
     expect(value).not.toContain("203.0.113.7");
+  });
+
+  /**
+   * `/mcp` is the one authenticated surface with no session cookie, so before this
+   * branch existed every MCP request fell through to the address bucket — and since
+   * they all arrive through the web app's proxy, that was ONE bucket for the whole
+   * install. A busy coding agent could 429 the dashboard.
+   */
+  describe("the MCP endpoint", () => {
+    const identity = () =>
+      new RateLimitIdentity({ isValid: jest.fn(() => false) } as unknown as ApiKeyVerifier);
+
+    it("gives two callers behind one proxy address separate buckets", async () => {
+      const one = await identity().resolve(
+        testRequest({ session: null, path: "/mcp", bearer: "pdmux_mcp_aaa", forwarded: "203.0.113.7" }),
+        proxyConfig,
+      );
+      const two = await identity().resolve(
+        testRequest({ session: null, path: "/mcp", bearer: "pdmux_mcp_bbb", forwarded: "203.0.113.7" }),
+        proxyConfig,
+      );
+
+      expect(one).not.toBe(two);
+      expect(one).toMatch(/^api-key:[a-f0-9]{64}$/);
+      expect(one).not.toContain("pdmux_mcp_aaa");
+    });
+
+    it("keeps one caller stable across requests", async () => {
+      const make = () =>
+        identity().resolve(
+          testRequest({ session: null, path: "/mcp", bearer: "pdmux_mcp_aaa", forwarded: "203.0.113.7" }),
+          proxyConfig,
+        );
+      expect(await make()).toBe(await make());
+    });
+
+    /**
+     * ⚠ THE ASSERTION THAT KEEPS THE DESIGN HONEST. Tracking on the token alone
+     * would be WORSE than tracking on the address: a sprayer would earn a fresh
+     * bucket per guess and face no limit at all. The address is part of the key, so
+     * rotating tokens from one place cannot escape.
+     */
+    it("does not let a rotating token escape its address", async () => {
+      const first = await identity().resolve(
+        testRequest({ session: null, path: "/mcp", bearer: "guess-1", forwarded: "203.0.113.7" }),
+        proxyConfig,
+      );
+      const elsewhere = await identity().resolve(
+        testRequest({ session: null, path: "/mcp", bearer: "guess-1", forwarded: "198.51.100.4" }),
+        proxyConfig,
+      );
+
+      expect(first).not.toBe(elsewhere);
+    });
+
+    it("does not answer a bearer on any other path", async () => {
+      const value = await identity().resolve(
+        testRequest({ session: null, path: "/hosts", bearer: "pdmux_mcp_aaa", forwarded: "203.0.113.7" }),
+        proxyConfig,
+      );
+      expect(value).toMatch(/^ip:[a-f0-9]{64}$/);
+    });
+
+    it("never looks for a session it could not have", async () => {
+      const getSession = jest.spyOn(authRuntime.api, "getSession");
+      try {
+        await identity().resolve(
+          testRequest({ path: "/mcp", bearer: "pdmux_mcp_aaa" }),
+          proxyConfig,
+        );
+        // A bearer credential has no cookie, so the lookup was pure cost.
+        expect(getSession).not.toHaveBeenCalled();
+      } finally {
+        getSession.mockRestore();
+      }
+    });
   });
 });

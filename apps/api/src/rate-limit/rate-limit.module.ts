@@ -51,6 +51,17 @@ export class ProxyAwareThrottlerGuard extends ThrottlerGuard {
       };
     } else if (method === "GET" && path === "/site/settings") {
       effective = { ...requestProps, limit: config.runtimeLimit };
+    } else if (path === "/mcp") {
+      // A coding CLI makes several calls per turn, so the generic browser budget is
+      // the wrong shape. The tracker for this path is the (address, token) pair —
+      // see `mcpBearer` in rate-limit.identity.ts — so this limit is per caller
+      // rather than per install.
+      effective = {
+        ...requestProps,
+        limit: config.mcpLimit,
+        ttl: config.mcpTtlSeconds * 1000,
+        blockDuration: config.mcpTtlSeconds * 1000,
+      };
     }
 
     try {

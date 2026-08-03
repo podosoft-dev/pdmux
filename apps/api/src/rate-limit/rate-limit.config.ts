@@ -6,6 +6,8 @@ export interface RateLimitConfig {
   authTtlSeconds: number;
   authLimit: number;
   runtimeLimit: number;
+  mcpTtlSeconds: number;
+  mcpLimit: number;
   trustedProxyHops: number;
   proxyHeader: string;
   storageTimeoutMs: number;
@@ -53,6 +55,12 @@ export function rateLimitConfig(env: NodeJS.ProcessEnv = process.env): RateLimit
       env.RATE_LIMIT_RUNTIME_MAX,
       1000,
     ),
+    // `/mcp` needs its own budget. An MCP client makes several calls per turn of a
+    // conversation, and it reaches the API through the web app's proxy — so without
+    // a bucket of its own it lands in the generic IP pool together with every
+    // browser request, and one busy coding agent starts 429ing the dashboard.
+    mcpTtlSeconds: positiveInteger("RATE_LIMIT_MCP_TTL", env.RATE_LIMIT_MCP_TTL, 60),
+    mcpLimit: positiveInteger("RATE_LIMIT_MCP_MAX", env.RATE_LIMIT_MCP_MAX, 600),
     trustedProxyHops: nonNegativeInteger(
       "RATE_LIMIT_TRUSTED_PROXY_HOPS",
       env.RATE_LIMIT_TRUSTED_PROXY_HOPS,
