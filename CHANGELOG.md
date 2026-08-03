@@ -1,5 +1,59 @@
 # CHANGELOG
 
+## 0.4.0
+
+- **An AI CLI can now drive the whole fleet, not one machine.** Alongside the existing
+  host key there is an **account token**, issued on the new **Coding CLI access** screen, at
+  one of three permission levels — read-only, operate (register a host, mint its install
+  command, update an agent, run commands) or admin (delete a host, roll an update across
+  several). It expires, it is revocable, and every change it makes is in the audit log.
+  Neither credential can create another credential; that line is the one worth reading
+  twice, because a credential that could mint credentials turns one leak into a foothold
+  that revoking the original does not close.
+- **What a token may be granted is capped by what its owner may do, and that is
+  recomputed on every authentication.** A token freezes the scope it was minted in; the
+  person's standing in that scope is not frozen with it, so somebody removed from an
+  organization stops carrying fleet-wide power within seconds rather than at expiry. A
+  demotion weakens a token rather than revoking it — losing authority is often transient.
+- **Two switches, because they answer different questions.** `mcpEnabled` is
+  installation-wide and defaults ON so existing host keys keep working; the per-fleet
+  `mcpUserTokens` decides whether that fleet accepts fleet-wide credentials at all and
+  defaults OFF, because a capability with this blast radius must not arrive with an
+  upgrade.
+- **Destructive MCP tools describe before they act.** Without `confirm` they return what
+  they would destroy and change nothing; `host_install_command` is gated only when a live
+  enrollment code would be retired, and `run_command` is not gated at all, because a
+  confirmation on every call is a rubber stamp a model learns to pass.
+- **The sidebar says when an agent is behind, and updating starts there.** The mark
+  appears only on hosts that have somewhere to go, says so in words rather than colour
+  alone, and draws a different silhouette for each state. Pressing it opens a
+  confirmation — no request is sent until you agree — and a job already in flight is not
+  a button, so a second one cannot be started.
+- **Fixed: a read-only host key could mint an enrollment code.** Minting retires the
+  host's live code and yields an agent token that outlives the key that produced it, so
+  it now needs a read-write key and the same confirmation the fleet surface always had.
+  Host-mode MCP calls are audited too; they were not before.
+- **Fixed: an echoed keystroke waited for the output coalescing window.** A remote
+  terminal has no local echo, so a typed character only appears after a round trip —
+  measured at ~55 ms on a real deployment — and the agent added the full flush interval
+  on top of that while buffering a byte with nothing to coalesce it with. The first chunk
+  after a quiet moment now goes out immediately; bursts still collapse into one frame per
+  interval.
+- **Fixed: Korean and every other multi-byte character typed as `____` inside tmux.** An
+  agent started by launchd or systemd inherits no locale at all, so panes ran in the C
+  locale and tmux, which reads exactly those variables to decide whether its client can
+  render UTF-8, replaced each byte with an underscore. Panes now get an `LC_CTYPE` when
+  the operator supplied none.
+- **Fixed: the fleet-token list never showed a row.** It paged from zero against a
+  one-based table, so the screen reported "no tokens yet" however many existed.
+- **Fixed: a failed bookkeeping write could take the API down.** Recording that a
+  credential was used was fire-and-forget with no rejection handler, and node's default
+  for an unhandled rejection is to terminate.
+- **`/mcp` has its own rate-limit bucket.** It shared the installation's, so a busy agent
+  could push the dashboard into 429s.
+- **A self-host compose file ships with the repository**, so the published images can be
+  run without reading the source.
+
 ## 0.3.1
 
 - **Published images are multi-architecture.** `ghcr.io/podosoft-dev/pdmux-{api,web}` now carry both
