@@ -55,6 +55,30 @@ export interface FleetSettings {
    * so this one stays out of the agent's config frame by construction.
    */
   staleHostRetentionDays: number;
+  /**
+   * Whether this fleet accepts FLEET-WIDE MCP tokens (`pdmux_usr_…`). Host-scoped
+   * keys (`pdmux_mcp_…`) are unaffected either way.
+   *
+   * ⚠ OFF BY DEFAULT, FOR THE REASON DIRECTLY ABOVE. `staleHostRetentionDays` is
+   * off because a non-zero default would, at the moment the upgrade lands, act on
+   * machines nobody pointed at. This is the same mistake in a different column: a
+   * credential that reaches every host in the scope — and at admin tier can delete
+   * them — must not arrive switched on in fleets nobody consulted. An operator opts
+   * in; nobody is opted in by shipping.
+   *
+   * ⚠ TURNING IT OFF DOES NOT REVOKE ANYTHING. Existing tokens stop working
+   * immediately and start again if it is turned back on. The screen says so, because
+   * "off" reading as "revoked" is the misunderstanding that costs somebody a
+   * credential they thought was dead.
+   *
+   * ⚠ NOT PUSHED TO AGENTS. `buildAgentConfig` lists its fields explicitly, so this
+   * stays out of the agent's config frame by construction — a credential policy has
+   * no business on that path.
+   *
+   * ⚠ THE FIRST BOOLEAN IN THIS FILE. `NUMBER_BOUNDS`/`clampNumber` do not apply to
+   * it; `encodeSetting` already handles it through `String(value)`.
+   */
+  mcpUserTokens: boolean;
 }
 
 export const FLEET_SETTING_DEFAULTS: FleetSettings = {
@@ -76,6 +100,9 @@ export const FLEET_SETTING_DEFAULTS: FleetSettings = {
   // 0 = never remove a host automatically. See the field's comment: this is the
   // one default whose other values delete data the operator did not point at.
   staleHostRetentionDays: 0,
+  // Off for the same reason as the line above: an upgrade must not hand a fleet a
+  // credential shape it never asked for.
+  mcpUserTokens: false,
 };
 
 export const FLEET_SETTING_KEYS = Object.keys(FLEET_SETTING_DEFAULTS) as (keyof FleetSettings)[];
@@ -153,6 +180,11 @@ export function resolveFleetSettings(rows: { key: string; value: string }[]): Fl
       case "metricRetentionDays":
       case "staleHostRetentionDays":
         out[row.key] = clampNumber(row.key, Number(row.value), FLEET_SETTING_DEFAULTS[row.key]);
+        break;
+      case "mcpUserTokens":
+        // Only the exact string turns it on. Anything else — a hand-edited row, a
+        // half-written value — leaves the safer default in place.
+        out.mcpUserTokens = row.value === "true";
         break;
       default:
         break;

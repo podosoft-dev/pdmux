@@ -33,6 +33,19 @@ export class AccountController {
     return { require2fa: this.settings.getBool("require2fa") };
   }
 
+  // Whether this server answers /mcp at all, for the Coding CLI access screen.
+  // Kept out of the typed Capabilities for the same reason require2fa is: that type
+  // lives in a published package and cannot be extended from here.
+  //
+  // ⚠ THIS IS THE DISPLAY PATH, NOT THE ENFORCEMENT PATH. SettingsService caches per
+  // process, which is fine for drawing a screen and NOT fine for a kill switch —
+  // mcp/mcp-enabled.ts reads the same row through a short-TTL pool query so every
+  // replica honours the toggle. Do not "simplify" the endpoint into that guard.
+  @Get("mcp-enabled")
+  mcpEnabled(): { mcpEnabled: boolean } {
+    return { mcpEnabled: this.settings.getBool("mcpEnabled") };
+  }
+
   // Which optional auth features are enabled, so the UI can show/hide sections.
   // Public so the login page (unauthenticated) can offer available sign-in methods.
   @Public()

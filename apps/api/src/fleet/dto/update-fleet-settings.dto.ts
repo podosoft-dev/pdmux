@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 export class UpdateFleetSettingsDto {
   @IsOptional()
@@ -87,4 +87,10 @@ export class UpdateFleetSettingsDto {
   @Min(0)
   @Max(3650)
   staleHostRetentionDays?: number;
+
+  // Whether this fleet accepts fleet-wide MCP tokens. Host-scoped keys are
+  // unaffected. Off by default — see the field's comment in fleet-settings.ts.
+  @IsOptional()
+  @IsBoolean()
+  mcpUserTokens?: boolean;
 }
