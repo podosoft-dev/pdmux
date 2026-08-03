@@ -193,3 +193,35 @@ version directory** under the release root (`AGENT_RELEASE_DIR`, or
 name a `version` to pick one of them. A deleted version can no longer be named — which
 means the target of a deliberate downgrade (`force`) is gone. What `install.sh` bakes is
 always the checksums of **the single newest version**.
+
+### 7-1. ⚠ A container deployment serves exactly one version — all four platforms of it
+
+The paragraph above describes a **checkout**, where every released version accumulates
+under `apps/web/static/agent/`. A deployed image does not work that way, and the
+difference decides what a running server can be asked for.
+
+`.dockerignore` excludes `apps/web/static/agent` on purpose — a local `npm run build:agent`
+leaves ~30 MB there and shipping the developer's copy would only bloat the build context.
+Each image instead builds its own in an `agent` stage. So an image contains the **one
+version that commit declares** in `agent/internal/cli/version.go`, and nothing else:
+
+| | in a checkout | in a deployed image |
+|---|---|---|
+| versions present | every released one (`0.1.0` … current) | **the current one only** |
+| platforms per version | linux/darwin × amd64/arm64 — **all four** | **all four**, unchanged |
+| what the web image carries | — | the four binaries, `SHA256SUMS`, `manifest.json` (~31 MB) |
+| what the api image carries | — | `manifest.json` only; the binaries are deleted after the build |
+
+**Platforms are not the axis that narrows.** A host installing or updating gets its own
+`GOOS/GOARCH` from the same four artifacts regardless of the server's architecture — the
+agent is cross-compiled and the release job verifies that the amd64 and arm64 images carry
+byte-identical binaries. Only the **version** axis collapses to one.
+
+The consequence, and it is the only one: **a deliberate downgrade cannot name a version the
+running image was not built from.** `force` to `0.1.6` from a server built at `0.1.7`
+answers 404, because that directory never existed in the image. Normal paths are unaffected
+— `install.sh` bakes the newest, and an update always moves toward the newest.
+
+To go back, roll the *deployment* back to the release whose image carried the version you
+want, rather than expecting one image to hold several. That is the same rule as everything
+else here: the image is the unit, and a version is a property of it.

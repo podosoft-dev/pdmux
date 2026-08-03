@@ -275,7 +275,9 @@ half-done, and adding `sig`/`sigAlg` later is an addition.
 
 `bytes` is both the exact size and **the agent's read cap** (a truncated body and an endless one
 both stop there). `probationSec` is 30–1800, default 300. `force` skips **the version comparison
-only** (a deliberate downgrade) — verification and probation still happen.
+only** (a deliberate downgrade) — verification and probation still happen, and the version named
+still has to be one that server actually holds, which on a container deployment is one version
+([VERSIONING.md](VERSIONING.md) §7-1).
 
 **`updateStatus` — progress and outcome in one type**
 
