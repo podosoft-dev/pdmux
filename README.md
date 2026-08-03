@@ -7,14 +7,19 @@ Host cards (resource trends, agent token budgets, service shortcuts), a split vi
 terminals, and a read-only commit graph, gathered onto one page. Every signed-in user gets their own
 screen, and a machine in any environment can take part **with nothing but an outbound connection**.
 
-```
-┌── hosts ────────────┬──────────── terminals ────────────┬── git ──┐
-│ ● build-01     ⚙   │  #1 build-01 · main   #2 db-02 …  │ ● main  │
-│   claude 3 ███░ 82% │  ┌──────────────┬──────────────┐  │ │ feat… │
-│   cpu 13% ╱╲__      │  │              │              │  │ ├─╯     │
-│   [● api      ▾][open]│ └──────────────┴──────────────┘  │ …      │
-└─────────────────────┴───────────────────────────────────┴─────────┘
-```
+![The pdmux dashboard: host cards, split terminals and a read-only commit graph](docs/media/dashboard.png)
+
+<details>
+<summary>Opening a terminal and switching repository (animated)</summary>
+
+![Choosing a host and a session fills an empty pane; the repository picker swaps the commit graph](docs/media/demo.gif)
+
+</details>
+
+> The fleet above is not real. It is `tools/demo-agent.mjs`, which speaks the agent side of the
+> protocol so the dashboard can be seen — and photographed — without any machines. A screenshot
+> taken against real agents carries whatever was on them: absolute paths with somebody's username
+> in them, branch names from private work, a service URL on an internal network.
 
 - **From anywhere** — the agent dials out to the server, so there are no inbound ports, no VPN and no
   SSH key distribution.
@@ -78,6 +83,20 @@ Building the agent release binaries yourself needs a Go toolchain (it is **not p
 npm run build:agent          # linux·darwin × amd64·arm64 + SHA256SUMS + manifest.json
 cd agent && go test ./...
 ```
+
+### Looking at it without any machines
+
+The screenshots above were taken against `tools/demo-agent.mjs`, which speaks the agent side of the
+protocol so a dashboard can be populated with no hosts at all:
+
+```bash
+# register a host in the UI, mint a token on its detail page, then
+node tools/demo-agent.mjs --server http://localhost:5001 --token pdmux_… --profile build
+node tools/demo-agent.mjs --list-profiles     # build · db · laptop
+```
+
+It is not a test double — nothing asserts against it, and the conformance corpus is where the two
+implementations are held to one contract. It exists so the product can be looked at.
 
 ## Tests
 
