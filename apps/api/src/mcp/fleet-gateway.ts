@@ -190,6 +190,13 @@ export class ApiFleetGateway implements PdmuxFleetGateway {
 
   async enrollmentPlan(hostId: string): Promise<DestroyPlan | null> {
     const live = await this.deps.enrollments.current(this.scope, hostId);
+    if (live) {
+      this.deps.audit({
+        tool: "host_install_command",
+        target: { type: "host", id: hostId },
+        metadata: { dryRun: true, confirmed: false },
+      });
+    }
     // Nothing live means nothing is voided, so minting needs no confirmation — which
     // is what keeps a fresh host frictionless.
     if (!live) return null;
@@ -250,11 +257,15 @@ export class ApiFleetGateway implements PdmuxFleetGateway {
 
   async updateFleet(hostIds: string[], version: string): Promise<unknown> {
     const result = await this.deps.updates.updateFleet(this.scope, { hostIds, version });
-    this.deps.audit({ tool: "fleet_agent_update", metadata: { hosts: hostIds.length, version } });
+    this.deps.audit({
+      tool: "fleet_agent_update",
+      metadata: { dryRun: false, confirmed: true, hosts: hostIds.length, version },
+    });
     return result;
   }
 
   async updateFleetPlan(hostIds: string[], version: string): Promise<DestroyPlan> {
+    this.deps.audit({ tool: "fleet_agent_update", metadata: { dryRun: true, confirmed: false, hosts: hostIds.length, version } });
     // Named, not counted: the scope check is what makes the count honest, and a host
     // in another scope must not appear in a list of what is about to change.
     const reachable: string[] = [];
@@ -277,6 +288,15 @@ export class ApiFleetGateway implements PdmuxFleetGateway {
 
   async deleteHostPlan(hostId: string): Promise<DestroyPlan> {
     const host = await this.deps.hosts.get(this.scope, hostId);
+    // ⚠ THE DRY RUN IS RECORDED TOO. "Somebody's agent tried to delete a host" is the
+    // entry an operator most wants and the one it is most tempting to skip — a plan
+    // that leaves no trace makes an abandoned attempt indistinguishable from one that
+    // never happened.
+    this.deps.audit({
+      tool: "host_delete",
+      target: { type: "host", id: hostId, label: host.label },
+      metadata: { dryRun: true, confirmed: false },
+    });
     const row = (await this.deps.hosts.list(this.scope)).find((candidate) => candidate.id === hostId);
     return {
       willDestroy: [
@@ -298,7 +318,13 @@ export class ApiFleetGateway implements PdmuxFleetGateway {
 
   async deleteHost(hostId: string): Promise<{ id: string; label: string }> {
     const removed = await this.deps.hosts.remove(this.scope, hostId);
-    this.deps.audit({ tool: "host_delete", target: { type: "host", id: removed.id, label: removed.label } });
+    this.deps.audit({
+      tool: "host_delete",
+      target: { type: "host", id: removed.id, label: removed.label },
+      // `confirmed` is what separates "a person agreed" from "a token did it". This
+      // method is only reachable through the confirmed branch.
+      metadata: { dryRun: false, confirmed: true },
+    });
     return removed;
   }
 

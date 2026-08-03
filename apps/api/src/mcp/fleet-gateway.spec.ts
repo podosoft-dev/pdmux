@@ -204,6 +204,24 @@ describe("what the audit trail records", () => {
     // that holds the identity — this one only says what happened to what.
   });
 
+  /**
+   * ⚠ THE ATTEMPT IS THE ENTRY WORTH HAVING. Local verification found this missing:
+   * the plan left no trace, so an abandoned deletion was indistinguishable from one
+   * that never happened. `confirmed` is what separates "a person agreed" from "a
+   * token did it".
+   */
+  it("records the dry run as well as the deletion, and tells them apart", async () => {
+    const { gateway, audit } = context();
+
+    await gateway.deleteHostPlan(MINE);
+    await gateway.deleteHost(MINE);
+
+    const entries = audit.mock.calls.map((call) => (call as unknown[])[0] as { metadata?: Record<string, unknown> });
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.metadata).toMatchObject({ dryRun: true, confirmed: false });
+    expect(entries[1]?.metadata).toMatchObject({ dryRun: false, confirmed: true });
+  });
+
   it("does not record a read", async () => {
     const { gateway, audit } = context();
     await gateway.detail(MINE);
