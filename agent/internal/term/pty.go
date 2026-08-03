@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -337,17 +339,68 @@ func runeLen(start byte) int {
 	}
 }
 
+// terminalEnv is the environment every pane's child gets.
+//
+// ⚠ IT HAS TO SUPPLY A CHARACTER ENCODING, because a service manager does not. An
+// agent started by launchd or systemd inherits no LANG, no LC_ALL and no LC_CTYPE —
+// checked on a running install, all three absent — so every child ran in the C
+// locale. tmux decides whether its CLIENT can render UTF-8 from exactly those
+// variables, and when it decides no it replaces each byte of a multi-byte character
+// with an underscore. Reported as "Korean types as ____ in pdmux but is fine in a
+// normal terminal", and reproduced by attaching a client with the variables stripped:
+// tmux sent zero bytes of the Korean text and four underscore runs.
+//
+// ⚠ ONLY WHEN THE OPERATOR SUPPLIED NONE. A unit file that sets a locale is a
+// deliberate choice and overriding it would be this code deciding it knows better.
+//
+// ⚠ AND ONLY `LC_CTYPE`. That is the category that governs encoding; setting `LANG`
+// would also move messages, collation and time formats, which is more than the bug
+// needs and more than anyone asked for.
 func terminalEnv(base []string) []string {
-	out := make([]string, 0, len(base)+1)
+	out := make([]string, 0, len(base)+2)
+	locale := false
 	for _, entry := range base {
-		if len(entry) >= 5 && entry[:5] == "TERM=" {
+		if strings.HasPrefix(entry, "TERM=") {
 			continue
+		}
+		if isSetLocale(entry) {
+			locale = true
 		}
 		out = append(out, entry)
 	}
 	// Without this a shell assumes a dumb terminal and stops emitting colour and
 	// cursor movement — the pane works but looks broken.
-	return append(out, "TERM=xterm-256color")
+	out = append(out, "TERM=xterm-256color")
+	if !locale {
+		out = append(out, "LC_CTYPE="+utf8Locale())
+	}
+	return out
+}
+
+// isSetLocale reports whether an environment entry names a locale AND gives it a
+// value. POSIX treats an empty one as unset, and `LC_ALL=` is a shape that really
+// occurs — counting it would leave the encoding unset while looking handled.
+func isSetLocale(entry string) bool {
+	for _, name := range [...]string{"LC_ALL=", "LC_CTYPE=", "LANG="} {
+		if strings.HasPrefix(entry, name) {
+			return len(entry) > len(name)
+		}
+	}
+	return false
+}
+
+// utf8Locale is the encoding to fall back to, spelled the way the platform spells it.
+//
+// ⚠ THE TWO SPELLINGS ARE NOT INTERCHANGEABLE. tmux only looks for "UTF-8" inside the
+// string, so either would satisfy it — but every other program in the pane calls
+// setlocale, which fails on a locale the system does not have and silently leaves them
+// in C. macOS has no `C.UTF-8`; its BSD spelling is the bare `UTF-8`. Linux has
+// `C.UTF-8` and not the bare form.
+func utf8Locale() string {
+	if runtime.GOOS == "darwin" {
+		return "UTF-8"
+	}
+	return "C.UTF-8"
 }
 
 // homeDir is where a terminal opens when the caller does not say.

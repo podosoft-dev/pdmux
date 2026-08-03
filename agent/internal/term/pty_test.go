@@ -252,3 +252,61 @@ func TestSplitRune(t *testing.T) {
 		}
 	})
 }
+
+/**
+ * ⚠ THE BUG THIS GUARDS IS INVISIBLE IN A DEVELOPER'S SHELL. A person running the
+ * agent by hand has LANG set, so the fallback never fires and everything looks
+ * right; under launchd or systemd the variables are simply absent. That is why the
+ * base environment here is written out rather than taken from `os.Environ()` — a
+ * test that inherited the developer's locale would pass against both the broken and
+ * the fixed code.
+ *
+ * What went wrong without it: tmux reads these variables to decide whether its
+ * client can render UTF-8, and when it decides no it draws each byte of a multi-byte
+ * character as an underscore. Korean typed into a pdmux pane came back as `____`
+ * while the same session in a normal terminal was fine.
+ */
+func TestTerminalEnv(t *testing.T) {
+	has := func(env []string, prefix string) string {
+		for _, entry := range env {
+			if strings.HasPrefix(entry, prefix) {
+				return entry
+			}
+		}
+		return ""
+	}
+
+	t.Run("[TC-PDTERM-021] supplies an encoding when the service manager gave none", func(t *testing.T) {
+		env := terminalEnv([]string{"PATH=/usr/bin", "HOME=/home/ubuntu"})
+		ctype := has(env, "LC_CTYPE=")
+		if ctype == "" {
+			t.Fatal("no LC_CTYPE: every pane would run in the C locale and tmux would draw multi-byte text as underscores")
+		}
+		if !strings.Contains(ctype, "UTF-8") {
+			t.Fatalf("LC_CTYPE = %q, want a UTF-8 encoding", ctype)
+		}
+		if has(env, "TERM=") != "TERM=xterm-256color" {
+			t.Fatalf("TERM = %q", has(env, "TERM="))
+		}
+	})
+
+	t.Run("[TC-PDTERM-021] leaves an operator's own locale alone", func(t *testing.T) {
+		for _, chosen := range []string{"LANG=ko_KR.UTF-8", "LC_CTYPE=ja_JP.eucJP", "LC_ALL=de_DE.UTF-8"} {
+			env := terminalEnv([]string{"PATH=/usr/bin", chosen})
+			// A unit file that names a locale made a decision; adding one beside it
+			// would quietly win, because LC_CTYPE outranks LANG.
+			if added := has(env, "LC_CTYPE="); added != "" && added != chosen {
+				t.Fatalf("with %s the environment also got %q", chosen, added)
+			}
+		}
+	})
+
+	t.Run("[TC-PDTERM-021] treats an empty locale as absent, the way POSIX does", func(t *testing.T) {
+		// `LC_ALL=` with no value is a real shape, and reading it as "set" would leave
+		// the encoding unset while looking handled.
+		env := terminalEnv([]string{"PATH=/usr/bin", "LC_ALL=", "LANG="})
+		if ctype := has(env, "LC_CTYPE="); !strings.Contains(ctype, "UTF-8") {
+			t.Fatalf("LC_CTYPE = %q, want a UTF-8 encoding", ctype)
+		}
+	})
+}
