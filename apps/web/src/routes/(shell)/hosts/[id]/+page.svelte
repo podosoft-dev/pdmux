@@ -41,7 +41,7 @@
   import HostInstallDialog from "$lib/dashboard/components/host-install-dialog.svelte";
   import ShellBreadcrumb from "$lib/dashboard/components/shell-breadcrumb.svelte";
   import { hostAddress, hostState, serviceUrl } from "$lib/dashboard/map";
-  import { causeMessage } from "$lib/dashboard/wording";
+  import { causeMessage, agentUpdateMessage } from "$lib/dashboard/wording";
   import { useShellState } from "$lib/dashboard/shell-state.svelte";
   import type {
     AgentTokenView,
@@ -491,12 +491,9 @@
   let updateOpen = $state(false);
   const openPanes = $derived(paneSlots(shell.layout.slots));
 
-  function updateMessage(cause: unknown): string {
-    const code = errorCode(cause);
-    if (code === "HOST_OFFLINE") return i18n.t.dash.agent.offline;
-    if (code === "AGENT_RELEASE_UNAVAILABLE" || code === "AGENT_RELEASE_INVALID") return i18n.t.dash.agent.noRelease;
-    return message(cause);
-  }
+  // Was a second copy of this map, and it had already lost the `NO_CANARY` branch the
+  // host list had — the drift `wording.ts` exists to stop.
+  const updateMessage = (cause: unknown): string => agentUpdateMessage(cause, i18n.t);
 
   async function runUpdate(): Promise<void> {
     try {

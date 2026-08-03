@@ -27,3 +27,19 @@ export function codeMessage(code: string | null, t: Messages): string {
 export function causeMessage(cause: unknown, t: Messages): string {
   return codeMessage(errorCode(cause), t);
 }
+
+/**
+ * Agent-update failures, which name the HOST's condition rather than the request's.
+ *
+ * ⚠ THIS EXISTED TWICE AND THE TWO COPIES HAD ALREADY DIVERGED. `/hosts` handled
+ * `NO_CANARY`; the host detail page did not, so the same failure read as a generic
+ * error on one screen and as an explanation on the other. The sidebar would have
+ * been a third copy — hence one function, called by three callers.
+ */
+export function agentUpdateMessage(cause: unknown, t: Messages): string {
+  const code = errorCode(cause);
+  if (code === "HOST_OFFLINE") return t.dash.agent.offline;
+  if (code === "AGENT_RELEASE_UNAVAILABLE" || code === "AGENT_RELEASE_INVALID") return t.dash.agent.noRelease;
+  if (code === "NO_CANARY") return t.dash.agent.noCanary;
+  return causeMessage(cause, t);
+}

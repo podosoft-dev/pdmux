@@ -42,7 +42,7 @@
   import ShellBreadcrumb from "$lib/dashboard/components/shell-breadcrumb.svelte";
   import { hostAddress, hostState } from "$lib/dashboard/map";
   import { useShellState } from "$lib/dashboard/shell-state.svelte";
-  import { causeMessage, codeMessage } from "$lib/dashboard/wording";
+  import { causeMessage, codeMessage, agentUpdateMessage } from "$lib/dashboard/wording";
   import type { HostView } from "$lib/dashboard/types";
   import type { PageData } from "./$types";
 
@@ -263,14 +263,8 @@
     updateOpen = true;
   }
 
-  /** Update failures name the host's own condition, so they get their own wording. */
-  function updateMessage(cause: unknown): string {
-    const code = errorCode(cause);
-    if (code === "HOST_OFFLINE") return i18n.t.dash.agent.offline;
-    if (code === "AGENT_RELEASE_UNAVAILABLE" || code === "AGENT_RELEASE_INVALID") return i18n.t.dash.agent.noRelease;
-    if (code === "NO_CANARY") return i18n.t.dash.agent.noCanary;
-    return message(cause);
-  }
+  /** Update failures name the host's own condition; the map lives in `wording.ts`. */
+  const updateMessage = (cause: unknown): string => agentUpdateMessage(cause, i18n.t);
 
   async function runUpdate(host: HostView): Promise<void> {
     try {
