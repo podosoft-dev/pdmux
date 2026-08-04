@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## 0.5.0
+
+- **A commit's detail is three faces again — Commit, Changes and File tree — and each
+  answers a different question.** The Commit face states who wrote it and what it
+  touched, and a file row toggles its patch open underneath. The Changes face puts the
+  changed files as a tree beside the chosen file's patch. The File tree face lists the
+  **whole repository at that commit** and shows a file's **contents** rather than a
+  patch — including files the commit never touched. An earlier build had folded these
+  into two, on research that turned out to describe an older release of the tool being
+  matched.
+- **Reading a repository still writes nothing to it.** `ls-tree` joins the read-only
+  whitelist on the same argument that let `ls-remote` in and keeps `fetch` out: it
+  reads the object database and changes no ref, no index and no working tree —
+  verified against a real checkout by hashing every file under `.git` before and
+  after. Requires agent **0.1.11**; an older agent leaves the File tree face saying so
+  rather than spinning.
+- **Nothing is fetched until it is asked for.** Opening a commit costs its patch,
+  opening the File tree face costs the listing, and opening a file costs that file.
+  The browser caches all of it behind a ten-minute TTL and an eight-megabyte budget
+  and drops the lot when the view closes. On the server the listing is stored per
+  commit and pruned with it, while file CONTENTS never reach the object store at all —
+  they are unbounded, one per path, and read once, so they live in a sixty-second
+  buffer that spans the agent's answer and the browser's request.
+- **A file's contents are syntax-highlighted**, chosen by extension rather than
+  guessed from content, and that highlighting is the only markup that reaches the
+  page: the source is escaped on the way through, and a file with no grammar takes the
+  same escaping path.
+- **The commit detail keeps one height and one shape.** Identity is pinned above a
+  scrolling body instead of scrolling away with it, a long message folds to five
+  lines, and switching faces no longer arrives with somebody else's file already open.
+- Fixes: the phone's bottom navigation no longer appears on desktop (a stylesheet name
+  collision), the commit list keeps its width when the branch panel opens, and a
+  file's horizontal scrollbar sits on the pane rather than at the bottom of the file.
+
 ## 0.4.0
 
 - **An AI CLI can now drive the whole fleet, not one machine.** Alongside the existing
