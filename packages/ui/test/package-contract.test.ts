@@ -5,6 +5,23 @@
  * came from — an import of an app path, a global store, or a `fetch` of an endpoint
  * only that app serves. None of those show up in a rendering test, so they are
  * checked here against the sources.
+ *
+ * ⚠ THE BAN IS ON COUPLING, NOT ON DEPENDENCIES, and this file used to conflate the
+ * two. The allowlist named four specifiers and refused everything else, which meant
+ * an ordinary self-contained library was rejected for a reason that did not apply to
+ * it — and the refusal read as principle because the rule was the only thing written
+ * down. Measured cost: a syntax highlighter was argued about instead of installed.
+ *
+ * So the list below is explicit about the two things that ARE forbidden and why:
+ *
+ *  1. THE CONSUMING APPLICATION — `apps/*`, its stores, its routes. A component that
+ *     imports one of those is this product's component, not a package.
+ *  2. A DESIGN SYSTEM — shadcn/bits-ui/Tailwind plugins. This package is installed by
+ *     projects that already have one; hard-coding ours would force every installer to
+ *     adopt it. That is why the controls live in `apps/web` and this draws content.
+ *
+ * Anything else self-contained is allowed. The cost of a dependency is bundle size,
+ * which is a judgement for the person adding it, not a structural violation.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -29,18 +46,24 @@ const read = (file: string): string => readFileSync(file, 'utf8');
 const rel = (file: string): string => file.slice(root.length + 1);
 
 describe('[TC-PDUI-030] the package never reaches into an application', () => {
-	it('imports nothing outside its own scope', () => {
+	it('imports neither the application nor a design system', () => {
+		// The application, by any spelling. A relative path can climb out of the
+		// package just as well as an alias can name it.
+		const appCoupled = /^(apps\/|\$lib|\$app|@\/)/;
+		// Design systems. Installing this package must not decide the installer's.
+		const designSystems = /^(bits-ui|shadcn|@shadcn|tailwindcss|tailwind-|@tailwindcss)/;
 		const offenders: string[] = [];
 		for (const file of sources) {
 			for (const match of read(file).matchAll(/from\s+['"]([^'"]+)['"]/g)) {
 				const specifier = match[1] as string;
-				const allowed =
-					specifier.startsWith('.') ||
-					specifier === 'svelte' ||
-					specifier.startsWith('svelte/') ||
-					specifier.startsWith('@pdmux/') ||
-					specifier.startsWith('@xterm/');
-				if (!allowed) offenders.push(`${rel(file)} -> ${specifier}`);
+				if (specifier.startsWith('.')) {
+					// ⚠ RELATIVE IS NOT AUTOMATICALLY SAFE. `../../../apps/web/...` resolves
+					// out of this package entirely, which is the very thing being banned.
+					if (specifier.includes('/apps/')) offenders.push(`${rel(file)} -> ${specifier}`);
+					continue;
+				}
+				if (appCoupled.test(specifier)) offenders.push(`${rel(file)} -> ${specifier}`);
+				if (designSystems.test(specifier)) offenders.push(`${rel(file)} -> ${specifier}`);
 			}
 		}
 		expect(offenders).toEqual([]);
