@@ -3,6 +3,7 @@ import { repoSnapshotSchema, type RepoSnapshot } from "@pdmux/protocol";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { GitDetailService } from "../git/git-detail.service";
+import { GitBlobBufferService } from "../git/git-blob-buffer.service";
 import { GitIngestService } from "../git/git-ingest.service";
 import { commitDetailKey } from "../git/git-storage";
 import { GitService } from "../git/git.service";
@@ -112,10 +113,11 @@ async function build(pending = 1): Promise<{
   const commits = new FakeRepository<RepoCommit>({ hasDetail: false, detailEmpty: false, parents: [], refs: [] });
   const storage = new FakeStorage();
   const details = new GitDetailService(storage.asStorage());
-  const ingest = new GitIngestService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details);
+  const blobs = new GitBlobBufferService();
+  const ingest = new GitIngestService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details, blobs);
   await ingest.ingest(host.id, [snapshot(pending)]);
 
-  const git = new GitService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details, hosts);
+  const git = new GitService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details, blobs, hosts);
   const registry = new AgentRegistryService();
   // The seam under test: the requester registers itself on the git service from
   // the agents side, exactly as Nest does at startup.
@@ -236,21 +238,21 @@ describe("[TC-PDGIT-008] a click on an uncollected commit asks the agent for it"
     ctx.registry.register(ctx.hostId, socket, TOKEN);
     const start = 1_800_000_000_000;
 
-    expect(ctx.service.request(ctx.hostId, REPO_PATH, PENDING, start)).toBe(true);
+    expect(ctx.service.request(ctx.hostId, REPO_PATH, { kind: "detail", sha: PENDING }, start)).toBe(true);
     // Still waiting: the answer may simply be in flight.
-    expect(ctx.service.request(ctx.hostId, REPO_PATH, PENDING, start + DETAIL_REQUEST_TTL_MS - 1)).toBe(true);
+    expect(ctx.service.request(ctx.hostId, REPO_PATH, { kind: "detail", sha: PENDING }, start + DETAIL_REQUEST_TTL_MS - 1)).toBe(true);
     expect(socket.requests()).toHaveLength(1);
 
     // The window passed with no answer — a dropped frame must not block the sha
     // forever.
-    expect(ctx.service.request(ctx.hostId, REPO_PATH, PENDING, start + DETAIL_REQUEST_TTL_MS)).toBe(true);
+    expect(ctx.service.request(ctx.hostId, REPO_PATH, { kind: "detail", sha: PENDING }, start + DETAIL_REQUEST_TTL_MS)).toBe(true);
     expect(socket.requests()).toHaveLength(2);
     expect(ctx.service.outstandingCount()).toBe(1);
   });
 
   it("[TC-PDGIT-008] forgets what it asked a host whose agent went away", () => {
     ctx.registry.register(ctx.hostId, socket, TOKEN);
-    ctx.service.request(ctx.hostId, REPO_PATH, PENDING);
+    ctx.service.request(ctx.hostId, REPO_PATH, { kind: "detail", sha: PENDING });
     expect(ctx.service.outstandingCount()).toBe(1);
 
     // The agent that was asked will never answer, and its replacement knows
@@ -260,7 +262,7 @@ describe("[TC-PDGIT-008] a click on an uncollected commit asks the agent for it"
 
     const reconnected = new RecordingSocket();
     ctx.registry.register(ctx.hostId, reconnected, TOKEN);
-    expect(ctx.service.request(ctx.hostId, REPO_PATH, PENDING)).toBe(true);
+    expect(ctx.service.request(ctx.hostId, REPO_PATH, { kind: "detail", sha: PENDING })).toBe(true);
     expect(reconnected.requests()).toHaveLength(1);
   });
 
@@ -270,7 +272,7 @@ describe("[TC-PDGIT-008] a click on an uncollected commit asks the agent for it"
       index.toString(16).padStart(40, "c"),
     );
 
-    const asked = shas.filter((sha) => ctx.service.request(ctx.hostId, REPO_PATH, sha));
+    const asked = shas.filter((sha) => ctx.service.request(ctx.hostId, REPO_PATH, { kind: "detail", sha: sha }));
 
     // A script sweeping a whole window cannot queue a `git show` per commit.
     expect(asked).toHaveLength(DETAIL_REQUEST_CAP);

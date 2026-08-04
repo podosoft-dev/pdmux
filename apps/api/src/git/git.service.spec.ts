@@ -12,6 +12,7 @@ import { fakeDataSource } from "../testing/fake-data-source";
 import { FakeRepository } from "../testing/fake-repository";
 import { FakeStorage } from "../testing/fake-storage";
 import { GitDetailService } from "./git-detail.service";
+import { GitBlobBufferService } from "./git-blob-buffer.service";
 import { GitIngestService } from "./git-ingest.service";
 import { GitService } from "./git.service";
 import { commitDetailKey } from "./git-storage";
@@ -107,10 +108,11 @@ async function build(frames: RepoSnapshot[] = [snapshot()]): Promise<{
   const commits = new FakeRepository<RepoCommit>({ hasDetail: false, detailEmpty: false, parents: [], refs: [] });
   const storage = new FakeStorage();
   const details = new GitDetailService(storage.asStorage());
-  const ingest = new GitIngestService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details);
+  const blobs = new GitBlobBufferService();
+  const ingest = new GitIngestService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details, blobs);
   for (const frame of frames) await ingest.ingest(host.id, [frame]);
 
-  const git = new GitService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details, hosts);
+  const git = new GitService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details, blobs, hosts);
   return { git, ingest, commits, storage, hostId: host.id, repoId: (repos.rows[0] as unknown as Repo).id };
 }
 

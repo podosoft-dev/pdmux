@@ -1,10 +1,11 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import type { CommitDetail, WorkingDiff } from "@pdmux/protocol";
+import type { CommitDetail, GitBlob, GitTree, WorkingDiff } from "@pdmux/protocol";
 import { AppException } from "../common/app-exception";
 import { HostsService } from "../hosts/hosts.service";
 import { stableTopoOrder } from "./commit-order";
+import { GitBlobBufferService } from "./git-blob-buffer.service";
 import { GitDetailService } from "./git-detail.service";
 import { isValidSha } from "./git-storage";
 import { RepoCommit } from "./repo-commit.entity";
@@ -61,8 +62,21 @@ export interface DetailResponse<T> {
 export type CommitDetailRequestListener = (
   hostId: string,
   repoPath: string,
-  sha: string,
+  request: AgentGitRequest,
 ) => boolean;
+
+/**
+ * What a click needs the agent to produce.
+ *
+ * ⚠ ONE LISTENER, THREE KINDS, ON PURPOSE. The coalescing, the TTL and the
+ * per-host ceiling in `AgentDetailRequestService` are the reason a polling browser
+ * does not turn into a flood of `git show` on somebody's machine, and a second
+ * request path would have had to reinvent all three — or, more likely, none.
+ */
+export type AgentGitRequest =
+  | { kind: "detail"; sha: string }
+  | { kind: "tree"; sha: string }
+  | { kind: "blob"; sha: string; path: string };
 
 @Injectable()
 export class GitService {
@@ -74,6 +88,7 @@ export class GitService {
     @InjectRepository(RepoRef) private readonly refs: Repository<RepoRef>,
     @InjectRepository(RepoCommit) private readonly commits: Repository<RepoCommit>,
     private readonly details: GitDetailService,
+    private readonly blobs: GitBlobBufferService,
     private readonly hosts: HostsService,
   ) {}
 
@@ -210,7 +225,7 @@ export class GitService {
    * count travels unchanged and "missing" stays the truthful answer.
    */
   private notCollected(repo: Repo, sha: string): DetailResponse<CommitDetail> {
-    const outstanding = this.requestDetail(repo, sha);
+    const outstanding = this.askAgent(repo, { kind: "detail", sha });
     return {
       available: false,
       detail: null,
@@ -219,13 +234,70 @@ export class GitService {
   }
 
   /** ⚠ Never throws: a socket that died mid-write must not turn a read into a 500. */
-  private requestDetail(repo: Repo, sha: string): boolean {
+  private askAgent(repo: Repo, request: AgentGitRequest): boolean {
     try {
-      return this.detailRequestListener(repo.hostId, repo.path, sha);
+      return this.detailRequestListener(repo.hostId, repo.path, request);
     } catch (error) {
-      this.logger.warn(`Detail request failed host=${repo.hostId} repo=${repo.path}: ${String(error)}`);
+      this.logger.warn(
+        `${request.kind} request failed host=${repo.hostId} repo=${repo.path}: ${String(error)}`,
+      );
       return false;
     }
+  }
+
+  /**
+   * The paths that existed at a commit.
+   *
+   * Same three-step shape as `commitDetail`: a hit answers, a miss asks the agent
+   * and says "collecting" so the screen can say something true, and the answer
+   * arrives through the ordinary ingest path. `pending` is 1 or 0 here rather than
+   * a repo-wide count — there is exactly one tree per commit, so "how many trees
+   * are outstanding" is the same question as "is this one".
+   */
+  async commitTree(
+    organizationId: string,
+    hostId: string,
+    repoId: string,
+    sha: string,
+  ): Promise<DetailResponse<GitTree>> {
+    if (!isValidSha(sha)) throw new AppException("GIT_INVALID_SHA", "Invalid commit sha", 400);
+    const repo = await this.getRepo(organizationId, hostId, repoId);
+    const commit = await this.commits.findOne({ where: { repoId: repo.id, sha } });
+    if (!commit) throw new AppException("GIT_COMMIT_NOT_FOUND", "Commit not in the collected window", 404);
+    const tree = await this.details.getFileTree(repo.hostId, repo.id, sha);
+    if (tree) return { available: true, detail: tree, pending: 0 };
+    return { available: false, detail: null, pending: this.askAgent(repo, { kind: "tree", sha }) ? 1 : 0 };
+  }
+
+  /**
+   * One file's contents at a commit.
+   *
+   * ⚠ READ FROM A BUFFER, NOT FROM STORAGE, and a miss is normal rather than an
+   * error — `git-blob-buffer.service.ts` explains why contents never reach the
+   * object store. A second read after the browser dropped its own copy simply
+   * costs one more `git show`.
+   */
+  async commitBlob(
+    organizationId: string,
+    hostId: string,
+    repoId: string,
+    sha: string,
+    path: string,
+  ): Promise<DetailResponse<GitBlob>> {
+    if (!isValidSha(sha)) throw new AppException("GIT_INVALID_SHA", "Invalid commit sha", 400);
+    if (path.length === 0 || path.length > 1024) {
+      throw new AppException("GIT_INVALID_PATH", "Invalid file path", 400);
+    }
+    const repo = await this.getRepo(organizationId, hostId, repoId);
+    const commit = await this.commits.findOne({ where: { repoId: repo.id, sha } });
+    if (!commit) throw new AppException("GIT_COMMIT_NOT_FOUND", "Commit not in the collected window", 404);
+    const blob = this.blobs.take(repo.id, sha, path);
+    if (blob) return { available: true, detail: blob, pending: 0 };
+    return {
+      available: false,
+      detail: null,
+      pending: this.askAgent(repo, { kind: "blob", sha, path }) ? 1 : 0,
+    };
   }
 
   private async getRepo(organizationId: string, hostId: string, repoId: string): Promise<Repo> {

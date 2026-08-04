@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { HostsModule } from "../hosts/hosts.module";
 import { GitController } from "./git.controller";
+import { GitBlobBufferService } from "./git-blob-buffer.service";
 import { GitDetailService } from "./git-detail.service";
 import { GitIngestService } from "./git-ingest.service";
 import { GitService } from "./git.service";
@@ -14,7 +15,7 @@ import { Repo } from "./repo.entity";
 @Module({
   imports: [TypeOrmModule.forFeature([Repo, RepoRef, RepoCommit]), HostsModule],
   controllers: [GitController],
-  providers: [GitService, GitIngestService, GitDetailService],
+  providers: [GitService, GitIngestService, GitDetailService, GitBlobBufferService],
   exports: [GitIngestService, GitService],
 })
 export class GitModule {}

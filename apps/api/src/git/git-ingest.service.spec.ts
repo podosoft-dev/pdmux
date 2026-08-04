@@ -10,6 +10,7 @@ import {
 import { FakeRepository } from "../testing/fake-repository";
 import { FakeStorage } from "../testing/fake-storage";
 import { GitDetailService } from "./git-detail.service";
+import { GitBlobBufferService } from "./git-blob-buffer.service";
 import { GitIngestService, REPO_MISSING_GRACE_MS } from "./git-ingest.service";
 import { commitDetailKey, workingDiffKey } from "./git-storage";
 import { RepoCommit } from "./repo-commit.entity";
@@ -79,7 +80,7 @@ function build(): {
   const storage = new FakeStorage();
   const details = new GitDetailService(storage.asStorage());
   return {
-    ingest: new GitIngestService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details),
+    ingest: new GitIngestService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details, new GitBlobBufferService()),
     repos,
     commits,
     refs,

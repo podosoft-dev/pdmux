@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
-import type { CommitDetail, WorkingDiff } from "@pdmux/protocol";
+import type { CommitDetail, GitTree, WorkingDiff } from "@pdmux/protocol";
 import { StorageService } from "../storage/storage.service";
-import { commitDetailKey, workingDiffKey } from "./git-storage";
+import { commitDetailKey, fileTreeKey, workingDiffKey } from "./git-storage";
 
 /**
  * Reads/writes the git payloads that live in object storage.
@@ -26,6 +26,34 @@ export class GitDetailService {
 
   async getCommitDetail(hostId: string, repoId: string, sha: string): Promise<CommitDetail | null> {
     return this.readJson<CommitDetail>(commitDetailKey(hostId, repoId, sha));
+  }
+
+  /**
+   * A commit's file listing.
+   *
+   * ⚠ IMMUTABLE PER SHA, like the patch — the tree of a commit cannot change — so
+   * this is written once and never rewritten, which is what makes a re-sent frame
+   * free. It is pruned with the commit row, not on its own schedule.
+   */
+  async putFileTree(hostId: string, repoId: string, tree: GitTree): Promise<void> {
+    await this.storage.put(
+      fileTreeKey(hostId, repoId, tree.sha),
+      JSON.stringify(tree),
+      "application/json",
+    );
+  }
+
+  async getFileTree(hostId: string, repoId: string, sha: string): Promise<GitTree | null> {
+    return this.readJson<GitTree>(fileTreeKey(hostId, repoId, sha));
+  }
+
+  async deleteFileTree(hostId: string, repoId: string, sha: string): Promise<void> {
+    try {
+      await this.storage.delete(fileTreeKey(hostId, repoId, sha));
+    } catch (error) {
+      // Already gone is the outcome this call wants, same as the patch beside it.
+      this.logger.debug(`Delete file tree failed repo=${repoId} sha=${sha}: ${String(error)}`);
+    }
   }
 
   async putWorkingDiff(hostId: string, repoId: string, diff: WorkingDiff): Promise<void> {

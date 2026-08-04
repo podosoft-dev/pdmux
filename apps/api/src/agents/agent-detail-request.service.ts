@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { AgentDownstream } from "@pdmux/protocol";
+import type { AgentGitRequest } from "../git/git.service";
 import { GitService } from "../git/git.service";
 import { AgentRegistryService } from "./agent-registry.service";
 
@@ -56,8 +57,8 @@ export class AgentDetailRequestService implements OnModuleInit {
    * `GitModule`, so the dependency only runs one way and no `forwardRef` is needed.
    */
   onModuleInit(): void {
-    this.git.setDetailRequestListener((hostId, repoPath, sha) =>
-      this.request(hostId, repoPath, sha),
+    this.git.setDetailRequestListener((hostId, repoPath, request) =>
+      this.request(hostId, repoPath, request),
     );
     // An agent that went away (or was replaced) will never answer what it was
     // asked, and the new process knows nothing about it. Dropping the markers lets
@@ -74,9 +75,14 @@ export class AgentDetailRequestService implements OnModuleInit {
    * `VerifyDialBudget.allow` takes one: expiry is behaviour worth asserting, and a
    * spec should not have to sleep for 30 seconds to assert it.
    */
-  request(hostId: string, repoPath: string, sha: string, now: number = Date.now()): boolean {
+  request(
+    hostId: string,
+    repoPath: string,
+    request: AgentGitRequest,
+    now: number = Date.now(),
+  ): boolean {
     this.expire(now);
-    const key = outstandingKey(hostId, repoPath, sha);
+    const key = outstandingKey(hostId, repoPath, request);
     if (this.outstanding.has(key)) return true;
     // Nothing is queued for an absent agent: the frame would have no reader, and
     // the collector's next pass covers this commit anyway.
@@ -89,8 +95,12 @@ export class AgentDetailRequestService implements OnModuleInit {
     }
     // One sha per frame — a click asks for one commit — which is trivially within
     // the contract's cap of DETAIL_REQUEST_CAP shas per `commitDetail`.
-    const frame: AgentDownstream = { type: "commitDetail", repoPath, shas: [sha] };
-    if (!this.registry.sendToHost(hostId, frame)) return false;
+    //
+    // ⚠ AN AGENT TOO OLD TO KNOW `fileTree` / `fileContent` LOGS AND KEEPS THE
+    // SOCKET (`DecodeDownstream` in the agent's protocol package says so in as
+    // many words), so sending one is safe. It simply never answers, the TTL
+    // expires, and the screen says the host's agent cannot do this yet.
+    if (!this.registry.sendToHost(hostId, frameFor(repoPath, request))) return false;
     this.outstanding.set(key, now + DETAIL_REQUEST_TTL_MS);
     return true;
   }
@@ -149,6 +159,17 @@ export const DETAIL_REQUEST_CAP = 50;
 /** NUL cannot appear in a host id, a path or a sha, so the key cannot collide. */
 const KEY_SEPARATOR = "\u0000";
 
-function outstandingKey(hostId: string, repoPath: string, sha: string): string {
-  return `${hostId}${KEY_SEPARATOR}${repoPath}${KEY_SEPARATOR}${sha}`;
+function outstandingKey(hostId: string, repoPath: string, request: AgentGitRequest): string {
+  // The kind and the path are part of the identity: a tree and a patch for the
+  // same sha are two different questions, and two files in one tree are two more.
+  const suffix = request.kind === "blob" ? `${KEY_SEPARATOR}${request.path}` : "";
+  return `${hostId}${KEY_SEPARATOR}${repoPath}${KEY_SEPARATOR}${request.kind}${KEY_SEPARATOR}${request.sha}${suffix}`;
+}
+
+function frameFor(repoPath: string, request: AgentGitRequest): AgentDownstream {
+  if (request.kind === "tree") return { type: "fileTree", repoPath, sha: request.sha };
+  if (request.kind === "blob") {
+    return { type: "fileContent", repoPath, sha: request.sha, path: request.path };
+  }
+  return { type: "commitDetail", repoPath, shas: [request.sha] };
 }

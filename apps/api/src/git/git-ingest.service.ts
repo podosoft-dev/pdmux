@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, IsNull, MoreThan, Not, Repository, type FindOptionsWhere } from "typeorm";
 import type { RepoSnapshot } from "@pdmux/protocol";
+import { GitBlobBufferService } from "./git-blob-buffer.service";
 import { GitDetailService } from "./git-detail.service";
 import { isValidSha } from "./git-storage";
 import { RepoCommit } from "./repo-commit.entity";
@@ -100,6 +101,7 @@ export class GitIngestService {
     @InjectRepository(RepoRef) private readonly refs: Repository<RepoRef>,
     @InjectRepository(RepoCommit) private readonly commits: Repository<RepoCommit>,
     private readonly details: GitDetailService,
+    private readonly blobs: GitBlobBufferService,
   ) {}
 
   async ingest(hostId: string, snapshots: RepoSnapshot[]): Promise<GitIngestSummary> {
@@ -190,6 +192,10 @@ export class GitIngestService {
     // unreachable garbage rather than a row claiming a patch that is no longer there.
     for (const row of commits) {
       if (row.hasDetail) await this.details.deleteCommitDetail(repo.hostId, repo.id, row.sha);
+      // The listing is keyed by sha like the patch, so it goes the same way. Not
+      // gated on a flag: nothing records whether a tree was ever fetched, and a
+      // delete of an absent object is the outcome this call wants anyway.
+      await this.details.deleteFileTree(repo.hostId, repo.id, row.sha);
     }
     if (repo.hasWorkingDiff) await this.details.deleteWorkingDiff(repo.hostId, repo.id);
     this.logger.log(`Dropped repo absent from the report host=${repo.hostId} path=${repo.path}`);
@@ -327,6 +333,26 @@ export class GitIngestService {
     const detailState = await this.loadDetailState(repo.id, snapshot.details.map((detail) => detail.sha));
     const stored = await this.storeDetails(hostId, repo, snapshot, detailState);
     const patch: Partial<Repo> = { lastSnapshotAt: new Date(snapshot.ts * 1000) };
+    if (snapshot.tree) {
+      // ⚠ ONLY WHEN THE FRAME CARRIES ONE, for the same reason the remote check
+      // below is conditional: a detail answer is also a partial frame, and every
+      // partial would otherwise clear what a different click just delivered.
+      //
+      // An unreadable tree (a sha this checkout no longer has) is NOT stored — it
+      // is a transient failure, and writing it would make the next reader see a
+      // permanent one. The read path asks the agent again instead.
+      if (snapshot.tree.error === null) {
+        await this.details.putFileTree(hostId, repo.id, snapshot.tree);
+      } else {
+        this.logger.debug(`Tree unreadable repo=${repo.id} sha=${snapshot.tree.sha}: ${snapshot.tree.error}`);
+      }
+    }
+    if (snapshot.blob) {
+      // ⚠ NOT THE OBJECT STORE. File contents are unbounded, one per (sha, path),
+      // and read exactly once because the browser caches them — see
+      // `git-blob-buffer.service.ts` for why that combination stays out of a bucket.
+      this.blobs.put(repo.id, snapshot.blob);
+    }
     if (snapshot.remote) {
       // ⚠ WRITTEN ONLY WHEN THE FRAME CARRIES ONE. A detail answer is also a partial
       // frame, and clearing the last remote check because somebody clicked a commit
