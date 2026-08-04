@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# Run CI's checks before the push, not after it.
+#
+# ⚠ THE POINT IS THAT NOBODY HAS TO REMEMBER. Three pushes in a row failed on a
+# workspace suite that had simply not been run by hand; the fix that works is the one
+# that does not depend on somebody choosing to run it.
+#
+# Skip deliberately when you mean to: `git push --no-verify`.
+exec "$(git rev-parse --show-toplevel)/tools/preflight.sh" --quick
