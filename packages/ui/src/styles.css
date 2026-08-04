@@ -1733,19 +1733,24 @@
 }
 
 /*
- * While the patch is still on its way, hold the height the panel is ABOUT to take.
+ * THE PANEL IS ONE HEIGHT, FROM THE CLICK UNTIL THE USER DRAGS THE HANDLE.
  *
- * WHY: the panel opened at `min-height` and grew to the cap when the answer arrived —
- * measured 140px -> 360px, between 45ms and 180ms after the click and varying per commit
- * (a stored patch answers at once, one still being collected does not). That is a SECOND
- * shrink of the commit list, so the list scrolled again after the click already looked
- * finished, and only sometimes. Reserving the space means the list shrinks once, when the
- * click happens, and nothing moves afterwards.
+ * WHY: it used to be content-height. The panel opened at `min-height` and grew to the cap
+ * when the answer arrived — measured 140px -> 360px, between 45ms and 180ms after the
+ * click and varying per commit (a stored patch answers at once, one still being collected
+ * does not). That is a SECOND shrink of the commit list, so the list scrolled again after
+ * the click already looked finished, and only sometimes.
  *
- * Not applied once the user has dragged the handle: an explicit height cannot grow, so
- * there is nothing to reserve.
+ * ⚠ THE SAME THING HAPPENS ON EVERY TAB CHANGE, and this rule used to be scoped to
+ * `[data-pdmux-awaiting]` so it did not cover it: the message face is a few lines and the
+ * patch face is hundreds, so switching tabs resized the panel — and therefore the commit
+ * list above it — every single time. Reported. The reason written here for the first case
+ * is the reason for this one: the list shrinks ONCE, when the click happens, and nothing
+ * moves afterwards.
+ *
+ * Not applied once the user has dragged the handle — that number is theirs.
  */
-.pdmux-detail[data-pdmux-awaiting]:not([data-pdmux-sized]) {
+.pdmux-detail:not([data-pdmux-sized]) {
 	height: 45%;
 }
 
