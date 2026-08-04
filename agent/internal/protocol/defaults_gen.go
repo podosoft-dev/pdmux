@@ -357,6 +357,38 @@ func (x *ExecResult) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, (*plain)(x))
 }
 
+// NewGitBlob returns a new GitBlob, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewGitBlob() GitBlob {
+	var value GitBlob
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero GitBlob.
+func (x *GitBlob) applyDefaults() {
+	x.Binary = false
+	x.Bytes = 0
+	x.Error = nil
+	x.Lines = []string{}
+	x.Truncated = false
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so GitBlob inside a list is defaulted exactly like one at the root.
+func (x *GitBlob) UnmarshalJSON(data []byte) error {
+	*x = GitBlob{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain GitBlob
+	return json.Unmarshal(data, (*plain)(x))
+}
+
 // NewGitCommit returns a new GitCommit, seeded with every default the contract declares.
 // Build values this way rather than as a struct literal: a literal leaves
 // slices nil (they marshal to null, which the server rejects) and non-zero
@@ -539,6 +571,65 @@ func (x *GitStatusFile) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, (*plain)(x))
 }
 
+// NewGitTree returns a new GitTree, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewGitTree() GitTree {
+	var value GitTree
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero GitTree.
+func (x *GitTree) applyDefaults() {
+	x.Dropped = 0
+	x.Entries = []GitTreeEntry{}
+	x.Error = nil
+	x.Truncated = false
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so GitTree inside a list is defaulted exactly like one at the root.
+func (x *GitTree) UnmarshalJSON(data []byte) error {
+	*x = GitTree{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain GitTree
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewGitTreeEntry returns a new GitTreeEntry, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewGitTreeEntry() GitTreeEntry {
+	var value GitTreeEntry
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero GitTreeEntry.
+func (x *GitTreeEntry) applyDefaults() {
+	x.Size = 0
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so GitTreeEntry inside a list is defaulted exactly like one at the root.
+func (x *GitTreeEntry) UnmarshalJSON(data []byte) error {
+	*x = GitTreeEntry{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain GitTreeEntry
+	return json.Unmarshal(data, (*plain)(x))
+}
+
 // NewGitUncommitted returns a new GitUncommitted, seeded with every default the contract declares.
 // Build values this way rather than as a struct literal: a literal leaves
 // slices nil (they marshal to null, which the server rejects) and non-zero
@@ -676,6 +767,7 @@ func NewRepoSnapshot() RepoSnapshot {
 
 // applyDefaults writes the contract's defaults over a zero RepoSnapshot.
 func (x *RepoSnapshot) applyDefaults() {
+	x.Blob = nil
 	x.Commits = []GitCommit{}
 	x.Details = []CommitDetail{}
 	x.Error = nil
@@ -685,6 +777,7 @@ func (x *RepoSnapshot) applyDefaults() {
 	x.Pending = 0
 	x.Refs = []GitRef{}
 	x.Remote = nil
+	x.Tree = nil
 	x.Truncated = false
 	x.Uncommitted = nil
 	x.WorkingDiff = nil

@@ -438,6 +438,44 @@ type GitRemoteCheck struct {
 	Error *string `json:"error"`
 }
 
+// GitTreeEntry is one path in a repository as it stood at a commit.
+type GitTreeEntry struct {
+	Path string `json:"path"`
+	// Size is the blob size in bytes, as `ls-tree --long` reports it.
+	Size int `json:"size"`
+}
+
+// GitTree is a repository's whole file list at one commit.
+//
+// ⚠ NOT COLLECTED ON THE TIMER. The tree of a large checkout is thousands of
+// paths and nobody has opened the commit; it arrives only because somebody
+// clicked, the same way a remote check does.
+type GitTree struct {
+	SHA     string         `json:"sha"`
+	Entries []GitTreeEntry `json:"entries"`
+	// Dropped counts paths left out by the entry cap, so the UI can say how many.
+	Dropped   int  `json:"dropped"`
+	Truncated bool `json:"truncated"`
+	// Error is set when the tree could not be read at all.
+	Error *string `json:"error"`
+}
+
+// GitBlob is one file's contents at one commit.
+//
+// ⚠ Binary is an ANSWER, not a failure: a PNG has no lines to show, and sending
+// its bytes to a browser that will render none of them is the payload this
+// contract keeps trimming.
+type GitBlob struct {
+	SHA       string   `json:"sha"`
+	Path      string   `json:"path"`
+	Lines     []string `json:"lines"`
+	Binary    bool     `json:"binary"`
+	Truncated bool     `json:"truncated"`
+	// Bytes is the size on disk, so "truncated" can say how much was left.
+	Bytes int     `json:"bytes"`
+	Error *string `json:"error"`
+}
+
 // RepoSnapshot is one checkout as of one collector pass.
 type RepoSnapshot struct {
 	// Path is the stable identity of the checkout on that host.
@@ -470,6 +508,10 @@ type RepoSnapshot struct {
 	// filled by the periodic pass: it costs a network round trip per repository, so
 	// it happens when a person presses the button and not on a timer.
 	Remote *GitRemoteCheck `json:"remote"`
+	// Tree and Blob answer a `fileTree` / `fileContent` request. Both are nil on
+	// every other frame, and neither is ever filled by the periodic pass.
+	Tree *GitTree `json:"tree"`
+	Blob *GitBlob `json:"blob"`
 }
 
 // ---------------------------------------------------------------------------

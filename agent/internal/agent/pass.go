@@ -116,6 +116,46 @@ func (a *Agent) detailPass(ctx context.Context, repoPath string, shas []string) 
 	a.client.Send(frame)
 }
 
+// treePass answers "which files existed at this commit" with a PARTIAL snapshot.
+//
+// ⚠ ONLY EVER BECAUSE SOMEBODY CLICKED, never on the timer. The tree of a large
+// checkout is thousands of paths, and collecting it for every commit in the
+// window would multiply the periodic pass by the size of the repository to
+// deliver something nobody has opened.
+func (a *Agent) treePass(ctx context.Context, repoPath string, sha string) {
+	repo, known := a.findRepo(repoPath)
+	if !known {
+		// The path came from the server. Answering it would mean running git in a
+		// directory this agent never discovered.
+		a.logger.Warn("Ignoring tree request for unknown repo", log.F("repoPath", repoPath))
+		return
+	}
+	snapshot := git.CollectTreeSnapshot(ctx, git.TreeOptions{Path: repo.Path, Name: repo.Name, SHA: sha})
+	frame := protocol.NewReposFrame(time.Now().Unix())
+	frame.Repos = []protocol.RepoSnapshot{snapshot}
+	a.client.Send(frame)
+}
+
+// blobPass answers "what is in this file at this commit", one file per request.
+//
+// ⚠ ONE FILE, NOT THE TREE'S WORTH. The whole point of splitting this from
+// `treePass` is that a person opens a handful of files out of thousands; sending
+// the contents of everything the tree listed would be the largest frame in the
+// protocol by orders of magnitude, for content that is never rendered.
+func (a *Agent) blobPass(ctx context.Context, repoPath string, sha string, path string) {
+	repo, known := a.findRepo(repoPath)
+	if !known {
+		a.logger.Warn("Ignoring file request for unknown repo", log.F("repoPath", repoPath))
+		return
+	}
+	snapshot := git.CollectBlobSnapshot(ctx, git.BlobOptions{
+		Path: repo.Path, Name: repo.Name, SHA: sha, FilePath: path,
+	})
+	frame := protocol.NewReposFrame(time.Now().Unix())
+	frame.Repos = []protocol.RepoSnapshot{snapshot}
+	a.client.Send(frame)
+}
+
 // remotePass asks every discovered checkout what its remote holds right now.
 //
 // ⚠ THIS IS THE ONLY PASS THAT LEAVES THE MACHINE, and it exists as its own pass

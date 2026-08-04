@@ -389,6 +389,12 @@ func (a *Agent) onDownstream(frame protocol.DownstreamFrame) {
 	case *protocol.CommitDetailFrame:
 		repoPath, shas := f.RepoPath, slices.Clone(f.Shas)
 		a.spawnPass("detail", func(ctx context.Context) { a.detailPass(ctx, repoPath, shas) })
+	case *protocol.FileTreeFrame:
+		repoPath, sha := f.RepoPath, f.SHA
+		a.spawnPass("tree", func(ctx context.Context) { a.treePass(ctx, repoPath, sha) })
+	case *protocol.FileContentFrame:
+		repoPath, sha, path := f.RepoPath, f.SHA, f.Path
+		a.spawnPass("blob", func(ctx context.Context) { a.blobPass(ctx, repoPath, sha, path) })
 	case *protocol.DetailAckFrame:
 		// The server HAS these, so they are never rebuilt again — across restarts.
 		a.ledger.Ack(f.RepoPath, f.Shas)

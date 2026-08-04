@@ -302,6 +302,59 @@
               "maxLength": 1024,
               "type": "string"
             },
+            "sha": {
+              "maxLength": 40,
+              "minLength": 7,
+              "type": "string"
+            },
+            "type": {
+              "const": "fileTree",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repoPath",
+            "sha"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "path": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "repoPath": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "sha": {
+              "maxLength": 40,
+              "minLength": 7,
+              "type": "string"
+            },
+            "type": {
+              "const": "fileContent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repoPath",
+            "sha",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "repoPath": {
+              "maxLength": 1024,
+              "type": "string"
+            },
             "shas": {
               "items": {
                 "maxLength": 40,
@@ -887,6 +940,59 @@
       ],
       "type": "object"
     },
+    "gitBlob": {
+      "additionalProperties": true,
+      "properties": {
+        "binary": {
+          "default": false,
+          "type": "boolean"
+        },
+        "bytes": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "lines": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "maxItems": 4000,
+          "type": "array"
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "sha": {
+          "maxLength": 40,
+          "minLength": 7,
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sha",
+        "path"
+      ],
+      "type": "object"
+    },
     "gitCommit": {
       "additionalProperties": true,
       "properties": {
@@ -1162,6 +1268,67 @@
       ],
       "type": "object"
     },
+    "gitTree": {
+      "additionalProperties": true,
+      "properties": {
+        "dropped": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "entries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/gitTreeEntry"
+          },
+          "maxItems": 5000,
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sha": {
+          "maxLength": 40,
+          "minLength": 7,
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sha"
+      ],
+      "type": "object"
+    },
+    "gitTreeEntry": {
+      "additionalProperties": true,
+      "properties": {
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "size": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
     "gitUncommitted": {
       "additionalProperties": true,
       "properties": {
@@ -1321,6 +1488,17 @@
     "repoSnapshot": {
       "additionalProperties": true,
       "properties": {
+        "blob": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/gitBlob"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "commits": {
           "default": [],
           "items": {
@@ -1387,6 +1565,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/gitRemoteCheck"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tree": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/gitTree"
             },
             {
               "type": "null"

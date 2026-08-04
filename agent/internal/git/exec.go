@@ -28,6 +28,11 @@ import (
 // all — and a test asserts the refusal, because a grep for those words also hits
 // comments and slice literals and proves nothing.
 //
+// ⚠ `ls-tree` READS THE OBJECT DATABASE AND WRITES NOTHING — it prints what a
+// commit's tree contains, touching no index, no working tree and no ref. It is
+// here for the same reason `show` is, and it is what lets a person browse a
+// repository at a commit without that repository changing under them.
+//
 // ⚠ `ls-remote` IS ON THIS LIST AND `fetch` IS STILL NOT, WHICH IS THE WHOLE
 // POINT OF THE DISTINCTION. Both talk to the remote; only one writes. `ls-remote`
 // asks the remote which refs it has and prints them — it downloads no objects,
@@ -46,6 +51,7 @@ var ReadOnlySubcommands = []string{
 	"show",
 	"diff",
 	"ls-remote",
+	"ls-tree",
 }
 
 // EnvGitBin names an alternative git binary, which is how a test points the

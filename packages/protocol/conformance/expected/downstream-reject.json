@@ -15,6 +15,6 @@
 		"update-sha256-truncated": "update.sha256: Invalid",
 		"config-heartbeat-sec-zero": "config.heartbeatSec: Number must be greater than or equal to 1",
 		"config-git-limit-too-large": "config.gitLimit: Number must be less than or equal to 2000",
-		"unknown-frame-type": "type: Invalid discriminator value. Expected 'welcome' | 'config' | 'update' | 'exec' | 'terminal' | 'ping' | 'collect' | 'commitDetail' | 'detailAck'"
+		"unknown-frame-type": "type: Invalid discriminator value. Expected 'welcome' | 'config' | 'update' | 'exec' | 'terminal' | 'ping' | 'collect' | 'commitDetail' | 'fileTree' | 'fileContent' | 'detailAck'"
 	}
 }

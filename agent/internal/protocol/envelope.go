@@ -57,6 +57,8 @@ const (
 	DownstreamCollect      DownstreamType = "collect"
 	DownstreamCommitDetail DownstreamType = "commitDetail"
 	DownstreamDetailAck    DownstreamType = "detailAck"
+	DownstreamFileTree     DownstreamType = "fileTree"
+	DownstreamFileContent  DownstreamType = "fileContent"
 	DownstreamExec         DownstreamType = "exec"
 )
 
@@ -255,6 +257,25 @@ type CommitDetailFrame struct {
 	Shas     []string       `json:"shas"`
 }
 
+// FileTreeFrame asks which paths existed at one commit.
+//
+// ⚠ SEPARATE FROM FileContentFrame ON PURPOSE. A tree is one `ls-tree` and a blob
+// is one `show` per click; folded into one frame, opening a second file in the
+// same commit would re-read the whole tree.
+type FileTreeFrame struct {
+	Type     DownstreamType `json:"type"`
+	RepoPath string         `json:"repoPath"`
+	SHA      string         `json:"sha"`
+}
+
+// FileContentFrame asks for one file's contents at one commit.
+type FileContentFrame struct {
+	Type     DownstreamType `json:"type"`
+	RepoPath string         `json:"repoPath"`
+	SHA      string         `json:"sha"`
+	Path     string         `json:"path"`
+}
+
 // DetailAckFrame says "I have these". Details are immutable per sha, so an agent
 // that knows what the server already stored never rebuilds them — without this, a
 // restarted agent spends its whole per-pass budget re-producing patches the
@@ -303,6 +324,16 @@ func (f *CollectFrame) stampDownstream() DownstreamType {
 func (f *CommitDetailFrame) stampDownstream() DownstreamType {
 	f.Type = DownstreamCommitDetail
 	return DownstreamCommitDetail
+}
+
+func (f *FileTreeFrame) stampDownstream() DownstreamType {
+	f.Type = DownstreamFileTree
+	return DownstreamFileTree
+}
+
+func (f *FileContentFrame) stampDownstream() DownstreamType {
+	f.Type = DownstreamFileContent
+	return DownstreamFileContent
 }
 
 func (f *DetailAckFrame) stampDownstream() DownstreamType {
@@ -524,6 +555,10 @@ func decodeDownstream(raw []byte) (DownstreamFrame, error) {
 		frame = new(CommitDetailFrame)
 	case DownstreamDetailAck:
 		frame = new(DetailAckFrame)
+	case DownstreamFileTree:
+		frame = new(FileTreeFrame)
+	case DownstreamFileContent:
+		frame = new(FileContentFrame)
 	default:
 		return nil, fmt.Errorf("unknown downstream frame type %q", kind)
 	}

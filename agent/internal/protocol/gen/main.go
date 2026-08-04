@@ -90,6 +90,8 @@ var unionBranches = map[string]map[string]string{
 		"collect":      "CollectFrame",
 		"commitDetail": "CommitDetailFrame",
 		"detailAck":    "DetailAckFrame",
+		"fileTree":     "FileTreeFrame",
+		"fileContent":  "FileContentFrame",
 		"exec":         "ExecFrame",
 	},
 	"terminalServerFrame": {

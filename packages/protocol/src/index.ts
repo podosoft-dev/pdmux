@@ -344,6 +344,61 @@ export const gitRemoteCheckSchema = z.object({
 });
 export type GitRemoteCheck = z.infer<typeof gitRemoteCheckSchema>;
 
+/**
+ * Caps for the two things a `File tree` view needs, which are NOT the diff's caps.
+ *
+ * ⚠ BYTES AND LINES BOTH, for the reason `DIFF_CAPS` records above: a line cap
+ * alone lets one 50,000-character line through, and a minified bundle is exactly
+ * that. A repository tree has no lines, so it is capped on entries.
+ */
+export const TREE_CAPS = {
+	maxEntries: 5_000,
+} as const;
+
+export const BLOB_CAPS = {
+	maxBytes: 256_000,
+	maxLines: 4_000,
+	maxLineChars: 500,
+} as const;
+
+/** One path in a repository as it stood at a commit. */
+export const gitTreeEntrySchema = z.object({
+	path: z.string().max(1024),
+	/** Blob size in bytes, as `ls-tree --long` reports it. */
+	size: z.number().int().nonnegative().default(0),
+});
+export type GitTreeEntry = z.infer<typeof gitTreeEntrySchema>;
+
+export const gitTreeSchema = z.object({
+	sha: z.string().min(7).max(40),
+	entries: z.array(gitTreeEntrySchema).max(TREE_CAPS.maxEntries).default([]),
+	/** Paths left out by the entry cap — a count, so the UI can say how many. */
+	dropped: z.number().int().nonnegative().default(0),
+	truncated: z.boolean().default(false),
+	/** Set when the tree could not be read at all. */
+	error: z.string().max(512).nullable().default(null),
+});
+export type GitTree = z.infer<typeof gitTreeSchema>;
+
+/**
+ * One file's contents at one commit.
+ *
+ * ⚠ `binary` IS AN ANSWER, NOT A FAILURE. A PNG has no lines to show and sending
+ * its bytes to a browser that will render none of them is the payload this
+ * contract keeps trimming. The UI says so instead.
+ */
+export const gitBlobSchema = z.object({
+	sha: z.string().min(7).max(40),
+	path: z.string().max(1024),
+	lines: z.array(z.string().max(BLOB_CAPS.maxLineChars)).max(BLOB_CAPS.maxLines).default([]),
+	binary: z.boolean().default(false),
+	truncated: z.boolean().default(false),
+	/** Size on disk, so "truncated" can say how much was left. */
+	bytes: z.number().int().nonnegative().default(0),
+	error: z.string().max(512).nullable().default(null),
+});
+export type GitBlob = z.infer<typeof gitBlobSchema>;
+
 export const repoSnapshotSchema = z.object({
 	/** Stable identity of the checkout on that host. */
 	path: z.string().max(1024),
@@ -370,6 +425,16 @@ export const repoSnapshotSchema = z.object({
 	 * repository, so it happens when a person presses the button and not on a timer.
 	 */
 	remote: gitRemoteCheckSchema.nullable().default(null),
+	/**
+	 * A repository's whole file list at one commit, and one file's contents.
+	 *
+	 * ⚠ NEVER FILLED BY THE PERIODIC PASS, for the same reason `remote` is not:
+	 * the tree of a large checkout is thousands of paths and a blob is arbitrary
+	 * bytes, and neither is worth collecting for a commit nobody has opened. Both
+	 * arrive only because somebody clicked.
+	 */
+	tree: gitTreeSchema.nullable().default(null),
+	blob: gitBlobSchema.nullable().default(null),
 	/**
 	 * True when this frame answers a `commitDetail` request and carries ONLY
 	 * `details`. Without it, replying to one click costs a full graph rebuild
@@ -760,6 +825,25 @@ export const agentDownstreamSchema = z.discriminatedUnion('type', [
 		type: z.literal('commitDetail'),
 		repoPath: z.string().max(1024),
 		shas: z.array(z.string().min(7).max(40)).max(50),
+	}),
+	/**
+	 * "What files existed at this commit", and "what is in this one".
+	 *
+	 * ⚠ TWO FRAMES, NOT ONE WITH AN OPTIONAL PATH. They cost different things —
+	 * a tree is one `ls-tree` and a blob is one `show` per click — and folding
+	 * them together would mean re-reading the tree every time somebody opened
+	 * another file in it.
+	 */
+	z.object({
+		type: z.literal('fileTree'),
+		repoPath: z.string().max(1024),
+		sha: z.string().min(7).max(40),
+	}),
+	z.object({
+		type: z.literal('fileContent'),
+		repoPath: z.string().max(1024),
+		sha: z.string().min(7).max(40),
+		path: z.string().max(1024),
 	}),
 	/**
 	 * "I have these." Details are immutable per sha, so an agent that knows what
