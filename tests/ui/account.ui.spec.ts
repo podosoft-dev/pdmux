@@ -170,6 +170,39 @@ test("account security and sessions sub-navigation", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Sign out other sessions" })).toBeVisible();
 });
 
+/**
+ * ⚠ THE SUITE ALWAYS SIGNS IN FIRST, WHICH IS WHY THIS NEEDED A MOCK.
+ *
+ * better-auth guards `/list-sessions` with its freshness middleware and
+ * `session.freshAge` defaults to 24 hours, so the endpoint returns 403
+ * `SESSION_NOT_FRESH` to anyone who signed in yesterday. The seeded session is
+ * minutes old, so the test above passes for every run while the screen is broken for
+ * real users — the tab showed an empty table under an untranslated "Session is not
+ * fresh" toast. Forcing the response is the only way to reach the state the suite's
+ * own setup prevents.
+ */
+test("sessions tab explains a session that is too old to list them", async ({ page }) => {
+  await page.route("**/api/auth/list-sessions", (route) =>
+    route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "Session is not fresh", code: "SESSION_NOT_FRESH" }),
+    }),
+  );
+
+  await ready(page, "/admin/account");
+  await page.getByRole("button", { name: "Sessions" }).click();
+
+  const panel = page.getByTestId("sessions-stale");
+  await expect(panel).toBeVisible();
+  // The raw upstream string must not be what a person reads.
+  await expect(page.getByText("Session is not fresh")).toHaveCount(0);
+  // And the one action that satisfies the rule is offered rather than described.
+  await expect(page.getByTestId("sessions-stale-signin")).toBeVisible();
+  // Revoking is meaningless while the list is withheld, so it is not offered either.
+  await expect(page.getByRole("button", { name: "Sign out other sessions" })).toBeDisabled();
+});
+
 // Changing a password is the one form here whose mistake is silent: the change
 // succeeds, and the person finds out at the next sign-in with a password they
 // cannot reproduce.

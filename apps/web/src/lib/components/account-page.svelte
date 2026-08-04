@@ -384,6 +384,8 @@
   }
 
   // Sessions — this user's own devices
+  /** better-auth's code for "this session is older than `session.freshAge`". */
+  const SESSION_NOT_FRESH = "SESSION_NOT_FRESH";
   type Session = { id: string; token: string; userAgent?: string | null; ipAddress?: string | null; createdAt: string | Date };
   const PAGE_SIZE = DEFAULT_PAGE_SIZE;
   let sessions = $state<Session[]>([]);
@@ -397,8 +399,30 @@
     { key: "status", label: i18n.t.sessions.status },
     { key: "actions", label: "", class: "w-10" },
   ];
+  /**
+   * True when the session is too old to list sessions.
+   *
+   * better-auth guards `/list-sessions` (and `/unlink-account`) with its freshness
+   * middleware, and `session.freshAge` defaults to 24 hours. So for anyone who signed
+   * in yesterday — which is most people, most of the time — this call returns 403
+   * `SESSION_NOT_FRESH`. It is not a failure to report as one: the tab has to say what
+   * happened and what to do, or it is a blank table under an untranslated toast.
+   */
+  let sessionsStale = $state(false);
+  async function signOutToRefresh(): Promise<void> {
+    busy = true;
+    await api.auth.signOut();
+    await goto("/login", { invalidateAll: true });
+  }
   async function loadSessions(): Promise<void> {
     const { data: res, error } = await api.auth.listSessions();
+    if (error?.code === SESSION_NOT_FRESH) {
+      // Explained in the panel below, not thrown at the corner of the screen.
+      sessionsStale = true;
+      sessions = [];
+      return;
+    }
+    sessionsStale = false;
     if (error) return void toast.error(error.message ?? i18n.t.sessions.loadFailed);
     // Current session first (users expect it on top; also keeps it on page 1),
     // then newest to oldest.
@@ -791,9 +815,21 @@
         <Card.Root>
           <Card.Header class="flex flex-row items-center justify-between gap-2">
             <Card.Title>{i18n.t.sessions.title}</Card.Title>
-            <Button variant="outline" size="sm" disabled={busy || sessions.length <= 1} onclick={signOutOthers}>{i18n.t.sessions.signOutOthers}</Button>
+            <Button variant="outline" size="sm" disabled={busy || sessionsStale || sessions.length <= 1} onclick={signOutOthers}>{i18n.t.sessions.signOutOthers}</Button>
           </Card.Header>
           <Card.Content>
+            {#if sessionsStale}
+              <!-- The list is withheld by the server, so the card explains the rule and
+                   offers the only thing that satisfies it. A toast would have scrolled
+                   away and left an empty table behind it. -->
+              <div class="flex flex-col items-start gap-3" data-testid="sessions-stale">
+                <p class="text-muted-foreground text-sm">{i18n.t.sessions.staleTitle}</p>
+                <p class="text-muted-foreground text-xs">{i18n.t.sessions.staleHint}</p>
+                <Button variant="outline" size="sm" disabled={busy} onclick={signOutToRefresh} data-testid="sessions-stale-signin">
+                  {i18n.t.sessions.staleAction}
+                </Button>
+              </div>
+            {:else}
             <DataTable
               columns={sessionsColumns}
               rows={sessions}
@@ -815,6 +851,7 @@
                 </Table.Cell>
               {/snippet}
             </DataTable>
+            {/if}
           </Card.Content>
         </Card.Root>
       {:else if section === "apiKeys"}

@@ -486,7 +486,10 @@
     "switchAccount": "Switch",
     "switchFailed": "Failed to switch account",
     "othersRevoked": "Signed out other sessions",
-    "total": "{count} sessions"
+    "total": "{count} sessions",
+    "staleTitle": "Sign in again to see where you are signed in.",
+    "staleHint": "For your security this list is only shown to a session that signed in recently.",
+    "staleAction": "Sign in again"
   },
   "adminSessions": {
     "title": "User sessions",
