@@ -165,6 +165,9 @@ type CollectWhat string
 const (
 	CollectHeartbeat CollectWhat = "heartbeat"
 	CollectRepos     CollectWhat = "repos"
+	// CollectRemote leaves the machine, which is why it is never on the agent's own
+	// timer: it only ever arrives because somebody pressed a button.
+	CollectRemote CollectWhat = "remote"
 )
 
 // ---------------------------------------------------------------------------
@@ -383,6 +386,15 @@ type CommitDetail struct {
 	// Empty records that a merge shown against its first parent has no patch.
 	// Storing that fact is what stops it being recomputed on every single pass.
 	Empty bool `json:"empty"`
+	// AuthorEmail and the committer trio are ONLY what the graph row lacks: the
+	// row already carries the author's name and date, and repeating them here pays
+	// for the same bytes twice on the payload this contract was trimmed to keep
+	// small. The committer usually equals the author — it differs after a rebase or
+	// a cherry-pick, which is exactly when it is worth drawing.
+	AuthorEmail    string `json:"authorEmail"`
+	Committer      string `json:"committer"`
+	CommitterEmail string `json:"committerEmail"`
+	CommitterDate  *int64 `json:"committerDate"`
 }
 
 // WorkingDiff is the patch of the working tree, rewritten every pass.
@@ -392,6 +404,38 @@ type WorkingDiff struct {
 	Untracked []DiffFile `json:"untracked"`
 	Dropped   int        `json:"dropped"`
 	Truncated bool       `json:"truncated"`
+}
+
+// GitRemoteRef is a ref as the REMOTE advertises it right now.
+//
+// ⚠ NOT GitRef, AND THE DIFFERENCE IS THE POINT. GitRef is a LOCAL pointer —
+// including `refs/remotes/*`, which is a remote-TRACKING ref and therefore as old
+// as the last fetch somebody ran. This one comes from asking the remote itself.
+//
+// ⚠ IT CARRIES A SHA AND NOT A DISTANCE. `ls-remote` downloads no objects, so
+// "the local ref points somewhere else" is knowable and "you are three commits
+// behind" is not.
+type GitRemoteRef struct {
+	Name string     `json:"name"`
+	SHA  string     `json:"sha"`
+	Kind RemoteKind `json:"kind"`
+}
+
+// RemoteKind is what the remote advertised: a branch or a tag.
+type RemoteKind string
+
+const (
+	RemoteBranch RemoteKind = "branch"
+	RemoteTag    RemoteKind = "tag"
+)
+
+// GitRemoteCheck is the result of one remote check, or the reason there is none.
+type GitRemoteCheck struct {
+	CheckedAt int64          `json:"checkedAt"`
+	Refs      []GitRemoteRef `json:"refs"`
+	// Error is set when the remote could not be reached — no remote, no network,
+	// no credentials. A reachable remote with no refs is an empty list, not an error.
+	Error *string `json:"error"`
 }
 
 // RepoSnapshot is one checkout as of one collector pass.
@@ -422,6 +466,10 @@ type RepoSnapshot struct {
 	// (refs + every row) that the server already has.
 	Partial bool    `json:"partial"`
 	Error   *string `json:"error"`
+	// Remote is the last remote check, or nil when nobody has asked for one. Never
+	// filled by the periodic pass: it costs a network round trip per repository, so
+	// it happens when a person presses the button and not on a timer.
+	Remote *GitRemoteCheck `json:"remote"`
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -32,6 +33,44 @@ func TestReadOnlyEnforcement(t *testing.T) {
 		// that built no subcommand at all must not reach exec.
 		if err := AssertReadOnly(nil); err == nil {
 			t.Fatal("an empty argv must be refused")
+		}
+	})
+
+	// ⚠ THE TWO NETWORK SUBCOMMANDS ARE NOT INTERCHANGEABLE, and this is where that
+	// is written down. `ls-remote` asks the remote which refs it has; `fetch`
+	// downloads objects and rewrites remote-tracking refs in a repository somebody
+	// else is working in. Reading the remote is allowed, changing the checkout is
+	// not — and adding the first must never quietly admit the second.
+	t.Run("[TC-PDAGENT-027] admits ls-remote without admitting fetch", func(t *testing.T) {
+		if err := AssertReadOnly([]string{"ls-remote"}); err != nil {
+			t.Fatalf("ls-remote was refused: %v", err)
+		}
+		var refusal *WriteAttemptError
+		if err := AssertReadOnly([]string{"fetch"}); !errors.As(err, &refusal) {
+			t.Fatalf("fetch returned %v, want a WriteAttemptError", err)
+		}
+	})
+
+	// ⚠ NOTHING HERE IS INTERACTIVE, AND SSH HAS TO BE TOLD SEPARATELY.
+	// `GIT_TERMINAL_PROMPT=0` silences git's own credential prompt but not `ssh`,
+	// which asks for a key passphrase itself — so an ssh remote would hold the call
+	// until its timeout. It only became reachable when `ls-remote` gave this package
+	// a subcommand that talks to a network at all.
+	t.Run("[TC-PDAGENT-027] never lets a git call wait for a human", func(t *testing.T) {
+		env := environ()
+		for key, needle := range map[string]string{
+			"GIT_TERMINAL_PROMPT": "0",
+			"GIT_SSH_COMMAND":     "BatchMode=yes",
+		} {
+			found := ""
+			for _, entry := range env {
+				if strings.HasPrefix(entry, key+"=") {
+					found = entry
+				}
+			}
+			if found == "" || !strings.Contains(found, needle) {
+				t.Fatalf("%s = %q, want it to carry %q", key, found, needle)
+			}
 		}
 	})
 

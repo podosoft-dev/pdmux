@@ -193,9 +193,11 @@ describe('[TC-PDPROTO-007] the contract evolves additively', () => {
 			'ts',
 			'usage',
 		]);
+		// `remote` was added for the on-demand remote check: an addition, so an agent
+		// that has never heard of it still produces a valid snapshot.
 		expect(Object.keys(repoSnapshotSchema.shape).sort()).toEqual([
 			'commits', 'details', 'error', 'head', 'limit', 'name', 'partial', 'path', 'pending', 'refs',
-			'truncated', 'ts', 'uncommitted', 'workingDiff',
+			'remote', 'truncated', 'ts', 'uncommitted', 'workingDiff',
 		]);
 		expect(Object.keys(agentConfigSchema.shape).sort()).toEqual([
 			'bodyMaxChars', 'gitDetailBudget', 'gitIntervalSec', 'gitLimit', 'gitRoots', 'heartbeatSec',

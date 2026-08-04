@@ -73,6 +73,11 @@ const EXPECTED_DEFS = [
 	'gitCommit',
 	'gitHead',
 	'gitRef',
+	// Added with the on-demand remote check. `gitRemoteRef` is deliberately not
+	// `gitRef`: one is a local pointer (including remote-TRACKING refs, which are
+	// as old as the last fetch) and the other is what the remote advertises now.
+	'gitRemoteCheck',
+	'gitRemoteRef',
 	'gitStatusFile',
 	'gitUncommitted',
 	'heartbeat',

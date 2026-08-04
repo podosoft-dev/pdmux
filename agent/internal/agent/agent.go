@@ -370,9 +370,16 @@ func (a *Agent) onDownstream(frame protocol.DownstreamFrame) {
 	case *protocol.CollectFrame:
 		// An explicit refresh, so a click does not wait out the interval. The pass
 		// itself refuses to double-run.
-		if f.What == protocol.CollectHeartbeat {
+		switch f.What {
+		case protocol.CollectHeartbeat:
 			a.spawnPass("heartbeat", a.heartbeatPass)
-		} else {
+		case protocol.CollectRemote:
+			// ⚠ ITS OWN PASS, NOT PART OF THE GIT ONE. Every other collector reads
+			// local files; this one waits on a network per repository, so folding it
+			// into the periodic pass would make that pass as slow as the slowest
+			// unreachable remote on the host — every interval, forever.
+			a.spawnPass("remote", a.remotePass)
+		default:
 			a.spawnPass("git", a.gitPass)
 		}
 	case *protocol.TerminalDownstream:

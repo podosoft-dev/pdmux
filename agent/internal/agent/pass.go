@@ -116,6 +116,31 @@ func (a *Agent) detailPass(ctx context.Context, repoPath string, shas []string) 
 	a.client.Send(frame)
 }
 
+// remotePass asks every discovered checkout what its remote holds right now.
+//
+// ⚠ THIS IS THE ONLY PASS THAT LEAVES THE MACHINE, and it exists as its own pass
+// for that reason. `ls-remote` writes nothing — it downloads no objects and moves
+// no ref, so the repository somebody is working in is unchanged — but it does
+// wait on a network, and a host with one unreachable remote would otherwise make
+// the periodic git pass as slow as that timeout, every interval, forever.
+//
+// One frame per repository rather than a batch: a person pressed a button and the
+// first answer should appear without waiting for the slowest remote on the host.
+func (a *Agent) remotePass(ctx context.Context) {
+	a.mu.Lock()
+	repos := append([]git.DiscoveredRepo(nil), a.repos...)
+	a.mu.Unlock()
+	for _, repo := range repos {
+		if ctx.Err() != nil {
+			return
+		}
+		snapshot := git.CollectRemoteSnapshot(ctx, git.RemoteOptions{Path: repo.Path, Name: repo.Name})
+		frame := protocol.NewReposFrame(time.Now().Unix())
+		frame.Repos = []protocol.RepoSnapshot{snapshot}
+		a.client.Send(frame)
+	}
+}
+
 // findRepo looks a request up against what the last scan actually found.
 func (a *Agent) findRepo(path string) (git.DiscoveredRepo, bool) {
 	a.mu.Lock()

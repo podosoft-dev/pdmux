@@ -255,7 +255,8 @@
             "what": {
               "enum": [
                 "heartbeat",
-                "repos"
+                "repos",
+                "remote"
               ],
               "type": "string"
             }
@@ -700,6 +701,11 @@
     "commitDetail": {
       "additionalProperties": true,
       "properties": {
+        "authorEmail": {
+          "default": "",
+          "maxLength": 255,
+          "type": "string"
+        },
         "body": {
           "default": "",
           "type": "string"
@@ -707,6 +713,27 @@
         "bodyTruncated": {
           "default": false,
           "type": "boolean"
+        },
+        "committer": {
+          "default": "",
+          "maxLength": 255,
+          "type": "string"
+        },
+        "committerDate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/epochSeconds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "committerEmail": {
+          "default": "",
+          "maxLength": 255,
+          "type": "string"
         },
         "dropped": {
           "default": 0,
@@ -1053,6 +1080,65 @@
       ],
       "type": "object"
     },
+    "gitRemoteCheck": {
+      "additionalProperties": true,
+      "properties": {
+        "checkedAt": {
+          "$ref": "#/$defs/epochSeconds"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "refs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/gitRemoteRef"
+          },
+          "maxItems": 2000,
+          "type": "array"
+        }
+      },
+      "required": [
+        "checkedAt"
+      ],
+      "type": "object"
+    },
+    "gitRemoteRef": {
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "default": "branch",
+          "enum": [
+            "branch",
+            "tag"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 255,
+          "type": "string"
+        },
+        "sha": {
+          "maxLength": 40,
+          "minLength": 7,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "sha"
+      ],
+      "type": "object"
+    },
     "gitStatusFile": {
       "additionalProperties": true,
       "properties": {
@@ -1296,6 +1382,17 @@
           },
           "maxItems": 2000,
           "type": "array"
+        },
+        "remote": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/gitRemoteCheck"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "truncated": {
           "default": false,

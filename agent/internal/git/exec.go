@@ -27,6 +27,14 @@ import (
 // `fetch`, `gc`, `checkout`, `reset` and `clean` cannot be reached from here at
 // all — and a test asserts the refusal, because a grep for those words also hits
 // comments and slice literals and proves nothing.
+//
+// ⚠ `ls-remote` IS ON THIS LIST AND `fetch` IS STILL NOT, WHICH IS THE WHOLE
+// POINT OF THE DISTINCTION. Both talk to the remote; only one writes. `ls-remote`
+// asks the remote which refs it has and prints them — it downloads no objects,
+// updates no remote-tracking ref, and does not write `FETCH_HEAD`, so the
+// repository somebody is working in is byte-for-byte unchanged. That is what
+// makes it the only way to answer "what does the remote have RIGHT NOW" without
+// giving up the structural guarantee this package exists to keep.
 var ReadOnlySubcommands = []string{
 	"rev-parse",
 	"symbolic-ref",
@@ -37,6 +45,7 @@ var ReadOnlySubcommands = []string{
 	"config",
 	"show",
 	"diff",
+	"ls-remote",
 }
 
 // EnvGitBin names an alternative git binary, which is how a test points the
@@ -152,6 +161,14 @@ func environ() []string {
 		// A repository with a credential-prompting remote must not park a hidden
 		// process waiting for a password nobody will ever type.
 		"GIT_TERMINAL_PROMPT=0",
+		// ⚠ AND THE SAME GUARANTEE FOR SSH, which the line above does not give.
+		// `GIT_TERMINAL_PROMPT` governs git's own credential prompts; an ssh remote
+		// with a passphrase-protected key hands the terminal to `ssh`, which asks
+		// on its own and would sit there until the call's timeout. Nothing here is
+		// interactive, so batch mode is simply the truth about this process — and it
+		// only started to matter when `ls-remote` gave this package a subcommand
+		// that reaches the network at all.
+		"GIT_SSH_COMMAND=ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
 		// Every parser in this package matches English porcelain/plumbing output.
 		"LC_ALL=C",
 	)

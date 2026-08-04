@@ -192,7 +192,24 @@ be a **structure**, not a rule.
   does not refresh the index.
 - `fetch`, `gc`, `checkout` and `prune` **do not exist in the code** (a test checks for the
   strings).
-- The price is that remote branches are **as of the last fetch**, and the UI says so.
+- Remote-tracking refs are therefore **as of the last fetch somebody ran by hand**, and the dock
+  labels them that way.
+
+⚠ **`ls-remote` is the one exception, and the distinction it draws is the whole point.** Both it and
+`fetch` talk to the remote; only one writes. `ls-remote` asks which refs the remote has and prints
+them — no objects downloaded, no remote-tracking ref moved, no `FETCH_HEAD` — so the checkout
+somebody is working in is byte-for-byte unchanged. That makes it the only way to answer "what does
+the remote have RIGHT NOW" without giving up the guarantee above, and it is why the whitelist gained
+one entry while `fetch` still cannot be reached.
+
+It costs a network round trip per repository, so it never rides the periodic pass: it happens when a
+person presses the button, as its own pass, and a host with one unreachable remote cannot slow the
+collector that has nothing to do with it.
+
+**What it cannot answer** is how far behind you are. Counting commits needs the objects, and those
+only arrive with a fetch — so a moved branch is reported as *moved*, with a number only when the
+local checkout happens to already hold that object. Turning "the shas differ" into "3 commits
+behind" would be inventing it.
 
 **Lists and details are also separated.** A graph row needs only sha, parents, refs, author, date
 and subject, but an earlier tool put commit bodies into the list feed as well — of 250 KB per

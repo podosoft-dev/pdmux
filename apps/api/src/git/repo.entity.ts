@@ -108,4 +108,22 @@ export class Repo {
 
   @UpdateDateColumn({ type: "timestamptz" })
   updatedAt!: Date;
+
+  /**
+   * The last remote check, or null when nobody has asked for one.
+   *
+   * ⚠ NOT `repo_refs`. Those are LOCAL pointers, including remote-TRACKING refs
+   * that are as old as the last fetch a human ran; these are what the remote itself
+   * answered. `remoteCheckedAt` null means never asked — a state the UI says out
+   * loud rather than rendering as "up to date".
+   */
+  @Column({ type: "jsonb", nullable: true })
+  remoteRefs!: { name: string; sha: string; kind: "branch" | "tag" }[] | null;
+
+  @Column({ type: "timestamptz", nullable: true })
+  remoteCheckedAt!: Date | null;
+
+  /** Why the remote could not be reached — no remote, no network, no credentials. */
+  @Column({ type: "varchar", length: 512, nullable: true })
+  remoteError!: string | null;
 }

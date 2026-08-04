@@ -25,7 +25,16 @@ const (
 //
 // The BODY was 58% of a 250KB repo feed and is only ever read after a click, so
 // it never travels with the rows: it is kept aside and attached to a detail.
-var LogFormat = strings.Join([]string{"%H", "%P", "%D", "%an", "%at", "%s", "%b"}, FieldSep)
+// ⚠ THE IDENTITY FIELDS ARE APPENDED, NEVER INSERTED. Every index below is
+// positional, and the torn-record guard counts fields — moving one would silently
+// re-read a subject as a date on the first commit whose message contains the
+// separator.
+var LogFormat = strings.Join([]string{
+	"%H", "%P", "%D", "%an", "%at", "%s", "%b",
+	// Detail-only, so they ride with the body rather than with the row: the graph
+	// draws neither, and the row feed was already trimmed once for exactly this.
+	"%ae", "%cn", "%ce", "%ct",
+}, FieldSep)
 
 // CommitBody is a message, kept aside during a log walk so the detail for that
 // sha does not have to walk the history again.
@@ -33,6 +42,12 @@ type CommitBody struct {
 	Subject       string
 	Body          string
 	BodyTruncated bool
+	// AuthorEmail and the committer trio answer "who wrote this and who applied
+	// it". They live here rather than on the row because a graph draws neither.
+	AuthorEmail    string
+	Committer      string
+	CommitterEmail string
+	CommitterDate  *int64
 }
 
 // ParsedLog is one `git log` walk.
@@ -99,11 +114,22 @@ func ParseLog(text string, limit, bodyMax int) ParsedLog {
 		commit.Subject = clip(subject, subjectMaxChars)
 		parsed.Commits = append(parsed.Commits, commit)
 
-		parsed.Bodies[sha] = CommitBody{
-			Subject:       commit.Subject,
-			Body:          clip(body, bodyMax),
-			BodyTruncated: tooLong(body, bodyMax),
+		entry := CommitBody{
+			Subject:        commit.Subject,
+			Body:           clip(body, bodyMax),
+			BodyTruncated:  tooLong(body, bodyMax),
+			AuthorEmail:    clip(strings.TrimSpace(field(parts, 7)), authorMaxChars),
+			Committer:      clip(strings.TrimSpace(field(parts, 8)), authorMaxChars),
+			CommitterEmail: clip(strings.TrimSpace(field(parts, 9)), authorMaxChars),
 		}
+		// An older agent's format has no tenth field, and a torn record has none
+		// either; both leave the date null rather than inventing one.
+		if committed := strings.TrimSpace(field(parts, 10)); digitsRe.MatchString(committed) {
+			if seconds, err := strconv.ParseInt(committed, 10, 64); err == nil {
+				entry.CommitterDate = &seconds
+			}
+		}
+		parsed.Bodies[sha] = entry
 	}
 	parsed.Truncated = len(parsed.Commits) >= limit
 	return parsed

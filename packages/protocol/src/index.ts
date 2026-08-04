@@ -277,6 +277,23 @@ export const commitDetailSchema = z.object({
 	subject: z.string().max(1024).default(''),
 	body: z.string().default(''),
 	bodyTruncated: z.boolean().default(false),
+	/**
+	 * Who wrote it and who committed it.
+	 *
+	 * ⚠ ONLY WHAT THE ROW LACKS. `gitCommitSchema` already carries the author's
+	 * name and date for the graph, and putting them here again would pay for the
+	 * same bytes twice on the one payload this contract was already trimmed to keep
+	 * small. A detail is only ever shown for a row the client is holding.
+	 *
+	 * ⚠ AND THE COMMITTER IS USUALLY THE AUTHOR. The pair differs after a rebase,
+	 * a cherry-pick or a patch applied on somebody's behalf — which is exactly when
+	 * it matters — so the UI draws the committer only when it differs, and its
+	 * appearance is itself the signal.
+	 */
+	authorEmail: z.string().max(255).default(''),
+	committer: z.string().max(255).default(''),
+	committerEmail: z.string().max(255).default(''),
+	committerDate: epochSeconds.nullable().default(null),
 	files: z.array(diffFileSchema).default([]),
 	/** Files left out by the byte cap — a count, so the UI can say how many. */
 	dropped: z.number().int().nonnegative().default(0),
@@ -298,6 +315,35 @@ export const workingDiffSchema = z.object({
 });
 export type WorkingDiff = z.infer<typeof workingDiffSchema>;
 
+/**
+ * A ref as the REMOTE advertises it right now.
+ *
+ * ⚠ THIS IS NOT `gitRefSchema` AND THE DIFFERENCE IS THE POINT. That one is a
+ * local ref — including `refs/remotes/*`, which is a remote-TRACKING ref and
+ * therefore as old as the last fetch somebody ran. This one comes from asking the
+ * remote itself, so it describes the remote at the moment of the check.
+ *
+ * ⚠ IT CARRIES A SHA AND NOT A DISTANCE. `ls-remote` downloads no objects, so
+ * "the local ref points somewhere else" is knowable and "you are three commits
+ * behind" is not. Anything that turns the first into the second is inventing a
+ * number.
+ */
+export const gitRemoteRefSchema = z.object({
+	name: z.string().max(255),
+	sha: z.string().min(7).max(40),
+	kind: z.enum(['branch', 'tag']).default('branch'),
+});
+export type GitRemoteRef = z.infer<typeof gitRemoteRefSchema>;
+
+/** The result of one remote check, or the reason there is none. */
+export const gitRemoteCheckSchema = z.object({
+	checkedAt: epochSeconds,
+	refs: z.array(gitRemoteRefSchema).max(2000).default([]),
+	/** Set when the remote could not be reached — no remote, no network, no credentials. */
+	error: z.string().max(512).nullable().default(null),
+});
+export type GitRemoteCheck = z.infer<typeof gitRemoteCheckSchema>;
+
 export const repoSnapshotSchema = z.object({
 	/** Stable identity of the checkout on that host. */
 	path: z.string().max(1024),
@@ -317,6 +363,13 @@ export const repoSnapshotSchema = z.object({
 	workingDiff: workingDiffSchema.nullable().default(null),
 	/** Commits in the window that still have no detail anywhere — the UI says so. */
 	pending: z.number().int().nonnegative().default(0),
+	/**
+	 * The last remote check, or null when nobody has asked for one.
+	 *
+	 * Never filled by the periodic pass: it costs a network round trip per
+	 * repository, so it happens when a person presses the button and not on a timer.
+	 */
+	remote: gitRemoteCheckSchema.nullable().default(null),
 	/**
 	 * True when this frame answers a `commitDetail` request and carries ONLY
 	 * `details`. Without it, replying to one click costs a full graph rebuild
@@ -697,7 +750,12 @@ export const agentDownstreamSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('exec'), exec: agentExecSchema }),
 	z.object({ type: z.literal('terminal'), frame: terminalClientFrameSchema }),
 	z.object({ type: z.literal('ping'), ts: epochSeconds }),
-	z.object({ type: z.literal('collect'), what: z.enum(['heartbeat', 'repos']) }),
+	/**
+	 * "Do a pass now." `remote` is the odd one: it leaves the machine, so it is
+	 * never on the agent's own timer and only ever arrives because somebody pressed
+	 * a button.
+	 */
+	z.object({ type: z.literal('collect'), what: z.enum(['heartbeat', 'repos', 'remote']) }),
 	z.object({
 		type: z.literal('commitDetail'),
 		repoPath: z.string().max(1024),

@@ -87,6 +87,10 @@ func buildDetail(ctx context.Context, git Runner, sha string, body CommitBody) (
 	detail.Dropped = patch.Dropped
 	detail.Truncated = patch.Truncated
 	detail.Empty = patch.Empty
+	detail.AuthorEmail = body.AuthorEmail
+	detail.Committer = body.Committer
+	detail.CommitterEmail = body.CommitterEmail
+	detail.CommitterDate = body.CommitterDate
 	return detail, nil
 }
 

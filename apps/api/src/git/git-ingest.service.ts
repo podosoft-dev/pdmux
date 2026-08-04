@@ -327,6 +327,14 @@ export class GitIngestService {
     const detailState = await this.loadDetailState(repo.id, snapshot.details.map((detail) => detail.sha));
     const stored = await this.storeDetails(hostId, repo, snapshot, detailState);
     const patch: Partial<Repo> = { lastSnapshotAt: new Date(snapshot.ts * 1000) };
+    if (snapshot.remote) {
+      // ⚠ WRITTEN ONLY WHEN THE FRAME CARRIES ONE. A detail answer is also a partial
+      // frame, and clearing the last remote check because somebody clicked a commit
+      // would make the answer disappear for a reason nobody could connect to it.
+      patch.remoteRefs = snapshot.remote.refs;
+      patch.remoteCheckedAt = new Date(snapshot.remote.checkedAt * 1000);
+      patch.remoteError = snapshot.remote.error;
+    }
     if (stored.storedDetails > 0) {
       // The click's patch just arrived, so one fewer commit is waiting. Clamped at
       // 0: the authoritative count comes from the next full snapshot.

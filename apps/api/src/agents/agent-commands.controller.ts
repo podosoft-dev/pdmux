@@ -10,8 +10,14 @@ import { AgentAckService } from "./agent-ack.service";
 import { AgentRegistryService } from "./agent-registry.service";
 
 export class CollectDto {
-  @IsIn(["heartbeat", "repos"])
-  what!: "heartbeat" | "repos";
+  /**
+   * ⚠ `remote` LEAVES THE MACHINE, and the other two do not. It runs `ls-remote`,
+   * which reads the remote's refs and writes nothing to the checkout — that is why
+   * it can exist at all — but it waits on a network per repository, so it is never
+   * on the agent's own timer and this endpoint is the only way it happens.
+   */
+  @IsIn(["heartbeat", "repos", "remote"])
+  what!: "heartbeat" | "repos" | "remote";
 }
 
 @ApiTags("hosts")

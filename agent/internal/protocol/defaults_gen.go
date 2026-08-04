@@ -264,8 +264,12 @@ func NewCommitDetail() CommitDetail {
 
 // applyDefaults writes the contract's defaults over a zero CommitDetail.
 func (x *CommitDetail) applyDefaults() {
+	x.AuthorEmail = ""
 	x.Body = ""
 	x.BodyTruncated = false
+	x.Committer = ""
+	x.CommitterDate = nil
+	x.CommitterEmail = ""
 	x.Dropped = 0
 	x.Empty = false
 	x.Files = []DiffFile{}
@@ -449,6 +453,63 @@ func (x *GitRef) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, (*plain)(x))
 }
 
+// NewGitRemoteCheck returns a new GitRemoteCheck, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewGitRemoteCheck() GitRemoteCheck {
+	var value GitRemoteCheck
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero GitRemoteCheck.
+func (x *GitRemoteCheck) applyDefaults() {
+	x.Error = nil
+	x.Refs = []GitRemoteRef{}
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so GitRemoteCheck inside a list is defaulted exactly like one at the root.
+func (x *GitRemoteCheck) UnmarshalJSON(data []byte) error {
+	*x = GitRemoteCheck{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain GitRemoteCheck
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewGitRemoteRef returns a new GitRemoteRef, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewGitRemoteRef() GitRemoteRef {
+	var value GitRemoteRef
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero GitRemoteRef.
+func (x *GitRemoteRef) applyDefaults() {
+	x.Kind = "branch"
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so GitRemoteRef inside a list is defaulted exactly like one at the root.
+func (x *GitRemoteRef) UnmarshalJSON(data []byte) error {
+	*x = GitRemoteRef{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain GitRemoteRef
+	return json.Unmarshal(data, (*plain)(x))
+}
+
 // NewGitStatusFile returns a new GitStatusFile, seeded with every default the contract declares.
 // Build values this way rather than as a struct literal: a literal leaves
 // slices nil (they marshal to null, which the server rejects) and non-zero
@@ -623,6 +684,7 @@ func (x *RepoSnapshot) applyDefaults() {
 	x.Partial = false
 	x.Pending = 0
 	x.Refs = []GitRef{}
+	x.Remote = nil
 	x.Truncated = false
 	x.Uncommitted = nil
 	x.WorkingDiff = nil
