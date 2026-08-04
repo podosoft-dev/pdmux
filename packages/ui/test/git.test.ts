@@ -81,7 +81,7 @@ describe('[TC-PDUI-021] the detail panel explains a commit, including when it ha
 	 * panel showed before it had tabs, so a default of "Commit" would have made the
 	 * common case cost an extra click. The message moved behind a tab, not away.
 	 */
-	it('[TC-PDUI-021] renders the header from the row and opens on the patch', async () => {
+	it('[TC-PDUI-021] renders the header from the row and opens on the file list', async () => {
 		const { container } = render(CommitDetail, {
 			props: {
 				commit: { sha: 'abc1234567', subject: 'fix: something', author: 'tester', date: 1_784_000_000 },
@@ -91,15 +91,63 @@ describe('[TC-PDUI-021] the detail panel explains a commit, including when it ha
 		});
 		expect(container.querySelector('[data-pdmux-subject]')?.textContent).toBe('fix: something');
 		expect(container.querySelector('[data-pdmux-meta]')?.textContent).toContain('2026-07-01');
-		expect(container.querySelector('[data-pdmux-file="a.ts"]')).not.toBeNull();
+		expect(container.querySelector('[data-pdmux-file-row="a.ts"]')).not.toBeNull();
 		// The body is a tab away, not gone.
 		expect(container.querySelector('[data-pdmux-body]')).toBeNull();
-		await fireEvent.click(container.querySelector('[data-pdmux-tab="commit"]') as HTMLElement);
 	});
 
-	it('[TC-PDUI-021] puts the message, the identity and the paths on their own tabs', async () => {
+	/**
+	 * ⚠ THE POINT OF THE FILE LIST. It shipped drawing paths and nothing else — a
+	 * list you could read and not open — and that is what was reported: "clicking a
+	 * file shows a diff in Fork, and that is missing here". So the guard is the pair:
+	 * no patch until a file is chosen, that file's patch once it is.
+	 */
+	it('[TC-PDUI-205] shows a file’s patch only once that file is chosen', () => {
+		const props = {
+			commit: { sha: 'abc1234567', subject: 'fix: something', author: 'tester', date: 1_784_000_000 },
+			detail: {
+				body: '',
+				files: [
+					{ path: 'a.ts', add: 1, del: 0, lines: ['@@ -1 +1 @@', '+first'] },
+					{ path: 'b.ts', add: 2, del: 0, lines: ['@@ -1 +1 @@', '+second'] },
+				],
+			},
+		};
+		const idle = render(CommitDetail, { props });
+		expect(idle.container.querySelector('[data-pdmux-file-row="a.ts"]')).not.toBeNull();
+		expect(idle.container.querySelector('[data-pdmux-file="a.ts"]')).toBeNull();
+
+		cleanup();
+		const chosen = render(CommitDetail, { props: { ...props, selectedPath: 'a.ts' } });
+		expect(chosen.container.querySelector('[data-pdmux-file="a.ts"]')).not.toBeNull();
+		expect(chosen.container.querySelector('[data-pdmux-file-row="a.ts"]')?.getAttribute('aria-current')).toBe('true');
+		// Only that one — a second patch would be the old "everything at once" screen.
+		expect(chosen.container.querySelector('[data-pdmux-file="b.ts"]')).toBeNull();
+
+		cleanup();
+		const all = render(CommitDetail, { props: { ...props, expandAll: true } });
+		expect(all.container.querySelector('[data-pdmux-file="a.ts"]')).not.toBeNull();
+		expect(all.container.querySelector('[data-pdmux-file="b.ts"]')).not.toBeNull();
+	});
+
+	it('[TC-PDUI-205] draws the file list flat when asked, whole path and all', () => {
 		const { container } = render(CommitDetail, {
 			props: {
+				commit: { sha: 'abc1234567', subject: 's', author: 'tester', date: 1_784_000_000 },
+				detail: { body: '', files: [{ path: 'src/deep/a.ts', add: 3, del: 1, lines: [] }] },
+				fileView: 'list' as const,
+			},
+		});
+		// No directory rows at all, and the row carries the path it could not otherwise
+		// be told apart by.
+		expect(container.querySelector('[data-pdmux-tree-dir="src/deep"]')).toBeNull();
+		expect(container.querySelector('[data-pdmux-file-row="src/deep/a.ts"]')?.textContent).toContain('src/deep/a.ts');
+	});
+
+	it('[TC-PDUI-021] draws the face the app asked for', () => {
+		const commitView = render(CommitDetail, {
+			props: {
+				view: 'commit' as const,
 				commit: {
 					sha: 'abc1234567',
 					subject: 'fix: something',
@@ -117,24 +165,27 @@ describe('[TC-PDUI-021] the detail panel explains a commit, including when it ha
 			},
 		});
 
-		await fireEvent.click(container.querySelector('[data-pdmux-tab="commit"]') as HTMLElement);
-		expect(container.querySelector('[data-pdmux-body]')?.textContent).toContain('why it was done');
-		expect(container.querySelector('[data-pdmux-facts]')?.textContent).toContain('tester@example.com');
-		expect(container.querySelector('[data-pdmux-parents]')?.textContent).toContain('0123456');
-		expect(container.querySelector('[data-pdmux-refs]')?.textContent).toContain('main');
+		const commit = commitView.container;
+		expect(commit.querySelector('[data-pdmux-body]')?.textContent).toContain('why it was done');
+		expect(commit.querySelector('[data-pdmux-facts]')?.textContent).toContain('tester@example.com');
+		expect(commit.querySelector('[data-pdmux-parents]')?.textContent).toContain('0123456');
+		expect(commit.querySelector('[data-pdmux-refs]')?.textContent).toContain('main');
 		// ⚠ NO COMMITTER LINE: it equals the author here, and printing both would be
 		// two lines saying one thing on almost every commit in existence.
-		expect(container.querySelector('[data-pdmux-committer]')).toBeNull();
+		expect(commit.querySelector('[data-pdmux-committer]')).toBeNull();
 
-		await fireEvent.click(container.querySelector('[data-pdmux-tab="tree"]') as HTMLElement);
-		// The chain folded into one row — that is `fileTree()`'s rule, seen through.
-		expect(container.querySelector('[data-pdmux-tree-dir="src/deep"]')).not.toBeNull();
-		expect(container.querySelector('[data-pdmux-tree-file="src/deep/a.ts"]')).not.toBeNull();
+		// ⚠ AND THE FILE LIST IS ON THIS FACE, not on a third tab. Fork's Commit tab has
+		// shown the full list of changes since 1.0.70; splitting the facts from what the
+		// commit touched made this face a dead end. The chain folded into one row — that
+		// is `fileTree()`'s rule, seen through.
+		expect(commit.querySelector('[data-pdmux-tree-dir="src/deep"]')).not.toBeNull();
+		expect(commit.querySelector('[data-pdmux-tree-file="src/deep/a.ts"]')).not.toBeNull();
 	});
 
-	it('[TC-PDUI-021] draws the committer only when it differs from the author', async () => {
+	it('[TC-PDUI-021] draws the committer only when it differs from the author', () => {
 		const { container } = render(CommitDetail, {
 			props: {
+				view: 'commit' as const,
 				commit: { sha: 'abc1234567', subject: 's', author: 'tester', date: 1_784_000_000 },
 				detail: {
 					body: '',
@@ -147,7 +198,6 @@ describe('[TC-PDUI-021] the detail panel explains a commit, including when it ha
 				formatDate: () => '2026-07-01 00:00',
 			},
 		});
-		await fireEvent.click(container.querySelector('[data-pdmux-tab="commit"]') as HTMLElement);
 		// Its presence IS the signal — it means a rebase, a cherry-pick or a patch
 		// applied on somebody's behalf.
 		expect(container.querySelector('[data-pdmux-committer]')).not.toBeNull();

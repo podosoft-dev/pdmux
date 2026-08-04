@@ -11,10 +11,18 @@
   import { CommitDetail, GitGraph, GitRefPanel, SplitHandle, type Translate } from "@pdmux/ui";
   import { UNCOMMITTED, feedAge, remoteComparison } from "@pdmux/core";
   import * as Select from "$lib/components/ui/select";
+  import * as Tabs from "$lib/components/ui/tabs";
   import { Button } from "$lib/components/ui/button";
   import { SHELL_STACK_MAX_WIDTH } from "@pdmux/core";
   import { IsMobile } from "$lib/hooks/is-mobile.svelte";
   import { toast } from "svelte-sonner";
+  import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import ArrowDownUpIcon from "@lucide/svelte/icons/arrow-down-up";
+  import GitBranchIcon from "@lucide/svelte/icons/git-branch";
+  import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
+  import FolderTreeIcon from "@lucide/svelte/icons/folder-tree";
+  import ListIcon from "@lucide/svelte/icons/list";
+  import UnfoldVerticalIcon from "@lucide/svelte/icons/unfold-vertical";
   import { fmt, getI18n } from "$lib/i18n";
   import { gitApi } from "../api";
   import { causeMessage } from "../wording";
@@ -82,6 +90,40 @@
    * possible value for the one thing this line exists to tell.
    */
   let busy = $state<"repos" | "remote" | null>(null);
+
+  /**
+   * Which face of the commit detail is showing.
+   *
+   * ⚠ THE CONTROL LIVES HERE, NOT IN `@pdmux/ui`. That package cannot import shadcn
+   * (`[TC-PDUI-030]` keeps it installable by a project with its own design system),
+   * so a tab strip built there is a lookalike — and a hand-rolled one under a
+   * product built entirely from shadcn is exactly what it looks like. The app owns
+   * the tabs; the package owns the two panels.
+   *
+   * It opens on the changes because that is what the click was for, and it resets
+   * with the commit.
+   */
+  let detailView = $state<"commit" | "changes">("changes");
+  /**
+   * How the file list is grouped, and whether every patch is open.
+   *
+   * ⚠ THESE ARE VIEW MODES ON THE LIST, NOT TABS — that is the correction. Fork puts
+   * tree-versus-list behind one button in the file list's corner and "Expand All"
+   * beside it; shipping "File tree" as a third tab put the same files in two places
+   * and let neither of them be clicked.
+   *
+   * They persist across commits deliberately: unlike the chosen FILE, "I read trees"
+   * is a preference about the person, not about the commit.
+   */
+  let fileView = $state<"tree" | "list">("tree");
+  let expandAll = $state(false);
+  /** Which file's patch is open. Belongs to the commit, so it resets with it. */
+  let selectedPath = $state<string | null>(null);
+  $effect(() => {
+    dock.selected;
+    detailView = "changes";
+    selectedPath = null;
+  });
   // `feedAge` rather than a local subtraction: it already buckets on raw milliseconds
   // (rounding first made a 30-second-old snapshot claim to be a minute behind) and it
   // already decides that an unknown timestamp is a warning rather than a zero.
@@ -273,7 +315,7 @@
       title={i18n.t.dash.git.rescan}
       aria-label={i18n.t.dash.git.rescan}
       data-testid="dock-rescan"
-      onclick={() => collect("repos")}>⟳</Button
+      onclick={() => collect("repos")}><RefreshCwIcon class="size-4" /></Button
     >
     <!-- The only control here that reaches a network. It runs `ls-remote`, which
          reads the remote's refs and writes nothing to the checkout — pdmux never
@@ -286,7 +328,7 @@
       title={i18n.t.dash.git.checkRemote}
       aria-label={i18n.t.dash.git.checkRemote}
       data-testid="dock-remote"
-      onclick={() => collect("remote")}>⇅</Button
+      onclick={() => collect("remote")}><ArrowDownUpIcon class="size-4" /></Button
     >
     {#if onToggleRefs}
       <Button
@@ -297,7 +339,7 @@
         aria-label={i18n.t.dash.git.refs}
         data-testid="dock-refs"
         aria-pressed={refsOpen}
-        onclick={() => onToggleRefs?.()}>⑂</Button
+        onclick={() => onToggleRefs?.()}><GitBranchIcon class="size-4" /></Button
       >
     {/if}
     {#if onDetach}
@@ -308,7 +350,7 @@
         title={i18n.t.dash.git.detach}
         aria-label={i18n.t.dash.git.detach}
         data-testid="dock-detach"
-        onclick={() => onDetach?.()}>↗</Button
+        onclick={() => onDetach?.()}><ExternalLinkIcon class="size-4" /></Button
       >
     {/if}
   </header>
@@ -342,12 +384,18 @@
   <!-- Refs panel │ graph: a row, so each side scrolls itself (ARCHITECTURE §7). -->
   <div class="pdmux pdmux-graph-body">
     {#if refsOpen}
-      <GitRefPanel {head} {refs} {t} ready={graphReady} />
-      <!-- ⚠ A SEPARATE SECTION FROM THE REFS ABOVE, and the separation is the point.
-           Those are local pointers — including `origin/*`, which is a remote-TRACKING
-           ref and therefore as old as the last fetch somebody ran by hand. This is
-           what the remote itself answered. -->
-      <div class="border-t px-2 py-1.5 text-xs" data-testid="dock-remote-panel">
+      <!-- ⚠ ONE FLEX CHILD, NOT TWO. `.pdmux-graph-body` lays its children out in a
+           ROW, so a panel added beside the refs took a column of its own and the
+           commit list was squeezed to zero width — measured at 1600px: refs 150px,
+           this 270px, graph 0px. The refs column and the remote report belong to the
+           same column, so they share one. -->
+      <div class="pdmux pdmux-refs-column">
+        <GitRefPanel {head} {refs} {t} ready={graphReady} />
+        <!-- ⚠ A SEPARATE SECTION FROM THE REFS ABOVE, and the separation is the point.
+             Those are local pointers — including `origin/*`, which is a remote-TRACKING
+             ref and therefore as old as the last fetch somebody ran by hand. This is
+             what the remote itself answered. -->
+        <div class="shrink-0 border-t px-2 py-1.5 text-xs" data-testid="dock-remote-panel">
         <p class="text-muted-foreground font-medium">{i18n.t.dash.git.remoteTitle}</p>
         {#if repo?.remoteError}
           <p class="text-destructive" data-testid="dock-remote-error">
@@ -370,8 +418,9 @@
           {/each}
           <!-- Said where the answer is, not in a tooltip: "we cannot show you the
                commits" is the first question this panel raises. -->
-          <p class="text-muted-foreground mt-1">{i18n.t.dash.git.remoteNote}</p>
-        {/if}
+            <p class="text-muted-foreground mt-1">{i18n.t.dash.git.remoteNote}</p>
+          {/if}
+        </div>
       </div>
     {/if}
     <GitGraph
@@ -399,6 +448,64 @@
       onCommit={(delta: number) => onDetailResize?.(delta, true)}
     />
   {/if}
+  {#if selectedCommit}
+    <!-- Real shadcn `Tabs`, in the app that owns the design system, and with the
+         DEFAULT look. Overriding the list into an underline bar is what made these
+         read as hand-rolled — the two other tab strips in this app
+         (`host-install-dialog`, `host-agent-access`) pass no classes at all, and that
+         is the product's tab. -->
+    <div class="flex shrink-0 items-center justify-between gap-2 px-1 pb-1">
+      <Tabs.Root bind:value={detailView} class="min-h-0 gap-0">
+        <Tabs.List>
+          <Tabs.Trigger value="commit" data-testid="detail-tab-commit">
+            {i18n.t.dash.git.tabCommit}
+          </Tabs.Trigger>
+          <Tabs.Trigger value="changes" data-testid="detail-tab-changes">
+            {i18n.t.dash.git.tabChanges}{detail?.files?.length ? ` ${detail.files.length}` : ""}
+          </Tabs.Trigger>
+        </Tabs.List>
+      </Tabs.Root>
+      <!-- The file list's own controls, in its corner, the way Fork places them. -->
+      <div class="flex items-center gap-0.5">
+        <Button
+          variant={fileView === "tree" ? "secondary" : "ghost"}
+          size="icon"
+          class="size-7"
+          aria-pressed={fileView === "tree"}
+          title={i18n.t.dash.git.fileViewTree}
+          data-testid="detail-file-tree"
+          onclick={() => (fileView = "tree")}
+        >
+          <FolderTreeIcon class="size-4" />
+          <span class="sr-only">{i18n.t.dash.git.fileViewTree}</span>
+        </Button>
+        <Button
+          variant={fileView === "list" ? "secondary" : "ghost"}
+          size="icon"
+          class="size-7"
+          aria-pressed={fileView === "list"}
+          title={i18n.t.dash.git.fileViewList}
+          data-testid="detail-file-list"
+          onclick={() => (fileView = "list")}
+        >
+          <ListIcon class="size-4" />
+          <span class="sr-only">{i18n.t.dash.git.fileViewList}</span>
+        </Button>
+        <Button
+          variant={expandAll ? "secondary" : "ghost"}
+          size="icon"
+          class="size-7"
+          aria-pressed={expandAll}
+          title={i18n.t.dash.git.expandAll}
+          data-testid="detail-expand-all"
+          onclick={() => (expandAll = !expandAll)}
+        >
+          <UnfoldVerticalIcon class="size-4" />
+          <span class="sr-only">{i18n.t.dash.git.expandAll}</span>
+        </Button>
+      </div>
+    </div>
+  {/if}
   <CommitDetail
     commit={selectedCommit}
     {detail}
@@ -407,6 +514,11 @@
     onRetry={() => void dock.retryDetail()}
     formatDate={formatDetailDate}
     height={detailHeight}
+    view={detailView}
+    {fileView}
+    {expandAll}
+    {selectedPath}
+    onSelectFile={(path) => (selectedPath = selectedPath === path ? null : path)}
     {t}
   />
 </div>

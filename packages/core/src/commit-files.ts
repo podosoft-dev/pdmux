@@ -94,6 +94,21 @@ function collapse(dir: FileTreeDir): void {
 	}
 }
 
+/**
+ * The same files as a flat list, in the order git itself names them.
+ *
+ * ⚠ THIS IS THE OTHER HALF OF A TOGGLE, NOT A LESSER TREE. A tree answers "which
+ * areas did this commit touch"; a list answers "how many files, and where is the
+ * one I am looking for" — and on a commit that touches twenty files across four
+ * directories the tree costs a fold-out before it can answer the second question
+ * at all. Fork puts both behind one button on the file list for exactly this
+ * reason, so the sort has to be stable and predictable: full path, case-folded, so
+ * `Foo.ts` and `foo.ts` do not swap places between two runs of the same commit.
+ */
+export function fileList(files: readonly ChangedFile[]): ChangedFile[] {
+	return [...files].sort((a, b) => a.path.localeCompare(b.path, undefined, { sensitivity: 'base' }));
+}
+
 function sort(dir: FileTreeDir): void {
 	dir.children.sort((a, b) => {
 		if (a.kind !== b.kind) return a.kind === 'file' ? -1 : 1;

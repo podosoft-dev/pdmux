@@ -11,10 +11,9 @@
 	 * content existed in the DOM thousands of pixels below the fold and clicking a
 	 * commit looked like it did nothing.
 	 */
-	import { type ChangedFile, type PendingNote, fileTree } from '@pdmux/core';
+	import { type ChangedFile, type PendingNote } from '@pdmux/core';
 	import { type Translate, translator } from '../i18n.js';
-	import DiffView from './DiffView.svelte';
-	import FileTree from './FileTree.svelte';
+	import FileList from './FileList.svelte';
 
 	interface CommitRow {
 		sha: string;
@@ -25,8 +24,16 @@
 		refs?: readonly string[];
 	}
 
-	/** The three faces of one commit, in the order a person reads them. */
-	type Tab = 'commit' | 'changes' | 'tree';
+	/**
+	 * The two faces of one commit.
+	 *
+	 * ⚠ THERE IS NO THIRD "FILE TREE" FACE, because Fork does not have one and it was
+	 * the wrong axis: tree-versus-list is how the SAME file list is drawn, so it is a
+	 * view mode on the list (one button in its corner) and not a sibling of the commit
+	 * message. Shipping it as a tab meant three places showed overlapping content and
+	 * none of them let a file be clicked.
+	 */
+	type Tab = 'commit' | 'changes';
 
 	interface DetailInput {
 		body?: string;
@@ -88,6 +95,15 @@
 		 * graph out or make the page scroll.
 		 */
 		height?: number | null;
+		/** Which of the two faces to draw. The app owns the control that sets it. */
+		view?: Tab;
+		/** How the file list is grouped. A view mode on the list, not a face. */
+		fileView?: 'tree' | 'list';
+		/** Every patch at once, Fork's "Expand All". */
+		expandAll?: boolean;
+		/** Which file's patch is showing. */
+		selectedPath?: string | null;
+		onSelectFile?: (path: string) => void;
 		t?: Translate;
 	}
 
@@ -99,6 +115,11 @@
 		onRetry,
 		formatDate,
 		height = null,
+		view = 'changes',
+		fileView = 'tree',
+		expandAll = false,
+		selectedPath = null,
+		onSelectFile,
 		t,
 	}: Props = $props();
 
@@ -122,19 +143,18 @@
 	 * The subject is already on the row and in the header above; the full message
 	 * is the part worth a tab, not the part worth the default.
 	 */
-	let tab = $state<Tab>('changes');
 	/**
-	 * ⚠ AND IT RESETS WHEN THE COMMIT DOES. Keeping "File tree" selected across a
-	 * click opens the next commit on a view of a different commit's paths, which
-	 * reads as the panel not having updated at all.
+	 * ⚠ THE TAB CHROME IS NOT DRAWN HERE, AND THAT IS THE FIX. This package cannot
+	 * import shadcn — `[TC-PDUI-030]` restricts it so that a project with its own
+	 * design system can install it — so any control it draws is a lookalike, and a
+	 * hand-rolled tab strip sitting under a product built entirely from shadcn reads
+	 * as exactly what it is. The app owns the tabs (real `Tabs`), this owns the three
+	 * panels, and the seam is one prop.
 	 */
-	$effect(() => {
-		commit?.sha;
-		tab = 'changes';
-	});
+	const tab = $derived(view);
+
 
 	const files = $derived((detail?.files ?? []) as readonly ChangedFile[]);
-	const tree = $derived(fileTree(files));
 	/**
 	 * The committer is drawn only when it differs from the author.
 	 *
@@ -183,23 +203,6 @@
 				>
 			{/if}
 		{:else if detail}
-			<!-- ⚠ PLAIN BUTTONS, NOT A COMPONENT LIBRARY. `@pdmux/ui` is installable by
-			     a project with its own design system, so its imports are restricted to
-			     relative paths and `@pdmux/*` — a shadcn tab would break that contract
-			     (and its test) the moment it was added. -->
-			<div class="pdmux-tabs" role="tablist" data-pdmux-tabs>
-				{#each [['commit', tr('pdmux.detail.tabCommit', 'Commit')], ['changes', `${tr('pdmux.detail.tabChanges', 'Changes')} ${files.length}${detail.truncated || detail.dropped ? ' ⚠' : ''}`], ['tree', tr('pdmux.detail.tabTree', 'File tree')]] as [id, label] (id)}
-					<button
-						type="button"
-						role="tab"
-						class="pdmux-tab"
-						data-pdmux-tab={id}
-						aria-selected={tab === id}
-						onclick={() => (tab = id as Tab)}>{label}</button
-					>
-				{/each}
-			</div>
-
 			{#if tab === 'commit'}
 				<div data-pdmux-tabpanel="commit">
 					{#if detail.body}
@@ -224,14 +227,31 @@
 							<dd data-pdmux-refs>{commit.refs.join(' · ')}</dd>
 						{/if}
 					</dl>
-				</div>
-			{:else if tab === 'changes'}
-				<div data-pdmux-tabpanel="changes">
-					<DiffView files={detail.files ?? []} note={droppedNote} {t} />
+					<!-- ⚠ THE FILE LIST IS ON THIS FACE TOO. Fork's Commit tab has shown the
+					     full list of changes since 1.0.70, and the reason holds here: what a
+					     commit says and what it touched are one question. Splitting them made
+					     the message face a dead end you had to leave to learn anything. -->
+					<FileList
+						{files}
+						view={fileView}
+						{expandAll}
+						selected={selectedPath}
+						onSelect={onSelectFile}
+						note={droppedNote}
+						{t}
+					/>
 				</div>
 			{:else}
-				<div data-pdmux-tabpanel="tree">
-					<FileTree nodes={tree} {t} />
+				<div data-pdmux-tabpanel="changes">
+					<FileList
+						{files}
+						view={fileView}
+						{expandAll}
+						selected={selectedPath}
+						onSelect={onSelectFile}
+						note={droppedNote}
+						{t}
+					/>
 				</div>
 			{/if}
 		{/if}

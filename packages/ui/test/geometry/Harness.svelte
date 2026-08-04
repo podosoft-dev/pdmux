@@ -92,7 +92,20 @@
 		selectedCommit
 			? {
 					body: 'body line\n'.repeat(20),
-					files: [{ path: 'src/a.ts', status: 'M' as const, add: 3, del: 1, lines: ['@@ -1 +1 @@', '-old', '+new'] }],
+					// ⚠ THE PATCH HAS TO BE LONGER THAN THE CAP ON ITS OWN. It used to be three
+					// lines, and `[TC-PDUI-042]` still passed — because the panel stacked the
+					// message, the file list and the diff together, so what overflowed was the
+					// STACK, not the patch. Once the faces were split the guard failed at
+					// exactly the cap, which is the assertion doing its job.
+					files: [
+						{
+							path: 'src/a.ts',
+							status: 'M' as const,
+							add: 3,
+							del: 1,
+							lines: ['@@ -1 +1 @@', ...Array.from({ length: 60 }, (_, i) => `+line ${i}`)],
+						},
+					],
 				}
 			: null,
 	);
@@ -128,6 +141,13 @@
 			selectedSha={selected}
 			onSelect={(sha) => (selected = sha)}
 		/>
-		<CommitDetail commit={selectedCommit} {detail} />
+		<!-- ⚠ `view="changes"` AND A CHOSEN FILE, ON PURPOSE. The tab chrome lives in
+		     `apps/web` now (this package cannot import shadcn — [TC-PDUI-030]), so both
+		     the face and the open file are props, and neither default puts a patch on
+		     screen. `[TC-PDUI-042]` exists to prove a patch longer than the cap SCROLLS
+		     inside the panel, and it caught this itself: without them its own guard
+		     failed with "the harness patch must exceed the cap, or this proves
+		     nothing". -->
+		<CommitDetail commit={selectedCommit} {detail} view="changes" selectedPath="src/a.ts" />
 	</div>
 </div>

@@ -33,6 +33,16 @@
       "empty": "변경 없음",
       "partial": "일부"
     },
+    "files": {
+      "choose": "파일을 고르면 그 파일의 변경 내용이 보입니다"
+    },
+    "tree": {
+      "added": "추가",
+      "deleted": "삭제",
+      "empty": "변경된 파일 없음",
+      "modified": "수정",
+      "renamed": "이름 변경"
+    },
     "graph": {
       "empty": "커밋 없음",
       "uncommitted": "미커밋 변경"
@@ -325,7 +335,12 @@
       "remoteGone": "원격에서 사라짐",
       "remoteSame": "동일",
       "remoteBehind": "{count}개 뒤처짐",
-      "remoteFailed": "원격에 닿지 못했습니다"
+      "remoteFailed": "원격에 닿지 못했습니다",
+      "tabCommit": "커밋",
+      "tabChanges": "변경",
+      "fileViewTree": "폴더별로 묶기",
+      "fileViewList": "한 줄씩 펼쳐 보기",
+      "expandAll": "모든 변경 내용 열기"
     },
     "hosts": {
       "title": "호스트",

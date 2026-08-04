@@ -1858,6 +1858,35 @@
 
 /* Its own scroll container: a repository with hundreds of tags must not lengthen the
    page (the graph and the detail panel own the rest of the viewport). */
+/* The column the refs panel lives in, and anything an app stacks beneath it.
+   ⚠ THE WIDTH LIVES HERE SO THERE IS ONE OF IT. A panel added beside the refs
+   sized itself to its own text (313px measured) and squeezed the commit list from
+   420px to 107px — the exact outcome the note below was written to prevent. */
+.pdmux-refs-column {
+	flex: none;
+	/* ⚠ THE WIDTH LIVES HERE, ONCE. Anything else on this side of the dock goes
+	   INSIDE this column, never beside it: `.pdmux-graph-body` is a row flex, so a
+	   sibling grows to its own content and squeezes the commit list — measured at
+	   420px → 0px when the remote panel first shipped as one. */
+	width: clamp(150px, 34%, 260px);
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	/* Never the page's scrollbar; the panel below owns its own. */
+	overflow: hidden;
+	border-right: 1px solid var(--pdmux-line, rgb(0 0 0 / 10%));
+}
+.pdmux-refs-column > .pdmux-refs {
+	/* ⚠ THE SCROLL STAYS ON THE PANEL — `[TC-PDUI-136]` measures `overflow-y` on
+	   this element, because a repository with hundreds of tags must scroll here
+	   rather than lengthen the page. Moving it to the wrapper reads the same on
+	   screen and breaks that guarantee the moment anything else joins the column. */
+	width: 100%;
+	flex: 1 1 auto;
+	border-right: 0;
+}
+
 .pdmux-refs {
 	flex: none;
 	/* Wide enough for `release/2026-07-25` before ellipsis, never more than a third of
@@ -2326,16 +2355,80 @@
 .pdmux .pdmux-tree-dir > .pdmux-tree-label {
 	color: var(--pdmux-muted, rgb(0 0 0 / 60%));
 }
+/* The row is now a button in a list item, so the item stacks (row, then its patch)
+   and the button is the flex line. */
 .pdmux .pdmux-tree-file {
+	display: block;
+}
+.pdmux .pdmux-file-row {
+	appearance: none;
+	background: none;
+	border: 0;
+	padding: 0.1rem 0.25rem;
+	margin: 0;
+	width: 100%;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+	border-radius: 3px;
 	display: flex;
 	align-items: baseline;
 	gap: 0.5rem;
 }
-.pdmux .pdmux-tree-file .pdmux-tree-label {
+.pdmux .pdmux-file-row:hover {
+	background: var(--pdmux-hover, rgb(0 0 0 / 5%));
+}
+/* ⚠ NOT COLOUR ALONE — the chosen row is the one whose patch is open, and a reader
+   who cannot separate the hues still has to be able to find it. The accent bar on
+   the leading edge is the part that survives that. */
+.pdmux .pdmux-file-row[aria-current='true'] {
+	background: var(--pdmux-hover, rgb(0 0 0 / 7%));
+	box-shadow: inset 2px 0 0 var(--pdmux-accent, #3b82f6);
+	font-weight: 600;
+}
+.pdmux .pdmux-file-row .pdmux-tree-label {
 	flex: 1 1 auto;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+/* ⚠ A FLAT ROW SHOWS THE WHOLE PATH, so it must ellipsise from the LEFT: cutting the
+   tail would leave `packages/ui/src/comp…` on every row of a commit that stayed in
+   one directory — identical rows for different files. `direction: rtl` moves the
+   ellipsis to the front; the inner span puts the characters back in order. */
+.pdmux [data-pdmux-tree='flat'] .pdmux-file-row > .pdmux-tree-label {
+	direction: rtl;
+	text-align: left;
+}
+.pdmux .pdmux-file-patch {
+	padding-left: 0.75rem;
+}
+
+/* --- the file pane: list, and the patch of the chosen file ----------------
+   ⚠ THE SPLIT IS DECIDED IN JS, NOT HERE. The same viewport holds a ~420px dock and
+   a full-width detached git window, so a media query would answer for the wrong one;
+   `FileList.svelte` measures its own element and writes `data-pdmux-filepane`. These
+   rules only dress whichever shape it chose. */
+.pdmux .pdmux-filepane {
+	min-width: 0;
+}
+.pdmux .pdmux-filepane[data-pdmux-filepane='split'] {
+	display: grid;
+	/* The list gets a readable share and no more: the patch is what the click was for.
+	   `minmax(0, …)` on both, or a long path makes the list column grow past its
+	   fraction and squeeze the patch — the same failure the refs column had. */
+	grid-template-columns: minmax(0, 0.4fr) minmax(0, 0.6fr);
+	gap: 0.5rem;
+	align-items: start;
+}
+.pdmux .pdmux-filepane[data-pdmux-filepane='split'] > .pdmux-filepane-list {
+	border-right: 1px solid var(--pdmux-border, rgb(0 0 0 / 12%));
+	padding-right: 0.5rem;
+}
+.pdmux .pdmux-filepane-list,
+.pdmux .pdmux-filepane-diff {
+	min-width: 0;
 }
 .pdmux .pdmux-tree-stat {
 	font-variant-numeric: tabular-nums;

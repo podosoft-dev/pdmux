@@ -1082,6 +1082,260 @@ test.describe.serial("pdmux shell fleet controls", () => {
  * on this machine cannot produce them. The sidebar reads the same `GET /hosts` the
  * table does, so mocking it drives the cards.
  */
+/**
+ * ⚠ THE COMMIT LIST HAS TO SURVIVE OPENING THE BRANCH PANEL, and only geometry can
+ * say so. A remote-status panel was added beside the refs as a second flex child of
+ * `.pdmux-graph-body`, which lays its children out in a ROW — the refs took 150px,
+ * the new panel sized itself to its own text at 313px, and the commit list was
+ * squeezed from 420px to ZERO. Every spec stayed green: the list was still in the
+ * DOM, still "visible", and nobody could see a single commit.
+ *
+ * `.pdmux-refs` carries the rule in a comment — "never more than a third of a dock
+ * column — the graph is what the user came for" — and a sibling was how to walk past
+ * it. This asserts the outcome that comment protects.
+ */
+test("[TC-PDUI-203] the commit list keeps its width when the branch panel opens", async ({ page }) => {
+  // ⚠ THE DATA IS FABRICATED, and it has to be. The first version of this guard
+  // leaned on whatever the live agent had collected — so it failed against the
+  // FIXED code the moment that host had no repositories, which is a guard that
+  // reports on the fixture rather than on the layout.
+  const repo = {
+    id: "11111111-1111-4111-8111-111111111111",
+    hostId: "h1",
+    path: "/work/repo",
+    name: "repo",
+    headBranch: "main",
+    headSha: "aaaaaaa",
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    dirtyCount: 0,
+    dirtySubmodules: 0,
+    truncated: false,
+    limit: 300,
+    pendingDetails: 0,
+    hasWorkingDiff: false,
+    lastSnapshotAt: new Date().toISOString(),
+    error: null,
+    remoteRefs: null,
+    remoteCheckedAt: null,
+    remoteError: null,
+  };
+  await page.route("**/api/hosts/*/repos", (route) => route.fulfill({ json: [repo] }));
+  await page.route("**/api/hosts/*/repos/*", (route) =>
+    route.fulfill({
+      json: {
+        repo,
+        // A long branch name is the case the width rule was written for.
+        refs: [{ name: "main", sha: "aaaaaaa", kind: "local" }, { name: "origin/release/2026-07-25", sha: "aaaaaaa", kind: "remote" }],
+        commits: Array.from({ length: 12 }, (_, i) => ({
+          sha: `${i}`.repeat(7),
+          parents: [],
+          refs: i === 0 ? ["main"] : [],
+          author: "tester",
+          date: 1_784_000_000 - i * 60,
+          subject: `commit ${i}`,
+          seq: i,
+        })),
+      },
+    }),
+  );
+
+  await page.goto("/");
+  await page.waitForSelector("[data-testid='commit-dock']");
+  await page.waitForSelector(".pdmux-graph-list");
+
+  const width = async (selector: string): Promise<number> =>
+    page.evaluate((s) => {
+      const element = document.querySelector(s);
+      return element ? Math.round(element.getBoundingClientRect().width) : 0;
+    }, selector);
+
+  // ⚠ ONE STATE, NOT A BEFORE AND AFTER. The toggle is persisted in the saved layout
+  // and round-trips through `/prefs`, so driving it twice races the save — the
+  // "closed" reading never arrived and the guard timed out against correct code.
+  // The rule being defended holds in the OPEN state on its own, so that is what is
+  // measured.
+  const toggle = page.locator("[data-testid='dock-refs']");
+  const column = page.locator(".pdmux-refs-column");
+  if ((await toggle.getAttribute("aria-pressed")) !== "true") await toggle.click();
+  await column.waitFor({ state: "visible" });
+
+  const refs = await width(".pdmux-refs-column");
+  const list = await width(".pdmux-graph-list");
+  const body = await width(".pdmux-graph-body");
+
+  expect(refs, "the branch panel did not open").toBeGreaterThan(0);
+  // `.pdmux-refs` is `clamp(150px, 34%, 260px)`, so 260 is the documented ceiling for
+  // everything on that side — the floor of 150 is why "a third" is the wrong number to
+  // assert on a narrow dock. The shipped bug put a 313px sibling there.
+  expect(refs, "the branch side outgrew its documented width").toBeLessThanOrEqual(260);
+  // And the list keeps what is left. Zero is what shipped.
+  expect(list, "the commit list was squeezed out by the branch panel").toBeGreaterThan(0);
+  expect(refs + list, "something else is eating the dock").toBeLessThanOrEqual(body + 2);
+});
+
+/**
+ * The three guards below share one fabricated repository and one fabricated commit
+ * detail, so they measure the layout rather than whatever an agent last collected.
+ */
+async function withFabricatedCommit(page: Page): Promise<void> {
+  const repo = {
+    id: "22222222-2222-4222-8222-222222222222",
+    hostId: "h1",
+    path: "/work/repo",
+    name: "repo",
+    headBranch: "main",
+    headSha: "aaaaaaa",
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    dirtyCount: 0,
+    dirtySubmodules: 0,
+    truncated: false,
+    limit: 300,
+    pendingDetails: 0,
+    hasWorkingDiff: false,
+    lastSnapshotAt: new Date().toISOString(),
+    error: null,
+    remoteRefs: null,
+    remoteCheckedAt: null,
+    remoteError: null,
+  };
+  await page.route("**/api/hosts/*/repos", (route) => route.fulfill({ json: [repo] }));
+  await page.route("**/api/hosts/*/repos/*/commits/*/detail", (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        pending: 0,
+        detail: {
+          // ⚠ LONG ENOUGH TO OUTGROW THE PANEL, on purpose. A short patch and a short
+          // message are the same height, and then a height guard proves nothing.
+          body: "why it was done\n".repeat(3),
+          bodyTruncated: false,
+          authorEmail: "tester@example.com",
+          truncated: false,
+          dropped: 0,
+          files: [
+            { path: "src/deep/a.ts", status: "M", add: 3, del: 1, binary: false, truncated: false,
+              lines: ["@@ -1,2 +1,4 @@", ...Array.from({ length: 40 }, (_, i) => `+first ${i}`)] },
+            { path: "src/deep/b.ts", status: "A", add: 2, del: 0, binary: false, truncated: false,
+              lines: ["@@ -0,0 +1,2 @@", "+second"] },
+          ],
+        },
+      },
+    }),
+  );
+  await page.route("**/api/hosts/*/repos/*", (route) => {
+    if (/\/detail$/.test(route.request().url())) return route.fallback();
+    return route.fulfill({
+      json: {
+        repo,
+        refs: [{ name: "main", sha: "aaaaaaa", kind: "local" }],
+        commits: Array.from({ length: 12 }, (_, i) => ({
+          sha: `${i}`.repeat(7),
+          parents: [],
+          refs: i === 0 ? ["main"] : [],
+          author: "tester",
+          date: 1_784_000_000 - i * 60,
+          subject: `commit ${i}`,
+          seq: i,
+        })),
+      },
+    });
+  });
+  await page.goto("/");
+  await page.waitForSelector("[data-testid='commit-dock']");
+  await page.locator(".pdmux-graph-row").first().click();
+  await page.waitForSelector("[data-pdmux-file-row]");
+}
+
+/**
+ * ⚠ THE PANEL IS ONE HEIGHT UNTIL THE USER DRAGS IT.
+ *
+ * It used to be content-height, so the message face (a few lines) and the patch face
+ * (hundreds) gave the panel two different sizes — and every tab press resized it, and
+ * therefore resized the commit list above it. Reported as "each tab change changes
+ * the size". The 45% reservation existed but only while the patch was in flight
+ * (`[data-pdmux-awaiting]`), which is the one moment this case is not in.
+ */
+test("[TC-PDUI-204] the detail panel keeps its height across tab changes", async ({ page }) => {
+  await withFabricatedCommit(page);
+
+  const panelHeight = async (): Promise<number> =>
+    page.evaluate(() => {
+      const element = document.querySelector("[data-pdmux-detail]");
+      return element ? Math.round(element.getBoundingClientRect().height) : 0;
+    });
+
+  const onChanges = await panelHeight();
+  expect(onChanges, "the panel did not open").toBeGreaterThan(0);
+
+  await page.locator("[data-testid='detail-tab-commit']").click();
+  await expect(page.locator("[data-pdmux-tabpanel='commit']")).toBeVisible();
+  const onCommit = await panelHeight();
+
+  await page.locator("[data-testid='detail-tab-changes']").click();
+  await expect(page.locator("[data-pdmux-tabpanel='changes']")).toBeVisible();
+  const back = await panelHeight();
+
+  // Not "roughly": the panel is sized by the column, so the number is the same number.
+  expect(onCommit, "the message face resized the panel").toBe(onChanges);
+  expect(back, "coming back resized it again").toBe(onChanges);
+});
+
+/**
+ * ⚠ A FILE LIST YOU CANNOT OPEN IS THE BUG. Fork shows a file's diff when you click
+ * it; this shipped drawing paths and nothing else, and that is exactly what was
+ * reported. The pair is the guard: nothing until a file is chosen, that file after.
+ */
+test("[TC-PDUI-205] clicking a file shows that file’s diff", async ({ page }) => {
+  await withFabricatedCommit(page);
+
+  await expect(page.locator("[data-pdmux-file-row='src/deep/a.ts']")).toBeVisible();
+  expect(await page.locator("[data-pdmux-file-patch]").count(), "a patch was open before anything was clicked").toBe(0);
+
+  await page.locator("[data-pdmux-file-row='src/deep/a.ts']").click();
+  await expect(page.locator("[data-pdmux-file-patch='src/deep/a.ts']")).toBeVisible();
+  await expect(page.locator("[data-pdmux-file-row='src/deep/a.ts']")).toHaveAttribute("aria-current", "true");
+  // Only the chosen one — every patch at once is the screen this replaced.
+  expect(await page.locator("[data-pdmux-file-patch]").count()).toBe(1);
+
+  // And the corner control opens all of them, the way Fork's "Expand All" does.
+  await page.locator("[data-testid='detail-expand-all']").click();
+  await expect(page.locator("[data-pdmux-file-patch='src/deep/b.ts']")).toBeVisible();
+
+  // Tree versus list is a VIEW MODE on this list, not a third tab: the flat mode
+  // draws whole paths and no directory rows.
+  await page.locator("[data-testid='detail-file-list']").click();
+  await expect(page.locator("[data-pdmux-tree-dir]")).toHaveCount(0);
+  await expect(page.locator("[data-pdmux-file-row='src/deep/a.ts']")).toContainText("src/deep/a.ts");
+});
+
+/**
+ * ⚠ THE BOTTOM TAB BAR BELONGS TO PHONES. It picks one region at a time on a screen
+ * too narrow for three, and the desktop block hides it —
+ * `.pdmux-shell > [data-pdmux-region='tabs'] { display: none }`.
+ *
+ * A `.pdmux .pdmux-tabs` rule added for the commit detail tied that selector on
+ * specificity (0,2,0) and sat later in the file, so it won and the bar appeared
+ * across every desktop screen. Nothing near the git dock changed; the report came
+ * from the other side of the app. A global stylesheet's name collisions are only
+ * caught like this.
+ */
+test("[TC-PDUI-206] the phone tab bar is not drawn at desktop width", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.waitForSelector("[data-testid='commit-dock']");
+
+  const bar = page.locator("[data-testid='shell-tabs']");
+  await expect(bar).toBeHidden();
+
+  // And it is still there for the phone — hidden at this width, not deleted.
+  await page.setViewportSize({ width: 420, height: 900 });
+  await expect(bar).toBeVisible();
+});
+
 test.describe("agent updates on the sidebar", () => {
   const OUTDATED = mockHost("mock-behind", { agentVersion: "1.4.0", agentVersionState: "outdated" });
   const CURRENT = mockHost("mock-newest", { agentVersion: "1.5.0", agentVersionState: "current" });

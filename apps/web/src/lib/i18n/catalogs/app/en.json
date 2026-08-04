@@ -33,6 +33,16 @@
       "empty": "No changes",
       "partial": "partial"
     },
+    "files": {
+      "choose": "Choose a file to see what changed in it"
+    },
+    "tree": {
+      "added": "added",
+      "deleted": "deleted",
+      "empty": "No files changed",
+      "modified": "modified",
+      "renamed": "renamed"
+    },
     "graph": {
       "empty": "No commits",
       "uncommitted": "Uncommitted changes"
@@ -325,7 +335,12 @@
       "remoteGone": "gone from the remote",
       "remoteSame": "up to date",
       "remoteBehind": "{count} behind",
-      "remoteFailed": "Could not reach the remote"
+      "remoteFailed": "Could not reach the remote",
+      "tabCommit": "Commit",
+      "tabChanges": "Changes",
+      "fileViewTree": "Group by folder",
+      "fileViewList": "Show as a flat list",
+      "expandAll": "Open every patch"
     },
     "hosts": {
       "title": "Hosts",
