@@ -25,6 +25,8 @@
       "loading": "변경 내용 불러오는 중…",
       "missing": "이 커밋의 변경 내용은 수집되지 않았습니다",
       "notArrived": "변경 내용이 아직 도착하지 않았습니다",
+      "showMore": "더 보기",
+      "showLess": "접기",
       "retry": "다시 시도"
     },
     "diff": {
@@ -33,15 +35,23 @@
       "empty": "변경 없음",
       "partial": "일부"
     },
-    "files": {
-      "choose": "파일을 고르면 그 파일의 변경 내용이 보입니다"
-    },
     "tree": {
       "added": "추가",
       "deleted": "삭제",
       "empty": "변경된 파일 없음",
       "modified": "수정",
       "renamed": "이름 변경"
+    },
+    "blob": {
+      "loading": "파일을 읽는 중…",
+      "unavailable": "이 호스트의 에이전트는 아직 파일 내용을 읽지 못합니다 — 업데이트하면 사용할 수 있습니다",
+      "binary": "바이너리 파일 — 내용은 표시하지 않습니다",
+      "truncated": "크기 제한까지만 표시했습니다 — 뒷부분은 포함되지 않았습니다"
+    },
+    "repoTree": {
+      "loading": "파일 목록을 읽는 중…",
+      "unavailable": "이 호스트의 에이전트는 아직 커밋 시점의 파일 목록을 만들지 못합니다 — 업데이트하면 사용할 수 있습니다",
+      "dropped": "표시하지 않은 파일이 {count}개 더 있습니다"
     },
     "graph": {
       "empty": "커밋 없음",
@@ -338,9 +348,7 @@
       "remoteFailed": "원격에 닿지 못했습니다",
       "tabCommit": "커밋",
       "tabChanges": "변경",
-      "fileViewTree": "폴더별로 묶기",
-      "fileViewList": "한 줄씩 펼쳐 보기",
-      "expandAll": "모든 변경 내용 열기"
+      "tabTree": "파일 트리"
     },
     "hosts": {
       "title": "호스트",

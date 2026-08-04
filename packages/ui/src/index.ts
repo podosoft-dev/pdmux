@@ -31,8 +31,10 @@ export { default as GitGraph } from './components/GitGraph.svelte';
 export { default as GitRefPanel } from './components/GitRefPanel.svelte';
 export { default as CommitDetail } from './components/CommitDetail.svelte';
 export { default as DiffView } from './components/DiffView.svelte';
+export { default as BlobView } from './components/BlobView.svelte';
 export { default as FileList } from './components/FileList.svelte';
 export { default as FileTree } from './components/FileTree.svelte';
+export { default as RepoTreeView } from './components/RepoTreeView.svelte';
 
 export { EchoTerminalAdapter } from './adapters/terminal-adapter.js';
 export type { TerminalAdapter, TerminalConnection, TerminalOpenTarget } from './adapters/terminal-adapter.js';

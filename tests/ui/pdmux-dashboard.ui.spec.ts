@@ -1301,15 +1301,246 @@ test("[TC-PDUI-205] clicking a file shows that file’s diff", async ({ page }) 
   // Only the chosen one — every patch at once is the screen this replaced.
   expect(await page.locator("[data-pdmux-file-patch]").count()).toBe(1);
 
-  // And the corner control opens all of them, the way Fork's "Expand All" does.
-  await page.locator("[data-testid='detail-expand-all']").click();
-  await expect(page.locator("[data-pdmux-file-patch='src/deep/b.ts']")).toBeVisible();
+  // Clicking the open row again closes it — Fork's toggle, and the same gesture the
+  // commit rows in the graph already use.
+  await page.locator("[data-pdmux-file-row='src/deep/a.ts']").click();
+  expect(await page.locator("[data-pdmux-file-patch]").count()).toBe(0);
 
-  // Tree versus list is a VIEW MODE on this list, not a third tab: the flat mode
-  // draws whole paths and no directory rows.
-  await page.locator("[data-testid='detail-file-list']").click();
-  await expect(page.locator("[data-pdmux-tree-dir]")).toHaveCount(0);
-  await expect(page.locator("[data-pdmux-file-row='src/deep/a.ts']")).toContainText("src/deep/a.ts");
+  // ⚠ THE `commit` FACE IS STACKED AT ANY WIDTH, so the same click works there and
+  // the patch is under the row rather than beside it. Fork draws it that way, and
+  // two faces that look identical when the window is wide would make the tabs
+  // pointless.
+  await page.locator("[data-testid='detail-tab-commit']").click();
+  await expect(page.locator("[data-pdmux-tabpanel='commit']")).toBeVisible();
+  await page.locator("[data-pdmux-file-row='src/deep/a.ts']").click();
+  await expect(page.locator("[data-pdmux-file-patch='src/deep/a.ts']")).toBeVisible();
+  expect(
+    await page.locator("[data-pdmux-tabpanel='commit'] [data-pdmux-filepane='stacked']").count(),
+    "the commit face split into two columns",
+  ).toBe(1);
+});
+
+/**
+ * ⚠ THE `File tree` FACE IS THE WHOLE REPOSITORY, NOT THE COMMIT'S CHANGES, and a
+ * file there shows its CONTENTS rather than a patch. Conflating the two is exactly
+ * the mistake this face was rebuilt to undo.
+ *
+ * ⚠ AND IT IS FETCHED LAZILY. The listing arrives when the TAB is opened and a file
+ * when its ROW is clicked — never with the graph. The counters below are the guard:
+ * an earlier build read the dock's own state inside the effect that triggers the
+ * fetch, so the effect re-ran on every flip it caused and the browser asked for one
+ * commit's listing 1,723 times in fifteen minutes, each one a frame to somebody's
+ * machine. Measured on the live stack.
+ */
+test("[TC-PDUI-207] fetches a commit’s file listing only when that face is opened", async ({ page }) => {
+  const repo = {
+    id: "33333333-3333-4333-8333-333333333333",
+    hostId: "h1",
+    path: "/work/repo",
+    name: "repo",
+    headBranch: "main",
+    headSha: "aaaaaaa",
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    dirtyCount: 0,
+    dirtySubmodules: 0,
+    truncated: false,
+    limit: 300,
+    pendingDetails: 0,
+    hasWorkingDiff: false,
+    lastSnapshotAt: new Date().toISOString(),
+    error: null,
+    remoteRefs: null,
+    remoteCheckedAt: null,
+    remoteError: null,
+  };
+  let treeCalls = 0;
+  let blobCalls = 0;
+
+  await page.route("**/api/hosts/*/repos", (route) => route.fulfill({ json: [repo] }));
+  await page.route("**/api/hosts/*/repos/*/commits/*/detail", (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        pending: 0,
+        detail: { body: "", bodyTruncated: false, truncated: false, dropped: 0, files: [] },
+      },
+    }),
+  );
+  await page.route("**/api/hosts/*/repos/*/commits/*/tree", (route) => {
+    treeCalls += 1;
+    return route.fulfill({
+      json: {
+        available: true,
+        pending: 0,
+        detail: {
+          sha: "0000000",
+          dropped: 0,
+          truncated: false,
+          error: null,
+          entries: [
+            { path: "src/deep/a.ts", size: 12 },
+            { path: "README.md", size: 2048 },
+          ],
+        },
+      },
+    });
+  });
+  await page.route("**/api/hosts/*/repos/*/commits/*/blob**", (route) => {
+    blobCalls += 1;
+    return route.fulfill({
+      json: {
+        available: true,
+        pending: 0,
+        detail: {
+          sha: "0000000",
+          path: "README.md",
+          lines: ["# pdmux", "", "a dashboard"],
+          binary: false,
+          truncated: false,
+          bytes: 24,
+          error: null,
+        },
+      },
+    });
+  });
+  await page.route("**/api/hosts/*/repos/*", (route) => {
+    if (/\/(detail|tree|blob)/.test(route.request().url())) return route.fallback();
+    return route.fulfill({
+      json: {
+        repo,
+        refs: [{ name: "main", sha: "aaaaaaa", kind: "local" }],
+        commits: Array.from({ length: 6 }, (_, i) => ({
+          sha: `${i}`.repeat(7),
+          parents: [],
+          refs: i === 0 ? ["main"] : [],
+          author: "tester",
+          date: 1_784_000_000 - i * 60,
+          subject: `commit ${i}`,
+          seq: i,
+        })),
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.waitForSelector("[data-testid='commit-dock']");
+  await page.locator(".pdmux-graph-row").first().click();
+  await expect(page.locator("[data-pdmux-tabpanel='changes']")).toBeVisible();
+
+  // ⚠ NOTHING YET. Opening a commit must not cost a repository listing.
+  expect(treeCalls, "the listing was fetched before its face was opened").toBe(0);
+
+  await page.locator("[data-testid='detail-tab-tree']").click();
+  await expect(page.locator("[data-pdmux-file-row='README.md']")).toBeVisible();
+  expect(treeCalls).toBe(1);
+  // And the files under it are still untouched.
+  expect(blobCalls, "a file was read before it was clicked").toBe(0);
+
+  // A directory is a disclosure, not a selection: it has no selectable row at all.
+  await expect(page.locator("[data-pdmux-tree-toggle='src/deep']")).toBeVisible();
+  await expect(page.locator("[data-pdmux-file-row='src/deep']")).toHaveCount(0);
+
+  await page.locator("[data-pdmux-file-row='README.md']").click();
+  await expect(page.locator("[data-pdmux-blob='README.md']")).toContainText("a dashboard");
+  expect(blobCalls).toBe(1);
+
+  // ⚠ AND LEAVING THE FACE AND COMING BACK ASKS FOR NEITHER AGAIN — the cache
+  // answers. This is the counter that caught the request loop.
+  await page.locator("[data-testid='detail-tab-changes']").click();
+  await expect(page.locator("[data-pdmux-tabpanel='changes']")).toBeVisible();
+  await page.locator("[data-testid='detail-tab-tree']").click();
+  await expect(page.locator("[data-pdmux-file-row='README.md']")).toBeVisible();
+  await page.waitForTimeout(1500);
+  expect(treeCalls, "re-entering the face re-fetched the listing").toBe(1);
+});
+
+/**
+ * ⚠ THE ONE THAT ACTUALLY LOOPED. While the answer keeps arriving, everything stops
+ * on its own; the runaway was the case where it never arrives — an agent too old to
+ * know the frame logs it and keeps its socket, so the server answers "asked, still
+ * waiting" forever. The effect that starts the fetch read the dock's own state, so
+ * every flip it caused re-ran it, and giving up re-ran it again: 1,723 requests in
+ * fifteen minutes on the live stack, each one a frame to somebody's machine.
+ *
+ * So the assertion is a CEILING on requests and a sentence on screen, not a success.
+ */
+test("[TC-PDUI-207] gives up on an unanswerable listing instead of asking forever", async ({ page }) => {
+  const repo = {
+    id: "44444444-4444-4444-8444-444444444444",
+    hostId: "h1",
+    path: "/work/repo",
+    name: "repo",
+    headBranch: "main",
+    headSha: "aaaaaaa",
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    dirtyCount: 0,
+    dirtySubmodules: 0,
+    truncated: false,
+    limit: 300,
+    pendingDetails: 0,
+    hasWorkingDiff: false,
+    lastSnapshotAt: new Date().toISOString(),
+    error: null,
+    remoteRefs: null,
+    remoteCheckedAt: null,
+    remoteError: null,
+  };
+  let treeCalls = 0;
+
+  await page.route("**/api/hosts/*/repos", (route) => route.fulfill({ json: [repo] }));
+  await page.route("**/api/hosts/*/repos/*/commits/*/detail", (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        pending: 0,
+        detail: { body: "", bodyTruncated: false, truncated: false, dropped: 0, files: [] },
+      },
+    }),
+  );
+  // "I asked the agent; nothing yet" — for ever, which is what an agent too old does.
+  await page.route("**/api/hosts/*/repos/*/commits/*/tree", (route) => {
+    treeCalls += 1;
+    return route.fulfill({ json: { available: false, pending: 1, detail: null } });
+  });
+  await page.route("**/api/hosts/*/repos/*", (route) => {
+    if (/\/(detail|tree|blob)/.test(route.request().url())) return route.fallback();
+    return route.fulfill({
+      json: {
+        repo,
+        refs: [{ name: "main", sha: "aaaaaaa", kind: "local" }],
+        commits: Array.from({ length: 6 }, (_, i) => ({
+          sha: `${i}`.repeat(7),
+          parents: [],
+          refs: i === 0 ? ["main"] : [],
+          author: "tester",
+          date: 1_784_000_000 - i * 60,
+          subject: `commit ${i}`,
+          seq: i,
+        })),
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.waitForSelector("[data-testid='commit-dock']");
+  await page.locator(".pdmux-graph-row").first().click();
+  await expect(page.locator("[data-pdmux-tabpanel='changes']")).toBeVisible();
+  await page.locator("[data-testid='detail-tab-tree']").click();
+
+  // It says so rather than spinning: that sentence IS the end state.
+  await expect(page.locator("[data-pdmux-tree-state='unavailable']")).toBeVisible({ timeout: 20_000 });
+  const afterGivingUp = treeCalls;
+  // The budget is 8 attempts. A handful more would be a slow poll; a hundred is the bug.
+  expect(afterGivingUp, "the client polled past its budget").toBeLessThanOrEqual(12);
+
+  // ⚠ AND IT STAYS GIVEN UP. This is the half that ran away: the state change that
+  // ended the wait used to re-enter the effect and start the whole budget again.
+  await page.waitForTimeout(6000);
+  expect(treeCalls, "asking resumed after it had given up").toBe(afterGivingUp);
 });
 
 /**

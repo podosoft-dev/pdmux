@@ -25,6 +25,8 @@
       "loading": "Loading changes…",
       "missing": "Changes were not collected for this commit",
       "notArrived": "The changes have not arrived yet",
+      "showMore": "Show more",
+      "showLess": "Show less",
       "retry": "Try again"
     },
     "diff": {
@@ -33,15 +35,23 @@
       "empty": "No changes",
       "partial": "partial"
     },
-    "files": {
-      "choose": "Choose a file to see what changed in it"
-    },
     "tree": {
       "added": "added",
       "deleted": "deleted",
       "empty": "No files changed",
       "modified": "modified",
       "renamed": "renamed"
+    },
+    "blob": {
+      "loading": "Reading the file…",
+      "unavailable": "This host’s agent cannot read file contents yet — update it to use this view",
+      "binary": "Binary file — contents are not shown",
+      "truncated": "Shown up to the size cap — the rest is not included"
+    },
+    "repoTree": {
+      "loading": "Reading the file list…",
+      "unavailable": "This host’s agent cannot list a commit’s files yet — update it to use this view",
+      "dropped": "{count} more files are not listed"
     },
     "graph": {
       "empty": "No commits",
@@ -338,9 +348,7 @@
       "remoteFailed": "Could not reach the remote",
       "tabCommit": "Commit",
       "tabChanges": "Changes",
-      "fileViewTree": "Group by folder",
-      "fileViewList": "Show as a flat list",
-      "expandAll": "Open every patch"
+      "tabTree": "File tree"
     },
     "hosts": {
       "title": "Hosts",

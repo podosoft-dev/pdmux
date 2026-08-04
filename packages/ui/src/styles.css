@@ -84,6 +84,13 @@
 		--pdmux-popover: var(--color-popover, var(--popover, #1c2029));
 		--pdmux-popover-fg: var(--color-popover-foreground, var(--popover-foreground, #e6e9ef));
 		--pdmux-hover: var(--color-accent, var(--accent, #262c37));
+		/* The code palette, lightened for a dark card. Same six roles. */
+		--pdmux-code-keyword: #d2a8ff;
+		--pdmux-code-string: #7ee787;
+		--pdmux-code-number: #ffa657;
+		--pdmux-code-title: #79c0ff;
+		--pdmux-code-type: #ffa198;
+		--pdmux-code-attr: #7ee787;
 		--pdmux-hover-fg: var(--color-accent-foreground, var(--accent-foreground, #e6e9ef));
 		--pdmux-input: var(--color-input, var(--input, #333a47));
 		--pdmux-ring: var(--color-ring, var(--ring, #6b7280));
@@ -1726,7 +1733,15 @@
 	/* ⚠ The panel is a SCROLL CONTAINER. It is capped at a share of the column, so a patch
 	   longer than the cap is only reachable by scrolling here. */
 	overflow: auto;
-	padding: 8px;
+	/* A column, so a split body can be told to fill what the header leaves. */
+	display: flex;
+	flex-direction: column;
+	/* ⚠ NO TOP PADDING — THE HEADER OWNS IT. A sticky child pins to the PADDING box,
+	   so 8px here is 8px of body scrolling in full view above a header that is
+	   supposed to be covering it. Measured: text visibly bled over the pinned title.
+	   The header pays the same 8px as its own padding, so nothing moves and nothing
+	   shows through. */
+	padding: 0 8px 8px;
 	border-top: 1px solid var(--pdmux-line);
 	font-size: 12px;
 	scrollbar-gutter: stable;
@@ -2329,15 +2344,161 @@
    Servers/Terminals/Git appeared across the bottom of every desktop screen, which
    is nowhere near the code that caused it. Grep a class name before adding it, and
    delete a component's CSS in the same commit that deletes the component. */
+/* --- commit detail: header vs body ----------------------------------------
+   ⚠ THIS PACKAGE CANNOT IMPORT shadcn (`[TC-PDUI-030]`), SO IT MIRRORS ITS TOKENS.
+   Every value below resolves to the same variable the product's shadcn theme sets
+   — `--color-border`, `--color-muted-foreground`, `--radius` — through the
+   `--pdmux-*` aliases at the top of this file. Hard-coding a grey or a radius here
+   is what makes a panel look "nearly right" beside real shadcn components; naming
+   the token is what makes it match in both themes without knowing either. */
+
+/* The identity of the commit, pinned above whatever the body is scrolling. */
+.pdmux .pdmux-detail-head {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--pdmux-card);
+	border-bottom: 1px solid var(--pdmux-line);
+	/* ⚠ IT HAS TO COVER THE SCROLLER'S OWN PADDING. `.pdmux-detail` is padded 8px and
+	   is the scroll container, so a sticky child pinned at `top: 0` leaves an 8px gap
+	   above it through which the body scrolls in full view — the header looks like it
+	   is floating over a leak. Pulling the header out by that padding and paying it
+	   back as its own closes the gap edge to edge. */
+	margin: 0 -8px 0.625rem;
+	padding: 8px 8px 0.5rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+}
+.pdmux .pdmux-detail-head h3 {
+	margin: 0;
+	/* shadcn's `text-sm font-medium`: a panel title, not a page heading. */
+	font-size: 0.875rem;
+	font-weight: 500;
+	line-height: 1.35;
+}
+.pdmux .pdmux-detail-head .pdmux-meta {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+	margin: 0;
+}
+.pdmux .pdmux-sep {
+	color: var(--pdmux-line);
+}
+
+.pdmux .pdmux-detail-body {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+	flex: 1 1 auto;
+}
+
+/* A section is one question answered. The rule between them is what stops three
+   answers reading as one paragraph. */
+.pdmux .pdmux-section + .pdmux-section {
+	border-top: 1px solid var(--pdmux-line);
+	margin-top: 0.75rem;
+	padding-top: 0.75rem;
+}
+.pdmux .pdmux-section-title {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin: 0 0 0.375rem;
+	/* shadcn's small muted label: uppercase is reserved for it and nothing else here. */
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--pdmux-muted);
+}
+/* The count beside a section title — shadcn's `badge` in `secondary`. */
+.pdmux .pdmux-count {
+	display: inline-flex;
+	align-items: center;
+	min-width: 1.25rem;
+	justify-content: center;
+	padding: 0 0.3rem;
+	border-radius: var(--pdmux-radius-sm);
+	background: var(--pdmux-hover);
+	color: var(--pdmux-fg);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0;
+}
+/* A ref name. ⚠ NOT `.pdmux-chip`, which is a BUTTON in this stylesheet — a
+   non-interactive label wearing a control's clothes invites a click that does
+   nothing. */
+.pdmux .pdmux-tag {
+	display: inline-flex;
+	align-items: center;
+	padding: 0 0.375rem;
+	margin-right: 0.25rem;
+	border: 1px solid var(--pdmux-line);
+	border-radius: var(--pdmux-radius-sm);
+	background: var(--pdmux-hover);
+	font-size: 0.6875rem;
+	line-height: 1.5;
+}
+/* A sha is data, so it is monospace wherever it appears. */
+.pdmux .pdmux-sha {
+	font-family: ui-monospace, monospace;
+	font-size: 0.75rem;
+	margin-right: 0.25rem;
+}
+/* The commit message. Wraps: a body paragraph is prose, unlike a patch. */
+.pdmux .pdmux-body {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	margin: 0 0 0.25rem;
+	background: none;
+	border: 0;
+	padding: 0;
+	font-size: 0.8125rem;
+}
+/* Folded to its first lines. `-webkit-line-clamp` is the one that fades nothing and
+   is supported everywhere this ships; the count comes from the component so the
+   number lives in one place. */
+.pdmux .pdmux-body[data-pdmux-body-folded] {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: var(--pdmux-body-lines, 5);
+	line-clamp: var(--pdmux-body-lines, 5);
+	overflow: hidden;
+}
+/* A text button that reads as a link, not as a control competing with the tabs. */
+.pdmux .pdmux-more {
+	appearance: none;
+	background: none;
+	border: 0;
+	padding: 0;
+	margin: 0 0 0.5rem;
+	font: inherit;
+	font-size: 0.75rem;
+	color: var(--pdmux-accent);
+	cursor: pointer;
+}
+.pdmux .pdmux-more:hover {
+	text-decoration: underline;
+}
+
 .pdmux .pdmux-facts {
 	display: grid;
-	grid-template-columns: max-content 1fr;
-	gap: 0.15rem 0.75rem;
+	grid-template-columns: max-content minmax(0, 1fr);
+	gap: 0.25rem 0.75rem;
+	align-items: baseline;
 	font-size: 0.8125rem;
-	margin: 0.25rem 0 0;
+	margin: 0;
 }
+/* The label column reads as a label: shadcn's muted foreground, one step down in
+   size, never bold. The value carries the emphasis because the value is the news. */
 .pdmux .pdmux-facts dt {
-	color: var(--pdmux-muted, rgb(0 0 0 / 60%));
+	color: var(--pdmux-muted);
+	font-size: 0.75rem;
+	white-space: nowrap;
 }
 .pdmux .pdmux-facts dd {
 	margin: 0;
@@ -2401,6 +2562,121 @@
 	direction: rtl;
 	text-align: left;
 }
+/* A directory row on the `File tree` face: a disclosure, never a selection.
+   ⚠ It deliberately does NOT get the hover/current treatment `.pdmux-file-row` has —
+   a folder has nothing to show, and a row that looks selectable promises that it
+   does. */
+.pdmux .pdmux-tree-toggle {
+	appearance: none;
+	background: none;
+	border: 0;
+	padding: 0.1rem 0.25rem;
+	margin: 0;
+	width: 100%;
+	font: inherit;
+	color: var(--pdmux-muted, rgb(0 0 0 / 60%));
+	text-align: left;
+	cursor: pointer;
+	display: flex;
+	align-items: baseline;
+	gap: 0.25rem;
+}
+.pdmux .pdmux-tree-caret {
+	flex: none;
+	width: 0.75rem;
+	font-size: 0.7rem;
+}
+
+/* One file's contents: a number column and a code column, side by side.
+   ⚠ NEITHER WRAPS. One source line has to stay one screen line or the two columns
+   drift apart by however many lines wrapped, and the numbers stop naming the code
+   beside them. Long lines scroll sideways, which is what a file viewer does. */
+.pdmux .pdmux-blob {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 0 0.75rem;
+	align-items: start;
+}
+.pdmux .pdmux-blob-gutter,
+.pdmux .pdmux-blob-code {
+	margin: 0;
+	white-space: pre;
+	font-family: ui-monospace, monospace;
+	font-size: 12px;
+	line-height: 1.5;
+	background: none;
+	border: 0;
+	padding: 0;
+}
+.pdmux .pdmux-blob-gutter {
+	text-align: right;
+	color: var(--pdmux-muted);
+	/* Not selectable: copying a file out of this view must not bring the numbers. */
+	user-select: none;
+	-webkit-user-select: none;
+}
+.pdmux .pdmux-blob-code {
+	overflow-x: auto;
+}
+
+/* --- the highlighter's palette -------------------------------------------
+   ⚠ MAPPED ONTO THIS PRODUCT'S TOKENS, NOT COPIED FROM A THEME FILE. A stock
+   highlight.js theme is a fixed palette that ignores light/dark and sits beside
+   shadcn components looking like a different application. These are the same six
+   hues the diff view already uses, so a patch and a file read as one product. */
+.pdmux .hljs-comment,
+.pdmux .hljs-quote {
+	color: var(--pdmux-muted);
+	font-style: italic;
+}
+.pdmux .hljs-keyword,
+.pdmux .hljs-selector-tag,
+.pdmux .hljs-literal,
+.pdmux .hljs-doctag,
+.pdmux .hljs-meta .hljs-keyword {
+	color: var(--pdmux-code-keyword, #8250df);
+}
+.pdmux .hljs-string,
+.pdmux .hljs-regexp,
+.pdmux .hljs-addition,
+.pdmux .hljs-attribute {
+	color: var(--pdmux-code-string, #0a7d3f);
+}
+.pdmux .hljs-number,
+.pdmux .hljs-symbol,
+.pdmux .hljs-bullet,
+.pdmux .hljs-variable,
+.pdmux .hljs-template-variable {
+	color: var(--pdmux-code-number, #b1531a);
+}
+.pdmux .hljs-title,
+.pdmux .hljs-section,
+.pdmux .hljs-name,
+.pdmux .hljs-selector-id,
+.pdmux .hljs-selector-class {
+	color: var(--pdmux-code-title, #0550ae);
+}
+.pdmux .hljs-type,
+.pdmux .hljs-built_in,
+.pdmux .hljs-class .hljs-title,
+.pdmux .hljs-params {
+	color: var(--pdmux-code-type, #953800);
+}
+.pdmux .hljs-attr,
+.pdmux .hljs-property,
+.pdmux .hljs-meta {
+	color: var(--pdmux-code-attr, #116329);
+}
+.pdmux .hljs-deletion {
+	color: var(--pdmux-hot);
+}
+.pdmux .hljs-emphasis {
+	font-style: italic;
+}
+.pdmux .hljs-strong {
+	font-weight: 600;
+}
+
 .pdmux .pdmux-file-patch {
 	padding-left: 0.75rem;
 }
@@ -2413,7 +2689,14 @@
 .pdmux .pdmux-filepane {
 	min-width: 0;
 }
+/* ⚠ IN SPLIT, EACH COLUMN SCROLLS ITSELF. A repository listing is thousands of
+   rows, so one shared scroller makes the grid row as tall as the list and pins the
+   code column to the top of it — scroll down to reach a file and the pane you came
+   to read is a screen and a half above you. Measured: the right column looked
+   empty. Two scrollers keep the file and its contents on screen together. */
 .pdmux .pdmux-filepane[data-pdmux-filepane='split'] {
+	flex: 1 1 auto;
+	min-height: 0;
 	display: grid;
 	/* The list gets a readable share and no more: the patch is what the click was for.
 	   `minmax(0, …)` on both, or a long path makes the list column grow past its
@@ -2429,6 +2712,12 @@
 .pdmux .pdmux-filepane-list,
 .pdmux .pdmux-filepane-diff {
 	min-width: 0;
+}
+.pdmux .pdmux-filepane[data-pdmux-filepane='split'] > .pdmux-filepane-list,
+.pdmux .pdmux-filepane[data-pdmux-filepane='split'] > .pdmux-filepane-diff {
+	min-height: 0;
+	max-height: 100%;
+	overflow: auto;
 }
 .pdmux .pdmux-tree-stat {
 	font-variant-numeric: tabular-nums;

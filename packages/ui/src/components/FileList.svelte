@@ -8,25 +8,25 @@
 	 * one. `ResizeObserver` on this element is the same approach `GitGraph.svelte`
 	 * already takes for its lanes.
 	 *
-	 *  - wide  — list on the left, patch on the right (this is Fork's layout)
+	 *  - wide   — list on the left, patch on the right (this is Fork's Changes tab)
 	 *  - narrow — the patch opens UNDER the file it belongs to, because two columns
 	 *    of ~200px each show neither a path nor a line of code
 	 *
-	 * The controls that choose tree-vs-list and expand-all are NOT here: they are
-	 * chrome, the app draws them with its design system, and this takes their
-	 * answers as props (see `.claude/rules/ui-changes.md`).
+	 * `stack` forces the second shape at any width: Fork's Commit tab is a list with
+	 * the patch toggling open under the row, however wide the window is.
+	 *
+	 * The controls that choose a face are NOT here: they are chrome, the app draws
+	 * them with its design system (`.claude/rules/ui-changes.md`).
 	 */
-	import { type ChangedFile, fileList, fileTree } from '@pdmux/core';
+	import { type ChangedFile, fileTree } from '@pdmux/core';
 	import { type Translate, translator } from '../i18n.js';
 	import DiffView from './DiffView.svelte';
 	import FileTree from './FileTree.svelte';
 
 	interface Props {
 		files?: readonly ChangedFile[];
-		/** Grouped by directory, or flat. Fork puts this behind one button on the list. */
-		view?: 'tree' | 'list';
-		/** Every patch at once — Fork calls it "Expand All". */
-		expandAll?: boolean;
+		/** Always stacked — the patch toggles under its row rather than beside it. */
+		stack?: boolean;
 		selected?: string | null;
 		onSelect?: (path: string) => void;
 		/** Shown after the list, e.g. "3 files omitted by the size cap". */
@@ -34,12 +34,12 @@
 		t?: Translate;
 	}
 
-	let { files = [], view = 'tree', expandAll = false, selected = null, onSelect, note = '', t }: Props = $props();
+	let { files = [], stack = false, selected = null, onSelect, note = '', t }: Props = $props();
 
 	const tr = $derived(translator(t));
 	const tree = $derived(fileTree(files));
-	const flat = $derived(fileList(files));
-	const chosen = $derived(files.find((file) => file.path === selected) ?? null);
+	const byPath = $derived(new Map(files.map((file) => [file.path, file])));
+	const chosen = $derived(selected === null ? null : (byPath.get(selected) ?? null));
 
 	/**
 	 * Wide enough for two columns.
@@ -50,13 +50,14 @@
 	 */
 	const WIDE = 640;
 	let host: HTMLDivElement | null = $state(null);
-	let wide = $state(false);
+	let roomy = $state(false);
+	const split = $derived(!stack && roomy);
 
 	$effect(() => {
 		const node = host;
 		if (!node || typeof ResizeObserver === 'undefined') return;
 		const measure = (): void => {
-			wide = node.clientWidth >= WIDE;
+			roomy = node.clientWidth >= WIDE;
 		};
 		measure();
 		const observer = new ResizeObserver(measure);
@@ -64,66 +65,53 @@
 		return () => observer.disconnect();
 	});
 
-	/** One file's patch, in the shape `DiffView` reads. */
-	const chosenAsList = $derived(chosen ? [chosen] : []);
+	/** The one-letter git status as a word. */
+	function statusLabel(status: string, translate: Translate): string {
+		if (status === 'A') return translate('pdmux.tree.added', 'added');
+		if (status === 'D') return translate('pdmux.tree.deleted', 'deleted');
+		if (status === 'R') return translate('pdmux.tree.renamed', 'renamed');
+		return translate('pdmux.tree.modified', 'modified');
+	}
 </script>
 
-<div class="pdmux-filepane" data-pdmux-filepane={wide ? 'split' : 'stacked'} bind:this={host}>
+<div class="pdmux-filepane" data-pdmux-filepane={split ? 'split' : 'stacked'} bind:this={host}>
 	<div class="pdmux-filepane-list" data-pdmux-filepane-list>
-		{#if view === 'tree'}
-			<FileTree nodes={tree} {selected} {onSelect} extra={wide ? undefined : inlinePatch} {t} />
-		{:else if flat.length === 0}
-			<p class="pdmux-meta" data-pdmux-tree-empty>{tr('pdmux.tree.empty', 'No files changed')}</p>
-		{:else}
-			<ul class="pdmux-tree" data-pdmux-tree="flat" style="--pdmux-tree-depth:0">
-				{#each flat as file (file.path)}
-					<li class="pdmux-tree-file" data-pdmux-tree-file={file.path}>
-						<button
-							type="button"
-							class="pdmux-file-row"
-							data-pdmux-file-row={file.path}
-							aria-current={file.path === selected ? 'true' : undefined}
-							onclick={() => onSelect?.(file.path)}
-						>
-							<!-- The whole path, because a flat list without directories cannot tell
-							     two `index.ts` apart. It ellipsises from the LEFT (see styles.css),
-							     so the filename survives and the directory is what gets cut. -->
-							<span class="pdmux-tree-label" title={file.path}>{file.path}</span>
-							<span class="pdmux-tree-stat" data-pdmux-tree-add>+{file.add}</span>
-							<span class="pdmux-tree-stat" data-pdmux-tree-del>−{file.del}</span>
-						</button>
-						{#if !wide}{@render inlinePatch(file.path)}{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
+		<FileTree
+			nodes={tree}
+			{selected}
+			{onSelect}
+			meta={stats}
+			extra={split ? undefined : inlinePatch}
+			{t}
+		/>
 		{#if note}<p class="pdmux-meta">{note}</p>{/if}
 	</div>
 
-	{#if wide}
+	{#if split}
 		<div class="pdmux-filepane-diff" data-pdmux-filepane-diff>
-			{#if expandAll}
-				<DiffView {files} {t} />
-			{:else if chosen}
-				<DiffView files={chosenAsList} {t} />
-			{:else}
-				<p class="pdmux-meta" data-pdmux-empty="file">
-					{tr('pdmux.files.choose', 'Choose a file to see what changed in it')}
-				</p>
+			{#if chosen}
+				<DiffView files={[chosen]} {t} />
 			{/if}
 		</div>
 	{/if}
 </div>
 
-<!--
-	The patch that hangs under one row while the pane is stacked.
+{#snippet stats(path: string)}
+	{@const file = byPath.get(path)}
+	{#if file}
+		<span class="pdmux-tree-stat" data-pdmux-tree-add>+{file.add}</span>
+		<span class="pdmux-tree-stat" data-pdmux-tree-del>−{file.del}</span>
+		<!-- ⚠ NEVER COLOUR ALONE — the same rule the host cards keep. A red row and a
+		     green row are one row to a reader who cannot separate the hues. -->
+		<span class="pdmux-tree-status" data-pdmux-tree-status={file.status}>
+			{statusLabel(file.status, tr)}
+		</span>
+	{/if}
+{/snippet}
 
-	⚠ It renders for the CHOSEN row only, and `expandAll` widens that to every row —
-	which is what makes "Expand All" mean the same thing in both shapes.
--->
 {#snippet inlinePatch(path: string)}
-	{#if expandAll || path === selected}
-		{@const file = files.find((candidate) => candidate.path === path)}
+	{#if path === selected}
+		{@const file = byPath.get(path)}
 		{#if file}
 			<div class="pdmux-file-patch" data-pdmux-file-patch={path}>
 				<DiffView files={[file]} {t} />

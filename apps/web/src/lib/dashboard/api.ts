@@ -7,7 +7,7 @@
  * one edit, and every caller gets the same typed answer.
  */
 import { ApiError } from "@podosoft/podokit-api-client";
-import type { CommitDetail, WorkingDiff } from "@pdmux/protocol";
+import type { CommitDetail, GitBlob, GitTree, WorkingDiff } from "@pdmux/protocol";
 import { api } from "$lib/api";
 import type {
   AgentEnrollmentView,
@@ -213,6 +213,19 @@ export const gitApi = {
     api.get<DetailResponse<CommitDetail>>(`/hosts/${hostId}/repos/${repoId}/commits/${sha}/detail`),
   workingDiff: (hostId: string, repoId: string): Promise<DetailResponse<WorkingDiff>> =>
     api.get<DetailResponse<WorkingDiff>>(`/hosts/${hostId}/repos/${repoId}/working-diff`),
+  /**
+   * The paths that existed at a commit — metadata only.
+   *
+   * ⚠ TWO CALLS, NOT ONE. This is a few thousand names and sizes; the files under
+   * them are the whole repository. Fetching contents with the listing would send
+   * megabytes to draw a list nobody has clicked into.
+   */
+  commitTree: (hostId: string, repoId: string, sha: string): Promise<DetailResponse<GitTree>> =>
+    api.get<DetailResponse<GitTree>>(`/hosts/${hostId}/repos/${repoId}/commits/${sha}/tree`),
+  commitBlob: (hostId: string, repoId: string, sha: string, path: string): Promise<DetailResponse<GitBlob>> =>
+    api.get<DetailResponse<GitBlob>>(
+      `/hosts/${hostId}/repos/${repoId}/commits/${sha}/blob?path=${encodeURIComponent(path)}`,
+    ),
 };
 
 export const prefsApi = {

@@ -14,6 +14,7 @@
 	import { type ChangedFile, type PendingNote } from '@pdmux/core';
 	import { type Translate, translator } from '../i18n.js';
 	import FileList from './FileList.svelte';
+	import RepoTreeView from './RepoTreeView.svelte';
 
 	interface CommitRow {
 		sha: string;
@@ -25,15 +26,19 @@
 	}
 
 	/**
-	 * The two faces of one commit.
+	 * The three faces of one commit, as the latest Fork for macOS draws them.
 	 *
-	 * ⚠ THERE IS NO THIRD "FILE TREE" FACE, because Fork does not have one and it was
-	 * the wrong axis: tree-versus-list is how the SAME file list is drawn, so it is a
-	 * view mode on the list (one button in its corner) and not a sibling of the commit
-	 * message. Shipping it as a tab meant three places showed overlapping content and
-	 * none of them let a file be clicked.
+	 *  - `commit`  — the facts, then the changed files; a row toggles its patch open
+	 *  - `changes` — the changed files as a tree, with the chosen file's patch beside it
+	 *  - `tree`    — every file that EXISTED at the commit, with the chosen file's contents
+	 *
+	 * ⚠ THE THIRD ONE IS NOT A REDRAW OF THE SECOND. `changes` lists what the commit
+	 * touched; `tree` lists the whole repository at that point and shows file contents
+	 * rather than patches. They were once conflated into a tree-versus-list toggle on
+	 * one list, which is a different product — and a research mistake: that description
+	 * came from an older Windows build.
 	 */
-	type Tab = 'commit' | 'changes';
+	type Tab = 'commit' | 'changes' | 'tree';
 
 	interface DetailInput {
 		body?: string;
@@ -95,15 +100,29 @@
 		 * graph out or make the page scroll.
 		 */
 		height?: number | null;
-		/** Which of the two faces to draw. The app owns the control that sets it. */
+		/** Which of the three faces to draw. The app owns the control that sets it. */
 		view?: Tab;
-		/** How the file list is grouped. A view mode on the list, not a face. */
-		fileView?: 'tree' | 'list';
-		/** Every patch at once, Fork's "Expand All". */
-		expandAll?: boolean;
-		/** Which file's patch is showing. */
+		/** Which file's patch is showing, on the `commit` and `changes` faces. */
 		selectedPath?: string | null;
 		onSelectFile?: (path: string) => void;
+		/** The `tree` face: the repository listing and the file being read. */
+		treeEntries?: readonly { path: string; size: number }[];
+		treeDropped?: number;
+		treeLoading?: boolean;
+		treeUnavailable?: boolean;
+		closedDirs?: ReadonlySet<string>;
+		onToggleDir?: (path: string) => void;
+		treePath?: string | null;
+		onSelectTreeFile?: (path: string) => void;
+		blob?: {
+			path: string;
+			lines?: readonly string[];
+			binary?: boolean;
+			truncated?: boolean;
+			error?: string | null;
+		} | null;
+		blobLoading?: boolean;
+		blobUnavailable?: boolean;
 		t?: Translate;
 	}
 
@@ -116,10 +135,19 @@
 		formatDate,
 		height = null,
 		view = 'changes',
-		fileView = 'tree',
-		expandAll = false,
 		selectedPath = null,
 		onSelectFile,
+		treeEntries = [],
+		treeDropped = 0,
+		treeLoading = false,
+		treeUnavailable = false,
+		closedDirs,
+		onToggleDir,
+		treePath = null,
+		onSelectTreeFile,
+		blob = null,
+		blobLoading = false,
+		blobUnavailable = false,
 		t,
 	}: Props = $props();
 
@@ -144,12 +172,13 @@
 	 * is the part worth a tab, not the part worth the default.
 	 */
 	/**
-	 * ⚠ THE TAB CHROME IS NOT DRAWN HERE, AND THAT IS THE FIX. This package cannot
-	 * import shadcn — `[TC-PDUI-030]` restricts it so that a project with its own
-	 * design system can install it — so any control it draws is a lookalike, and a
+	 * ⚠ THE TAB CHROME IS NOT DRAWN HERE, AND THAT IS THE FIX. This package must not
+	 * import a design system — `[TC-PDUI-030]` bans shadcn/bits-ui so that a project
+	 * with its own can install it — so any control it draws is a lookalike, and a
 	 * hand-rolled tab strip sitting under a product built entirely from shadcn reads
 	 * as exactly what it is. The app owns the tabs (real `Tabs`), this owns the three
-	 * panels, and the seam is one prop.
+	 * panels, and the seam is one prop. (Ordinary self-contained libraries are fine:
+	 * the file view below highlights with `highlight.js`.)
 	 */
 	const tab = $derived(view);
 
@@ -172,6 +201,29 @@
 			? ''
 			: (formatDate ?? ((s: number) => new Date(s * 1000).toISOString()))(detail.committerDate),
 	);
+	/** The sha, as everything else in this product writes one. */
+	const shortSha = $derived((commit?.sha ?? '').slice(0, 12));
+
+	/**
+	 * A long commit message is folded to its first few lines.
+	 *
+	 * ⚠ THE PANEL IS A FIXED SHARE OF THE COLUMN, so a message with a design document
+	 * in it pushes the file list off the bottom and the face opens on prose nobody
+	 * asked for. Five lines is a subject plus a paragraph — enough to know whether the
+	 * rest is worth opening.
+	 *
+	 * ⚠ COUNTED, NOT MEASURED. `scrollHeight > clientHeight` would answer the same
+	 * question and answers it differently before fonts settle, which is the class of
+	 * first-paint bug this codebase already keeps a rule about. Lines are in the data.
+	 */
+	const MESSAGE_LINES = 5;
+	let messageOpen = $state(false);
+	const messageLong = $derived((detail?.body ?? '').split('\n').length > MESSAGE_LINES);
+	// Folding belongs to the message, so a different commit starts folded again.
+	$effect(() => {
+		commit?.sha;
+		messageOpen = false;
+	});
 	const droppedNote = $derived(
 		detail?.dropped
 			? `+${detail.dropped} ${tr('pdmux.detail.droppedFiles', 'files omitted by the size cap')}`
@@ -188,8 +240,25 @@
 	hidden={!commit}
 >
 	{#if commit}
-		<h3 data-pdmux-subject>{commit.subject ?? ''}</h3>
-		<p class="pdmux-meta" data-pdmux-meta>{commit.author ?? ''} · {dateText} · {commit.sha}</p>
+		<!--
+			⚠ THE HEADER IS A SEPARATE REGION FROM THE BODY, and it is pinned.
+
+			What a commit IS (its subject, who wrote it, its sha) does not change while
+			you read what it DID, so it must not scroll away underneath a patch — and
+			without a boundary the two ran together as one wall of text at the same
+			weight. The rule that comes out of it: every face is `header` + `body`, the
+			header states identity, the body is what you scroll.
+		-->
+		<header class="pdmux-detail-head" data-pdmux-detail-head>
+			<h3 data-pdmux-subject>{commit.subject ?? ''}</h3>
+			<p class="pdmux-meta" data-pdmux-meta>
+				<span data-pdmux-meta-author>{commit.author ?? ''}</span>
+				<span class="pdmux-sep" aria-hidden="true">·</span>
+				<span>{dateText}</span>
+				<span class="pdmux-sep" aria-hidden="true">·</span>
+				<code class="pdmux-sha">{shortSha}</code>
+			</p>
+		</header>
 		{#if loading}
 			<p class="pdmux-meta" data-pdmux-state="loading">{tr('pdmux.detail.loading', 'Loading changes…')}</p>
 		{:else if pending}
@@ -204,52 +273,99 @@
 			{/if}
 		{:else if detail}
 			{#if tab === 'commit'}
-				<div data-pdmux-tabpanel="commit">
-					{#if detail.body}
-						<pre class="pdmux-patch" data-pdmux-body>{detail.body}{detail.bodyTruncated ? '\n…' : ''}</pre>
-					{/if}
-					<dl class="pdmux-facts" data-pdmux-facts>
-						<dt>{tr('pdmux.detail.authored', 'Authored')}</dt>
-						<dd>{commit.author ?? ''}{detail.authorEmail ? ` <${detail.authorEmail}>` : ''} · {dateText}</dd>
-						{#if committerDiffers}
-							<!-- Present only when it says something the author line does not. -->
-							<dt data-pdmux-committer>{tr('pdmux.detail.committed', 'Committed')}</dt>
-							<dd>{detail.committer}{detail.committerEmail ? ` <${detail.committerEmail}>` : ''} · {committerDateText}</dd>
+				<div class="pdmux-detail-body" data-pdmux-tabpanel="commit">
+					<!-- ⚠ THE FACTS ARE A SECTION, NOT LOOSE LINES. Message, identity and
+					     files are three answers to three questions; run together at one
+					     weight they read as one paragraph nobody scans. -->
+					<section class="pdmux-section" data-pdmux-section="about">
+							{#if detail.body}
+							<pre
+								class="pdmux-patch pdmux-body"
+								data-pdmux-body
+								data-pdmux-body-folded={messageLong && !messageOpen ? 'true' : undefined}
+								style={messageLong && !messageOpen ? `--pdmux-body-lines:${MESSAGE_LINES}` : undefined}
+							>{detail.body}{detail.bodyTruncated ? '\n…' : ''}</pre>
+							{#if messageLong}
+								<!-- An inline disclosure on content the package owns, like the tree's
+								     directory rows. The TAB chrome is the app's; this is not chrome. -->
+								<button
+									type="button"
+									class="pdmux-more"
+									data-pdmux-body-toggle
+									aria-expanded={messageOpen}
+									onclick={() => (messageOpen = !messageOpen)}
+								>
+									{messageOpen
+										? tr('pdmux.detail.showLess', 'Show less')
+										: tr('pdmux.detail.showMore', 'Show more')}
+								</button>
+							{/if}
 						{/if}
-						<dt>{tr('pdmux.detail.sha', 'SHA')}</dt>
-						<dd data-pdmux-sha>{commit.sha}</dd>
-						{#if commit.parents?.length}
-							<dt>{tr('pdmux.detail.parents', 'Parents')}</dt>
-							<dd data-pdmux-parents>{commit.parents.map((p) => p.slice(0, 7)).join(' · ')}</dd>
-						{/if}
-						{#if commit.refs?.length}
-							<dt>{tr('pdmux.detail.refs', 'In')}</dt>
-							<dd data-pdmux-refs>{commit.refs.join(' · ')}</dd>
-						{/if}
-					</dl>
+						<dl class="pdmux-facts" data-pdmux-facts>
+							<dt>{tr('pdmux.detail.authored', 'Authored')}</dt>
+							<dd>{commit.author ?? ''}{detail.authorEmail ? ` <${detail.authorEmail}>` : ''} · {dateText}</dd>
+							{#if committerDiffers}
+								<!-- Present only when it says something the author line does not. -->
+								<dt data-pdmux-committer>{tr('pdmux.detail.committed', 'Committed')}</dt>
+								<dd>{detail.committer}{detail.committerEmail ? ` <${detail.committerEmail}>` : ''} · {committerDateText}</dd>
+							{/if}
+							<dt>{tr('pdmux.detail.sha', 'SHA')}</dt>
+							<dd><code class="pdmux-sha" data-pdmux-sha>{commit.sha}</code></dd>
+							{#if commit.parents?.length}
+								<dt>{tr('pdmux.detail.parents', 'Parents')}</dt>
+								<dd data-pdmux-parents>
+									{#each commit.parents as parent (parent)}<code class="pdmux-sha">{parent.slice(0, 7)}</code>{/each}
+								</dd>
+							{/if}
+							{#if commit.refs?.length}
+								<dt>{tr('pdmux.detail.refs', 'In')}</dt>
+								<dd data-pdmux-refs>
+									{#each commit.refs as ref (ref)}<span class="pdmux-tag">{ref}</span>{/each}
+								</dd>
+							{/if}
+						</dl>
+					</section>
+					<section class="pdmux-section" data-pdmux-section="files">
+						<h4 class="pdmux-section-title">
+							{tr('pdmux.detail.files', 'Changed files')}
+							<span class="pdmux-count">{files.length}</span>
+						</h4>
 					<!-- ⚠ THE FILE LIST IS ON THIS FACE TOO. Fork's Commit tab has shown the
 					     full list of changes since 1.0.70, and the reason holds here: what a
 					     commit says and what it touched are one question. Splitting them made
 					     the message face a dead end you had to leave to learn anything. -->
+					<!-- ⚠ STACKED AT ANY WIDTH. Fork's Commit tab is a list whose rows toggle
+					     their patch open underneath; the side-by-side shape belongs to the
+					     Changes tab, and having both faces look identical when the window is
+					     wide would make the tabs pointless. -->
 					<FileList
-						{files}
-						view={fileView}
-						{expandAll}
-						selected={selectedPath}
-						onSelect={onSelectFile}
-						note={droppedNote}
-						{t}
-					/>
+							{files}
+							stack
+							selected={selectedPath}
+							onSelect={onSelectFile}
+							note={droppedNote}
+							{t}
+						/>
+					</section>
+				</div>
+			{:else if tab === 'changes'}
+				<div class="pdmux-detail-body" data-pdmux-tabpanel="changes">
+					<FileList {files} selected={selectedPath} onSelect={onSelectFile} note={droppedNote} {t} />
 				</div>
 			{:else}
-				<div data-pdmux-tabpanel="changes">
-					<FileList
-						{files}
-						view={fileView}
-						{expandAll}
-						selected={selectedPath}
-						onSelect={onSelectFile}
-						note={droppedNote}
+				<div class="pdmux-detail-body" data-pdmux-tabpanel="tree">
+					<RepoTreeView
+						entries={treeEntries}
+						dropped={treeDropped}
+						{treeLoading}
+						unavailable={treeUnavailable}
+						closed={closedDirs}
+						{onToggleDir}
+						selected={treePath}
+						onSelect={onSelectTreeFile}
+						{blob}
+						loading={blobLoading}
+						{blobUnavailable}
 						{t}
 					/>
 				</div>

@@ -124,24 +124,158 @@ describe('[TC-PDUI-021] the detail panel explains a commit, including when it ha
 		// Only that one — a second patch would be the old "everything at once" screen.
 		expect(chosen.container.querySelector('[data-pdmux-file="b.ts"]')).toBeNull();
 
+		// Clicking the open row again closes it — Fork's toggle, and the same gesture
+		// the commit rows in the graph already use.
 		cleanup();
-		const all = render(CommitDetail, { props: { ...props, expandAll: true } });
-		expect(all.container.querySelector('[data-pdmux-file="a.ts"]')).not.toBeNull();
-		expect(all.container.querySelector('[data-pdmux-file="b.ts"]')).not.toBeNull();
+		const reclosed = render(CommitDetail, { props: { ...props, selectedPath: null } });
+		expect(reclosed.container.querySelector('[data-pdmux-file-patch]')).toBeNull();
 	});
 
-	it('[TC-PDUI-205] draws the file list flat when asked, whole path and all', () => {
+	/**
+	 * ⚠ THE HEADER IS A REGION, NOT THE FIRST TWO LINES OF THE BODY.
+	 *
+	 * What a commit IS does not change while you read what it DID, so identity is
+	 * pinned above the scroller and the body scrolls under it. Before that they were
+	 * loose siblings at one weight and read as a single wall of text — and the
+	 * pinning only works while the header is a separate element, which is what this
+	 * asserts. Where it SITS is geometry, so `[TC-PDUI-042]`'s neighbours measure it.
+	 */
+	it('[TC-PDUI-208] separates the commit’s identity from what it changed', () => {
 		const { container } = render(CommitDetail, {
 			props: {
-				commit: { sha: 'abc1234567', subject: 's', author: 'tester', date: 1_784_000_000 },
-				detail: { body: '', files: [{ path: 'src/deep/a.ts', add: 3, del: 1, lines: [] }] },
-				fileView: 'list' as const,
+				view: 'commit' as const,
+				commit: {
+					sha: 'abc1234567890',
+					subject: 'fix: something',
+					author: 'tester',
+					date: 1_784_000_000,
+					refs: ['main'],
+				},
+				detail: { body: 'why', authorEmail: 't@e.com', files: [{ path: 'a.ts', add: 1, del: 0, lines: [] }] },
+				formatDate: () => '2026-07-01 00:00',
 			},
 		});
-		// No directory rows at all, and the row carries the path it could not otherwise
-		// be told apart by.
-		expect(container.querySelector('[data-pdmux-tree-dir="src/deep"]')).toBeNull();
-		expect(container.querySelector('[data-pdmux-file-row="src/deep/a.ts"]')?.textContent).toContain('src/deep/a.ts');
+		const head = container.querySelector('[data-pdmux-detail-head]');
+		expect(head, 'the header is not its own region').not.toBeNull();
+		// Identity lives in the header…
+		expect(head?.querySelector('[data-pdmux-subject]')?.textContent).toBe('fix: something');
+		// …and nothing that scrolls does. A body element inside the header would be
+		// pinned along with it, which is the failure this guards.
+		expect(head?.querySelector('[data-pdmux-facts]')).toBeNull();
+		expect(head?.querySelector('[data-pdmux-tree-file]')).toBeNull();
+
+		// The body is sectioned: the facts and the files are two answers, not one.
+		const body = container.querySelector('[data-pdmux-tabpanel="commit"]');
+		expect(body?.querySelector('[data-pdmux-section="about"] [data-pdmux-facts]')).not.toBeNull();
+		expect(body?.querySelector('[data-pdmux-section="files"] [data-pdmux-tree-file="a.ts"]')).not.toBeNull();
+	});
+
+	/**
+	 * ⚠ THE THIRD FACE IS A DIFFERENT LIST. `changes` is what the commit touched;
+	 * `tree` is every file that EXISTED at it, and opening one shows its CONTENTS
+	 * rather than a patch. Conflating the two is the mistake this face was rebuilt
+	 * to undo.
+	 */
+	it('[TC-PDUI-207] lists the repository at the commit and reads one file', () => {
+		const props = {
+			view: 'tree' as const,
+			commit: { sha: 'abc1234567', subject: 's', author: 'tester', date: 1_784_000_000 },
+			detail: { body: '', files: [] },
+			treeEntries: [
+				{ path: 'src/deep/a.ts', size: 12 },
+				{ path: 'README.md', size: 2048 },
+			],
+		};
+		const listing = render(CommitDetail, { props });
+		expect(listing.container.querySelector('[data-pdmux-file-row="README.md"]')).not.toBeNull();
+		// A file the COMMIT did not touch is still listed: this is the repository.
+		expect(listing.container.querySelector('[data-pdmux-file-row="src/deep/a.ts"]')).not.toBeNull();
+		// ⚠ A DIRECTORY IS A DISCLOSURE, NOT A SELECTION. Choosing a folder has
+		// nothing to show, so it must not be given a row that looks selectable.
+		expect(listing.container.querySelector('[data-pdmux-tree-dir="src/deep"]')).not.toBeNull();
+		expect(listing.container.querySelector('[data-pdmux-file-row="src/deep"]')).toBeNull();
+		expect(listing.container.querySelector('[data-pdmux-tree-toggle="src/deep"]')).not.toBeNull();
+
+		cleanup();
+		const open = render(CommitDetail, {
+			props: {
+				...props,
+				treePath: 'README.md',
+				blob: { path: 'README.md', lines: ['# pdmux', '', 'a dashboard'] },
+			},
+		});
+		expect(open.container.querySelector('[data-pdmux-blob="README.md"]')?.textContent).toContain('a dashboard');
+	});
+
+	/**
+	 * ⚠ THE FILE IS COLOURED, AND THE COLOURING IS THE ONLY MARKUP THAT REACHES THE
+	 * PAGE. Everything here comes out of somebody's repository, so the guard is the
+	 * pair: a keyword is a span (it highlighted) AND a `<script>` in the source is
+	 * text (it was escaped on the way).
+	 *
+	 * ⚠ THE GRAMMAR COMES FROM THE PATH. `highlightAuto` guesses from content and
+	 * guesses differently for two files in one project.
+	 */
+	it('[TC-PDUI-209] highlights a file by its extension and escapes what it draws', () => {
+		const { container } = render(CommitDetail, {
+			props: {
+				view: 'tree' as const,
+				commit: { sha: 'abc1234567', subject: 's', author: 'tester', date: 1_784_000_000 },
+				detail: { body: '', files: [] },
+				treeEntries: [{ path: 'src/a.ts', size: 12 }],
+				treePath: 'src/a.ts',
+				blob: {
+					path: 'src/a.ts',
+					lines: ['const x = 1;', '// <script>alert(1)</script>'],
+				},
+			},
+		});
+		const view = container.querySelector('[data-pdmux-blob="src/a.ts"]');
+		expect(view?.getAttribute('data-pdmux-blob-lang')).toBe('typescript');
+		// It actually highlighted: `const` is a keyword span, not bare text.
+		expect(view?.querySelector('.hljs-keyword')?.textContent).toBe('const');
+		// ⚠ AND THE `<script>` IN THE SOURCE IS TEXT. A real element here would mean
+		// a repository could put markup on this page.
+		expect(view?.querySelector('script')).toBeNull();
+		expect(view?.textContent).toContain('<script>alert(1)</script>');
+		// The numbers are their own column, so they are not inside the code.
+		expect(container.querySelector('.pdmux-blob-gutter')?.textContent).toBe('1\n2');
+	});
+
+	it('[TC-PDUI-209] falls back to plain text for a file it has no grammar for', () => {
+		const { container } = render(CommitDetail, {
+			props: {
+				view: 'tree' as const,
+				commit: { sha: 'abc1234567', subject: 's', author: 'tester', date: 1_784_000_000 },
+				detail: { body: '', files: [] },
+				treeEntries: [{ path: 'LICENSE', size: 12 }],
+				treePath: 'LICENSE',
+				blob: { path: 'LICENSE', lines: ['Copyright <holder>'] },
+			},
+		});
+		const view = container.querySelector('[data-pdmux-blob="LICENSE"]');
+		expect(view?.getAttribute('data-pdmux-blob-lang')).toBe('text');
+		// Still escaped: the fallback path is not a hole in the one above.
+		expect(view?.textContent).toContain('Copyright <holder>');
+	});
+
+	/**
+	 * ⚠ AN AGENT TOO OLD NEVER ANSWERS AT ALL — it logs the frame it does not know
+	 * and keeps its socket — so the failure mode without this is a spinner that
+	 * never stops. The screen has to say what is wrong instead.
+	 */
+	it('[TC-PDUI-207] says so when the host’s agent cannot list files', () => {
+		const { container } = render(CommitDetail, {
+			props: {
+				view: 'tree' as const,
+				commit: { sha: 'abc1234567', subject: 's', author: 'tester', date: 1_784_000_000 },
+				detail: { body: '', files: [] },
+				treeUnavailable: true,
+			},
+		});
+		const note = container.querySelector('[data-pdmux-tree-state="unavailable"]');
+		expect(note).not.toBeNull();
+		expect(note?.textContent).toContain('agent');
 	});
 
 	it('[TC-PDUI-021] draws the face the app asked for', () => {

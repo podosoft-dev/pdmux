@@ -14,24 +14,31 @@ export interface ChangedFile {
 	del: number;
 }
 
-/** A directory in the tree. `path` is the full prefix, `label` what is drawn. */
-export interface FileTreeDir {
+/**
+ * A directory in the tree. `path` is the full prefix, `label` what is drawn.
+ *
+ * ⚠ THE PAYLOAD IS A TYPE PARAMETER because two different lists are drawn as the
+ * same tree: the files a commit CHANGED (each with an add/del/status) and every
+ * file that EXISTED at it (each with a size). The folding rules are identical and
+ * were worth getting right once; the row content is not the tree's business.
+ */
+export interface FileTreeDir<T = ChangedFile> {
 	kind: 'dir';
 	/** Full path from the root, so two directories with the same name differ. */
 	path: string;
 	/** What to draw — several segments when a chain was collapsed. */
 	label: string;
-	children: FileTreeNode[];
+	children: FileTreeNode<T>[];
 }
 
-export interface FileTreeFile {
+export interface FileTreeFile<T = ChangedFile> {
 	kind: 'file';
 	path: string;
 	label: string;
-	file: ChangedFile;
+	file: T;
 }
 
-export type FileTreeNode = FileTreeDir | FileTreeFile;
+export type FileTreeNode<T = ChangedFile> = FileTreeDir<T> | FileTreeFile<T>;
 
 /**
  * Group changed files by directory.
@@ -47,7 +54,18 @@ export type FileTreeNode = FileTreeDir | FileTreeFile;
  * person is looking for are not pushed below an expanding hierarchy.
  */
 export function fileTree(files: readonly ChangedFile[]): FileTreeNode[] {
-	const root: FileTreeDir = { kind: 'dir', path: '', label: '', children: [] };
+	return treeOf(files);
+}
+
+/**
+ * The same grouping for anything that has a path.
+ *
+ * `fileTree` is this with the changed-file payload; the `File tree` face passes a
+ * repository listing instead. One implementation, so the collapse rule and its
+ * edge case cannot diverge between the two screens that rely on it.
+ */
+export function treeOf<T extends { path: string }>(files: readonly T[]): FileTreeNode<T>[] {
+	const root: FileTreeDir<T> = { kind: 'dir', path: '', label: '', children: [] };
 
 	for (const file of files) {
 		const segments = file.path.split('/').filter((segment) => segment.length > 0);
@@ -58,7 +76,7 @@ export function fileTree(files: readonly ChangedFile[]): FileTreeNode[] {
 			const segment = segments[i] as string;
 			const path = cursor.path ? `${cursor.path}/${segment}` : segment;
 			let next = cursor.children.find(
-				(child): child is FileTreeDir => child.kind === 'dir' && child.path === path,
+				(child): child is FileTreeDir<T> => child.kind === 'dir' && child.path === path,
 			);
 			if (!next) {
 				next = { kind: 'dir', path, label: segment, children: [] };
@@ -80,14 +98,14 @@ export function fileTree(files: readonly ChangedFile[]): FileTreeNode[] {
 }
 
 /** Fold `a/` → `b/` → `c/` into one `a/b/c/` row, depth first. */
-function collapse(dir: FileTreeDir): void {
+function collapse<T>(dir: FileTreeDir<T>): void {
 	for (const child of dir.children) {
 		if (child.kind === 'dir') collapse(child);
 	}
 	// Only a directory whose single child is itself a directory can fold: folding a
 	// directory that holds one FILE would hide the directory the file lives in.
 	while (dir.children.length === 1 && dir.children[0]?.kind === 'dir') {
-		const only = dir.children[0] as FileTreeDir;
+		const only = dir.children[0] as FileTreeDir<T>;
 		dir.label = dir.label ? `${dir.label}/${only.label}` : only.label;
 		dir.path = only.path;
 		dir.children = only.children;
@@ -109,7 +127,7 @@ export function fileList(files: readonly ChangedFile[]): ChangedFile[] {
 	return [...files].sort((a, b) => a.path.localeCompare(b.path, undefined, { sensitivity: 'base' }));
 }
 
-function sort(dir: FileTreeDir): void {
+function sort<T>(dir: FileTreeDir<T>): void {
 	dir.children.sort((a, b) => {
 		if (a.kind !== b.kind) return a.kind === 'file' ? -1 : 1;
 		return a.label.localeCompare(b.label);
