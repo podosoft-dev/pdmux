@@ -113,8 +113,15 @@ jobs:
           # tests. Bumping for those would publish a version whose binary is
           # byte-identical to the last one — every host downloading the same bytes
           # again, which is the same dishonesty pointing the other way.
+          #
+          # ⚠ `package.json` AND `package-lock.json` JOIN THAT LIST. The agent embeds
+          # `schema/protocol.schema.json`, never a manifest, so a version bump in
+          # `packages/protocol/package.json` cannot reach the binary — and every
+          # release commit bumps exactly that. Without this the gate fires on the
+          # release itself and the only way past is to publish one more identical
+          # build, which is the outcome the paragraph above calls dishonest.
           changed=$(git diff --name-only "$BASE" HEAD -- agent packages/protocol \
-            | grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/)' \
+            | grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|/package(-lock)?\.json$)' \
             || true)
 
           if [ -z "$changed" ]; then

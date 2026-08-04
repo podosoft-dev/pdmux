@@ -72,7 +72,7 @@ agent_version() {
 	}
 	local changed
 	changed=$(git diff --name-only "$base" HEAD -- agent packages/protocol |
-		grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/)' || true)
+		grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|/package(-lock)?\.json$)' || true)
 	[ -z "$changed" ] && { echo "  no agent or contract source changed"; return 0; }
 
 	echo "  changed:"; echo "$changed" | sed 's/^/    /'
