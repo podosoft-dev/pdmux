@@ -70,6 +70,10 @@ const EXPECTED_DEFS = [
 	'diffFile',
 	'epochSeconds',
 	'execResult',
+	// Added with the `File tree` face: a repository listing at one commit, and one
+	// file's contents. `gitBlob` carries LINES rather than bytes — a binary file is
+	// answered as `binary: true`, because a browser renders none of its bytes.
+	'gitBlob',
 	'gitCommit',
 	'gitHead',
 	'gitRef',
@@ -79,6 +83,8 @@ const EXPECTED_DEFS = [
 	'gitRemoteCheck',
 	'gitRemoteRef',
 	'gitStatusFile',
+	'gitTree',
+	'gitTreeEntry',
 	'gitUncommitted',
 	'heartbeat',
 	'listener',

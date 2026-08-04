@@ -38,12 +38,13 @@ const binarySniffBytes = 8_000
 // in is byte-for-byte unchanged afterwards, which is the guarantee this package
 // exists to keep.
 //
-// ⚠ `-z` IS NOT OPTIONAL. Without it git quotes paths containing spaces,
-// newlines or non-ASCII bytes, and the quoting is git's own C-style escaping —
-// so `apps/web/src/lib/컴포넌트.svelte` comes back as a backslash-escaped string
-// that no longer matches the path the diff reported for the same file. With
-// `-z` the path is raw and the record separator is a NUL, which cannot occur in
-// a path at all.
+// ⚠ `-z` IS NOT OPTIONAL. Without it git quotes any path containing a space, a
+// newline or a byte outside ASCII, using its own C-style escaping — so a file
+// whose name is not plain ASCII comes back wrapped in quotes with every such
+// byte written as `\NNN`, and that string no longer matches the path the diff
+// reported for the same file. With `-z` the path is raw and the record separator
+// is a NUL, which cannot occur in a path at all. `tree_test.go` holds the
+// fixture that proves it.
 func ReadTree(ctx context.Context, run Runner, sha string, cap int) ([]protocol.GitTreeEntry, int, error) {
 	if cap <= 0 {
 		cap = DefaultTreeEntryCap

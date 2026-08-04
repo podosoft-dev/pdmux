@@ -193,11 +193,12 @@ describe('[TC-PDPROTO-007] the contract evolves additively', () => {
 			'ts',
 			'usage',
 		]);
-		// `remote` was added for the on-demand remote check: an addition, so an agent
-		// that has never heard of it still produces a valid snapshot.
+		// `remote`, then `tree` and `blob`, were added for the on-demand checks: all
+		// three are ADDITIONS, so an agent that has never heard of them still produces
+		// a valid snapshot — which is the property this list exists to keep.
 		expect(Object.keys(repoSnapshotSchema.shape).sort()).toEqual([
-			'commits', 'details', 'error', 'head', 'limit', 'name', 'partial', 'path', 'pending', 'refs',
-			'remote', 'truncated', 'ts', 'uncommitted', 'workingDiff',
+			'blob', 'commits', 'details', 'error', 'head', 'limit', 'name', 'partial', 'path', 'pending',
+			'refs', 'remote', 'tree', 'truncated', 'ts', 'uncommitted', 'workingDiff',
 		]);
 		expect(Object.keys(agentConfigSchema.shape).sort()).toEqual([
 			'bodyMaxChars', 'gitDetailBudget', 'gitIntervalSec', 'gitLimit', 'gitRoots', 'heartbeatSec',

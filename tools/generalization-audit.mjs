@@ -232,6 +232,10 @@ const PATTERN_ALLOW = [
 	// boundary and check the halves; replacing the text deletes what they measure.
 	{ file: 'agent/internal/term/pty_test.go', ids: ['korean'] },
 	{ file: 'agent/internal/term/manager_test.go', ids: ['korean'] },
+	// ⚠ Korean as a NON-ASCII PATH. `ls-tree -z` exists so git does not C-quote a
+	// path like this one; an ASCII fixture cannot fail the way the bug did, so
+	// translating it would delete what the spec measures.
+	{ file: 'agent/internal/git/tree_test.go', ids: ['korean'] },
 	// ⚠ THE EVIDENCE ITSELF. This document's whole argument is a log of what a real
 	// device sent while somebody typed Korean; paraphrasing it in English would delete
 	// the measurement and leave an assertion.
