@@ -1410,20 +1410,32 @@
    `overflow-y: scroll` div — **0** on a Pixel 7 AND **0** on desktop Chromium (dpr 1), which
    is also why xterm's own measurement hits its 15px fallback rather than reading a width.
 
-   ⚠ `::-webkit-scrollbar` DOES NOT OPT OUT OF THAT. It is often said to, and it does not
-   here: the same div measured 0 with `::-webkit-scrollbar { width: 10px }`, 0 with
-   `scrollbar-width`/`scrollbar-color`, and 0 with both, on the phone and on the desktop
-   alike. So no declaration in this file can make the terminal's scrollbar take layout, and
-   nothing below should be read as promising a reserved strip of its own.
+   ⚠ THAT MEASUREMENT IS PER-PLATFORM, AND THIS COMMENT ONCE READ AS IF IT WERE NOT. It
+   used to say the same div measured 0 with `::-webkit-scrollbar { width: 10px }`, 0 with
+   `scrollbar-width`/`scrollbar-color` and 0 with both, and concluded that NO declaration
+   here could make the scrollbar take layout. Re-run on a Mac's own Chrome (headed, dpr 2)
+   the same probes give 15 unstyled, 10 with the webkit rule, 11 with the standard pair,
+   11 with both — every one of them reserves. The original numbers came from a Pixel 7 and
+   a dpr-1 desktop Chromium, and the bundled headless Chromium reports 0 where this Mac's
+   Chrome reports 15. So: on THIS product's phone and on a headless run there is nothing to
+   reserve; on a Mac's Chrome there is. Neither is "the answer".
 
-   WHAT IS THEREFORE LOAD-BEARING: `scrollbar-color`, which Blink honours for an overlay
-   scrollbar (>= 121) — the live viewport computes `rgb(182, 189, 201) rgba(0, 0, 0, 0)`, so
-   the thumb that appears on a drag/wheel is this product's grey rather than the engine's
-   default, and the track is transparent so nothing is painted while nothing is happening.
-   The `::-webkit-*` rules are the classic-scrollbar path for a platform whose scrollbars ARE
-   laid out (a Linux/Windows desktop with overlay scrollbars off, an embedded webview); they
-   are the pair `.pdmux-graph-list` below already relies on, so both scrollers answer to the
-   same two declarations instead of one inventing its own.
+   ⚠ AND THE `::-webkit-*` RULES BELOW ARE INERT ON CHROME 121+. Since that release a
+   `scrollbar-width` or `scrollbar-color` at anything but `auto` makes the engine ignore
+   every `::-webkit-scrollbar-*` rule — the CSSWG resolved it deliberately. Measured with
+   the exact pair this block sets: the webkit rule alone reserves 10, the standard pair
+   alone reserves 11, and both together still reserve 11. The webkit half changes nothing
+   precisely on the engines that have it. It is kept for the engines that do not implement
+   the standard properties, and `scrollbar-color` is what is actually load-bearing here:
+   Blink honours it for an overlay scrollbar, so the thumb that appears on a drag or a
+   wheel is this product's grey rather than the engine's default, and the transparent track
+   means nothing is painted while nothing is happening.
+
+   ⚠ DELIBERATELY NOT CHANGED. Wrapping the standard pair in
+   `@supports not selector(::-webkit-scrollbar)` — what `.pdmux-blob-code` does — would give
+   Chrome a 10px bar that is always visible over the terminal surface. That is a different
+   product decision from a comment being accurate, so it stays a decision rather than a
+   side effect of this correction.
 
    IDLE = UNOBTRUSIVE, without a media query: no thumb is painted while
    `scrollHeight <= clientHeight`, and with a transparent track that means a pane with no
@@ -1549,7 +1561,14 @@
 }
 
 /* The list scrolls, the detail does not move: both need an explicit min-height:0 or
-   they grow to their content and push each other out of the viewport. */
+   they grow to their content and push each other out of the viewport.
+
+   ⚠ THE `::-webkit-*` RULES BELOW DO NOTHING ON CHROME 121+, for the same reason
+   spelled out at `.xterm-viewport` above: a non-`auto` `scrollbar-width` makes the
+   engine ignore every `::-webkit-scrollbar-*` rule. They are the path for engines
+   without the standard properties, and `scrollbar-width` is what shapes this one on
+   Chrome. Left as it is on purpose — changing it changes what a live screen looks
+   like, which is a decision rather than a tidy-up. */
 .pdmux-graph-list {
 	flex: 1;
 	min-height: 0;
