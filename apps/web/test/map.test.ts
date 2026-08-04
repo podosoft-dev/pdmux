@@ -220,6 +220,9 @@ describe("[TC-PDUI-113] HEAD for the refs panel", () => {
     pendingDetails: 0,
     hasWorkingDiff: false,
     lastSnapshotAt: null,
+  remoteRefs: null,
+  remoteCheckedAt: null,
+  remoteError: null,
     error: null,
     ...overrides,
   });
@@ -287,6 +290,9 @@ describe("[TC-PDUI-107] working tree summary", () => {
     pendingDetails: 0,
     hasWorkingDiff: false,
     lastSnapshotAt: null,
+  remoteRefs: null,
+  remoteCheckedAt: null,
+  remoteError: null,
     error: null,
     ...overrides,
   });

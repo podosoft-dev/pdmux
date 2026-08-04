@@ -28,6 +28,10 @@ function patch(sha: string): CommitDetail {
     subject: "fix a thing",
     body: "why",
     bodyTruncated: false,
+  authorEmail: "",
+  committer: "",
+  committerEmail: "",
+  committerDate: null,
     files: [
       { path: "a.ts", oldPath: null, status: "M", add: 1, del: 0, binary: false, truncated: false, lines: ["+x"] },
     ],

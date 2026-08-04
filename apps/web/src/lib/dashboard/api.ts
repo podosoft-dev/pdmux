@@ -196,6 +196,15 @@ export const metricsApi = {
 
 export const gitApi = {
   repos: (hostId: string): Promise<RepoRow[]> => api.get<RepoRow[]>(`/hosts/${hostId}/repos`),
+  /**
+   * "Do a pass now" — the endpoint that already existed for the host card's refresh.
+   *
+   * `remote` is the one that leaves the machine: it runs `ls-remote`, which reads the
+   * remote's refs and writes nothing to the checkout. It is never on the agent's own
+   * timer, so this call is the only way it ever happens.
+   */
+  collect: (hostId: string, what: "repos" | "remote"): Promise<{ hostId: string; what: string }> =>
+    api.post<{ hostId: string; what: string }>(`/hosts/${hostId}/collect`, { what }),
   graph: (hostId: string, repoId: string): Promise<RepoGraphResponse> =>
     api.get<RepoGraphResponse>(`/hosts/${hostId}/repos/${repoId}`),
   // Fetched on a click and never with the graph: bodies and patches were 58% of a

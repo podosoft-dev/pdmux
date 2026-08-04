@@ -155,6 +155,17 @@ export interface RepoRow {
   hasWorkingDiff: boolean;
   lastSnapshotAt: string | null;
   error: string | null;
+  /**
+   * The last remote check, or nulls when nobody has asked for one.
+   *
+   * ⚠ NOT `RepoRefRow`. Those are LOCAL pointers — including remote-TRACKING refs,
+   * which are as old as the last fetch somebody ran by hand. These are what the
+   * remote itself answered, and `remoteCheckedAt === null` means never asked, which
+   * the screen says out loud rather than drawing as "up to date".
+   */
+  remoteRefs: { name: string; sha: string; kind: "branch" | "tag" }[] | null;
+  remoteCheckedAt: string | null;
+  remoteError: string | null;
 }
 
 export interface RepoRefRow {

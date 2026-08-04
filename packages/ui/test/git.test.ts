@@ -1,7 +1,7 @@
 /**
  * Read-only commit graph, detail panel and patch rendering.
  */
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { pendingNote, uncommittedSummary } from '@pdmux/core';
 import CommitDetail from '../src/components/CommitDetail.svelte';
@@ -76,7 +76,12 @@ describe('[TC-PDUI-020] the graph draws one clickable row per commit', () => {
 });
 
 describe('[TC-PDUI-021] the detail panel explains a commit, including when it has none', () => {
-	it('renders the header from the row and the body from the fetched detail', () => {
+	/**
+	 * ⚠ THE PANEL OPENS ON THE CHANGES. It is what the click was for and what this
+	 * panel showed before it had tabs, so a default of "Commit" would have made the
+	 * common case cost an extra click. The message moved behind a tab, not away.
+	 */
+	it('[TC-PDUI-021] renders the header from the row and opens on the patch', async () => {
 		const { container } = render(CommitDetail, {
 			props: {
 				commit: { sha: 'abc1234567', subject: 'fix: something', author: 'tester', date: 1_784_000_000 },
@@ -86,8 +91,67 @@ describe('[TC-PDUI-021] the detail panel explains a commit, including when it ha
 		});
 		expect(container.querySelector('[data-pdmux-subject]')?.textContent).toBe('fix: something');
 		expect(container.querySelector('[data-pdmux-meta]')?.textContent).toContain('2026-07-01');
-		expect(container.querySelector('[data-pdmux-body]')?.textContent).toContain('why it was done');
 		expect(container.querySelector('[data-pdmux-file="a.ts"]')).not.toBeNull();
+		// The body is a tab away, not gone.
+		expect(container.querySelector('[data-pdmux-body]')).toBeNull();
+		await fireEvent.click(container.querySelector('[data-pdmux-tab="commit"]') as HTMLElement);
+	});
+
+	it('[TC-PDUI-021] puts the message, the identity and the paths on their own tabs', async () => {
+		const { container } = render(CommitDetail, {
+			props: {
+				commit: {
+					sha: 'abc1234567',
+					subject: 'fix: something',
+					author: 'tester',
+					date: 1_784_000_000,
+					parents: ['0123456789abcdef'],
+					refs: ['main'],
+				},
+				detail: {
+					body: 'why it was done',
+					authorEmail: 'tester@example.com',
+					files: [{ path: 'src/deep/a.ts', add: 3, del: 1, lines: ['@@ -1 +1 @@', '+x'] }],
+				},
+				formatDate: () => '2026-07-01 00:00',
+			},
+		});
+
+		await fireEvent.click(container.querySelector('[data-pdmux-tab="commit"]') as HTMLElement);
+		expect(container.querySelector('[data-pdmux-body]')?.textContent).toContain('why it was done');
+		expect(container.querySelector('[data-pdmux-facts]')?.textContent).toContain('tester@example.com');
+		expect(container.querySelector('[data-pdmux-parents]')?.textContent).toContain('0123456');
+		expect(container.querySelector('[data-pdmux-refs]')?.textContent).toContain('main');
+		// ⚠ NO COMMITTER LINE: it equals the author here, and printing both would be
+		// two lines saying one thing on almost every commit in existence.
+		expect(container.querySelector('[data-pdmux-committer]')).toBeNull();
+
+		await fireEvent.click(container.querySelector('[data-pdmux-tab="tree"]') as HTMLElement);
+		// The chain folded into one row — that is `fileTree()`'s rule, seen through.
+		expect(container.querySelector('[data-pdmux-tree-dir="src/deep"]')).not.toBeNull();
+		expect(container.querySelector('[data-pdmux-tree-file="src/deep/a.ts"]')).not.toBeNull();
+	});
+
+	it('[TC-PDUI-021] draws the committer only when it differs from the author', async () => {
+		const { container } = render(CommitDetail, {
+			props: {
+				commit: { sha: 'abc1234567', subject: 's', author: 'tester', date: 1_784_000_000 },
+				detail: {
+					body: '',
+					authorEmail: 'tester@example.com',
+					committer: 'somebody else',
+					committerEmail: 'else@example.com',
+					committerDate: 1_784_000_500,
+					files: [],
+				},
+				formatDate: () => '2026-07-01 00:00',
+			},
+		});
+		await fireEvent.click(container.querySelector('[data-pdmux-tab="commit"]') as HTMLElement);
+		// Its presence IS the signal — it means a rebase, a cherry-pick or a patch
+		// applied on somebody's behalf.
+		expect(container.querySelector('[data-pdmux-committer]')).not.toBeNull();
+		expect(container.querySelector('[data-pdmux-facts]')?.textContent).toContain('somebody else');
 	});
 
 	it('distinguishes "still collecting" from "never collected"', () => {

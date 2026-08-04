@@ -11,20 +11,32 @@
 	 * content existed in the DOM thousands of pixels below the fold and clicking a
 	 * commit looked like it did nothing.
 	 */
-	import type { PendingNote } from '@pdmux/core';
+	import { type ChangedFile, type PendingNote, fileTree } from '@pdmux/core';
 	import { type Translate, translator } from '../i18n.js';
 	import DiffView from './DiffView.svelte';
+	import FileTree from './FileTree.svelte';
 
 	interface CommitRow {
 		sha: string;
 		subject?: string;
 		author?: string;
 		date?: number | null;
+		parents?: readonly string[];
+		refs?: readonly string[];
 	}
+
+	/** The three faces of one commit, in the order a person reads them. */
+	type Tab = 'commit' | 'changes' | 'tree';
 
 	interface DetailInput {
 		body?: string;
 		bodyTruncated?: boolean;
+		/** Only what the row lacks — see the contract's note on `commitDetail`. */
+		authorEmail?: string;
+		committer?: string;
+		committerEmail?: string;
+		committerDate?: number | null;
+		truncated?: boolean;
 		files?: readonly {
 			path: string;
 			oldPath?: string | null;
@@ -101,6 +113,45 @@
 	const dateText = $derived(
 		commit?.date == null ? '' : (formatDate ?? ((s: number) => new Date(s * 1000).toISOString()))(commit.date),
 	);
+	/**
+	 * ⚠ IT OPENS ON THE CHANGES, NOT ON THE MESSAGE. The tabs are ordered the way a
+	 * person reads them, but the diff is what the click was FOR — and it is what
+	 * this panel showed before there were tabs, so defaulting to the message would
+	 * have made the most common thing cost an extra click to get back.
+	 *
+	 * The subject is already on the row and in the header above; the full message
+	 * is the part worth a tab, not the part worth the default.
+	 */
+	let tab = $state<Tab>('changes');
+	/**
+	 * ⚠ AND IT RESETS WHEN THE COMMIT DOES. Keeping "File tree" selected across a
+	 * click opens the next commit on a view of a different commit's paths, which
+	 * reads as the panel not having updated at all.
+	 */
+	$effect(() => {
+		commit?.sha;
+		tab = 'changes';
+	});
+
+	const files = $derived((detail?.files ?? []) as readonly ChangedFile[]);
+	const tree = $derived(fileTree(files));
+	/**
+	 * The committer is drawn only when it differs from the author.
+	 *
+	 * On the overwhelming majority of commits the two are the same person and the
+	 * same second, and printing both is two lines that say one thing. It diverges
+	 * after a rebase, a cherry-pick or a patch applied on somebody's behalf — so its
+	 * presence is itself the signal.
+	 */
+	const committerDiffers = $derived(
+		Boolean(detail?.committer) &&
+			(detail?.committer !== commit?.author || detail?.committerEmail !== detail?.authorEmail),
+	);
+	const committerDateText = $derived(
+		detail?.committerDate == null
+			? ''
+			: (formatDate ?? ((s: number) => new Date(s * 1000).toISOString()))(detail.committerDate),
+	);
 	const droppedNote = $derived(
 		detail?.dropped
 			? `+${detail.dropped} ${tr('pdmux.detail.droppedFiles', 'files omitted by the size cap')}`
@@ -132,13 +183,57 @@
 				>
 			{/if}
 		{:else if detail}
-			{#if detail.body}
-				<pre class="pdmux-patch" data-pdmux-body>{detail.body}{detail.bodyTruncated ? '\n…' : ''}</pre>
+			<!-- ⚠ PLAIN BUTTONS, NOT A COMPONENT LIBRARY. `@pdmux/ui` is installable by
+			     a project with its own design system, so its imports are restricted to
+			     relative paths and `@pdmux/*` — a shadcn tab would break that contract
+			     (and its test) the moment it was added. -->
+			<div class="pdmux-tabs" role="tablist" data-pdmux-tabs>
+				{#each [['commit', tr('pdmux.detail.tabCommit', 'Commit')], ['changes', `${tr('pdmux.detail.tabChanges', 'Changes')} ${files.length}${detail.truncated || detail.dropped ? ' ⚠' : ''}`], ['tree', tr('pdmux.detail.tabTree', 'File tree')]] as [id, label] (id)}
+					<button
+						type="button"
+						role="tab"
+						class="pdmux-tab"
+						data-pdmux-tab={id}
+						aria-selected={tab === id}
+						onclick={() => (tab = id as Tab)}>{label}</button
+					>
+				{/each}
+			</div>
+
+			{#if tab === 'commit'}
+				<div data-pdmux-tabpanel="commit">
+					{#if detail.body}
+						<pre class="pdmux-patch" data-pdmux-body>{detail.body}{detail.bodyTruncated ? '\n…' : ''}</pre>
+					{/if}
+					<dl class="pdmux-facts" data-pdmux-facts>
+						<dt>{tr('pdmux.detail.authored', 'Authored')}</dt>
+						<dd>{commit.author ?? ''}{detail.authorEmail ? ` <${detail.authorEmail}>` : ''} · {dateText}</dd>
+						{#if committerDiffers}
+							<!-- Present only when it says something the author line does not. -->
+							<dt data-pdmux-committer>{tr('pdmux.detail.committed', 'Committed')}</dt>
+							<dd>{detail.committer}{detail.committerEmail ? ` <${detail.committerEmail}>` : ''} · {committerDateText}</dd>
+						{/if}
+						<dt>{tr('pdmux.detail.sha', 'SHA')}</dt>
+						<dd data-pdmux-sha>{commit.sha}</dd>
+						{#if commit.parents?.length}
+							<dt>{tr('pdmux.detail.parents', 'Parents')}</dt>
+							<dd data-pdmux-parents>{commit.parents.map((p) => p.slice(0, 7)).join(' · ')}</dd>
+						{/if}
+						{#if commit.refs?.length}
+							<dt>{tr('pdmux.detail.refs', 'In')}</dt>
+							<dd data-pdmux-refs>{commit.refs.join(' · ')}</dd>
+						{/if}
+					</dl>
+				</div>
+			{:else if tab === 'changes'}
+				<div data-pdmux-tabpanel="changes">
+					<DiffView files={detail.files ?? []} note={droppedNote} {t} />
+				</div>
+			{:else}
+				<div data-pdmux-tabpanel="tree">
+					<FileTree nodes={tree} {t} />
+				</div>
 			{/if}
-			{#if detail.files?.length}
-				<h3 data-pdmux-filecount>{tr('pdmux.detail.files', 'Changed files')} {detail.files.length}</h3>
-			{/if}
-			<DiffView files={detail.files ?? []} note={droppedNote} {t} />
 		{/if}
 	{/if}
 </div>

@@ -9,12 +9,15 @@
    */
   import { onDestroy } from "svelte";
   import { CommitDetail, GitGraph, GitRefPanel, SplitHandle, type Translate } from "@pdmux/ui";
-  import { UNCOMMITTED } from "@pdmux/core";
+  import { UNCOMMITTED, feedAge, remoteComparison } from "@pdmux/core";
   import * as Select from "$lib/components/ui/select";
   import { Button } from "$lib/components/ui/button";
   import { SHELL_STACK_MAX_WIDTH } from "@pdmux/core";
   import { IsMobile } from "$lib/hooks/is-mobile.svelte";
+  import { toast } from "svelte-sonner";
   import { fmt, getI18n } from "$lib/i18n";
+  import { gitApi } from "../api";
+  import { causeMessage } from "../wording";
   import type { GitDock } from "../git-dock.svelte";
   import { dockEmptyReason } from "../git-roots";
   import { graphCommits, refInputs, repoHead, uncommittedFor, workingDiffFiles } from "../map";
@@ -69,6 +72,74 @@
    * branches or tags" about a repository they have not heard back on.
    */
   const graphReady = $derived(dock.graph !== null || dock.error !== null);
+
+  /**
+   * When this snapshot was taken, and whether that is recent enough to trust.
+   *
+   * ⚠ THE ANSWER "NEVER" IS A DIFFERENT ANSWER FROM "A WHILE AGO", and both are
+   * different from a number. A repo the agent has not reported on yet has no time
+   * at all, and rendering that as 0 would read as "just now" — the most misleading
+   * possible value for the one thing this line exists to tell.
+   */
+  let busy = $state<"repos" | "remote" | null>(null);
+  // `feedAge` rather than a local subtraction: it already buckets on raw milliseconds
+  // (rounding first made a 30-second-old snapshot claim to be a minute behind) and it
+  // already decides that an unknown timestamp is a warning rather than a zero.
+  const age = $derived(
+    feedAge(repo?.lastSnapshotAt ? Date.parse(repo.lastSnapshotAt) / 1000 : null, Date.now()),
+  );
+  const freshText = $derived.by(() => {
+    if (busy) return i18n.t.dash.git.collecting;
+    if (!age.known) return i18n.t.dash.git.neverCollected;
+    const ago =
+      age.unit === "now"
+        ? i18n.t.dash.git.agoNow
+        : fmt(age.unit === "minute" ? i18n.t.dash.git.agoMinutes : i18n.t.dash.git.agoHours, {
+            count: age.value,
+          });
+    return age.stale ? `⚠ ${ago}` : ago;
+  });
+  const freshTitle = $derived(repo?.lastSnapshotAt ?? i18n.t.dash.git.neverCollected);
+
+  /**
+   * ⚠ NO DISTANCE IS PASSED IN, so every row that moved says so without a number.
+   * `ls-remote` downloads no objects, so the sha it reports is usually a commit this
+   * checkout has never seen — nothing here could count towards it, and "3 behind"
+   * would be invented. `remoteComparison` keeps that rule; this only draws it.
+   */
+  const remoteRows = $derived(
+    remoteComparison(
+      (dock.graph?.refs ?? []).map((ref) => ({ name: ref.name, sha: ref.sha, kind: ref.kind })),
+      repo?.remoteRefs ?? [],
+    ),
+  );
+  function remoteLabel(status: string): string {
+    if (status === "moved") return i18n.t.dash.git.remoteMoved;
+    if (status === "appeared") return i18n.t.dash.git.remoteAppeared;
+    if (status === "gone") return i18n.t.dash.git.remoteGone;
+    return i18n.t.dash.git.remoteSame;
+  }
+
+  /**
+   * Ask the agent for a pass now.
+   *
+   * The answer arrives as a snapshot on the host feed rather than as this call's
+   * response, so the button reports "collecting" until the repo's timestamp moves
+   * rather than pretending to be done when the request was merely accepted.
+   */
+  async function collect(what: "repos" | "remote"): Promise<void> {
+    if (!dock.hostId || busy) return;
+    busy = what;
+    try {
+      await gitApi.collect(dock.hostId, what);
+    } catch (cause) {
+      toast.error(causeMessage(cause, i18n.t));
+    } finally {
+      // A fixed window rather than polling: the feed pushes the new snapshot, and a
+      // button that spun until it arrived would spin forever on an offline host.
+      setTimeout(() => (busy = null), 2_000);
+    }
+  }
   const selectedHost = $derived(hosts.find((host) => host.id === dock.hostId));
   const hostName = $derived(selectedHost?.label ?? i18n.t.dash.git.noHost);
   /**
@@ -187,6 +258,36 @@
         {/each}
       </Select.Content>
     </Select.Root>
+    <!-- ⚠ WHEN THIS WAS COLLECTED, SAID OUT LOUD. The graph is a snapshot an agent
+         took on a timer, and ARCHITECTURE §4 claimed for a long time that "the UI
+         says so" while no such line existed anywhere. Without it there is no way to
+         tell a quiet repository from a dead agent. -->
+    <span class="text-muted-foreground shrink-0" data-testid="dock-freshness" title={freshTitle}>
+      {freshText}
+    </span>
+    <Button
+      variant="ghost"
+      size="sm"
+      class="h-7 px-2"
+      disabled={busy !== null}
+      title={i18n.t.dash.git.rescan}
+      aria-label={i18n.t.dash.git.rescan}
+      data-testid="dock-rescan"
+      onclick={() => collect("repos")}>⟳</Button
+    >
+    <!-- The only control here that reaches a network. It runs `ls-remote`, which
+         reads the remote's refs and writes nothing to the checkout — pdmux never
+         fetches, and the panel says so where the answer appears. -->
+    <Button
+      variant="ghost"
+      size="sm"
+      class="h-7 px-2"
+      disabled={busy !== null}
+      title={i18n.t.dash.git.checkRemote}
+      aria-label={i18n.t.dash.git.checkRemote}
+      data-testid="dock-remote"
+      onclick={() => collect("remote")}>⇅</Button
+    >
     {#if onToggleRefs}
       <Button
         variant={refsOpen ? "default" : "outline"}
@@ -242,6 +343,36 @@
   <div class="pdmux pdmux-graph-body">
     {#if refsOpen}
       <GitRefPanel {head} {refs} {t} ready={graphReady} />
+      <!-- ⚠ A SEPARATE SECTION FROM THE REFS ABOVE, and the separation is the point.
+           Those are local pointers — including `origin/*`, which is a remote-TRACKING
+           ref and therefore as old as the last fetch somebody ran by hand. This is
+           what the remote itself answered. -->
+      <div class="border-t px-2 py-1.5 text-xs" data-testid="dock-remote-panel">
+        <p class="text-muted-foreground font-medium">{i18n.t.dash.git.remoteTitle}</p>
+        {#if repo?.remoteError}
+          <p class="text-destructive" data-testid="dock-remote-error">
+            {i18n.t.dash.git.remoteFailed} — {repo.remoteError}
+          </p>
+        {:else if !repo?.remoteCheckedAt}
+          <p class="text-muted-foreground" data-testid="dock-remote-never">{i18n.t.dash.git.remoteNever}</p>
+        {:else}
+          {#each remoteRows as row (row.name)}
+            <div class="flex items-baseline justify-between gap-2" data-testid="dock-remote-row" data-status={row.status}>
+              <span class="truncate">{row.name}</span>
+              <span class="text-muted-foreground shrink-0">
+                {#if row.behind !== null}
+                  {fmt(i18n.t.dash.git.remoteBehind, { count: row.behind })}
+                {:else}
+                  {remoteLabel(row.status)}
+                {/if}
+              </span>
+            </div>
+          {/each}
+          <!-- Said where the answer is, not in a tooltip: "we cannot show you the
+               commits" is the first question this panel raises. -->
+          <p class="text-muted-foreground mt-1">{i18n.t.dash.git.remoteNote}</p>
+        {/if}
+      </div>
     {/if}
     <GitGraph
       ready={graphReady}

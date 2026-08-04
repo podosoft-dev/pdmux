@@ -2280,3 +2280,77 @@
 	/* Selectable: copying a stack trace out of here is half the reason it exists. */
 	user-select: text;
 }
+
+/* --- commit detail: tabs, facts and the file tree -------------------------
+   ⚠ PLAIN CSS, NOT A COMPONENT LIBRARY. This package is installable by a project
+   with its own design system, so `[TC-PDUI-030]` restricts its imports and every
+   control it draws has to be built from elements and these variables. */
+.pdmux .pdmux-tabs {
+	display: flex;
+	gap: 0.25rem;
+	border-bottom: 1px solid var(--pdmux-border, rgb(0 0 0 / 12%));
+	margin-bottom: 0.5rem;
+}
+.pdmux .pdmux-tab {
+	appearance: none;
+	background: none;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	padding: 0.35rem 0.6rem;
+	font: inherit;
+	font-size: 0.8125rem;
+	color: var(--pdmux-muted, rgb(0 0 0 / 60%));
+	cursor: pointer;
+}
+.pdmux .pdmux-tab[aria-selected='true'] {
+	color: inherit;
+	border-bottom-color: currentcolor;
+	font-weight: 600;
+}
+.pdmux .pdmux-facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 0.15rem 0.75rem;
+	font-size: 0.8125rem;
+	margin: 0.25rem 0 0;
+}
+.pdmux .pdmux-facts dt {
+	color: var(--pdmux-muted, rgb(0 0 0 / 60%));
+}
+.pdmux .pdmux-facts dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+.pdmux .pdmux-tree {
+	list-style: none;
+	margin: 0;
+	padding-left: calc(var(--pdmux-tree-depth, 0) > 0 ? 0.75rem : 0);
+	font-size: 0.8125rem;
+}
+.pdmux .pdmux-tree .pdmux-tree {
+	padding-left: 0.75rem;
+}
+.pdmux .pdmux-tree-dir > .pdmux-tree-label {
+	color: var(--pdmux-muted, rgb(0 0 0 / 60%));
+}
+.pdmux .pdmux-tree-file {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+}
+.pdmux .pdmux-tree-file .pdmux-tree-label {
+	flex: 1 1 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.pdmux .pdmux-tree-stat {
+	font-variant-numeric: tabular-nums;
+	color: var(--pdmux-muted, rgb(0 0 0 / 60%));
+}
+/* ⚠ The word carries the meaning; the colour is only an accent (cards keep the
+   same rule, and for the same reader). */
+.pdmux .pdmux-tree-status {
+	font-size: 0.75rem;
+	color: var(--pdmux-muted, rgb(0 0 0 / 60%));
+}
