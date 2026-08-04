@@ -77,12 +77,20 @@ agent_version() {
 
 	echo "  changed:"; echo "$changed" | sed 's/^/    /'
 	local read_version before after
+	# ⚠ `sed -nE`, NOT THE BRE THE WORKFLOW USES. CI runs GNU sed; this runs wherever
+	# somebody develops, and BSD sed (macOS) matches nothing for `\{1,\}` here — so
+	# both reads came back EMPTY and compared equal, which reports "not bumped" no
+	# matter what the versions are. A gate that is right by accident is not a gate.
 	read_version() {
 		git show "$1:agent/internal/cli/version.go" 2>/dev/null |
-			sed -n 's/^[[:space:]]*\(var\|const\)[[:space:]]\{1,\}AgentVersion[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\2/p'
+			sed -nE 's/^[[:space:]]*(var|const)[[:space:]]+AgentVersion[[:space:]]*=[[:space:]]*"([^"]*)".*/\2/p'
 	}
 	before=$(read_version "$base")
 	after=$(read_version HEAD)
+	if [ -z "$after" ]; then
+		echo "  could not read AgentVersion at HEAD"
+		return 1
+	fi
 	if [ "$before" = "$after" ]; then
 		echo "  AgentVersion is still ${after} — a release nobody downloads"
 		return 1
