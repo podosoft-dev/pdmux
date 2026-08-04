@@ -109,45 +109,78 @@
 				}
 			: null,
 	);
+
+	/**
+	 * ⚠ THE FACES ARE SEPARATE SCREENS, CHOSEN BY THE QUERY STRING. Mounting the
+	 * `File tree` face beside the main harness broke two specs that had nothing to do
+	 * with it — the page grew past the viewport, and `[data-pdmux-detail]` matched
+	 * twice. A harness that changes what the other specs measure is not a harness.
+	 */
+	const screen = typeof location === 'undefined' ? '' : new URLSearchParams(location.search).get('screen');
 </script>
 
-<div
-	class="pdmux pdmux-shell"
-	data-sidebar={layout.sidebarOpen ? 'open' : 'hidden'}
-	data-dock="open"
-	style="--pdmux-left:{layout.sidebarWidth}px;--pdmux-right:{layout.dockWidth}px"
->
-	<!-- `onAddHost` is supplied so the column carries its trailing tile here too: it is the
-	     last thing in the scroll content, and the geometry checks measure that content. -->
-	<HostSidebar {cards} now={seconds} onAddHost={() => {}} onUpdateAgent={() => {}} />
-	<SplitHandle onCommit={(delta) => (layout = setSidebarWidth(layout, layout.sidebarWidth + delta))} />
-	<div class="pdmux pdmux-panel">
-		<TerminalGrid
-			{layout}
-			{hosts}
-			{adapter}
-			sweepMs={0}
-			onZoom={(slotId) => (layout = toggleZoom(layout, slotId))}
-		/>
-	</div>
-	<SplitHandle invert />
-	<div class="pdmux pdmux-graph">
-		<GitGraph
-			{commits}
-			refs={[{ name: 'main', kind: 'local', sha: commits[0]?.sha }]}
-			head={commits[0]?.sha}
-			uncommitted={uncommittedSummary({ unstaged: 3 })}
-			uncommittedLabel="modified 3"
-			selectedSha={selected}
-			onSelect={(sha) => (selected = sha)}
-		/>
-		<!-- ⚠ `view="changes"` AND A CHOSEN FILE, ON PURPOSE. The tab chrome lives in
-		     `apps/web` now (this package cannot import shadcn — [TC-PDUI-030]), so both
-		     the face and the open file are props, and neither default puts a patch on
-		     screen. `[TC-PDUI-042]` exists to prove a patch longer than the cap SCROLLS
-		     inside the panel, and it caught this itself: without them its own guard
-		     failed with "the harness patch must exceed the cap, or this proves
-		     nothing". -->
-		<CommitDetail commit={selectedCommit} {detail} view="changes" selectedPath="src/a.ts" />
-	</div>
+{#if screen === 'tree'}
+<!--
+	The `File tree` face, mounted on its own so its geometry can be measured.
+
+	⚠ THE LINE IS DELIBERATELY LONGER THAN ANY COLUMN THIS EVER GETS. Whether a file
+	viewer scrolls sideways cannot be asserted on content that fits.
+-->
+	<div class="pdmux pdmux-graph" data-harness="tree" style="width:900px;height:320px">
+	<CommitDetail
+		commit={{ sha: 'abc1234567890', subject: 'a commit', author: 'tester', date: 1_784_000_000 }}
+		detail={{ body: '', files: [] }}
+		view="tree"
+		treeEntries={[{ path: 'src/a.ts', size: 12 }]}
+		treePath="src/a.ts"
+		blob={{
+			path: 'src/a.ts',
+			lines: [
+				'const wide = ' + "'x'".repeat(120) + ';',
+				'const narrow = 1;',
+			],
+		}}
+	/>
 </div>
+{:else}
+	<div
+		class="pdmux pdmux-shell"
+		data-sidebar={layout.sidebarOpen ? 'open' : 'hidden'}
+		data-dock="open"
+		style="--pdmux-left:{layout.sidebarWidth}px;--pdmux-right:{layout.dockWidth}px"
+	>
+		<!-- `onAddHost` is supplied so the column carries its trailing tile here too: it is the
+		     last thing in the scroll content, and the geometry checks measure that content. -->
+		<HostSidebar {cards} now={seconds} onAddHost={() => {}} onUpdateAgent={() => {}} />
+		<SplitHandle onCommit={(delta) => (layout = setSidebarWidth(layout, layout.sidebarWidth + delta))} />
+		<div class="pdmux pdmux-panel">
+			<TerminalGrid
+				{layout}
+				{hosts}
+				{adapter}
+				sweepMs={0}
+				onZoom={(slotId) => (layout = toggleZoom(layout, slotId))}
+			/>
+		</div>
+		<SplitHandle invert />
+		<div class="pdmux pdmux-graph">
+			<GitGraph
+				{commits}
+				refs={[{ name: 'main', kind: 'local', sha: commits[0]?.sha }]}
+				head={commits[0]?.sha}
+				uncommitted={uncommittedSummary({ unstaged: 3 })}
+				uncommittedLabel="modified 3"
+				selectedSha={selected}
+				onSelect={(sha) => (selected = sha)}
+			/>
+			<!-- ⚠ `view="changes"` AND A CHOSEN FILE, ON PURPOSE. The tab chrome lives in
+			     `apps/web` now (this package cannot import shadcn — [TC-PDUI-030]), so both
+			     the face and the open file are props, and neither default puts a patch on
+			     screen. `[TC-PDUI-042]` exists to prove a patch longer than the cap SCROLLS
+			     inside the panel, and it caught this itself: without them its own guard
+			     failed with "the harness patch must exceed the cap, or this proves
+			     nothing". -->
+			<CommitDetail commit={selectedCommit} {detail} view="changes" selectedPath="src/a.ts" />
+		</div>
+	</div>
+{/if}

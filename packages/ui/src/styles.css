@@ -2591,11 +2591,26 @@
    ⚠ NEITHER WRAPS. One source line has to stay one screen line or the two columns
    drift apart by however many lines wrapped, and the numbers stop naming the code
    beside them. Long lines scroll sideways, which is what a file viewer does. */
+/* One file's contents: a number column and a code column, side by side.
+
+   ⚠ THE SCROLLER IS THIS GRID, NOT THE CODE COLUMN, and that was the bug. With
+   `overflow-x` on the code, the horizontal bar sits at the bottom of the CODE — which
+   is as tall as the file (measured 2,916px) — so it lived far below the visible pane
+   and the reader had no way to know the file continued to the right. Reported as
+   "the horizontal scroll does not show". Scrolling here puts both bars on the pane's
+   own edges.
+
+   ⚠ NEITHER COLUMN WRAPS. One source line has to stay one screen line or the two
+   columns drift apart by however many lines wrapped, and the numbers stop naming the
+   code beside them. */
 .pdmux .pdmux-blob {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
 	gap: 0 0.75rem;
 	align-items: start;
+	overflow: auto;
+	max-height: 100%;
+	min-height: 0;
 }
 .pdmux .pdmux-blob-gutter,
 .pdmux .pdmux-blob-code {
@@ -2607,17 +2622,22 @@
 	background: none;
 	border: 0;
 	padding: 0;
+	overflow: visible;
 }
 .pdmux .pdmux-blob-gutter {
+	/* Pinned while the code scrolls sideways: a number column that slides out of view
+	   is a number column that has stopped naming anything. */
+	position: sticky;
+	left: 0;
+	z-index: 1;
+	background: var(--pdmux-card);
 	text-align: right;
 	color: var(--pdmux-muted);
 	/* Not selectable: copying a file out of this view must not bring the numbers. */
 	user-select: none;
 	-webkit-user-select: none;
 }
-.pdmux .pdmux-blob-code {
-	overflow-x: auto;
-}
+
 
 /* --- the highlighter's palette -------------------------------------------
    ⚠ MAPPED ONTO THIS PRODUCT'S TOKENS, NOT COPIED FROM A THEME FILE. A stock

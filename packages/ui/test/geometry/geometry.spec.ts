@@ -65,6 +65,58 @@ test.describe('pdmux ui geometry', () => {
 		expect(list.gutter).toBeGreaterThan(0);
 	});
 
+	/**
+	 * ⚠ THE FILE VIEW SCROLLS SIDEWAYS, AND THE SCROLLER IS THE GRID.
+	 *
+	 * Reported as "the horizontal scroll does not show". It was not an overlay
+	 * scrollbar, which is what the terminal's note above would have suggested: this
+	 * Chrome reserves 15px for one. The bar existed and sat at the bottom of the CODE
+	 * element, which is as tall as the file — 2,916px measured — so it was a screen
+	 * and a half below the pane. Moving the overflow onto the grid puts both bars on
+	 * the pane's own edges.
+	 *
+	 * ⚠ WHAT IS ASSERTED IS WHAT EVERY ENGINE AGREES ON. Whether a scrollbar takes
+	 * layout is a platform answer — the same page reserves 15px in this Mac's Chrome
+	 * and 0 in the bundled headless one — so a guard written on `offsetHeight` would
+	 * pass or fail by machine. That it CAN scroll, and that the numbers stay put while
+	 * it does, are facts anywhere.
+	 */
+	test('[TC-PDUI-210] a file view scrolls sideways with its line numbers pinned', async ({ page }) => {
+		// Its own screen: mounting it beside the main harness changed what the other
+		// specs measured (the page outgrew the viewport, and `[data-pdmux-detail]`
+		// matched twice).
+		await page.goto('/?screen=tree');
+		const blob = page.locator('[data-harness="tree"] .pdmux-blob');
+		await blob.waitFor();
+
+		const measured = await page.evaluate(() => {
+			const scroller = document.querySelector('[data-harness="tree"] .pdmux-blob') as HTMLElement;
+			const gutter = document.querySelector('[data-harness="tree"] .pdmux-blob-gutter') as HTMLElement;
+			const left = () => Math.round(gutter.getBoundingClientRect().left);
+			const before = left();
+			scroller.scrollLeft = 400;
+			const after = left();
+			const moved = Math.round(scroller.scrollLeft);
+			scroller.scrollLeft = 0;
+			return {
+				client: Math.round(scroller.clientWidth),
+				scroll: Math.round(scroller.scrollWidth),
+				sticky: getComputedStyle(gutter).position,
+				gutterDrift: after - before,
+				moved,
+			};
+		});
+
+		// The harness line is far wider than any column it gets, so this is the case
+		// horizontal scrolling exists for.
+		expect(measured.scroll, 'the file does not overflow, so nothing is proven').toBeGreaterThan(measured.client);
+		expect(measured.moved, 'the grid is not the scroller').toBe(400);
+		// ⚠ THE NUMBERS DO NOT SLIDE AWAY. A gutter that scrolls with the code stops
+		// naming the lines beside it the moment you move.
+		expect(measured.sticky).toBe('sticky');
+		expect(measured.gutterDrift, 'the line numbers scrolled away with the code').toBe(0);
+	});
+
 	test('[TC-PDUI-042] clicking a commit shows the detail INSIDE the viewport', async ({ page }) => {
 		await page.locator('.pdmux-graph-row').nth(3).click();
 		const detail = page.locator('[data-pdmux-detail]');
