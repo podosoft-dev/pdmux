@@ -25,11 +25,13 @@ import (
 	"bytes"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/log"
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
+	"github.com/podosoft-dev/pdmux/agent/internal/sample"
 )
 
 // Relay tuning. FlushInterval and MaxPendingBytes are defaults the server can
@@ -52,6 +54,17 @@ const (
 
 	// maxErrorMessage bounds what is echoed back to a browser.
 	maxErrorMessage = 512
+
+	// SlowLockWait is when a pane's queue for sendMu is worth a line.
+	//
+	// Healthy is microseconds: the lock is held for one socket write, which on the
+	// deployment this was reported from takes about 1ms over a 0.05ms RTT link. A
+	// pane that waited 100ms did not wait for its own frame — it waited for
+	// somebody else's, and that is the thing worth knowing. Kept well below
+	// net.SlowWriteThreshold so a slow write shows up as BOTH a slow write and the
+	// queue it caused; seeing only one of the two would leave the direction of
+	// cause ambiguous, which is what made this hard to pin down before.
+	SlowLockWait = 100 * time.Millisecond
 )
 
 // Options configure a Manager. Every dependency is injectable so a spec can
@@ -86,6 +99,20 @@ type Manager struct {
 	// concurrent use — two panes flushing at once would interleave halves of two
 	// frames on the wire.
 	sendMu sync.Mutex
+
+	// lockWaits times how long each pane queued for sendMu. Drained by the agent
+	// on the same timer as the socket's write stats, so the two can be read
+	// against each other: a long wait with fast writes means a producer other than
+	// the socket held the wire.
+	lockWaits *sample.Set
+
+	// opened counts every pane this manager has started since the process began.
+	//
+	// ⚠ IT IS CUMULATIVE ON PURPOSE, and it is here to be read against the live
+	// count and the goroutine count. A leak on the close path is invisible in
+	// "panes open now" — that number is correct — and only shows as the gap
+	// between how many were ever started and what the process is still holding.
+	opened atomic.Int64
 
 	mu              sync.Mutex
 	terminals       map[string]*terminal
@@ -127,6 +154,7 @@ func NewManager(options Options) *Manager {
 		terminals:       make(map[string]*terminal),
 		opening:         make(map[string]struct{}),
 		maxPendingBytes: options.MaxPendingBytes,
+		lockWaits:       sample.New(0),
 	}
 	if m.spawn == nil {
 		m.spawn = Spawn
@@ -145,6 +173,13 @@ func NewManager(options Options) *Manager {
 	}
 	return m
 }
+
+// OpenedTotal is how many panes have been started since this process began.
+func (m *Manager) OpenedTotal() int64 { return m.opened.Load() }
+
+// DrainLockWaitStats returns how long panes have been queueing for the send lock
+// since the last call, and starts a fresh interval.
+func (m *Manager) DrainLockWaitStats() sample.Summary { return m.lockWaits.Drain() }
 
 // Count is how many terminals are open.
 func (m *Manager) Count() int {
@@ -283,6 +318,7 @@ func (m *Manager) open(termID string, target protocol.TerminalTarget) {
 	m.terminals[termID] = t
 	m.mu.Unlock()
 
+	m.opened.Add(1)
 	go m.pump(termID, t)
 	m.logger.Info("Opened terminal", log.F("termId", termID), log.F("target", resolved.Label))
 	m.emit(&protocol.TerminalReady{Type: protocol.TermReady, TermID: termID, Pid: process.Pid()})
@@ -464,9 +500,36 @@ func (m *Manager) emit(frame protocol.TerminalServerFrame) {
 	if m.send == nil {
 		return
 	}
+	waited := m.sendLocked(frame)
+	m.lockWaits.Add(waited)
+	// ⚠ LOGGED AFTER THE UNLOCK, NEVER INSIDE IT. The logger takes a mutex of its
+	// own and writes to stderr; holding sendMu across that would make every pane on
+	// this host wait on journald, which is the very stall this line exists to
+	// report. Reporting a problem must not be able to cause it.
+	if waited >= SlowLockWait {
+		m.logger.Warn("Terminal frame waited for the send lock",
+			log.F("waitMs", waited.Milliseconds()))
+	}
+}
+
+// sendLocked holds sendMu for exactly one frame and reports how long the caller
+// queued for it.
+//
+// ⚠ THE WAIT IS THE INTERESTING NUMBER, NOT THE SEND. sendMu is one lock for
+// EVERY pane on this host, and behind it sits a socket shared with the heartbeat,
+// the git pass, file reads and exec results. So a long wait here is the fingerprint
+// of "one producer held the wire and every terminal on this host froze together" —
+// reported repeatedly as slowness that ssh to the same machine did not show, and
+// until now not measured anywhere.
+func (m *Manager) sendLocked(frame protocol.TerminalServerFrame) time.Duration {
+	requested := time.Now()
 	m.sendMu.Lock()
+	// Deferred rather than unlocked inline so a panic in send cannot leave every
+	// pane on this host deadlocked on a mutex nobody will ever release.
 	defer m.sendMu.Unlock()
+	waited := time.Since(requested)
 	m.send(frame)
+	return waited
 }
 
 // frameEnd is where the next output frame stops: at most MaxFrameBytes, and

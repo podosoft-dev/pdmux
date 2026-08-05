@@ -56,6 +56,24 @@ const (
 	repoFrameMaxCount = 8
 )
 
+// slowPass is when a collector's wall time is worth a line.
+//
+// Two seconds is above every healthy pass — the heartbeat's collectors are
+// bounded by their own timeouts (a 4s `tmux list-sessions`, a 2s service probe)
+// and the git pass is a few hundred milliseconds on a normal checkout — while
+// still being far below the intervals themselves (5s, 60s, 120s), so a pass that
+// trips this is one that ate a meaningful share of its own period.
+const slowPass = 2 * time.Second
+
+// transportStatsInterval is how often the socket's behaviour is summarised.
+//
+// Thirty seconds is short enough that a person who says "it is slow right now"
+// has at least one line covering the moment, and long enough that an idle fleet
+// costs two lines a minute in journald. It is deliberately NOT tunable from the
+// server: this is the measurement used to decide whether the server is the
+// problem, and a knob the suspect controls is not a measurement.
+const transportStatsInterval = 30 * time.Second
+
 // Field caps the contract states on `hello`. Truncating here rather than sending
 // an over-long value is deliberate: a host with a 300-character hostname must
 // still appear on the dashboard.
@@ -237,6 +255,18 @@ func New(options Options) *Agent {
 		Logger:       logger,
 		OnDownstream: a.onDownstream,
 		OnDisconnect: func() {
+			// ⚠ COUNTED BEFORE THE CLOSE, AND LOGGED EVEN WHEN IT IS ZERO. This is
+			// the line that tells a socket DROP apart from a socket STALL, and the
+			// two are indistinguishable from the browser: both look like every pane
+			// on the host going quiet at once. If this line is absent while panes
+			// froze, the socket stayed up and the stall is downstream (see the slow
+			// write and lock-wait lines); if it is present, the panes died with the
+			// connection and reattached, which is a different bug with a different
+			// fix. Guessing which one it was is what cost the previous rounds.
+			shell, session := a.terminals.Counts()
+			a.logger.Warn("Socket dropped, closing terminals",
+				log.F("shellPanes", shell),
+				log.F("sessionPanes", session))
 			// The ptys belong to this socket; a `session` terminal loses only its
 			// viewer because the multiplexer session outlives it.
 			a.terminals.CloseAll()
@@ -262,9 +292,14 @@ func (a *Agent) Run(ctx context.Context) error {
 	// collector wait behind the expensive one — and the heartbeat is the frame
 	// that decides whether the dashboard thinks this host is alive.
 	var timers sync.WaitGroup
-	timers.Add(2)
+	timers.Add(3)
 	go func() { defer timers.Done(); a.tick(ctx, "heartbeat", a.heartbeatReset, a.heartbeatPass) }()
 	go func() { defer timers.Done(); a.tick(ctx, "git", a.gitReset, a.gitPass) }()
+	// A third loop rather than a job on one of the two above: this one must report
+	// what the OTHER work did to the socket, so it cannot share a timer with the
+	// thing it is measuring — a summary emitted from inside the git pass would
+	// always be read at the same phase of that pass and would never see the rest.
+	go func() { defer timers.Done(); a.transportStats(ctx) }()
 
 	// Blocks until ctx ends, reconnecting on its own in between. Downstream
 	// frames are dispatched on THIS goroutine.
@@ -534,6 +569,83 @@ func (a *Agent) tick(ctx context.Context, name string, reset <-chan time.Duratio
 	}
 }
 
+// transportStats summarises the socket and the send lock on a fixed timer.
+//
+// ⚠ IT EXISTS BECAUSE THE THRESHOLDS ALONE WERE NOT ENOUGH. The warnings above
+// fire when one write or one lock wait crosses a bar that was guessed before
+// anyone had a distribution to guess from — and on the first reproduction after
+// they shipped, a person watched a terminal lag while every counter read zero.
+// Zero means "nothing crossed 250ms", not "nothing was wrong", and there was no
+// way to tell those apart. This line makes them distinguishable: it prints what
+// normal looks like on this host, so the next report can be compared against a
+// number rather than an assumption.
+func (a *Agent) transportStats(ctx context.Context) {
+	ticker := time.NewTicker(transportStatsInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			writes, bytes := a.client.DrainWriteStats()
+			locks := a.terminals.DrainLockWaitStats()
+			// An idle host says nothing. A summary of zero frames is noise that
+			// would make the interesting lines harder to find in journald, which is
+			// where somebody will be reading these under time pressure.
+			if writes.Count == 0 {
+				continue
+			}
+			shell, session := a.terminals.Counts()
+			// ⚠ THE PROCESS'S OWN SIZE IS PART OF THE MEASUREMENT, because the thing
+			// that actually made terminals fast again was RESTARTING THIS PROCESS —
+			// no code fixed anything. systemd's accounting caught it after the fact:
+			// agents replaced at ~22 hours had peaked at 141-191 MB against ~50 MB
+			// for a fresh one, and the host that felt slowest was the one that had
+			// grown most and begun to swap. That is the "worse the longer it is
+			// open" report, measured. Growth here IS the hypothesis, so it has to be
+			// on the same line as the latency it is supposed to explain.
+			//
+			// `goroutines` is the load-bearing field: heap can grow for honest
+			// reasons, but a goroutine count that climbs with `opensTotal` while
+			// `panes` stays flat is a pane that was closed and never let go — which
+			// is the leak this is looking for, stated as a number.
+			var mem runtime.MemStats
+			runtime.ReadMemStats(&mem)
+			// ⚠ THE HOST'S OWN LOAD BELONGS ON THIS LINE, because every other number
+			// here is measured DOWNSTREAM of where the delay is felt. A keystroke goes
+			// pty write -> multiplexer -> the program -> redraw -> pty read, and only
+			// then reaches anything timed above. Measured on a host reported slow with
+			// "cpu is fine at 11%": its coding-agent processes had 99-155 MB each
+			// swapped out, so every redraw faulted pages back in and stalled while the
+			// cpu sat idle — invisible in cpu%, but load1 counts uninterruptible sleep
+			// and rises for exactly that. Without it, "all my numbers are zero and the
+			// user says it is slow" has no next step.
+			fields := []log.Field{
+				log.F("writes", writes.Count),
+				log.F("writeP50Ms", writes.P50.Milliseconds()),
+				log.F("writeP95Ms", writes.P95.Milliseconds()),
+				log.F("writeMaxMs", writes.Max.Milliseconds()),
+				log.F("lockWaits", locks.Count),
+				log.F("lockP95Ms", locks.P95.Milliseconds()),
+				log.F("lockMaxMs", locks.Max.Milliseconds()),
+				log.F("bytes", bytes),
+				log.F("panes", shell+session),
+				log.F("opensTotal", a.terminals.OpenedTotal()),
+				log.F("goroutines", runtime.NumGoroutine()),
+				log.F("heapMB", mem.HeapAlloc>>20),
+				log.F("sysMB", mem.Sys>>20),
+			}
+			// Omitted rather than reported as zero when the host will not say: a load
+			// of 0.00 and "there is no /proc/loadavg here" are opposite readings, and
+			// a field that cannot tell them apart is worse than an absent one.
+			if load1, ok := collect.ReadLoad1(); ok {
+				fields = append(fields, log.F("load1", load1))
+			}
+			a.logger.Info("Transport stats", fields...)
+		}
+	}
+}
+
 // spawnPass runs one pass off the caller's goroutine, so neither a retune nor
 // the read loop waits on a collector. Overlap is refused by the pass itself.
 func (a *Agent) spawnPass(name string, pass func(context.Context)) {
@@ -542,7 +654,19 @@ func (a *Agent) spawnPass(name string, pass func(context.Context)) {
 	go func() {
 		defer a.passes.Done()
 		defer a.recoverPass(name)
+		started := time.Now()
 		pass(ctx)
+		// ⚠ A PASS IS OFF THE HOT PATH BUT NOT OFF THE WIRE. Every pass ends by
+		// sending, and those sends share one socket with every terminal on this
+		// host, so a pass that runs long is a candidate for the freeze the panes
+		// felt. The git pass batches up to 512 KiB across 8 repos per frame and the
+		// usage pass runs INSIDE the heartbeat with a 20s RPC timeout — both are
+		// large enough to matter and neither was timed anywhere.
+		if elapsed := time.Since(started); elapsed >= slowPass {
+			a.logger.Warn("Slow pass",
+				log.F("pass", name),
+				log.F("ms", elapsed.Milliseconds()))
+		}
 	}()
 }
 

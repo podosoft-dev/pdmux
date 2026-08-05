@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/podosoft-dev/pdmux/agent/internal/log"
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
 )
 
@@ -632,4 +633,78 @@ func TestMultiplexerAbsent(t *testing.T) {
 			t.Fatal("no PTY was started for a session target")
 		}
 	})
+}
+
+// TestSendLockWaitIsReported is the guard on the instrumentation itself.
+//
+// ⚠ IT EXISTS BECAUSE THE MEASUREMENT IS THE DELIVERABLE. This round added timing
+// to the send path after three rounds of "the terminals on that host are slow"
+// that could not be attributed to anything, because nothing on the path was
+// timed. A silent timer is worth exactly as much as no timer, and the way a timer
+// goes silent is a threshold nobody ever reaches or a field nobody ever fills —
+// neither of which shows up as a failure anywhere. So the warning is asserted the
+// same way behaviour is: revert `emit` to a plain Lock/Unlock and this fails.
+func TestSendLockWaitIsReported(t *testing.T) {
+	var mu sync.Mutex
+	var lines []string
+	logger := log.New(log.Options{
+		Level: log.LevelDebug,
+		Sink: func(line string) {
+			mu.Lock()
+			lines = append(lines, line)
+			mu.Unlock()
+		},
+	})
+
+	held := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+
+	manager := NewManager(Options{
+		Which:  muxInstalled,
+		Logger: logger,
+		// The first frame parks inside the lock; every later one passes straight
+		// through. That is the real shape of the failure being hunted — one producer
+		// holding the wire while the other panes queue behind it.
+		Send: func(protocol.TerminalServerFrame) {
+			first := false
+			once.Do(func() { first = true })
+			if first {
+				close(held)
+				<-release
+			}
+		},
+	})
+
+	frame := func(id string) protocol.TerminalServerFrame {
+		return &protocol.TerminalOutput{Type: protocol.TermOutput, TermID: id, Data: "x"}
+	}
+
+	go manager.emit(frame("holder"))
+	<-held
+
+	queued := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		close(queued)
+		manager.emit(frame("waiter"))
+		close(done)
+	}()
+	<-queued
+
+	// Twice the threshold, so the waiter is over it even if its goroutine takes an
+	// implausibly long time to reach the Lock. A tighter margin would make this
+	// spec flaky on a loaded machine, and a flaky spec gets deleted.
+	time.Sleep(2 * SlowLockWait)
+	close(release)
+	<-done
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, line := range lines {
+		if strings.Contains(line, "waited for the send lock") {
+			return
+		}
+	}
+	t.Fatalf("a pane queued for more than %v behind another and nothing said so; lines=%q", SlowLockWait, lines)
 }

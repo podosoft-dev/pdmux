@@ -639,3 +639,33 @@ func TestClient(t *testing.T) {
 		}
 	})
 }
+
+// TestSlowWriteIsReported guards the instrumentation, not the socket.
+//
+// ⚠ THE THRESHOLD MOVES, NOT THE WIRE. A spec cannot make a real socket block on
+// demand — that is the whole difficulty of the bug this line was added for — so
+// the bar is dropped to a nanosecond and every write becomes a slow one. What is
+// asserted is that the agent SAYS SO, which is the part that kept being missing:
+// three rounds of "every terminal on that host went slow at once, but ssh to it
+// is fine" ended without an answer because conn.Write was never timed, and a
+// timer that nobody proves can fire is the same as no timer at all.
+func TestSlowWriteIsReported(t *testing.T) {
+	h := start(t, func(options *Options) {
+		options.SlowWriteThreshold = time.Nanosecond
+	})
+	// `hello` is written by the client the moment the socket comes up, so accepting
+	// the connection is enough to have timed a real write.
+	h.server.accept()
+
+	deadline := time.After(waitFor)
+	for {
+		if strings.Contains(h.lines.joined(), "Slow frame write") {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("every write was over the threshold and none was reported:\n%s", h.lines.joined())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}

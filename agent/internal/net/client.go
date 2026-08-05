@@ -26,12 +26,14 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/log"
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
+	"github.com/podosoft-dev/pdmux/agent/internal/sample"
 )
 
 const (
@@ -56,6 +58,25 @@ const (
 
 	// maxCloseReason bounds what a remote close reason can write into our log.
 	maxCloseReason = 200
+
+	// SlowWriteThreshold is when one frame's socket write is worth a line.
+	//
+	// ⚠ THIS IS THE MEASUREMENT THAT TELLS "THE AGENT IS SLOW" APART FROM "THE
+	// SERVER STOPPED READING", AND UNTIL IT EXISTED THERE WAS NO WAY TO ASK.
+	// conn.Write blocks when the peer is not draining, and everything this agent
+	// says queues behind it: term.Manager serialises every pane onto one lock, and
+	// this socket also carries the heartbeat, the git pass, file reads and exec
+	// results. So ONE slow write freezes EVERY terminal on this host at once —
+	// while ssh to the same machine stays crisp, because ssh shares none of it.
+	// That is the exact shape this was reported in, more than once, with the host's
+	// cpu, memory and disk all healthy and nothing anywhere to point at.
+	//
+	// The number is set against measurement rather than taste: on the deployment it
+	// was reported from, this agent reaches the server over the VPC at 0.05ms RTT
+	// and a frame writes in about 1ms. 250ms is 250x that — well outside anything
+	// healthy, and well short of DefaultWriteTimeout, which would otherwise be the
+	// first and only sign that anything had gone wrong.
+	SlowWriteThreshold = 250 * time.Millisecond
 )
 
 // Options configure a Client. Everything with a sensible default may be left
@@ -97,6 +118,11 @@ type Options struct {
 	HTTPClient   *http.Client
 	DialTimeout  time.Duration
 	WriteTimeout time.Duration
+	// SlowWriteThreshold is when a frame's write earns a line; zero uses
+	// SlowWriteThreshold. Injectable for the same reason the timeouts are: a spec
+	// cannot make a real socket block on demand, so the only way to assert that
+	// the report fires is to move the bar rather than the wire.
+	SlowWriteThreshold time.Duration
 	// Now is the clock behind the pong timestamp; nil uses time.Now.
 	Now func() time.Time
 }
@@ -118,6 +144,7 @@ type Client struct {
 	httpClient   *http.Client
 	dialTimeout  time.Duration
 	writeTimeout time.Duration
+	slowWrite    time.Duration
 	now          func() time.Time
 
 	// mu guards the live socket and the counters. Send is called from the
@@ -127,6 +154,11 @@ type Client struct {
 	conn    *websocket.Conn
 	open    bool
 	attempt int
+
+	// writes times every conn.Write; bytes counts what went with them. Read and
+	// reset together by DrainWriteStats, which the agent logs on a timer.
+	writes     *sample.Set
+	writeBytes atomic.Int64
 }
 
 // New builds a Client. It does not dial; Run does.
@@ -150,7 +182,12 @@ func New(options Options) *Client {
 		httpClient:   options.HTTPClient,
 		dialTimeout:  options.DialTimeout,
 		writeTimeout: options.WriteTimeout,
+		slowWrite:    options.SlowWriteThreshold,
 		now:          options.Now,
+		writes:       sample.New(0),
+	}
+	if client.slowWrite <= 0 {
+		client.slowWrite = SlowWriteThreshold
 	}
 	if client.dialTimeout <= 0 {
 		client.dialTimeout = DefaultDialTimeout
@@ -165,6 +202,17 @@ func New(options Options) *Client {
 		client.now = time.Now
 	}
 	return client
+}
+
+// DrainWriteStats returns how the socket has been behaving since the last call
+// and starts a fresh interval. Bytes is what went out with those writes.
+//
+// It is the agent, not this package, that decides when to read: the interval and
+// the log line belong with the other periodic work, and a client that logged on
+// its own timer would report a window nobody could line up against the passes
+// and the terminals it is competing with.
+func (c *Client) DrainWriteStats() (sample.Summary, int64) {
+	return c.writes.Drain(), c.writeBytes.Swap(0)
 }
 
 // Connected reports whether a session is up right now.
@@ -344,9 +392,33 @@ func (c *Client) Send(frame protocol.UpstreamFrame) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), c.writeTimeout)
 	defer cancel()
-	if err := conn.Write(ctx, websocket.MessageText, raw); err != nil {
-		c.logger.Warn("Failed to send frame", log.F("type", frameLabel(frame)), log.F("error", err))
+	started := time.Now()
+	err = conn.Write(ctx, websocket.MessageText, raw)
+	elapsed := time.Since(started)
+	if err != nil {
+		c.logger.Warn("Failed to send frame",
+			log.F("type", frameLabel(frame)),
+			log.F("ms", elapsed.Milliseconds()),
+			log.F("error", err))
 		return false
+	}
+	// Timed on every frame because the failure being hunted is intermittent and
+	// nobody is watching when it happens: a threshold that only a human can arm is
+	// a threshold that is always disarmed. `time.Since` is a monotonic clock read,
+	// so the cost of asking is far below the cost of the write it is timing.
+	//
+	// ⚠ RECORDED WHETHER OR NOT IT CROSSES THE BAR, and that is the whole point of
+	// this line. The threshold below was guessed before anybody had a distribution
+	// to guess from, and on the first real reproduction it reported nothing while a
+	// person watched their terminal lag — which is indistinguishable from "healthy"
+	// unless the normal case is also recorded. The summary is what says which.
+	c.writes.Add(elapsed)
+	c.writeBytes.Add(int64(len(raw)))
+	if elapsed >= c.slowWrite {
+		c.logger.Warn("Slow frame write — the server may not be reading",
+			log.F("type", frameLabel(frame)),
+			log.F("ms", elapsed.Milliseconds()),
+			log.F("bytes", len(raw)))
 	}
 	return true
 }
