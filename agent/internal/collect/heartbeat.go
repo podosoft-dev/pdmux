@@ -66,6 +66,13 @@ type Deps struct {
 	Log *log.Logger
 }
 
+// slowCollectorThreshold is when one collector's wall time earns a line. A
+// variable rather than a const so a spec can lower it and assert the line
+// without sleeping for real. 1.5s sits above every healthy collector (tmux and
+// the fd walk answer in milliseconds; a service probe's own timeout is 2s) and
+// below the 2s pass threshold, so a slow pass always has a named component.
+var slowCollectorThreshold = 1500 * time.Millisecond
+
 // NewDeps builds the default dependency set: a live CPU meter (which must
 // survive across passes to have a delta at all) and the host readers for
 // everything else.
@@ -106,7 +113,21 @@ func Heartbeat(ctx context.Context, config protocol.AgentConfig, deps Deps) prot
 			// Inside the goroutine, because a panic in a goroutine is not
 			// recoverable by whoever started it — it takes the process with it.
 			defer deps.recoverCollector(name)
+			started := time.Now()
 			fn()
+			// ⚠ THE PASS-LEVEL WARNING CANNOT NAME THE CULPRIT, AND GUESSING NAMED
+			// FOUR INNOCENTS IN A ROW. "Slow pass pass=heartbeat ms=3541" was chased
+			// to the usage spawn, then tmux, then the fd walk, then service probes —
+			// each measured healthy in isolation while the beats stayed slow,
+			// because the five collectors run in parallel and the pass only ever
+			// shows the maximum. One line naming the slow collector replaces that
+			// whole guessing round. Kept below the pass threshold so a slow pass
+			// always arrives with its component named.
+			if elapsed := time.Since(started); elapsed >= slowCollectorThreshold && deps.Log != nil {
+				deps.Log.Warn("Slow collector",
+					log.F("collector", name),
+					log.F("ms", elapsed.Milliseconds()))
+			}
 		}()
 	}
 

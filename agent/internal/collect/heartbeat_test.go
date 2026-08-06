@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/log"
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
@@ -190,4 +191,42 @@ func TestHeartbeat(t *testing.T) {
 			t.Fatalf("second pass reported %v, want 25", second.Resource.CPUPct)
 		}
 	})
+}
+
+// TestSlowCollectorIsNamed pins the per-collector timing line.
+//
+// ⚠ THE PASS-LEVEL WARNING CANNOT NAME THE CULPRIT — the collectors run in
+// parallel, so "Slow pass" only ever reports the maximum, and one field round
+// chased four innocent collectors before this line existed. Lower the threshold
+// seam, make one collector dawdle, and the line must say which.
+func TestSlowCollectorIsNamed(t *testing.T) {
+	previous := slowCollectorThreshold
+	slowCollectorThreshold = time.Millisecond
+	t.Cleanup(func() { slowCollectorThreshold = previous })
+
+	var mu sync.Mutex
+	var lines []string
+	logger := log.New(log.Options{Level: log.LevelDebug, Sink: func(line string) {
+		mu.Lock()
+		lines = append(lines, line)
+		mu.Unlock()
+	}})
+
+	deps := Deps{
+		Sessions: func(ctx context.Context) SessionReading {
+			time.Sleep(5 * time.Millisecond)
+			return SessionReading{Sessions: []protocol.MuxSession{}, Present: true}
+		},
+		Log: logger,
+	}
+	Heartbeat(context.Background(), protocol.NewAgentConfig(), deps)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, line := range lines {
+		if strings.Contains(line, "Slow collector") && strings.Contains(line, "collector=sessions") {
+			return
+		}
+	}
+	t.Fatalf("a collector dawdled past the threshold and no line named it; lines=%q", lines)
 }
