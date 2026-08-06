@@ -22,6 +22,7 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
@@ -39,6 +40,27 @@ const defaultRPCTimeoutMs = 20_000
 // machine somebody else is working on: a chatty (or wedged) app server must not
 // grow its heap. The answer is a few hundred bytes.
 const maxTranscriptBytes = 1 << 20
+
+// Backoff after an ask that yielded nothing.
+//
+// ⚠ AN EMPTY ANSWER THAT COSTS A SPAWN MUST NOT BE RE-BOUGHT EVERY PASS. On a
+// host where the CLI is installed but idle — no live session, nothing for the
+// transcript reader either — this provider is consulted every collection, and
+// each consultation is the launcher plus its ~259 MB native binary. Measured on
+// two 15 GB hosts that were already paging: the spawn ran at the 60 s cadence
+// all night, each one stretching that heartbeat to 2.1–9.7 s (74 and 52 slow-pass
+// warnings in 16 h), and its working set fed the very memory pressure that was
+// making the machines feel slow. The answer it kept buying was "nothing".
+//
+// So an empty answer starts a hold-off, and consecutive empties double it up to
+// the cap. A non-empty answer clears it: while the CLI is actually in use the
+// question keeps being asked at the collector's own cadence, which is the cost
+// the fallback was always allowed to have. The state is in-memory on purpose —
+// an agent restart retrying immediately is correct, not a leak.
+const (
+	rpcEmptyBackoffInitialSec = 10 * 60
+	rpcEmptyBackoffCapSec     = 30 * 60
+)
 
 type rpcClientInfo struct {
 	Name    string `json:"name"`
@@ -186,6 +208,12 @@ type RPCCLIProvider struct {
 	now         func() int64
 	procDir     string
 	home        string
+
+	// The empty-answer hold-off (see the constants above). Guarded because the
+	// collector may be retuned while a pass is in flight.
+	mu         sync.Mutex
+	nextTrySec int64
+	backoffSec int64
 }
 
 // NewRPCCLIProvider builds a provider, filling in the defaults for anything
@@ -226,20 +254,63 @@ func (p *RPCCLIProvider) ProcessCount(ctx context.Context) int {
 }
 
 // Windows asks the CLI and normalises what it says.
+//
+// An ask that yields nothing — the binary missing, the stream unanswered, or an
+// answer with no usable window — arms the hold-off, and while it is armed this
+// returns empty without asking. Only a non-empty answer disarms it, so a host
+// where the CLI sits idle stops paying the spawn every pass, and one where it is
+// in use keeps its gauge fresh.
 func (p *RPCCLIProvider) Windows(ctx context.Context) []protocol.UsageWindow {
+	empty := []protocol.UsageWindow{}
+	p.mu.Lock()
+	held := p.now() < p.nextTrySec
+	p.mu.Unlock()
+	if held {
+		return empty
+	}
+
 	read := p.transcript
 	if read == nil {
 		read = func() (string, bool) { return p.spawnAndRead(ctx) }
 	}
 	stdout, ok := read()
 	if !ok {
-		return []protocol.UsageWindow{}
+		p.holdOff()
+		return empty
 	}
 	result, answered := ExtractRPCResult(stdout)
 	if !answered {
-		return []protocol.UsageWindow{}
+		p.holdOff()
+		return empty
 	}
-	return NormalizeWindows(WindowsFromRPCResult(result), p.now())
+	windows := NormalizeWindows(WindowsFromRPCResult(result), p.now())
+	if len(windows) == 0 {
+		// ⚠ AN ANSWERED "NOTHING TO REPORT" BACKS OFF TOO. It is the authoritative
+		// form of the same fact — this account has no windows to show right now —
+		// and re-asking it every minute is the exact spend the hold-off exists to
+		// stop. It clears the moment an answer carries a window.
+		p.holdOff()
+		return empty
+	}
+	p.mu.Lock()
+	p.nextTrySec, p.backoffSec = 0, 0
+	p.mu.Unlock()
+	return windows
+}
+
+// holdOff arms (or doubles) the empty-answer backoff.
+func (p *RPCCLIProvider) holdOff() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.backoffSec == 0 {
+		p.backoffSec = rpcEmptyBackoffInitialSec
+	} else if p.backoffSec < rpcEmptyBackoffCapSec {
+		p.backoffSec *= 2
+		if p.backoffSec > rpcEmptyBackoffCapSec {
+			p.backoffSec = rpcEmptyBackoffCapSec
+		}
+	}
+	p.nextTrySec = p.now() + p.backoffSec
 }
 
 // spawnAndRead writes the request, then reads until OUR answer arrives and kills

@@ -267,3 +267,107 @@ func TestRateLimitsNotification(t *testing.T) {
 		}
 	})
 }
+
+// TestEmptyAnswerHoldsOffTheNextAsk pins the negative cache on the RPC provider.
+//
+// ⚠ THE COST BEING GUARDED IS THE SPAWN, NOT THE PARSE. On a host where the CLI
+// is installed but idle, every collection used to spawn the launcher and its
+// ~259 MB native binary to buy the same empty answer — measured overnight on two
+// paging 15 GB hosts as 74 and 52 heartbeats stretched to 2.1-9.7 s, at exactly
+// the collector's 60 s cadence. Revert the hold-off in Windows and the first
+// subtest fails on asks=2.
+func TestEmptyAnswerHoldsOffTheNextAsk(t *testing.T) {
+	t.Run("an empty answer is not re-bought before the hold-off elapses", func(t *testing.T) {
+		now := int64(testNow)
+		asks := 0
+		provider := NewRPCCLIProvider(RPCCLIOptions{
+			ID:         "codex",
+			Transcript: func() (string, bool) { asks++; return "", false },
+			Now:        func() int64 { return now },
+		})
+
+		provider.Windows(t.Context())
+		provider.Windows(t.Context())
+		if asks != 1 {
+			t.Fatalf("asks = %d after two passes, want 1 — the empty answer was re-bought", asks)
+		}
+
+		now += rpcEmptyBackoffInitialSec - 1
+		provider.Windows(t.Context())
+		if asks != 1 {
+			t.Fatalf("asks = %d one second before the hold-off elapsed, want 1", asks)
+		}
+
+		now += 1
+		provider.Windows(t.Context())
+		if asks != 2 {
+			t.Fatalf("asks = %d after the hold-off elapsed, want 2", asks)
+		}
+	})
+
+	t.Run("consecutive empties double the hold-off up to the cap", func(t *testing.T) {
+		now := int64(testNow)
+		asks := 0
+		provider := NewRPCCLIProvider(RPCCLIOptions{
+			ID:         "codex",
+			Transcript: func() (string, bool) { asks++; return "", false },
+			Now:        func() int64 { return now },
+		})
+
+		// Each loop lets the current hold-off elapse exactly, asks again (another
+		// empty), and expects the next hold-off to have doubled — 10m, 20m, 30m,
+		// then pinned at the cap.
+		provider.Windows(t.Context())
+		for i, wait := range []int64{
+			rpcEmptyBackoffInitialSec,
+			rpcEmptyBackoffInitialSec * 2,
+			rpcEmptyBackoffCapSec,
+			rpcEmptyBackoffCapSec,
+		} {
+			now += wait - 1
+			provider.Windows(t.Context())
+			if asks != i+1 {
+				t.Fatalf("step %d: asks = %d just inside the hold-off, want %d", i, asks, i+1)
+			}
+			now += 1
+			provider.Windows(t.Context())
+			if asks != i+2 {
+				t.Fatalf("step %d: asks = %d after the hold-off, want %d", i, asks, i+2)
+			}
+		}
+	})
+
+	t.Run("a real answer clears the hold-off", func(t *testing.T) {
+		now := int64(testNow)
+		asks := 0
+		// resetsAt sits far past every clock advance below: the normaliser drops an
+		// expired window, and this subtest is about the hold-off, not expiry.
+		answer := answerLine(t, map[string]any{
+			"primary": map[string]any{"usedPercent": 12, "windowDurationMins": 300, "resetsAt": testNow + 100_000},
+		})
+		full := false
+		provider := NewRPCCLIProvider(RPCCLIOptions{
+			ID: "codex",
+			Transcript: func() (string, bool) {
+				asks++
+				if full {
+					return answer, true
+				}
+				return "", false
+			},
+			Now: func() int64 { return now },
+		})
+
+		provider.Windows(t.Context()) // empty -> hold-off armed
+		full = true
+		now += rpcEmptyBackoffInitialSec
+		if got := provider.Windows(t.Context()); len(got) != 1 {
+			t.Fatalf("windows = %+v, want the answered window", got)
+		}
+		// Cleared: the very next pass asks again with no wait.
+		provider.Windows(t.Context())
+		if asks != 3 {
+			t.Fatalf("asks = %d after a real answer, want 3 — the hold-off survived success", asks)
+		}
+	})
+}
