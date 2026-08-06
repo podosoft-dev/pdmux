@@ -36,6 +36,7 @@ import (
 	"github.com/podosoft-dev/pdmux/agent/internal/log"
 	"github.com/podosoft-dev/pdmux/agent/internal/net"
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
+	"github.com/podosoft-dev/pdmux/agent/internal/sample"
 	"github.com/podosoft-dev/pdmux/agent/internal/state"
 	"github.com/podosoft-dev/pdmux/agent/internal/term"
 	"github.com/podosoft-dev/pdmux/agent/internal/usage"
@@ -73,6 +74,39 @@ const slowPass = 2 * time.Second
 // server: this is the measurement used to decide whether the server is the
 // problem, and a knob the suspect controls is not a measurement.
 const transportStatsInterval = 30 * time.Second
+
+// Which level a summary line is written at.
+//
+// ⚠ MEASURED: AT INFO ON EVERY TICK, THIS LINE WAS 75% OF THE AGENT'S JOURNAL —
+// ~120 of ~160 lines an hour, on every connected host, forever. The "say nothing
+// when idle" guard never engaged because the heartbeat itself writes a frame
+// every five seconds, so no connected host is ever idle by that test. journald
+// caps total size either way; the cost was retention — thousands of lines of
+// "still healthy" pushing out the history that gets read during an incident.
+//
+// So the summary is written at DEBUG while it says what the baseline already
+// says, and at INFO when it says something else — the bar sits well above the
+// measured healthy figures (p95 0–3 ms, max 0–5 ms) and well below the one-shot
+// warning thresholds, so the interesting minute is on the record before the
+// warnings would fire. One INFO an hour goes out regardless: a journal where
+// the line is absent must mean "nothing noteworthy", never "who knows".
+const (
+	statsNoteworthyP95Ms  = 10
+	statsNoteworthyMaxMs  = 50
+	statsInfoAtLeastEvery = time.Hour
+)
+
+// statsWorthInfo is the level decision, kept pure so the spec can state it
+// without running the timer loop.
+func statsWorthInfo(writes, locks sample.Summary, sinceLastInfo time.Duration) bool {
+	if sinceLastInfo >= statsInfoAtLeastEvery {
+		return true
+	}
+	return writes.P95.Milliseconds() >= statsNoteworthyP95Ms ||
+		writes.Max.Milliseconds() >= statsNoteworthyMaxMs ||
+		locks.P95.Milliseconds() >= statsNoteworthyP95Ms ||
+		locks.Max.Milliseconds() >= statsNoteworthyMaxMs
+}
 
 // Field caps the contract states on `hello`. Truncating here rather than sending
 // an over-long value is deliberate: a host with a 300-character hostname must
@@ -582,6 +616,7 @@ func (a *Agent) tick(ctx context.Context, name string, reset <-chan time.Duratio
 func (a *Agent) transportStats(ctx context.Context) {
 	ticker := time.NewTicker(transportStatsInterval)
 	defer ticker.Stop()
+	lastInfo := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
@@ -641,7 +676,12 @@ func (a *Agent) transportStats(ctx context.Context) {
 			if load1, ok := collect.ReadLoad1(); ok {
 				fields = append(fields, log.F("load1", load1))
 			}
-			a.logger.Info("Transport stats", fields...)
+			if statsWorthInfo(writes, locks, time.Since(lastInfo)) {
+				lastInfo = time.Now()
+				a.logger.Info("Transport stats", fields...)
+			} else {
+				a.logger.Debug("Transport stats", fields...)
+			}
 		}
 	}
 }
