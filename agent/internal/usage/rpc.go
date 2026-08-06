@@ -62,6 +62,26 @@ const (
 	rpcEmptyBackoffCapSec     = 30 * 60
 )
 
+// rpcRefreshSec is how long a SUCCESSFUL answer is served before the CLI is
+// asked again.
+//
+// ⚠ SUCCESS TURNED OUT TO BE THE EXPENSIVE CASE, NOT FAILURE. The empty-answer
+// backoff above shipped first, and the field measurement that followed it is
+// this constant's reason: the spawns kept coming at the collector's 60 s cadence
+// with the backoff provably armed-and-idle, because the answers were NOT empty —
+// the stdin fix (see spawnAndRead) had quietly made the RPC reliable, and a
+// reliable fallback clears the backoff every time. Meanwhile the transcript path
+// above it is dead upstream (state moved into sqlite; no rollout files), so on
+// every host with a current CLI the "last resort" is the only resort, running
+// sixty times an hour at ~134 MB a spawn under a cost model written for almost
+// never.
+//
+// The windows a spawn buys move on five-hour and weekly scales, so serving one
+// answer for fifteen minutes loses nothing a gauge can show — resets_at stays
+// exact, and expiry is applied at serve time so a window never outlives its own
+// reset. Four spawns an hour instead of sixty.
+const rpcRefreshSec = 15 * 60
+
 type rpcClientInfo struct {
 	Name    string `json:"name"`
 	Title   string `json:"title"`
@@ -209,11 +229,15 @@ type RPCCLIProvider struct {
 	procDir     string
 	home        string
 
-	// The empty-answer hold-off (see the constants above). Guarded because the
-	// collector may be retuned while a pass is in flight.
+	// The ask throttle (see the constants above). nextTrySec is when the CLI may
+	// next be spawned — set by an empty answer (backing off) and by a full one
+	// (refresh interval). cached carries the last full answer, raw so expiry is
+	// re-applied at serve time. Guarded because the collector may be retuned
+	// while a pass is in flight.
 	mu         sync.Mutex
 	nextTrySec int64
 	backoffSec int64
+	cached     []RawWindow
 }
 
 // NewRPCCLIProvider builds a provider, filling in the defaults for anything
@@ -253,21 +277,26 @@ func (p *RPCCLIProvider) ProcessCount(ctx context.Context) int {
 	return CountProcesses(ctx, p.processName, ProcessCountOptions{ProcDir: p.procDir})
 }
 
-// Windows asks the CLI and normalises what it says.
+// Windows answers from the last spawn while its refresh interval holds, and
+// asks the CLI again only past it.
 //
-// An ask that yields nothing — the binary missing, the stream unanswered, or an
-// answer with no usable window — arms the hold-off, and while it is armed this
-// returns empty without asking. Only a non-empty answer disarms it, so a host
-// where the CLI sits idle stops paying the spawn every pass, and one where it is
-// in use keeps its gauge fresh.
+// Every ask arms nextTrySec — an empty answer with the doubling backoff, a full
+// one with the refresh interval and its windows cached. Between asks the cache
+// is re-normalised against the clock, so an expired window drops out at serve
+// time rather than being shown until the next spawn.
 func (p *RPCCLIProvider) Windows(ctx context.Context) []protocol.UsageWindow {
 	empty := []protocol.UsageWindow{}
+	now := p.now()
 	p.mu.Lock()
-	held := p.now() < p.nextTrySec
-	p.mu.Unlock()
-	if held {
-		return empty
+	if now < p.nextTrySec {
+		cached := p.cached
+		p.mu.Unlock()
+		if cached == nil {
+			return empty
+		}
+		return NormalizeWindows(cached, now)
 	}
+	p.mu.Unlock()
 
 	read := p.transcript
 	if read == nil {
@@ -283,7 +312,8 @@ func (p *RPCCLIProvider) Windows(ctx context.Context) []protocol.UsageWindow {
 		p.holdOff()
 		return empty
 	}
-	windows := NormalizeWindows(WindowsFromRPCResult(result), p.now())
+	raw := WindowsFromRPCResult(result)
+	windows := NormalizeWindows(raw, p.now())
 	if len(windows) == 0 {
 		// ⚠ AN ANSWERED "NOTHING TO REPORT" BACKS OFF TOO. It is the authoritative
 		// form of the same fact — this account has no windows to show right now —
@@ -293,12 +323,16 @@ func (p *RPCCLIProvider) Windows(ctx context.Context) []protocol.UsageWindow {
 		return empty
 	}
 	p.mu.Lock()
-	p.nextTrySec, p.backoffSec = 0, 0
+	p.nextTrySec = p.now() + rpcRefreshSec
+	p.backoffSec = 0
+	p.cached = raw
 	p.mu.Unlock()
 	return windows
 }
 
-// holdOff arms (or doubles) the empty-answer backoff.
+// holdOff arms (or doubles) the empty-answer backoff. An empty answer also
+// drops the cache: serving yesterday's windows past an authoritative "nothing"
+// would be the stale-gauge failure the transcript path already had once.
 func (p *RPCCLIProvider) holdOff() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -311,6 +345,7 @@ func (p *RPCCLIProvider) holdOff() {
 		}
 	}
 	p.nextTrySec = p.now() + p.backoffSec
+	p.cached = nil
 }
 
 // spawnAndRead writes the request, then reads until OUR answer arrives and kills

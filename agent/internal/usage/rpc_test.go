@@ -364,10 +364,71 @@ func TestEmptyAnswerHoldsOffTheNextAsk(t *testing.T) {
 		if got := provider.Windows(t.Context()); len(got) != 1 {
 			t.Fatalf("windows = %+v, want the answered window", got)
 		}
-		// Cleared: the very next pass asks again with no wait.
+		// ⚠ THIS USED TO ASSERT AN IMMEDIATE RE-ASK, AND THAT EXPECTATION WAS THE
+		// BUG: a reliable answer re-bought every pass is the 60-a-hour spawn the
+		// field measurement caught. What "cleared" must mean is that the EMPTY
+		// backoff left no residue — so after the success's own refresh interval,
+		// the next empty starts over at the INITIAL hold-off, not a doubled one.
+		now += rpcRefreshSec
+		full = false
+		provider.Windows(t.Context()) // asks again (refresh elapsed), empty -> initial hold-off
+		if asks != 3 {
+			t.Fatalf("asks = %d after the refresh interval, want 3", asks)
+		}
+		now += rpcEmptyBackoffInitialSec - 1
 		provider.Windows(t.Context())
 		if asks != 3 {
-			t.Fatalf("asks = %d after a real answer, want 3 — the hold-off survived success", asks)
+			t.Fatalf("asks = %d — the post-success empty was held for more than the initial hold-off", asks)
+		}
+		now += 1
+		provider.Windows(t.Context())
+		if asks != 4 {
+			t.Fatalf("asks = %d — the post-success empty never released", asks)
 		}
 	})
+}
+
+// TestFullAnswerIsServedForTheRefreshInterval pins the success-side throttle.
+//
+// ⚠ SUCCESS IS THE EXPENSIVE CASE THIS ROUND. The empty-answer backoff shipped
+// first and the spawns kept coming at the collector's 60 s cadence, because the
+// answers were full — a reliable fallback cleared the backoff every pass. Revert
+// the refresh gate and the first assertion fails on asks=2.
+func TestFullAnswerIsServedForTheRefreshInterval(t *testing.T) {
+	now := int64(testNow)
+	asks := 0
+	// The session window resets INSIDE the refresh interval, so the mid-interval
+	// serve below can watch it drop out of the cache; the weekly one outlives
+	// every clock advance here.
+	answer := answerLine(t, map[string]any{
+		"primary":   map[string]any{"usedPercent": 12, "windowDurationMins": 300, "resetsAt": testNow + 300},
+		"secondary": map[string]any{"usedPercent": 44, "windowDurationMins": 10_080, "resetsAt": testNow + 100_000},
+	})
+	provider := NewRPCCLIProvider(RPCCLIOptions{
+		ID:         "codex",
+		Transcript: func() (string, bool) { asks++; return answer, true },
+		Now:        func() int64 { return now },
+	})
+
+	if got := provider.Windows(t.Context()); len(got) != 2 {
+		t.Fatalf("first ask = %+v, want two windows", got)
+	}
+	if got := provider.Windows(t.Context()); len(got) != 2 || asks != 1 {
+		t.Fatalf("second pass: windows=%d asks=%d, want the cached answer without a second ask", len(got), asks)
+	}
+
+	// The session window's reset passes mid-interval: the served cache must lose
+	// it at once — a window outliving its own reset is a lying gauge — while the
+	// weekly window stays.
+	now = testNow + 500
+	if got := provider.Windows(t.Context()); len(got) != 1 || got[0].Key != WindowWeekly || asks != 1 {
+		t.Fatalf("after session reset: windows=%+v asks=%d, want only the weekly window from cache", got, asks)
+	}
+
+	// Past the refresh interval the CLI is asked again.
+	now = testNow + rpcRefreshSec
+	provider.Windows(t.Context())
+	if asks != 2 {
+		t.Fatalf("asks = %d past the refresh interval, want 2", asks)
+	}
 }
