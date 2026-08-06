@@ -18,4 +18,4 @@ package cli
 // The literal here is still the single source of truth for the version — the build
 // script reads THIS line and stamps the same value back, so an unstamped build (a
 // developer's `go build`) and a released one agree.
-var AgentVersion = "0.1.12"
+var AgentVersion = "0.1.13"
