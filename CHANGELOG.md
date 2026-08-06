@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 0.5.1
+
+- **A terminal no longer dies just because nobody typed in it.** The browser's terminal
+  socket carries every pane for one host and had no keepalive at all, while the agent's
+  socket has been pinged every thirty seconds for as long as it has existed. A pane that
+  is merely QUIET — one waiting on a coding agent's reply — sends nothing, and a CDN
+  drops an idle WebSocket at around a hundred seconds. Measured on a live deployment: a
+  socket closed on its own with code 1006, no close frame, after 125 seconds. The next
+  keystroke then paid a reconnect that had to reattach every pane on that host, which
+  from the chair is indistinguishable from a terminal that has simply gone slow. Both
+  gateways now ping on the same interval and drop what stops answering.
+- **A host stops paying for a usage reading it already has.** The coding-CLI budget
+  gauge prefers what a CLI already wrote to disk and keeps spawning the CLI as a last
+  resort. That last resort had quietly become the only resort — one vendor moved its
+  state into a database and stopped writing the file, and a separate fix had made the
+  spawn reliable enough to succeed every time. The result was a ~134 MB process started
+  every sixty seconds, forever, to re-buy a number that moves on five-hour and weekly
+  scales; on two hosts it stretched a heartbeat to between 2 and 10 seconds, all night.
+  An answer is now served for fifteen minutes and an empty one backs off, so the cost
+  falls from sixty spawns an hour to four, with nothing lost that a gauge could show.
+- **When a terminal does feel slow, there is now something to read.** The agent times
+  every socket write and every pane's wait for the shared send lock, and summarises them
+  with its goroutine count, heap, open and cumulative pane counts and the host's load
+  average. It says so out loud when a write, a lock wait, a collector or a whole pass
+  crosses its threshold, and the server records each terminal socket's lifetime and
+  close code. That is enough to tell "the agent is stalled" from "the server stopped
+  reading" from "the host itself is paging" — three things that had been guessed at.
+  The summary keeps quiet while it agrees with the baseline, so an ordinary day costs
+  a line an hour rather than a hundred and twenty.
+
 ## 0.5.0
 
 - **A commit's detail is three faces again — Commit, Changes and File tree — and each
