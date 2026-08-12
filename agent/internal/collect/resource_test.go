@@ -155,6 +155,107 @@ func TestMemory(t *testing.T) {
 	})
 }
 
+// A real /proc/meminfo shape, including the two lines that are traps: SwapCached
+// (starts with "Swap" and sizes nothing) and HugePages_Total (a real line with no
+// `kB` unit). Swap answers 25% here while memory answers 50% from the SAME text,
+// so a parser wired to the wrong keys cannot land on the right number by accident.
+const meminfoWithSwap = `MemTotal:       8000000 kB
+MemFree:         100000 kB
+MemAvailable:   4000000 kB
+Buffers:          50000 kB
+Cached:         3000000 kB
+SwapCached:      200000 kB
+SwapTotal:      2000000 kB
+SwapFree:       1500000 kB
+HugePages_Total:       0
+`
+
+func TestSwap(t *testing.T) {
+	t.Run("[TC-PDAGENT-125] reads the swap keys, not the memory keys beside them", func(t *testing.T) {
+		reading := parseMeminfoSwap(meminfoWithSwap)
+		if reading == nil {
+			t.Fatal("meminfo did not parse")
+		}
+		// 2000000 kB total, 1500000 kB free -> 500000 kB used -> 512000000 B, 25%.
+		if reading.TotalBytes != 2_048_000_000 || reading.UsedBytes != 512_000_000 || reading.Pct != 25 {
+			t.Fatalf("reading = %+v, want used 512000000 / total 2048000000 / 25%%", *reading)
+		}
+	})
+
+	t.Run("[TC-PDAGENT-125] does not count SwapCached as part of the swap area", func(t *testing.T) {
+		// SwapCached is 200000 kB. Folded into free the answer would be 15%; folded
+		// into total it would be 23%. Both are far enough from 25% to be visible.
+		if reading := parseMeminfoSwap(meminfoWithSwap); reading.Pct != 25 {
+			t.Fatalf("pct = %d, want 25 — SwapCached leaked into the arithmetic", reading.Pct)
+		}
+	})
+
+	t.Run("[TC-PDAGENT-125] a host with swap turned off is measured, not unmeasured", func(t *testing.T) {
+		// Every container and every server built with swap off reports exactly this,
+		// and it is a successful reading: nothing is swapped because there is nowhere
+		// to swap to. nil here would make it indistinguishable from a /proc nobody
+		// could read, and from an agent too old to know the word.
+		reading := parseMeminfoSwap("SwapTotal:             0 kB\nSwapFree:              0 kB\n")
+		if reading == nil {
+			t.Fatal("reading = nil, want a measured 0/0 — a swapless host was looked at")
+		}
+		if reading.TotalBytes != 0 || reading.UsedBytes != 0 || reading.Pct != 0 {
+			t.Fatalf("reading = %+v, want 0/0 at 0%%", *reading)
+		}
+	})
+
+	t.Run("[TC-PDAGENT-125] refuses a meminfo that never mentions swap", func(t *testing.T) {
+		// Kernels print the swap lines even with CONFIG_SWAP=n, so their absence is a
+		// masked or truncated /proc — not a host with swap turned off.
+		for name, text := range map[string]string{
+			"memory only":    "MemTotal: 8000000 kB\nMemAvailable: 4000000 kB\n",
+			"total alone":    "SwapTotal: 2000000 kB\n",
+			"free alone":     "SwapFree: 1500000 kB\n",
+			"garbage":        "garbage",
+			"negative total": "SwapTotal:      -1 kB\nSwapFree:       0 kB\n",
+		} {
+			if got := parseMeminfoSwap(text); got != nil {
+				t.Fatalf("%s: parsed %+v, want nil", name, *got)
+			}
+		}
+	})
+
+	t.Run("[TC-PDAGENT-125] reports nil when there is no /proc/meminfo at all", func(t *testing.T) {
+		// ⚠ THIS CANNOT FAIL ON LINUX. The host fall-through it guards is behind
+		// runtime.GOOS == "darwin", so on Linux the broken code returns nil anyway.
+		// Same blind spot as its memory twin above; it bites on a Mac, which is where
+		// the fall-through exists.
+		if got := ReadSwap(func() (string, bool) { return "", false }); got != nil {
+			t.Fatalf("reading = %+v, want nil on a host without /proc", *got)
+		}
+	})
+
+	t.Run("[TC-PDAGENT-125] reads the real file through the default reader", func(t *testing.T) {
+		read := procFile(t, "meminfo", "SwapTotal:      4000000 kB\nSwapFree:       1000000 kB\n")
+		got := ReadSwap(read)
+		if got == nil || got.Pct != 75 {
+			t.Fatalf("reading = %+v, want 75%%", got)
+		}
+	})
+
+	t.Run("[TC-PDAGENT-125] a memory failure does not take swap with it", func(t *testing.T) {
+		// The reason swap is its own seam. A kernel too old for MemAvailable makes
+		// parseMeminfo return nil, and a shared reading would drag a perfectly
+		// readable SwapTotal down with it.
+		got := Resource(t.Context(), ResourceReaders{
+			Memory: func() *MemoryReading { return nil },
+			Swap:   func() *SwapReading { return &SwapReading{UsedBytes: 1 << 30, TotalBytes: 4 << 30, Pct: 25} },
+			Disk:   func(context.Context) *DiskReading { return nil },
+		})
+		if got.MemPct != nil {
+			t.Fatalf("memPct = %v, want nil", got.MemPct)
+		}
+		if derefInt(got.SwapPct) != 25 || got.SwapTotalBytes == nil {
+			t.Fatalf("swap = %v / %v, want 25%% and its bytes", got.SwapPct, got.SwapTotalBytes)
+		}
+	})
+}
+
 func TestDisk(t *testing.T) {
 	t.Run("[TC-PDAGENT-012] parses df -Pk output for the root filesystem", func(t *testing.T) {
 		text := "Filesystem     1024-blocks     Used Available Capacity Mounted on\n" +
@@ -194,6 +295,9 @@ func TestResourceAssembly(t *testing.T) {
 		Memory: func() *MemoryReading {
 			return &MemoryReading{UsedBytes: 4 << 30, TotalBytes: 8 << 30, Pct: 50}
 		},
+		Swap: func() *SwapReading {
+			return &SwapReading{UsedBytes: 1 << 30, TotalBytes: 2 << 30, Pct: 50}
+		},
 		Disk: func(context.Context) *DiskReading {
 			return &DiskReading{UsedBytes: 3 << 30, TotalBytes: 4 << 30, Pct: 75}
 		},
@@ -213,6 +317,9 @@ func TestResourceAssembly(t *testing.T) {
 		if got.DiskUsedBytes == nil || got.DiskTotalBytes == nil {
 			t.Fatalf("disk bytes = %v/%v", got.DiskUsedBytes, got.DiskTotalBytes)
 		}
+		if derefInt(got.SwapPct) != 50 || got.SwapUsedBytes == nil || got.SwapTotalBytes == nil {
+			t.Fatalf("swap = %v at %v/%v", got.SwapPct, got.SwapUsedBytes, got.SwapTotalBytes)
+		}
 		if got.Load1 == nil || *got.Load1 != 1.25 {
 			t.Fatalf("load1 = %v, want 1.25", got.Load1)
 		}
@@ -224,6 +331,7 @@ func TestResourceAssembly(t *testing.T) {
 	t.Run("[TC-PDAGENT-010][TC-PDAGENT-011][TC-PDAGENT-012] leaves every unmeasurable field nil", func(t *testing.T) {
 		got := Resource(t.Context(), ResourceReaders{
 			Memory:    func() *MemoryReading { return nil },
+			Swap:      func() *SwapReading { return nil },
 			Disk:      func(context.Context) *DiskReading { return nil },
 			Load:      func() (float64, bool) { return 0, false },
 			UptimeSec: func() (int64, bool) { return 0, false },
@@ -232,6 +340,7 @@ func TestResourceAssembly(t *testing.T) {
 			"cpuPct": got.CPUPct, "memPct": got.MemPct, "diskPct": got.DiskPct,
 			"memUsedBytes": got.MemUsedBytes, "memTotalBytes": got.MemTotalBytes,
 			"diskUsedBytes": got.DiskUsedBytes, "diskTotalBytes": got.DiskTotalBytes,
+			"swapPct": got.SwapPct, "swapUsedBytes": got.SwapUsedBytes, "swapTotalBytes": got.SwapTotalBytes,
 			"load1": got.Load1, "uptimeSec": got.UptimeSec,
 		} {
 			if !isNilPointer(value) {

@@ -124,6 +124,7 @@ export function metricsFeed(hosts: readonly HostView[], fallbackNowMs: number): 
       cpuPct: host.resource?.cpuPct ?? null,
       memPct: host.resource?.memPct ?? null,
       diskPct: host.resource?.diskPct ?? null,
+      swapPct: host.resource?.swapPct ?? null,
     });
   }
   return { ts: Math.floor((newest || fallbackNowMs) / 1000), hosts: rows };
@@ -134,11 +135,22 @@ export function historyFeed(metrics: MetricsResponse): HistoryFeed {
   return {
     t: metrics.t ?? [],
     window: metrics.window,
-    hosts: [{ id: metrics.hostId, cpu: metrics.cpu ?? [], mem: metrics.mem ?? [], disk: metrics.disk ?? [] }],
+    hosts: [
+      {
+        id: metrics.hostId,
+        cpu: metrics.cpu ?? [],
+        mem: metrics.mem ?? [],
+        disk: metrics.disk ?? [],
+        // `?? []` is load-bearing here and not defensive habit: a server that has not
+        // deployed the swap columns yet omits the key entirely, and an empty series
+        // draws no line — which is the honest answer — rather than throwing.
+        swap: metrics.swap ?? [],
+      },
+    ],
   };
 }
 
-/** Convenience: metrics response -> the three series for that host. */
+/** Convenience: metrics response -> the series for that host. */
 export function hostSeries(metrics: MetricsResponse): HostSeries {
   return historySeries(historyFeed(metrics), metrics.hostId);
 }
@@ -166,7 +178,7 @@ function ratioHint(used: number | null | undefined, total: number | null | undef
 }
 
 /**
- * The three resource readings for a card.
+ * The resource readings for a card.
  *
  * `fresh` is the fast feed after `freshMetrics()` has vetted it; when it is null
  * (stale collector) the card falls back to the host row's own heartbeat rather than
@@ -179,8 +191,14 @@ export function hostResources(host: HostView, fresh: MetricsRow | null | undefin
     cpuPct: fresh?.cpuPct ?? resource?.cpuPct ?? null,
     memPct: fresh?.memPct ?? resource?.memPct ?? null,
     diskPct: fresh?.diskPct ?? resource?.diskPct ?? null,
+    swapPct: fresh?.swapPct ?? resource?.swapPct ?? null,
     memHint: ratioHint(resource?.memUsedBytes, resource?.memTotalBytes),
     diskHint: ratioHint(resource?.diskUsedBytes, resource?.diskTotalBytes),
+    // ⚠ THIS IS WHY `ratioHint` MUST KEEP TREATING 0 AS A VALUE. `formatBytes(0)` is
+    // "0B", which is truthy, so a swapless host gets "0B/0B" — the only thing on the
+    // card that separates "nowhere to swap to" from "somewhere, and unused" ("0B/8Gi").
+    // Both read 0%. A tidy-up that made `ratioHint` skip zeroes would delete that.
+    swapHint: ratioHint(resource?.swapUsedBytes, resource?.swapTotalBytes),
   };
 }
 

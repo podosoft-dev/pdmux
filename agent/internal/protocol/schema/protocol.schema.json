@@ -1716,6 +1716,41 @@
           ],
           "default": null
         },
+        "swapPct": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/percent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "swapTotalBytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "swapUsedBytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "uptimeSec": {
           "anyOf": [
             {

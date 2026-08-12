@@ -109,6 +109,7 @@ export interface MetricsResponse {
   cpu: (number | null)[];
   mem: (number | null)[];
   disk: (number | null)[];
+  swap: (number | null)[];
   step: number;
   window: number;
   latest: { ts: string; cpuPct: number | null; memPct: number | null; diskPct: number | null } | null;

@@ -21,7 +21,7 @@ is where pdmux started.
 
 The rest was added because it came up while actually using it.
 
-- **Resource monitoring.** Run a few AI CLIs and your machine's CPU, memory and disk are the first
+- **Resource monitoring.** Run a few AI CLIs and your machine's CPU, memory, swap and disk are the first
   things to give out. Watching only the terminals tells you nothing about why everything suddenly got
   slow, so host state sits on the same screen.
 - **Token budgets.** The other common reason work stops is running out of tokens. Remaining usage for
@@ -42,7 +42,7 @@ Sessions live in a multiplexer (tmux) on the host. Close the browser and the AI 
 open it again and you reattach to the same session. The split layout and which pane held which
 session are stored on your account, so the same screen opens on another computer.
 
-**Host cards.** Current CPU, memory and disk plus a sparkline of the recent trend. A measurement that
+**Host cards.** Current CPU, memory, swap and disk plus a sparkline of the recent trend. A measurement that
 failed shows as `—`, not `0`, because `0` reads as "healthy but idle".
 
 **Token budgets.** Remaining usage per provider, per window (5 hours, 7 days). Providers disagree

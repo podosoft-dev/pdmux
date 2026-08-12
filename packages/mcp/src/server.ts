@@ -106,7 +106,7 @@ function registerHostTools(
   server.registerTool(
     "host_metrics",
     {
-      description: "CPU, memory and disk history for this host, as aligned arrays oldest-first. Read-only.",
+      description: "CPU, memory, swap and disk history for this host, as aligned arrays oldest-first. Read-only.",
       inputSchema: {
         windowSec: z
           .number()
@@ -323,7 +323,7 @@ function registerFleetTools(
   server.registerTool(
     "host_metrics",
     {
-      description: "CPU, memory and disk history for one host, as aligned arrays oldest-first. Read-only.",
+      description: "CPU, memory, swap and disk history for one host, as aligned arrays oldest-first. Read-only.",
       inputSchema: {
         hostId: HOST_ID,
         windowSec: z.number().int().min(60).max(86_400).default(3_600).describe("How far back to read, in seconds"),

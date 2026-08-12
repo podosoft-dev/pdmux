@@ -1,6 +1,6 @@
 package collect
 
-// Memory, load and uptime on a host with no /proc.
+// Memory, swap, load and uptime on a host with no /proc.
 //
 // The four readers next door all read /proc, and `resource.go` says plainly what
 // that costs off Linux: those metrics come back nil, "not measured", because the
@@ -149,6 +149,71 @@ func darwinMemory(memsizeText string, vmStatText string) *MemoryReading {
 	}
 }
 
+// parseSysctlSwapusage reads `sysctl -n vm.swapusage`:
+//
+//	total = 3072.00M  used = 1234.50M  free = 1837.50M  (encrypted)
+//
+// ⚠ macOS KEEPS SWAP CAPACITY OUT OF vm_stat, so this is a THIRD tool beside
+// `hw.memsize` and `vm_stat` rather than another field of one of them. `vm_stat`
+// has Swapins and Swapouts, which are counters since boot; nothing in its output
+// adds up to the SIZE of the swap area. Anyone who tries to fold this into
+// parseVMStatPages will find only the counters.
+//
+// ⚠ AN UNRECOGNISED UNIT SUFFIX IS A REFUSAL, NOT A NUMBER OF BYTES. Reading
+// `3072.00G` as 3072 bytes is a factor of 10^9 that arrives on screen as a
+// plausible small figure, and nothing downstream would look at it twice. A bare
+// number with no suffix refuses for the same reason: the suffix carries the
+// magnitude. Measured on macOS 26.5.2 (build 25F84, 2026-08-07), sysctl(8)
+// formats all three figures with an unconditional `%.2fM`, so K and G are
+// defensive — three lines against a formatter change that would otherwise be
+// silent. That `%.2f` also quantises the byte counts to about 10 KiB: they are a
+// size, not an exact count.
+//
+// Both output forms are tolerated — the `vm.swapusage: ` prefix that appears
+// without `-n`, and the trailing `(encrypted)` — because the two wanted figures
+// are taken by name and everything else is ignored.
+func parseSysctlSwapusage(text string) *SwapReading {
+	total, okTotal := swapusageField(text, "total")
+	used, okUsed := swapusageField(text, "used")
+	if !okTotal || !okUsed {
+		return nil
+	}
+	return newSwapReading(total, used)
+}
+
+// swapusageField pulls one `<name> = 1234.50M` figure out of the line, in bytes.
+//
+// `free` is deliberately never read: total and used are the two the contract
+// carries, and a reading that derives nothing from the third cannot disagree
+// with itself when the three were formatted a moment apart.
+func swapusageField(text string, name string) (int64, bool) {
+	_, rest, found := strings.Cut(text, name+" = ")
+	if !found {
+		return 0, false
+	}
+	field, _, _ := strings.Cut(strings.TrimSpace(rest), " ")
+	if field == "" {
+		return 0, false
+	}
+	var scale int64
+	switch field[len(field)-1] {
+	case 'K':
+		scale = 1 << 10
+	case 'M':
+		scale = 1 << 20
+	case 'G':
+		scale = 1 << 30
+	default:
+		return 0, false
+	}
+	value, err := strconv.ParseFloat(field[:len(field)-1], 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0, false
+	}
+	// M means MiB here: sysctl divides by 1024*1024, not by a million.
+	return int64(math.Round(value * float64(scale))), true
+}
+
 // runDarwinTool is the one place a subprocess is spawned for these metrics, so
 // the timeout and the "non-zero means nil" rule are stated once.
 func runDarwinTool(file string, args []string) (string, bool) {
@@ -179,6 +244,14 @@ func readDarwinMemory() *MemoryReading {
 		return nil
 	}
 	return darwinMemory(memsize, vmStat)
+}
+
+func readDarwinSwap() *SwapReading {
+	text, ok := runDarwinTool("sysctl", []string{"-n", "vm.swapusage"})
+	if !ok {
+		return nil
+	}
+	return parseSysctlSwapusage(text)
 }
 
 func readDarwinUptimeSec() (int64, bool) {

@@ -115,6 +115,7 @@ describe("[TC-PDUI-103] metric series", () => {
     cpu: [10, null, 30],
     mem: [40, 50, 60],
     disk: [70, 70, 70],
+    swap: [12, 13, 14],
     step: 30,
     window: 3600,
     latest: null,
@@ -128,6 +129,16 @@ describe("[TC-PDUI-103] metric series", () => {
       { t: 160, v: 30 },
     ]);
     expect(series.mem.at(-1)).toEqual({ t: 160, v: 60 });
+    expect(series.swap.at(-1)).toEqual({ t: 160, v: 14 });
+  });
+
+  it("survives a server that has not deployed the swap column yet", () => {
+    // The web app can be newer than the API it is talking to. An absent key must
+    // yield an empty series — no line drawn — rather than throwing in a render loop.
+    const { swap, ...withoutSwap } = response;
+    const series = hostSeries(withoutSwap as MetricsResponse);
+    expect(series.swap).toEqual([]);
+    expect(series.cpu).toHaveLength(3);
   });
 });
 
@@ -149,6 +160,9 @@ describe("[TC-PDUI-104] resources", () => {
           memTotalBytes: 30 * 1024 ** 3,
           diskUsedBytes: null,
           diskTotalBytes: null,
+          swapPct: 25,
+          swapUsedBytes: 2 * 1024 ** 3,
+          swapTotalBytes: 8 * 1024 ** 3,
           load1: null,
           uptimeSec: null,
         },
@@ -161,6 +175,34 @@ describe("[TC-PDUI-104] resources", () => {
     expect(resources.memPct).toBe(50);
     expect(resources.memHint).toBe("12Gi/30Gi");
     expect(resources.diskHint).toBe("");
+    expect(resources.swapPct).toBe(25);
+    expect(resources.swapHint).toBe("2.0Gi/8.0Gi");
+  });
+
+  it("hints 0B/0B for a swapless host, which is what separates it from an empty one", () => {
+    const swapless = hostResources(
+      host({
+        resource: {
+          cpuPct: 5,
+          memPct: 50,
+          diskPct: 66,
+          memUsedBytes: null,
+          memTotalBytes: null,
+          diskUsedBytes: null,
+          diskTotalBytes: null,
+          swapPct: 0,
+          swapUsedBytes: 0,
+          swapTotalBytes: 0,
+          load1: null,
+          uptimeSec: null,
+        },
+      }),
+      null,
+    );
+    // Both of these render "0%". Only the hint says which one the machine is.
+    expect(swapless.swapPct).toBe(0);
+    expect(swapless.swapHint).toBe("0B/0B");
+    expect(formatBytes(0)).toBe("0B");
   });
 });
 

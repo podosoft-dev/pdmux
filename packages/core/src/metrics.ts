@@ -10,10 +10,25 @@
 /** At/above this percentage a reading is in the red band. */
 export const HOT_PCT = 80;
 
+/**
+ * Swap turns red earlier than the others, and both directions of that were
+ * measured before the number was picked.
+ *
+ * 80 is too late. The investigation this row exists for found hosts sitting on
+ * 4.2 GB and 5.6 GB of swap while their CPU read 11% — the state a person was
+ * reporting as "the terminal is slow", and one that stays black under an 80%
+ * rule. But a threshold much below this trains people to ignore the number, the
+ * exact failure the agent's own `parseMeminfo` comment records for counting
+ * cache as used: a long-uptime box with swappiness=60 parks idle pages in swap
+ * and rests in the low tens of per cent with nothing wrong. 50 is above that
+ * resting band and below the point where the escape valve is gone.
+ */
+export const SWAP_HOT_PCT = 50;
+
 /** Sparkline user-space box. Width 120 = one unit per 30s sample of an hour. */
 export const SPARK = { w: 120, h: 20 } as const;
 
-export const METRIC_KEYS = ['cpu', 'mem', 'disk'] as const;
+export const METRIC_KEYS = ['cpu', 'mem', 'disk', 'swap'] as const;
 export type MetricKey = (typeof METRIC_KEYS)[number];
 
 /** The fast feed is only trusted while it is this fresh. */
@@ -32,12 +47,12 @@ export interface UsageCell {
  * `null` means the probe could not measure (unreachable or stopped host). A UI
  * renders that as a dash and never as red — and never as 0%, which is a real state.
  */
-export function usageCell(value: unknown): UsageCell {
+export function usageCell(value: unknown, hotPct: number = HOT_PCT): UsageCell {
 	const pct =
 		typeof value === 'number' && Number.isFinite(value)
 			? Math.max(0, Math.min(100, Math.round(value)))
 			: null;
-	return { pct, hot: pct != null && pct >= HOT_PCT };
+	return { pct, hot: pct != null && pct >= hotPct };
 }
 
 export interface MetricsRow {
@@ -45,6 +60,7 @@ export interface MetricsRow {
 	cpuPct?: number | null;
 	memPct?: number | null;
 	diskPct?: number | null;
+	swapPct?: number | null;
 }
 
 export interface MetricsFeed {
@@ -86,10 +102,14 @@ export interface HistoryFeed {
 	hosts: Array<{ id: string } & Partial<Record<MetricKey, Array<number | null>>>>;
 }
 
-const emptySeries = (): HostSeries => ({ cpu: [], mem: [], disk: [] });
+// ⚠ A LITERAL, SO IT DOES NOT FOLLOW METRIC_KEYS BY ITSELF. Adding a key above
+// without adding it here leaves `out[key]` undefined and `historySeries` throws
+// inside a render loop. The two specs in metrics.test.ts that count the keys are
+// what catch it.
+const emptySeries = (): HostSeries => ({ cpu: [], mem: [], disk: [], swap: [] });
 
 /**
- * One host's three series out of the trend ring.
+ * One host's series out of the trend ring.
  *
  * A length mismatch, a junk value or a missing host must yield an empty series
  * rather than invent samples — the arrays are produced by a collector on another

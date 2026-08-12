@@ -45,7 +45,7 @@ agent/
     ├── net/                outbound WebSocket client with jittered backoff
     ├── protocol/           the Go side of the contract — structs, validation, defaults (some generated, §3)
     ├── semver/             a replica of what `packages/protocol/src/semver.ts` does
-    ├── collect/            heartbeat: CPU/memory/disk · sessions · service probes · diagnostics
+    ├── collect/            heartbeat: CPU/memory/swap/disk · sessions · service probes · diagnostics
     ├── usage/              coding-CLI usage — the provider plugin seam
     ├── git/                read-only snapshots · commits · diffs · the detail ledger
     ├── term/               PTY ownership · target resolution · output coalescing and caps

@@ -8,7 +8,7 @@ import { HostMetricSample } from "./host-metric-sample.entity";
 import { MetricsRetentionService } from "./metrics-retention.service";
 import { MetricsService } from "./metrics.service";
 
-function heartbeatAt(ts: number, cpuPct: number): Heartbeat {
+function heartbeatAt(ts: number, cpuPct: number, swap?: Partial<Heartbeat["resource"]>): Heartbeat {
   return {
     ts,
     resource: {
@@ -19,8 +19,12 @@ function heartbeatAt(ts: number, cpuPct: number): Heartbeat {
       memTotalBytes: 30 * 1024 ** 3,
       diskUsedBytes: null,
       diskTotalBytes: null,
+      swapPct: 25,
+      swapUsedBytes: 2 * 1024 ** 3,
+      swapTotalBytes: 8 * 1024 ** 3,
       load1: null,
       uptimeSec: null,
+      ...swap,
     },
     sessions: [],
     usage: [],
@@ -67,6 +71,31 @@ describe("MetricsService", () => {
 
     const latest = await metrics.latest("host-1");
     expect(latest?.memTotalBytes).toBe(30 * 1024 ** 3);
+    expect(latest?.swapTotalBytes).toBe(8 * 1024 ** 3);
+  });
+
+  it("[TC-PDMETRIC-007] stores a swapless host as 0, not as null", async () => {
+    const now = new Date("2026-07-25T10:00:00Z");
+    const base = Math.floor(now.getTime() / 1000);
+    // What every container and every swap-off server sends: measured, and zero.
+    await metrics.recordHeartbeat(
+      "host-1",
+      heartbeatAt(base, 30, { swapPct: 0, swapUsedBytes: 0, swapTotalBytes: 0 }),
+      30,
+    );
+
+    const stored = samples.rows as unknown as HostMetricSample[];
+    // ⚠ "0", NOT null. `clampPct` and `toBigintString` both keep a measured zero
+    // today; a falsy check added to either would silently put this host back in the
+    // "nobody could look" bucket, where an agent older than 0.1.16 already lives.
+    expect(stored[0]?.swapPct).toBe(0);
+    expect(stored[0]?.swapUsedBytes).toBe("0");
+    expect(stored[0]?.swapTotalBytes).toBe("0");
+
+    const latest = await metrics.latest("host-1");
+    expect(latest?.swapTotalBytes).toBe(0);
+    const series = await metrics.series("host-1", { windowSec: 120, stepSec: 30, now });
+    expect(series.swap.at(-1)).toBe(0);
   });
 
   it("[TC-PDMETRIC-004] prunes only the samples past each organization's retention", async () => {

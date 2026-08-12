@@ -1,6 +1,6 @@
 ---
 name: pdmux-operate
-description: Work with a pdmux host through its hosted MCP — read its state, install its agent, and run commands on it. Use when the user mentions pdmux, a registered host, or asks about a machine's CPU/disk/sessions/repos.
+description: Work with a pdmux host through its hosted MCP — read its state, install its agent, and run commands on it. Use when the user mentions pdmux, a registered host, or asks about a machine's CPU/memory/swap/disk/sessions/repos.
 ---
 
 # Working with a pdmux host
@@ -64,7 +64,7 @@ somebody made when they minted it — do not work around it.
 
 ## Reading state
 
-`host_metrics` (CPU/memory/disk history), `host_sessions` (terminal multiplexer
+`host_metrics` (CPU/memory/swap/disk history), `host_sessions` (terminal multiplexer
 sessions), `host_services` (registered ports and their probe status),
 `host_usage` (which coding CLIs run there and how much budget is left),
 `host_repos` (git checkouts, ahead/behind, dirty counts).

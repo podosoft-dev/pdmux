@@ -1,6 +1,6 @@
 package collect
 
-// CPU / memory / disk for one host.
+// CPU / memory / swap / disk for one host.
 //
 // Ported from apps/agent/src/collect/resource.ts, including the two rules that
 // file was written around:
@@ -284,6 +284,131 @@ func ReadMemory(read StatReader) *MemoryReading {
 	return parseMeminfo(text)
 }
 
+// SwapReading is the swap area as `free` describes it.
+//
+// ⚠ A HOST WITH NO SWAP IS A MEASUREMENT, NOT A FAILURE, and that is why Pct is
+// a plain int like its two neighbours rather than a pointer. Every container and
+// every server built with swap off reports `SwapTotal: 0 kB`, and the honest
+// reading of that is "nothing is swapped": 0 used, 0 total, 0 per cent. The
+// tooltip's "0B/0B" is what separates it from a host whose swap merely happens
+// to be empty ("0B/8Gi") — a percentage alone cannot, which is the same argument
+// the absolute bytes were added for in the first place.
+//
+// nil, as everywhere else in this file, stays reserved for "we could not look".
+type SwapReading struct {
+	UsedBytes  int64
+	TotalBytes int64
+	Pct        int
+}
+
+// newSwapReading is the one place 0/0 is decided, so a swapless host answers
+// identically whether the numbers came from /proc/meminfo or from `sysctl
+// vm.swapusage` — and both really do reach it. Measured on macOS 26.5.2 (build
+// 25F84, 2026-08-07): a Mac that has not swapped yet reports `total = 0.00M`
+// with dynamic swap fully enabled, so this is not a Linux-only branch.
+func newSwapReading(total, used int64) *SwapReading {
+	if total < 0 || used < 0 {
+		return nil
+	}
+	if used > total {
+		// A `free` that raced a `swapoff`, or three sysctl figures formatted a
+		// moment apart. Cap rather than refuse: one figure should cost its own
+		// digit, not the whole reading — the same call `df`'s 101% already gets.
+		used = total
+	}
+	reading := &SwapReading{UsedBytes: used, TotalBytes: total}
+	// ⚠ NOT clampPct(NaN), WHICH ALSO HAPPENS TO BE 0. That branch is a totality
+	// guard for a function whose callers check their inputs first; reaching it
+	// with a real 0/0 would be using it as an answer, and the next person to
+	// tighten it would silently change what a swapless host reports.
+	if total > 0 {
+		reading.Pct = clampPct(float64(used) * 100 / float64(total))
+	}
+	return reading
+}
+
+// parseMeminfoSwap reads SwapTotal/SwapFree out of the same /proc/meminfo text
+// `parseMeminfo` reads, in the same `kB` form.
+//
+// USED IS TOTAL MINUS FREE, WITH NO `available` EQUIVALENT, and that asymmetry
+// with the memory figure above is deliberate. MemAvailable exists because page
+// cache counted as used reports 90% on a healthy box; swap has no cache to
+// discount. A page in swap is a page that did not fit.
+//
+// ⚠ THE SWITCH MATCHES THE KEY EXACTLY, WHICH IS WHAT KEEPS `SwapCached` OUT.
+// /proc/meminfo has three keys beginning "Swap" and only two of them size the
+// swap area; a prefix match would fold SwapCached into an accumulator and be
+// wrong by an amount no percentage looks odd enough to catch.
+//
+// nil is "this file did not say", which is NOT what `SwapTotal: 0` says. Modern
+// kernels print the swap lines even with CONFIG_SWAP=n, so an absent SwapTotal
+// means a masked or truncated /proc (lxcfs, gVisor, a sandbox) — and a /proc we
+// could not read must not be reported as a host with swap turned off.
+func parseMeminfoSwap(text string) *SwapReading {
+	var total, free int64
+	haveTotal, haveFree := false, false
+	for _, line := range strings.Split(text, "\n") {
+		key, rest, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+		fields := strings.Fields(rest)
+		// `SwapTotal:  2000000 kB` — anything without the unit is not a size, which
+		// is how the unitless lines in the same file (HugePages_Total: 0) stay out.
+		if len(fields) != 2 || fields[1] != "kB" {
+			continue
+		}
+		kb, err := strconv.ParseInt(fields[0], 10, 64)
+		// `parseMeminfo` gets this from its `total <= 0` guard; here 0 is a legal
+		// total, so a negative one has to be refused explicitly.
+		if err != nil || kb < 0 {
+			continue
+		}
+		switch key {
+		case "SwapTotal":
+			total, haveTotal = kb*1024, true
+		case "SwapFree":
+			free, haveFree = kb*1024, true
+		}
+	}
+	// Half a reading is not a reading: without both, used is not computable and a
+	// zero would claim the host has no swap.
+	if !haveTotal || !haveFree {
+		return nil
+	}
+	return newSwapReading(total, max(0, total-free))
+}
+
+// ReadSwap reads swap from /proc/meminfo, or from `sysctl vm.swapusage` on macOS.
+//
+// ⚠ THE SAME FILE IS READ TWICE PER PASS, ONCE HERE AND ONCE IN ReadMemory, AND
+// THAT IS THE CHEAPER OF THE TWO MISTAKES. One shared read means one reading
+// carrying both, and then a kernel too old for MemAvailable — the case
+// `parseMeminfo` already returns nil for, with its own spec — would drag a
+// perfectly readable SwapTotal down with it. "A failed measurement is nil" is a
+// PER-FIELD rule here, and a second open() of a 1.4 kB pseudo-file is what it
+// costs to keep it one. The pass this sits in already spawns `df`.
+//
+// ⚠ AND THE macOS SOURCE BELONGS TO THE DEFAULT READER, NOT TO THE ERROR PATH —
+// same rule and same reason as ReadMemory next door.
+func ReadSwap(read StatReader) *SwapReading {
+	if read != nil {
+		text, ok := read()
+		if !ok {
+			return nil
+		}
+		return parseMeminfoSwap(text)
+	}
+	text, ok := readTextFile(procMeminfoPath)
+	if !ok {
+		if runtime.GOOS == "darwin" {
+			return readDarwinSwap()
+		}
+		return nil
+	}
+	return parseMeminfoSwap(text)
+}
+
 // DiskReading is the filesystem behind one path.
 type DiskReading struct {
 	UsedBytes  int64
@@ -376,13 +501,17 @@ func ReadUptimeSec() (int64, bool) {
 	return int64(math.Max(0, math.Round(seconds))), true
 }
 
-// ResourceReaders are the four sources one Resource is assembled from. Every
-// field is optional; a nil one is filled in with the host reader.
+// ResourceReaders are the sources one Resource is assembled from. Every field is
+// optional; a nil one is filled in with the host reader.
 type ResourceReaders struct {
 	// CPU is stateful (it remembers the previous /proc/stat), so it is owned by
 	// the caller and lives across passes.
-	CPU       *CPUMeter
-	Memory    func() *MemoryReading
+	CPU    *CPUMeter
+	Memory func() *MemoryReading
+	// Swap is its own seam rather than a field of the memory reading, so that a
+	// meminfo whose MemAvailable is missing loses memory and keeps swap. See
+	// ReadSwap for the second read this costs and why it is worth paying.
+	Swap      func() *SwapReading
 	Disk      func(ctx context.Context) *DiskReading
 	Load      LoadReader
 	UptimeSec func() (int64, bool)
@@ -408,6 +537,21 @@ func Resource(ctx context.Context, readers ResourceReaders) protocol.Resource {
 		out.MemPct = ptr(memory.Pct)
 		out.MemUsedBytes = ptr(float64(memory.UsedBytes))
 		out.MemTotalBytes = ptr(float64(memory.TotalBytes))
+	}
+
+	readSwap := readers.Swap
+	if readSwap == nil {
+		readSwap = func() *SwapReading { return ReadSwap(nil) }
+	}
+	if swap := readSwap(); swap != nil {
+		// ⚠ ALL THREE TRAVEL TOGETHER, AND THE PAIRING IS THE SIGNAL. Total 0 with
+		// pct 0 is "this host has no swap" — measured. All three absent is "we could
+		// not look", which is also what an agent too old to know the word swap
+		// produces. Emitting the first as the second would make upgrading such an
+		// agent look like it changed nothing.
+		out.SwapPct = ptr(swap.Pct)
+		out.SwapUsedBytes = ptr(float64(swap.UsedBytes))
+		out.SwapTotalBytes = ptr(float64(swap.TotalBytes))
 	}
 
 	readDisk := readers.Disk

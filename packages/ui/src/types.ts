@@ -38,9 +38,16 @@ export interface HostResources {
 	cpuPct?: number | null;
 	memPct?: number | null;
 	diskPct?: number | null;
+	swapPct?: number | null;
 	/** Absolute detail for a tooltip, e.g. "12Gi/30Gi" — a percentage cannot say it. */
 	memHint?: string;
 	diskHint?: string;
+	/**
+	 * ⚠ THE ONLY THING THAT SEPARATES "NO SWAP" FROM "SWAP IS EMPTY". Both report
+	 * 0%, and they are different facts about the machine: "0B/0B" has nowhere to
+	 * swap to, "0B/8Gi" has somewhere and has not needed it.
+	 */
+	swapHint?: string;
 }
 
 /** A key/value line in the card settings popover (address, ssh command, …). */

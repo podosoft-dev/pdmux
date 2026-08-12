@@ -207,6 +207,33 @@ describe('[TC-PDPROTO-007] the contract evolves additively', () => {
 		]);
 	});
 
+	it('[TC-PDPROTO-014] carries swap without requiring an agent to know about it', () => {
+		// An agent older than 0.1.16 sends a resource with no swap keys at all. It has
+		// to keep parsing, and the three keys have to default to null — not 0, which
+		// would put a fleet of unanswered hosts on screen as healthy swapless ones.
+		const old = heartbeatSchema.parse({
+			ts: 1,
+			resource: { cpuPct: 11, memPct: 40, diskPct: 50 },
+		});
+		expect(old.resource.swapPct).toBeNull();
+		expect(old.resource.swapUsedBytes).toBeNull();
+		expect(old.resource.swapTotalBytes).toBeNull();
+
+		// And the frame a swapless host sends has to survive intact: a measured 0 is
+		// the whole point, so `swapTotalBytes` may not be `.positive()`.
+		const swapless = heartbeatSchema.parse({
+			ts: 1,
+			resource: { swapPct: 0, swapUsedBytes: 0, swapTotalBytes: 0 },
+		});
+		expect(swapless.resource.swapPct).toBe(0);
+		expect(swapless.resource.swapTotalBytes).toBe(0);
+
+		// Percentages stay integers 0..100, like their three neighbours.
+		expect(() => heartbeatSchema.parse({ ts: 1, resource: { swapPct: 140 } })).toThrow();
+		expect(() => heartbeatSchema.parse({ ts: 1, resource: { swapPct: 42.5 } })).toThrow();
+		expect(() => heartbeatSchema.parse({ ts: 1, resource: { swapTotalBytes: -1 } })).toThrow();
+	});
+
 	it('[TC-PDPROTO-007] pins the version and the paths both sides dial', () => {
 		expect(PROTOCOL_VERSION).toBe(1);
 		expect(AGENT_WS_PATH).toBe('/agent/ws');

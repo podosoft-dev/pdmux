@@ -102,7 +102,7 @@ The scrolling column of host cards.
 |---|---|---|
 | `host` | `{ id, name, state?: 'online'\|'offline'\|'unknown' }` | a badge appears only for `offline`/`unknown` |
 | `agents` | `AgentRow[]` (core `agentRows()`) | the agent widget |
-| `resources` | `{ cpuPct, memPct, diskPct, memHint?, diskHint? }` | the three resource rows |
+| `resources` | `{ cpuPct, memPct, diskPct, swapPct, memHint?, diskHint?, swapHint? }` | the four resource rows (swap sits under memory) |
 | `history` | `HostSeries` (core `historySeries()`) | trends |
 | `services` | `ServiceOption[]` (core `serviceOptions()`) | shortcuts |
 | `prefs` | `CardPrefs` (core `cardPrefs()`) | which widgets are shown |

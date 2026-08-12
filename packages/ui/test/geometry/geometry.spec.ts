@@ -504,6 +504,63 @@ test.describe('pdmux ui geometry', () => {
 		}
 	});
 
+	test('[TC-PDUI-211] every metric label fits its column and leaves the sparkline room', async ({ page }) => {
+		/**
+		 * `.pdmux-metric-label` is a fixed box with `flex: none` and NO overflow rule,
+		 * inside a `white-space: nowrap` parent — so a label too wide for it does not
+		 * ellipsise, it draws straight over the percentage next to it. Adding SWAP put
+		 * a capital W where the widest previous label had an I, and this package
+		 * declares no `font-family`, so the answer depends on whatever the consuming
+		 * app supplies. That is exactly the kind of thing that must be measured rather
+		 * than reasoned about.
+		 */
+		const cards = await page.evaluate(() =>
+			[...document.querySelectorAll('.pdmux-widget[data-pdmux-widget="resources"]')].map((widget) =>
+				[...widget.querySelectorAll('.pdmux-row')].map((row) => {
+					const label = row.querySelector('.pdmux-metric-label') as HTMLElement;
+					const value = row.querySelector('.pdmux-metric-value') as HTMLElement;
+					const spark = row.querySelector('svg.pdmux-spark');
+					// ⚠ MEASURED WITH A Range, NOT WITH scrollWidth. scrollWidth is an
+					// integer, so a 34.22px label in a 34px box reports 34 and reads as a
+					// fit — which is exactly what SWAP did, and what let it spend the row's
+					// gap unnoticed. A Range gives the true sub-pixel text width.
+					const range = document.createRange();
+					range.selectNodeContents(label);
+					return {
+						text: (label.textContent ?? '').trim(),
+						textWidth: range.getBoundingClientRect().width,
+						boxWidth: label.clientWidth,
+						// The label must not reach into the value's box either.
+						overlaps: label.getBoundingClientRect().right > value.getBoundingClientRect().left + 0.5,
+						sparkWidth: spark ? spark.getBoundingClientRect().width : 0,
+					};
+				}),
+			),
+		);
+
+		expect(cards.length, 'no resource widgets rendered, so this proves nothing').toBeGreaterThan(0);
+		for (const rows of cards) {
+			expect(rows.map((r) => r.text)).toEqual(['CPU', 'MEM', 'SWAP', 'DISK']);
+			for (const row of rows) {
+				expect(
+					row.textWidth,
+					`"${row.text}" is ${row.textWidth.toFixed(2)}px in a ${row.boxWidth}px column`,
+				).toBeLessThanOrEqual(row.boxWidth);
+				expect(row.overlaps, `"${row.text}" is drawing over its own percentage`).toBe(false);
+			}
+			// The harness gives CPU and SWAP history and gives MEM and DISK none, so a
+			// sparkline on exactly those two is also the proof that `history[key]` reaches
+			// the new key — a swap row wired to nothing would look identical otherwise.
+			const drawn = rows.filter((r) => r.sparkWidth > 0).map((r) => r.text);
+			expect(drawn).toEqual(['CPU', 'SWAP']);
+			for (const row of rows.filter((r) => r.sparkWidth > 0)) {
+				// A widened label steals from the sparkline, which is `flex: 1 1 0` inside a
+				// 300px sidebar — squeezing it to nothing is the other way to break this row.
+				expect(row.sparkWidth, `"${row.text}" left the sparkline no room`).toBeGreaterThan(40);
+			}
+		}
+	});
+
 	test('[TC-PDUI-177] every card states its reachability without relying on colour', async ({ page }) => {
 		// The busy/idle chip was dropped, but the stopped/unknown one was deliberately kept:
 		// "without it a card whose every value is a dash looks broken instead of switched

@@ -59,6 +59,13 @@ export class MetricsService {
         memTotalBytes: toBigintString(resource.memTotalBytes),
         diskUsedBytes: toBigintString(resource.diskUsedBytes),
         diskTotalBytes: toBigintString(resource.diskTotalBytes),
+        // ⚠ A MEASURED 0 MUST SURVIVE AS 0, NOT BECOME null. Both helpers already
+        // do that (`clampPct(0)` is 0, `toBigintString(0)` is "0") — but a future
+        // falsy check in either one would silently turn every swapless host back
+        // into an unanswered one, which is the whole distinction these three carry.
+        swapPct: clampPct(resource.swapPct),
+        swapUsedBytes: toBigintString(resource.swapUsedBytes),
+        swapTotalBytes: toBigintString(resource.swapTotalBytes),
       }),
     );
     this.lastSampleAt.set(hostId, ts);
@@ -85,6 +92,8 @@ export class MetricsService {
     memTotalBytes: number | null;
     diskUsedBytes: number | null;
     diskTotalBytes: number | null;
+    swapUsedBytes: number | null;
+    swapTotalBytes: number | null;
   } | null> {
     const row = await this.samples.findOne({ where: { hostId }, order: { ts: "DESC" } });
     if (!row) return null;
@@ -94,6 +103,8 @@ export class MetricsService {
       memTotalBytes: toNumber(row.memTotalBytes),
       diskUsedBytes: toNumber(row.diskUsedBytes),
       diskTotalBytes: toNumber(row.diskTotalBytes),
+      swapUsedBytes: toNumber(row.swapUsedBytes),
+      swapTotalBytes: toNumber(row.swapTotalBytes),
     };
   }
 

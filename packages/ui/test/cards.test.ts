@@ -335,6 +335,58 @@ describe('[TC-PDUI-003] a resource row is a dash when unmeasured and red at the 
 	});
 });
 
+describe('[TC-PDUI-212] the card carries swap beside memory, and 0% is a reading', () => {
+	const cardWith = (resources: Record<string, unknown>) =>
+		render(HostCard, {
+			props: {
+				host: { id: 'h1', name: 'alpha', state: 'online' },
+				agents: AGENTS,
+				resources,
+				services: SERVICES,
+				now: NOW / 1000,
+			},
+		});
+
+	it('draws four rows, with swap under memory', () => {
+		const { container } = cardWith({ cpuPct: 91, memPct: 47, diskPct: 66, swapPct: 62 });
+		const rows = [...container.querySelectorAll('[data-pdmux-widget="resources"] .pdmux-row')];
+		// The order is the point: swap is memory pressure, so it answers the question
+		// the line above it just raised. Disk is a different question and comes after.
+		expect(rows.map((r) => r.getAttribute('data-pdmux-metric'))).toEqual(['CPU', 'MEM', 'SWAP', 'DISK']);
+	});
+
+	it('turns swap red at its own threshold, well below the other three', () => {
+		const { container } = cardWith({ cpuPct: 62, memPct: 62, diskPct: 62, swapPct: 62 });
+		const hot = [...container.querySelectorAll('[data-pdmux-widget="resources"] .pdmux-row')]
+			.filter((r) => r.querySelector('.pdmux-metric-value')?.classList.contains('pdmux-hot'))
+			.map((r) => r.getAttribute('data-pdmux-metric'));
+		// 62% is comfortable for cpu/mem/disk and is the state that had a person
+		// reporting "the terminal is slow" while the dashboard showed nothing wrong.
+		expect(hot).toEqual(['SWAP']);
+	});
+
+	it('reads a swapless host as 0%, not as a dash, and says so in the hint', () => {
+		const { container } = cardWith({ swapPct: 0, swapHint: '0B/0B' });
+		const row = container.querySelector('[data-pdmux-metric="SWAP"]');
+		const value = row?.querySelector('.pdmux-metric-value');
+		// The host answered: there is nowhere to swap to, so nothing is swapped. A dash
+		// would claim nobody looked — which is what an agent too old to send the field
+		// legitimately produces, and the two must not render the same.
+		expect(value?.textContent).toBe('0%');
+		expect(value?.classList.contains('pdmux-hot')).toBe(false);
+		// "0B/0B" against "0B/8Gi" is the only thing separating "no swap" from
+		// "swap exists and is empty" — both of which show 0%.
+		expect(row?.getAttribute('title')).toBe('0B/0B');
+	});
+
+	it('still draws a dash when nobody could measure swap', () => {
+		const { container } = cardWith({ cpuPct: 91 });
+		const value = container.querySelector('[data-pdmux-metric="SWAP"] .pdmux-metric-value');
+		expect(value?.textContent).toBe('—');
+		expect(value?.classList.contains('pdmux-hot')).toBe(false);
+	});
+});
+
 describe('[TC-PDUI-004] the launcher opens the selected service', () => {
 	it('preselects the first live service and reports the URL through a callback', async () => {
 		const onOpen = vi.fn();

@@ -816,6 +816,9 @@ func (x *Resource) applyDefaults() {
 	x.MemPct = nil
 	x.MemTotalBytes = nil
 	x.MemUsedBytes = nil
+	x.SwapPct = nil
+	x.SwapTotalBytes = nil
+	x.SwapUsedBytes = nil
 	x.UptimeSec = nil
 }
 

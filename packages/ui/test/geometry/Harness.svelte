@@ -46,7 +46,16 @@
 	const history = historySeries(
 		{
 			t: Array.from({ length: 40 }, (_, i) => seconds - (39 - i) * 30),
-			hosts: [{ id: 'h1', cpu: Array.from({ length: 40 }, (_, i) => (i * 7) % 100) }],
+			hosts: [
+				{
+					id: 'h1',
+					cpu: Array.from({ length: 40 }, (_, i) => (i * 7) % 100),
+					// Swap carries history too, so the fourth row draws a real sparkline and
+					// the label-column probe measures a row in its full shape rather than one
+					// whose right-hand side happens to be empty.
+					swap: Array.from({ length: 40 }, (_, i) => (i * 3) % 100),
+				},
+			],
 		},
 		'h1',
 	);
@@ -70,7 +79,17 @@
 			['claude', 'codex'],
 			NOW,
 		),
-		resources: { cpuPct: 91, memPct: 47, diskPct: 66 },
+		// SWAP is the widest of the four labels (a capital W against DISK's I), so it
+		// is what the label-column probe is really measuring.
+		//
+		// The two cards carry the two swap states on purpose: one host under real
+		// pressure (past SWAP_HOT_PCT, so the row is red) and one with swap turned off,
+		// which reports a measured 0/0 rather than a dash. The swapless one is the
+		// shape most of a real fleet has and the one easiest to regress into a dash.
+		resources:
+			host.id === 'h2'
+				? { cpuPct: 34, memPct: 52, diskPct: 66, swapPct: 0, swapHint: '0B/0B' }
+				: { cpuPct: 91, memPct: 47, diskPct: 66, swapPct: 62, swapHint: '5.0Gi/8.0Gi' },
 		history,
 		services: serviceOptions([{ id: 'web', label: 'web', url: 'https://web.test', status: 'up' as const }]),
 		prefs: cardPrefs({}, host.id),

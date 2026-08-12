@@ -119,9 +119,18 @@ server → agent : welcome | config | terminal | ping | collect | commitDetail |
 Carries resources, sessions, agent usage and service probes in one frame.
 
 - Percentages are **integers 0–100**. The UI needs no more resolution than that.
-- **Absolute bytes travel alongside** (`memUsedBytes`/`memTotalBytes`, same for disk) — the
-  tooltip's `12Gi/30Gi` cannot be produced from a percentage.
+- **Absolute bytes travel alongside** (`memUsedBytes`/`memTotalBytes`, same for disk and swap)
+  — the tooltip's `12Gi/30Gi` cannot be produced from a percentage.
 - A failed measurement is **`null`**. Substituting `0` makes it look like "healthy but idle".
+- ⚠ **Swap has a third state the other two do not, and it is not an exception to the rule
+  above.** A host with swap turned off — every container, every server built without it —
+  reports `SwapTotal: 0`, and that is a **successful measurement**: nothing is swapped
+  because there is nowhere to swap to. So it sends `swapPct: 0` with `swapUsedBytes: 0` and
+  `swapTotalBytes: 0`, while all three `null` keeps meaning what it means everywhere else:
+  nobody could look — which is also what an agent older than `0.1.16` produces, since the
+  keys default to `null`. The two must stay distinguishable, or upgrading such an agent
+  appears to change nothing. On the card both read `0%` and the byte hint separates them:
+  `0B/0B` has nowhere to swap to, `0B/8Gi` has somewhere and has not needed it.
 - With no multiplexer, the session list is an **empty array**, not an error.
 
 ### Usage windows

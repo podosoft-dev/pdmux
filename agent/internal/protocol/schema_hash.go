@@ -16,7 +16,7 @@ package protocol
 
 const (
 	// SchemaSHA256 is sha256 of packages/protocol/schema/protocol.schema.json.
-	SchemaSHA256 = "d57aa12f371f3344175dc2cb5059b21d02e9593c8a6a7aeebdfff3d58e6547cd"
+	SchemaSHA256 = "66a333d2be524120df1d4d284eef23512cc07887dff928894e35231658131889"
 	// ConstantsSHA256 is sha256 of packages/protocol/schema/constants.json.
 	ConstantsSHA256 = "08c0e2e885865abe19f27dd2f3ed1a870f1a613cb6ec21318fc076efcc13e4b5"
 )

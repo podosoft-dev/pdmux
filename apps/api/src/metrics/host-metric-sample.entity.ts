@@ -31,6 +31,14 @@ export class HostMetricSample {
   @Column({ type: "smallint", nullable: true })
   diskPct!: number | null;
 
+  /**
+   * ⚠ 0 ON A HOST WITH SWAP TURNED OFF, null ONLY WHEN NOBODY COULD LOOK. The
+   * byte columns below carry the difference: 0/0 is swapless, null/null is
+   * unanswered — which is also every row written before this column existed.
+   */
+  @Column({ type: "smallint", nullable: true })
+  swapPct!: number | null;
+
   // Absolute bytes travel with the percentages: a tooltip wants "12Gi/30Gi" and a
   // percentage alone cannot produce it. bigint columns come back as strings from
   // pg, so the read path converts them once, at the edge.
@@ -45,4 +53,10 @@ export class HostMetricSample {
 
   @Column({ type: "bigint", nullable: true })
   diskTotalBytes!: string | null;
+
+  @Column({ type: "bigint", nullable: true })
+  swapUsedBytes!: string | null;
+
+  @Column({ type: "bigint", nullable: true })
+  swapTotalBytes!: string | null;
 }

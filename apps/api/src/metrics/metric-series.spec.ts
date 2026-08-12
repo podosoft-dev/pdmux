@@ -42,9 +42,9 @@ describe("[TC-PDMETRIC-003] series construction", () => {
   it("lays samples on a time grid whose right edge is now", () => {
     const series = buildSeries(
       [
-        { ts: at(-60), cpuPct: 10, memPct: 40, diskPct: 50 },
-        { ts: at(-30), cpuPct: 20, memPct: 41, diskPct: 50 },
-        { ts: at(0), cpuPct: 30, memPct: 42, diskPct: 50 },
+        { ts: at(-60), cpuPct: 10, memPct: 40, diskPct: 50 , swapPct: 5 },
+        { ts: at(-30), cpuPct: 20, memPct: 41, diskPct: 50 , swapPct: 6 },
+        { ts: at(0), cpuPct: 30, memPct: 42, diskPct: 50 , swapPct: 7 },
       ],
       { now, windowSec: 120, stepSec: 30 },
     );
@@ -59,9 +59,9 @@ describe("[TC-PDMETRIC-003] series construction", () => {
   it("leaves a gap null so the graph can break the line", () => {
     const series = buildSeries(
       [
-        { ts: at(-120), cpuPct: 10, memPct: null, diskPct: null },
+        { ts: at(-120), cpuPct: 10, memPct: null, diskPct: null , swapPct: null },
         // Nothing measured for two steps — the collector could not reach the host.
-        { ts: at(0), cpuPct: 30, memPct: null, diskPct: null },
+        { ts: at(0), cpuPct: 30, memPct: null, diskPct: null , swapPct: null },
       ],
       { now, windowSec: 120, stepSec: 30 },
     );
@@ -70,12 +70,46 @@ describe("[TC-PDMETRIC-003] series construction", () => {
   });
 
   it("ignores samples outside the window", () => {
-    const series = buildSeries([{ ts: at(-3600), cpuPct: 99, memPct: null, diskPct: null }], {
+    const series = buildSeries([{ ts: at(-3600), cpuPct: 99, memPct: null, diskPct: null , swapPct: null }], {
       now,
       windowSec: 120,
       stepSec: 30,
     });
     expect(series.cpu.every((value) => value === null)).toBe(true);
+  });
+});
+
+describe("[TC-PDMETRIC-007] swap is stored and served as its own series", () => {
+  const now = new Date("2026-07-25T10:00:00Z");
+  const at = (offsetSec: number): Date => new Date(now.getTime() + offsetSec * 1000);
+
+  it("lays swap on the same grid and breaks its line at a gap", () => {
+    const series = buildSeries(
+      [
+        { ts: at(-60), cpuPct: 10, memPct: 40, diskPct: 50, swapPct: 12 },
+        // Swap unmeasured for one step while the other metrics answered — the agent
+        // reads them through separate seams, so one failing must not fill the other in.
+        { ts: at(-30), cpuPct: 20, memPct: 41, diskPct: 50, swapPct: null },
+        { ts: at(0), cpuPct: 30, memPct: 42, diskPct: 50, swapPct: 14 },
+      ],
+      { now, windowSec: 120, stepSec: 30 },
+    );
+
+    expect(series.swap).toEqual([null, null, 12, null, 14]);
+    expect(series.swap).toHaveLength(series.t.length);
+  });
+
+  it("keeps a measured 0 as 0 rather than folding it into null", () => {
+    // A swapless host reports a real 0. Turning it into null here would put it back
+    // in the same bucket as "nobody could look", which is the one distinction the
+    // whole swap column exists to carry.
+    const series = buildSeries([{ ts: at(0), cpuPct: 30, memPct: 42, diskPct: 50, swapPct: 0 }], {
+      now,
+      windowSec: 120,
+      stepSec: 30,
+    });
+    expect(series.swap.at(-1)).toBe(0);
+    expect(clampPct(0)).toBe(0);
   });
 });
 

@@ -10,6 +10,7 @@ export interface MetricPoint {
   cpuPct: number | null;
   memPct: number | null;
   diskPct: number | null;
+  swapPct: number | null;
 }
 
 /** Aligned arrays instead of an array of objects: this is what a sparkline reads,
@@ -20,6 +21,7 @@ export interface MetricSeries {
   cpu: (number | null)[];
   mem: (number | null)[];
   disk: (number | null)[];
+  swap: (number | null)[];
   step: number;
   window: number;
 }
@@ -69,6 +71,9 @@ export function buildSeries(
   const cpu: (number | null)[] = new Array<number | null>(count).fill(null);
   const mem: (number | null)[] = new Array<number | null>(count).fill(null);
   const disk: (number | null)[] = new Array<number | null>(count).fill(null);
+  // Parallel arrays rather than a keyed record: these names are the wire shape the
+  // sparkline reads positionally, so folding them into a loop would change the API.
+  const swap: (number | null)[] = new Array<number | null>(count).fill(null);
 
   for (const sample of samples) {
     const sec = Math.floor(sample.ts.getTime() / 1000);
@@ -79,9 +84,10 @@ export function buildSeries(
     cpu[index] = clampPct(sample.cpuPct);
     mem[index] = clampPct(sample.memPct);
     disk[index] = clampPct(sample.diskPct);
+    swap[index] = clampPct(sample.swapPct);
   }
 
-  return { t, cpu, mem, disk, step, window: windowSec };
+  return { t, cpu, mem, disk, swap, step, window: windowSec };
 }
 
 /** Cutoff for the retention job. Separated so the arithmetic is testable. */

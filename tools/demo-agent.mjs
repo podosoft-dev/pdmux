@@ -38,6 +38,9 @@ const PROFILES = {
 		cpu: [58, 96],
 		mem: [61, 74],
 		disk: 47,
+		// A build box that is comfortable: swap exists and is barely touched.
+		swap: [4, 9],
+		swapTotal: 8 * 1024 ** 3,
 		memTotal: 32 * 1024 ** 3,
 		diskTotal: 512 * 1024 ** 3,
 		sessions: [
@@ -66,6 +69,11 @@ const PROFILES = {
 		cpu: [3, 11],
 		mem: [38, 44],
 		disk: 71,
+		// ⚠ NO SWAP AT ALL, which is the ordinary container/database-box shape and the
+		// one state the swap row is easiest to get wrong. It must draw "0%" with a
+		// "0B/0B" hint, never a dash — so the demo fleet has to contain one.
+		swap: [0, 0],
+		swapTotal: 0,
 		memTotal: 16 * 1024 ** 3,
 		diskTotal: 1024 * 1024 ** 3,
 		sessions: [{ name: 'main', attached: 0, windows: 1 }],
@@ -87,6 +95,10 @@ const PROFILES = {
 		cpu: [12, 38],
 		mem: [55, 68],
 		disk: 63,
+		// Under real memory pressure: past SWAP_HOT_PCT, so this card shows the red
+		// the row was added for.
+		swap: [58, 74],
+		swapTotal: 8 * 1024 ** 3,
 		memTotal: 24 * 1024 ** 3,
 		diskTotal: 994 * 1024 ** 3,
 		sessions: [
@@ -207,6 +219,11 @@ const heartbeat = () => ({
 			memUsedBytes: Math.round((profile.memTotal * between(profile.mem)) / 100),
 			diskTotalBytes: profile.diskTotal,
 			diskUsedBytes: Math.round((profile.diskTotal * profile.disk) / 100),
+			// A swapless profile sends a measured 0/0, not nulls: nulls are what an
+			// agent too old to know the field sends, and the card must tell them apart.
+			swapPct: between(profile.swap),
+			swapTotalBytes: profile.swapTotal,
+			swapUsedBytes: Math.round((profile.swapTotal * between(profile.swap)) / 100),
 			load1: Number((between(profile.cpu) / 25).toFixed(2)),
 			uptimeSec: 86_400 * 12 + 3_600,
 		},

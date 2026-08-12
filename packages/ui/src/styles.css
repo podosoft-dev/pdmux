@@ -825,9 +825,17 @@
 	text-align: right;
 }
 
+/* 34px fitted CPU/MEM/DISK and SWAP does not: measured 34.22px against a 34px box
+   (headless Chromium, dpr 2, 12px/18px system-ui, 2026-08-07). The box does not grow
+   — `flex: none` — so the overflow spent the row's 5px gap rather than moving the
+   sparkline, which is why nothing looked wrong and why `scrollWidth` missed it: it
+   rounds to an integer, so 34.22 in 34 reads as a fit. 38px puts ~4px back under the
+   widest label. The sparkline is `flex: 1 1 0` and simply gives up the 4px.
+   ⚠ THE LABEL AND VALUE WIDTHS ARE NOT THE SAME NUMBER any more, and should not be
+   made one: the value holds at most "100%" and has its own headroom. */
 .pdmux-metric-label {
 	flex: none;
-	width: 34px;
+	width: 38px;
 }
 
 .pdmux-metric-value {

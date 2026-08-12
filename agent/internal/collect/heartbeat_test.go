@@ -24,6 +24,7 @@ func quietReaders() ResourceReaders {
 			CoreCount: 1,
 		}),
 		Memory:    func() *MemoryReading { return nil },
+		Swap:      func() *SwapReading { return nil },
 		Disk:      func(context.Context) *DiskReading { return nil },
 		Load:      func() (float64, bool) { return 0, false },
 		UptimeSec: func() (int64, bool) { return 0, false },
@@ -155,7 +156,11 @@ func TestHeartbeat(t *testing.T) {
 			t.Fatalf("unmarshalling the frame: %v", err)
 		}
 		resource, _ := decoded["heartbeat"].(map[string]any)["resource"].(map[string]any)
-		for _, key := range []string{"cpuPct", "memPct", "diskPct", "load1", "uptimeSec"} {
+		for _, key := range []string{
+			"cpuPct", "memPct", "diskPct",
+			"swapPct", "swapUsedBytes", "swapTotalBytes",
+			"load1", "uptimeSec",
+		} {
 			value, present := resource[key]
 			if !present || value != nil {
 				t.Fatalf("resource.%s = %v, want an explicit null", key, value)

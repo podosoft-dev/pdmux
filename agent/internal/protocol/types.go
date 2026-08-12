@@ -242,6 +242,11 @@ type Listener struct {
 // Every field is a pointer because every one of them can fail to be measured,
 // and `null` is the only honest way to say so. The byte and load fields are
 // `number` (not `int`) in the contract, hence float64.
+//
+// ⚠ THE SWAP FIELDS HAVE A THIRD STATE THE OTHERS DO NOT. A host with swap
+// turned off measures perfectly — total 0, used 0 — so its byte fields are set
+// and only the percentage is a judgement call. See collect.SwapReading for which
+// way that call goes and why.
 type Resource struct {
 	CPUPct         *int     `json:"cpuPct"`
 	MemPct         *int     `json:"memPct"`
@@ -250,6 +255,9 @@ type Resource struct {
 	MemTotalBytes  *float64 `json:"memTotalBytes"`
 	DiskUsedBytes  *float64 `json:"diskUsedBytes"`
 	DiskTotalBytes *float64 `json:"diskTotalBytes"`
+	SwapPct        *int     `json:"swapPct"`
+	SwapUsedBytes  *float64 `json:"swapUsedBytes"`
+	SwapTotalBytes *float64 `json:"swapTotalBytes"`
 	Load1          *float64 `json:"load1"`
 	UptimeSec      *int64   `json:"uptimeSec"`
 }

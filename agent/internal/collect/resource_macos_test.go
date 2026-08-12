@@ -119,6 +119,75 @@ func TestDarwinMemory(t *testing.T) {
 	})
 }
 
+// `sysctl -n vm.swapusage` on a Mac that has swapped: 3072 MiB total,
+// 1234.5 MiB used -> 40.19%, which rounds to 40.
+const swapusageFixture = "total = 3072.00M  used = 1234.50M  free = 1837.50M  (encrypted)\n"
+
+// The same command on a Mac that has NOT swapped yet — captured verbatim from
+// this machine, macOS 26.5.2 (build 25F84), 2026-08-07. Dynamic swap is fully
+// enabled here and the reported total is still 0.00M, which is why the swapless
+// branch is not a Linux special case: both platforms reach the same constructor.
+const swapusageIdleFixture = "total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)\n"
+
+func TestParseSysctlSwapusage(t *testing.T) {
+	t.Run("[TC-PDAGENT-126] converts the M suffix to bytes", func(t *testing.T) {
+		reading := parseSysctlSwapusage(swapusageFixture)
+		if reading == nil {
+			t.Fatal("swapusage did not parse")
+		}
+		// MiB, not megabytes: sysctl divides by 1024*1024. Reading these as bare
+		// numbers would be six orders of magnitude out and still look plausible.
+		if reading.TotalBytes != 3_221_225_472 || reading.UsedBytes != 1_294_467_072 || reading.Pct != 40 {
+			t.Fatalf("reading = %+v, want used 1294467072 / total 3221225472 / 40%%", *reading)
+		}
+	})
+
+	t.Run("[TC-PDAGENT-126] a Mac that has not swapped yet reports 0/0 and 0%", func(t *testing.T) {
+		reading := parseSysctlSwapusage(swapusageIdleFixture)
+		if reading == nil {
+			t.Fatal("reading = nil, want a measured 0/0 — the host was asked and answered")
+		}
+		if reading.TotalBytes != 0 || reading.UsedBytes != 0 || reading.Pct != 0 {
+			t.Fatalf("reading = %+v, want 0/0 at 0%%", *reading)
+		}
+	})
+
+	t.Run("[TC-PDAGENT-126] refuses swapusage it cannot read", func(t *testing.T) {
+		for name, text := range map[string]string{
+			"empty":           "",
+			"sysctl error":    "sysctl: unknown oid 'vm.swapusage'\n",
+			"no figure":       "total = M  used = 0.00M\n",
+			"unknown suffix":  "total = 3072.00X  used = 0.00M\n",
+			"no suffix":       "total = 3072.00  used = 0.00M\n",
+			"used is missing": "total = 3072.00M\n",
+			"not a number":    "total = nope  used = 0.00M\n",
+		} {
+			// The suffix rows carry this test: reading `3072.00G` as 3072 bytes is a
+			// factor of 10^9 that arrives on screen as a plausible small figure.
+			if got := parseSysctlSwapusage(text); got != nil {
+				t.Fatalf("%s: parsed %+v, want nil", name, *got)
+			}
+		}
+	})
+
+	t.Run("[TC-PDAGENT-126] caps used at total rather than losing the reading", func(t *testing.T) {
+		// Asserted on UsedBytes, NOT on Pct: clampPct caps 200 at 100 by itself and
+		// would hide an uncapped byte count that renders as "2Gi/1Gi".
+		reading := parseSysctlSwapusage("total = 1024.00M  used = 2048.00M  free = 0.00M\n")
+		if reading == nil || reading.UsedBytes != reading.TotalBytes {
+			t.Fatalf("reading = %+v, want used capped at total", reading)
+		}
+	})
+
+	t.Run("[TC-PDAGENT-126] tolerates the prefix sysctl prints without -n", func(t *testing.T) {
+		withPrefix := parseSysctlSwapusage("vm.swapusage: " + swapusageFixture)
+		bare := parseSysctlSwapusage(swapusageFixture)
+		if withPrefix == nil || bare == nil || *withPrefix != *bare {
+			t.Fatalf("prefixed %v != bare %v", withPrefix, bare)
+		}
+	})
+}
+
 func TestReadDarwinUptimeSec(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("shells out to sysctl(8)")
@@ -180,6 +249,23 @@ func TestDarwinHostReadings(t *testing.T) {
 		uptime, ok := ReadUptimeSec()
 		if !ok || uptime <= 0 {
 			t.Fatalf("uptime = %v, %v; want a real uptime", uptime, ok)
+		}
+	})
+
+	t.Run("[TC-PDAGENT-126] swap answers on a host with no /proc", func(t *testing.T) {
+		// ⚠ THE ONLY SPEC THAT PROVES THE TOOL IS CALLED AT ALL. Everything in
+		// TestParseSysctlSwapusage feeds hand-written text to a parser and stays
+		// green if the oid is misspelled, the `-n` is dropped, or readDarwinSwap is
+		// never reached. It skips on Linux CI, so green there is not evidence.
+		swap := ReadSwap(nil)
+		if swap == nil {
+			t.Fatal("swap not measured on a host whose vm.swapusage is readable")
+		}
+		if swap.UsedBytes > swap.TotalBytes {
+			t.Fatalf("swap = %+v; used cannot exceed total", *swap)
+		}
+		if swap.Pct < 0 || swap.Pct > 100 {
+			t.Fatalf("swap pct = %d; want 0..100", swap.Pct)
 		}
 	})
 

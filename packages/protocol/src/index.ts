@@ -132,6 +132,17 @@ export const resourceSchema = z.object({
 	memTotalBytes: z.number().nonnegative().nullable().default(null),
 	diskUsedBytes: z.number().nonnegative().nullable().default(null),
 	diskTotalBytes: z.number().nonnegative().nullable().default(null),
+	/**
+	 * Swap. ⚠ `swapTotalBytes: 0` IS A MEASUREMENT, NOT A FAILURE — it says "this
+	 * host has no swap", which is the ordinary state of a container and of a
+	 * server built with swap off. All three null is the other fact: nobody could
+	 * look, which is also what an agent too old to know the word `swap` produces.
+	 * Collapsing the first into the second would make upgrading such an agent
+	 * appear to change nothing.
+	 */
+	swapPct: percent.nullable().default(null),
+	swapUsedBytes: z.number().nonnegative().nullable().default(null),
+	swapTotalBytes: z.number().nonnegative().nullable().default(null),
 	load1: z.number().nonnegative().nullable().default(null),
 	uptimeSec: z.number().int().nonnegative().nullable().default(null),
 });

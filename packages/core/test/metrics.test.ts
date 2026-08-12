@@ -7,6 +7,7 @@ import {
 	HOT_PCT,
 	METRIC_KEYS,
 	SPARK,
+	SWAP_HOT_PCT,
 	freshMetrics,
 	historySeries,
 	sparkGeometry,
@@ -33,6 +34,30 @@ describe('[TC-PDCORE-035] a reading is red at the threshold and a dash when unme
 		expect(usageCell(41.6).pct).toBe(42);
 		expect(usageCell(140).pct).toBe(100);
 		expect(usageCell(-5).pct).toBe(0);
+	});
+});
+
+describe('[TC-PDCORE-095] swap crosses into the red band earlier than the other metrics', () => {
+	it('takes a per-metric threshold without moving the default', () => {
+		expect(SWAP_HOT_PCT).toBe(50);
+		// The state the row exists to catch: hosts sitting on 4.2GB and 5.6GB of swap
+		// while their CPU read 11%. Under the shared 80% rule this stays black.
+		expect(usageCell(60, SWAP_HOT_PCT)).toEqual({ pct: 60, hot: true });
+		expect(usageCell(60)).toEqual({ pct: 60, hot: false });
+		expect(usageCell(50, SWAP_HOT_PCT).hot).toBe(true); // the boundary IS hot
+		expect(usageCell(49, SWAP_HOT_PCT).hot).toBe(false);
+		// A swapless host reports a real 0, and 0 is never hot at any threshold.
+		expect(usageCell(0, SWAP_HOT_PCT)).toEqual({ pct: 0, hot: false });
+		// Unmeasured stays unmeasured — a threshold cannot conjure a value.
+		expect(usageCell(null, SWAP_HOT_PCT)).toEqual({ pct: null, hot: false });
+	});
+
+	it('moves the sparkline band with the number, so the two agree', () => {
+		// The guide line is drawn from the same threshold the value is coloured by;
+		// if they disagreed, a row would read red against a band it never crossed.
+		const samples = series([10, 60]);
+		expect(sparkGeometry(samples, { now: 10_000, hotPct: SWAP_HOT_PCT }).hotY).toBe(SPARK.h * 0.5);
+		expect(sparkGeometry(samples, { now: 10_000 }).hotY).toBe(SPARK.h * 0.2);
 	});
 });
 
@@ -63,8 +88,10 @@ describe('[TC-PDCORE-037] the trend ring survives whatever a collector produced'
 		const feed = {
 			t: [1, 2, 3],
 			hosts: [
-				{ id: 'h1', cpu: [10, null, 30], mem: [1, 2, 3], disk: [4, 5, 6] },
-				// A host added mid-window legitimately has shorter arrays.
+				{ id: 'h1', cpu: [10, null, 30], mem: [1, 2, 3], disk: [4, 5, 6], swap: [7, 8, 9] },
+				// A host added mid-window legitimately has shorter arrays. This one also
+				// sends no `swap` at all, which is what a collector older than the field
+				// looks like: an EMPTY series, never a run of zeros.
 				{ id: 'short', cpu: [7], mem: [], disk: [1, 2, 3, 4, 5] },
 			],
 		};
@@ -74,12 +101,15 @@ describe('[TC-PDCORE-037] the trend ring survives whatever a collector produced'
 			{ t: 2, v: null },
 			{ t: 3, v: 30 },
 		]);
-		expect(METRIC_KEYS.map((k) => first[k].length)).toEqual([3, 3, 3]);
+		expect(METRIC_KEYS.map((k) => first[k].length)).toEqual([3, 3, 3, 3]);
 
 		const short = historySeries(feed, 'short');
 		expect(short.cpu).toEqual([{ t: 1, v: 7 }]);
 		expect(short.mem).toEqual([]);
 		expect(short.disk).toHaveLength(3); // never longer than t
+		// An absent key is an absent series, not zeros: a collector too old to send
+		// swap must draw no line rather than a flat one along the bottom.
+		expect(short.swap).toEqual([]);
 
 		for (const [input, id] of [
 			[feed, 'nope'],
@@ -89,7 +119,7 @@ describe('[TC-PDCORE-037] the trend ring survives whatever a collector produced'
 			[{ t: [1], hosts: [{ id: 'h1', cpu: 'nope' }] }, 'h1'],
 		] as const) {
 			const out = historySeries(input, id);
-			expect(METRIC_KEYS.map((k) => out[k])).toEqual([[], [], []]);
+			expect(METRIC_KEYS.map((k) => out[k])).toEqual([[], [], [], []]);
 		}
 		const bad = historySeries({ t: [1, 'x', 3], hosts: [{ id: 'm', cpu: [1, 2, 3] }] }, 'm');
 		expect(bad.cpu).toEqual([

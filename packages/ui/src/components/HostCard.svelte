@@ -22,7 +22,15 @@
 	 * SHAPE reads at a glance and survives greyscale, so each state is now its own drawing
 	 * at the ⚙'s own 16px.
 	 */
-	import { type AgentRow, type CardPrefs, type HostSeries, type ServiceOption, cardPrefs } from '@pdmux/core';
+	import {
+		type AgentRow,
+		type CardPrefs,
+		HOT_PCT,
+		type HostSeries,
+		SWAP_HOT_PCT,
+		type ServiceOption,
+		cardPrefs,
+	} from '@pdmux/core';
 	import { type Translate, translator } from '../i18n.js';
 	import type { HostResources, HostSummary } from '../types.js';
 	import ResourceRow from './ResourceRow.svelte';
@@ -74,10 +82,21 @@
 				? tr('pdmux.host.unknown', 'unknown')
 				: tr('pdmux.host.online', 'online'),
 	);
+	// SWAP sits under MEM, not at the end: it is the same question one level down,
+	// and a person reading "MEM 94%" wants the next line to say whether the machine
+	// is already paging. DISK answers "will it run out of room", which is a
+	// different question and belongs after both halves of the first one.
 	const rows = $derived([
-		{ key: 'cpu' as const, label: 'CPU', pct: resources.cpuPct, hint: '' },
-		{ key: 'mem' as const, label: 'MEM', pct: resources.memPct, hint: resources.memHint ?? '' },
-		{ key: 'disk' as const, label: 'DISK', pct: resources.diskPct, hint: resources.diskHint ?? '' },
+		{ key: 'cpu' as const, label: 'CPU', pct: resources.cpuPct, hint: '', hot: HOT_PCT },
+		{ key: 'mem' as const, label: 'MEM', pct: resources.memPct, hint: resources.memHint ?? '', hot: HOT_PCT },
+		{
+			key: 'swap' as const,
+			label: 'SWAP',
+			pct: resources.swapPct,
+			hint: resources.swapHint ?? '',
+			hot: SWAP_HOT_PCT,
+		},
+		{ key: 'disk' as const, label: 'DISK', pct: resources.diskPct, hint: resources.diskHint ?? '', hot: HOT_PCT },
 	]);
 </script>
 
@@ -174,6 +193,7 @@
 					{now}
 					{windowSec}
 					hint={row.hint}
+					hotPct={row.hot}
 					{t}
 				/>
 			{/each}

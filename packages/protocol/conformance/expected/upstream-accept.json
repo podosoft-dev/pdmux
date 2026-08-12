@@ -15,6 +15,9 @@
 					"memPct": null,
 					"memTotalBytes": null,
 					"memUsedBytes": null,
+					"swapPct": null,
+					"swapTotalBytes": null,
+					"swapUsedBytes": null,
 					"uptimeSec": null
 				},
 				"services": [],
@@ -36,6 +39,9 @@
 					"memPct": 61,
 					"memTotalBytes": null,
 					"memUsedBytes": null,
+					"swapPct": null,
+					"swapTotalBytes": null,
+					"swapUsedBytes": null,
 					"uptimeSec": null
 				},
 				"services": [],
@@ -77,6 +83,9 @@
 					"memPct": null,
 					"memTotalBytes": null,
 					"memUsedBytes": null,
+					"swapPct": null,
+					"swapTotalBytes": null,
+					"swapUsedBytes": null,
 					"uptimeSec": null
 				},
 				"services": [],

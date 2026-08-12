@@ -19,7 +19,7 @@ pdmux-api (NestJS)          Postgres  organisations, users, hosts, services, lay
    ▲                        Redis     sessions, pub/sub, rate limits, job queues (retention, cleanup)
    │                        S3/MinIO  commit patch bodies
    │  WebSocket (the agent dials **outbound**, x-api-key)
-pdmux-agent (one per host)  PTY · session enumeration · CPU/MEM/DISK · service probes · read-only git · token usage
+pdmux-agent (one per host)  PTY · session enumeration · CPU/MEM/SWAP/DISK · service probes · read-only git · token usage
 ```
 
 - `packages/protocol` — the contract for both arrows above (zod). The API and the web app use
@@ -123,7 +123,7 @@ What it does add is **another daemon** on every host, plus its account, its keys
 cadence.
 
 The more important reason is that the agent **is not a tunnel**. It is not a thing that moves
-traffic, it is a thing that **measures a host** — it samples CPU/memory/disk, enumerates
+traffic, it is a thing that **measures a host** — it samples CPU/memory/swap/disk, enumerates
 multiplexer sessions, probes service ports, builds read-only git snapshots and **opens PTYs on that
 host**. All of that has to be done by code running on that machine anyway, and that code is the
 thing you have to install. A VPN does not remove that installation; it adds one on top.
