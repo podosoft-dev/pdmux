@@ -44,6 +44,17 @@ services:
     command: npm run dev -w pdmux-web -- --host 0.0.0.0
     working_dir: /app
     env_file: .env.docker
+    # ⚠ THE AGENT BINARIES CANNOT COME FROM THE IMAGE, AND WITHOUT THIS LINE THEY
+    # COME FROM NOWHERE. They are build output, so `.gitignore` keeps them out of the
+    # repo and therefore out of the image; the `sync` rule below only populates them
+    # while `docker compose watch` is actually running. Started any other way, this
+    # container serves `vite dev` out of a `static/` that has a favicon in it — and
+    # `/agent/<version>/<binary>` 404s. Which was REPORTED, from the far end: the
+    # dashboard offered an update, the operator confirmed it, and the agent recorded
+    # `DOWNLOAD_FAILED — the server answered 404 Not Found for the artifact`. Nothing
+    # on the button was wrong.
+    volumes:
+      - ./apps/web/static/agent:/app/apps/web/static/agent:ro
     environment:
       - VITE_DOCKER=1
       - BACKEND_INTERNAL_URL=http://api:5002
@@ -76,6 +87,20 @@ services:
     command: npm run dev -w pdmux-api
     working_dir: /app
     env_file: .env.docker
+    # ⚠ NAME THE ROOT, BECAUSE THE FALLBACK PICKS ONE THE WEB TIER CANNOT SERVE.
+    # `fileSystemAgentReleases` searches `../web/build/client/agent` AND
+    # `../web/static/agent` and takes the newest across both — which is right for a
+    # checkout that has both, and wrong here: the image bakes `build/client/agent`
+    # (from its own `npm run build`) while the thing serving bytes is `vite dev`,
+    # which reads `static/` only. So the API advertised 0.1.15 out of a directory no
+    # request could reach, and the dashboard offered an update that could not download.
+    # Pointing the API at exactly the directory the web serves makes the two halves
+    # agree: whatever is offered is fetchable, and an empty mount offers nothing
+    # ("no published build for that platform") instead of offering a 404.
+    environment:
+      - AGENT_RELEASE_DIR=/app/apps/web/static/agent
+    volumes:
+      - ./apps/web/static/agent:/app/apps/web/static/agent:ro
     depends_on:
       postgres: { condition: service_healthy }
     networks: [podokit]
