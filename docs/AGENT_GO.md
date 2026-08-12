@@ -133,18 +133,30 @@ Only needed when the contract changed. The order is the dependency direction.
 $EDITOR packages/protocol/src/index.ts
 
 # 2. zod → JSON artifacts (schema/protocol.schema.json, schema/constants.json)
+#    This one reads src/ directly — see "Load the contract from SOURCE" in build-schema.mjs.
 npm run schema:build -w @pdmux/protocol
 
-# 3. recompute the conformance expectations with zod (cases/ is human-owned, expected/ is script-owned)
+# 3. ⚠ NOT OPTIONAL, AND ITS ABSENCE FAILS SILENTLY. Step 4 imports the package's
+#    dist/ (build-expected.mjs), NOT src/. Skip this and the expectations are
+#    recomputed against the PREVIOUS contract, then `expect:check` agrees with them
+#    and the corpus quietly stops covering whatever you just added.
+npm run build -w @pdmux/protocol
+
+# 4. recompute the conformance expectations with zod (cases/ is human-owned, expected/ is script-owned)
 npm run expect:build -w @pdmux/protocol
 
-# 4. JSON artifacts → Go (mirror + consts_gen + defaults_gen + schema_hash)
+# 5. add the new fields to Resource/… in agent/internal/protocol/types.go BY HAND.
+#    That file is a port, not generated output; the generator only VALIDATES it and
+#    stops with "resource.swapPct has no Go field (add one to Resource)".
+$EDITOR agent/internal/protocol/types.go
+
+# 6. JSON artifacts → Go (mirror + consts_gen + defaults_gen + schema_hash)
 cd agent && go generate ./...
 
-# 5. is a re-run a no-op — i.e. do the committed artifacts match the contract?
+# 7. is a re-run a no-op — i.e. do the committed artifacts match the contract?
 git diff --exit-code
 
-# 6. verify both sides
+# 8. verify both sides
 go test ./...
 cd .. && npm test -w @pdmux/protocol
 ```
