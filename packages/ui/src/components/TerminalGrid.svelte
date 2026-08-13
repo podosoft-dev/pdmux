@@ -28,6 +28,7 @@
 		stalePaneIds,
 		visibleIndexes,
 		visibleSlots,
+		type HistoryLine,
 	} from '@pdmux/core';
 	import { type Translate, translator } from '../i18n.js';
 	import type { TerminalAdapter } from '../adapters/terminal-adapter.js';
@@ -68,7 +69,7 @@
 		onExit?: (slotId: string, code: number | null) => void;
 		/** Passed straight to every pane — see `TerminalPane` for why the app owns these. */
 		onScrollback?: (slot: TerminalSlot, action: "enter" | "exit") => void;
-		onReadHistory?: (slot: TerminalSlot) => Promise<{ lines: string[]; scrollback: boolean } | null>;
+		onReadHistory?: (slot: TerminalSlot) => Promise<{ lines: HistoryLine[]; scrollback: boolean } | null>;
 	}
 
 	let {

@@ -188,7 +188,9 @@
       "close": "Close",
       "body": "Output",
       "empty": "Nothing has been printed yet",
-      "screenOnly": "This pane runs a multiplexer, which keeps its own history — only the visible screen is available here."
+      "screenOnly": "This pane runs a multiplexer, which keeps its own history — only the visible screen is available here.",
+      "foldLine": "Fold this line",
+      "unfoldLine": "Show the whole line"
     }
   },
   "dash": {

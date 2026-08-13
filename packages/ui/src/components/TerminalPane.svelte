@@ -22,6 +22,7 @@
 		pressHelperKey,
 		slotLabel,
 		toProtocolTarget,
+		type HistoryLine,
 	} from '@pdmux/core';
 	import { type Translate, translator } from '../i18n.js';
 	import { writeClipboard } from '../adapters/terminal-surface.js';
@@ -93,7 +94,7 @@
 		 * The pane's real history, when the consumer can fetch it. Returning null (or not
 		 * passing this at all) falls back to the local buffer — see `openHistory`.
 		 */
-		onReadHistory?: (slot: TerminalSlot) => Promise<{ lines: string[]; scrollback: boolean } | null>;
+		onReadHistory?: (slot: TerminalSlot) => Promise<{ lines: HistoryLine[]; scrollback: boolean } | null>;
 	}
 
 	let {
@@ -370,7 +371,7 @@
 	 * into a fallback. The local buffer is still the answer when that fetch is absent or
 	 * fails, because a sheet that opens empty is worse than one that admits its scope.
 	 */
-	let history = $state<{ lines: string[]; scrollback: boolean } | null>(null);
+	let history = $state<{ lines: HistoryLine[]; scrollback: boolean } | null>(null);
 	let historyPending = $state(false);
 
 	async function openHistory(): Promise<void> {

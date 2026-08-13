@@ -2422,6 +2422,57 @@
 	user-select: text;
 }
 
+/*
+ * A folded line.
+ *
+ * ⚠ HIDDEN, NOT TRUNCATED — the whole line stays in the DOM. A selection, a browser
+ * find and `textContent` all still see it; clipping is purely what the eye is spared.
+ * Slicing the string instead would make the sheet quietly lossy in exactly the case
+ * folding was added for: one enormous line nobody can read but everybody may need.
+ *
+ * `inline-block` is what makes a height clip possible at all — an inline span has no
+ * box to limit — and `vertical-align: top` keeps the folded line sitting on the same
+ * baseline as its neighbours instead of hanging below them.
+ */
+.pdmux-history-line[data-pdmux-folded='true'] {
+	display: inline-block;
+	vertical-align: top;
+	max-width: 100%;
+	max-height: calc(3 * 1.45em);
+	overflow: hidden;
+}
+
+/*
+ * The fold toggle carries NO text of its own — the glyph comes from `content`, which is
+ * not part of `textContent`. A label here would end up inside the block that has to
+ * stay byte-identical to the output, and would be copied along with it.
+ */
+.pdmux-history-fold {
+	appearance: none;
+	margin-inline-start: 6px;
+	padding: 0 6px;
+	font: inherit;
+	line-height: 1.3;
+	cursor: pointer;
+	color: var(--pdmux-popover-fg);
+	background: var(--pdmux-hover);
+	border: 1px solid var(--pdmux-line);
+	border-radius: var(--pdmux-radius-sm);
+	user-select: none;
+}
+
+.pdmux-history-fold::after {
+	content: '⋯';
+}
+
+.pdmux-history-fold[aria-expanded='true']::after {
+	content: '⌃';
+}
+
+.pdmux-history-fold:hover {
+	color: var(--pdmux-hover-fg);
+}
+
 /* --- commit detail: facts, the file list and the patch --------------------
    ⚠ PLAIN CSS, NOT A COMPONENT LIBRARY. This package is installable by a project
    with its own design system, so `[TC-PDUI-030]` restricts its imports and every

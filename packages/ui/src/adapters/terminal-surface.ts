@@ -6,6 +6,10 @@
  * data both ways, resize, close) is testable without a browser, while the shipped
  * default is the real terminal.
  */
+// Type-only: erased at build, so it adds nothing to the module graph the dev server
+// externalises — a runtime import here would need a dev-server restart to be seen.
+import type { HistoryColor, HistoryLine, HistorySpan } from '@pdmux/core';
+
 /**
  * What a pane can read back out of its terminal.
  *
@@ -16,7 +20,11 @@
  * tell the user which it got, or it is claiming to show a history it does not have.
  */
 export interface TerminalHistory {
-	lines: string[];
+	/**
+	 * Attributed lines. A bare string is the shorthand for "no attributes", which is
+	 * what most lines are — see `@pdmux/core`'s `HistoryLine`.
+	 */
+	lines: HistoryLine[];
 	/** False when the buffer is alternate, i.e. these lines are one screen, not a history. */
 	scrollback: boolean;
 }
@@ -117,6 +125,142 @@ export const TERMINAL_THEME = {
  * alone: the request was for the colours, and the family is a separate call.)
  */
 export const TERMINAL_FONT_SIZE = 13;
+
+/** What `getCell` fills in — the subset this module reads. Structural, so no import. */
+interface Cell {
+	getChars(): string;
+	getWidth(): number;
+	getFgColor(): number;
+	getBgColor(): number;
+	isFgDefault(): boolean;
+	isBgDefault(): boolean;
+	isFgPalette(): boolean;
+	isBgPalette(): boolean;
+	isBold(): number;
+	isDim(): number;
+	isItalic(): number;
+	isUnderline(): number;
+	isStrikethrough(): number;
+	isInverse(): number;
+	isAttributeDefault(): boolean;
+}
+
+interface Line {
+	length: number;
+	isWrapped: boolean;
+	translateToString(trimRight?: boolean): string;
+	getCell(x: number, cell?: unknown): Cell | undefined;
+}
+
+/**
+ * One buffer line as attributed runs.
+ *
+ * ⚠ THE FAST PATH IS THE POINT. A terminal line is usually one colour or none at all, so
+ * a line whose cells are all default never builds a single object — it returns the string
+ * form and the sheet renders one text node. Only lines that actually carry attributes pay
+ * for spans, which is what keeps opening the sheet on a 5000-line buffer cheap.
+ */
+function readLine(line: Line, cell: unknown): HistoryLine {
+	const spans: HistorySpan[] = [];
+	let text = '';
+	let attrs: HistorySpan | null = null;
+	let plain = true;
+
+	const flush = (): void => {
+		if (text.length === 0) return;
+		spans.push(attrs === null ? { text } : { ...attrs, text });
+		text = '';
+	};
+
+	for (let x = 0; x < line.length; x++) {
+		const at = line.getCell(x, cell);
+		if (!at) continue;
+		// Width 0 is the trailing half of a wide glyph — its characters belong to the
+		// cell before it and reading them again would double every CJK character.
+		if (at.getWidth() === 0) continue;
+		const next = at.isAttributeDefault() ? null : styleOf(at);
+		if (!sameStyle(attrs, next)) {
+			flush();
+			attrs = next;
+			if (next !== null) plain = false;
+		}
+		// An empty cell is a space: a terminal pads with them and `getChars()` is ''.
+		text += at.getChars() || ' ';
+	}
+	flush();
+
+	// Trailing padding is the width of the pane, not content.
+	while (spans.length > 0) {
+		const last = spans[spans.length - 1] as HistorySpan;
+		last.text = last.text.replace(/[ \t]+$/, '');
+		if (last.text.length > 0) break;
+		spans.pop();
+	}
+	if (spans.length === 0) return '';
+	if (plain) return spans.map((span) => span.text).join('');
+	return spans;
+}
+
+function styleOf(at: Cell): HistorySpan {
+	const span: HistorySpan = { text: '' };
+	const fg = colorOf(at.isFgDefault(), at.isFgPalette(), at.getFgColor());
+	const bg = colorOf(at.isBgDefault(), at.isBgPalette(), at.getBgColor());
+	if (fg) span.fg = fg;
+	if (bg) span.bg = bg;
+	if (at.isBold()) span.bold = true;
+	if (at.isDim()) span.dim = true;
+	if (at.isItalic()) span.italic = true;
+	if (at.isUnderline()) span.underline = true;
+	if (at.isStrikethrough()) span.strike = true;
+	if (at.isInverse()) span.inverse = true;
+	return span;
+}
+
+function colorOf(isDefault: boolean, isPalette: boolean, value: number): HistoryColor | undefined {
+	if (isDefault) return undefined;
+	return isPalette ? { kind: 'palette', index: value } : { kind: 'rgb', value };
+}
+
+function sameStyle(a: HistorySpan | null, b: HistorySpan | null): boolean {
+	if (a === null || b === null) return a === b;
+	return (
+		sameColour(a.fg, b.fg) &&
+		sameColour(a.bg, b.bg) &&
+		a.bold === b.bold &&
+		a.dim === b.dim &&
+		a.italic === b.italic &&
+		a.underline === b.underline &&
+		a.strike === b.strike &&
+		a.inverse === b.inverse
+	);
+}
+
+function sameColour(a: HistoryColor | undefined, b: HistoryColor | undefined): boolean {
+	if (a === undefined || b === undefined) return a === b;
+	if (a.kind !== b.kind) return false;
+	return a.kind === 'palette'
+		? a.index === (b as { index: number }).index
+		: a.value === (b as { value: number }).value;
+}
+
+/**
+ * Two rows that were one line. A trailing trim already ran on the first half, so the
+ * padding a wrap never had is not re-introduced here.
+ */
+function joinLines(first: HistoryLine, second: HistoryLine): HistoryLine {
+	if (typeof first === 'string' && typeof second === 'string') return first + second;
+	const spans = typeof first === 'string' ? [{ text: first }] : first;
+	const rest = typeof second === 'string' ? [{ text: second }] : second;
+	return [...spans, ...rest];
+}
+
+/** The plain text of a line, without importing core at runtime (see the type import). */
+function plainOf(line: HistoryLine): string {
+	if (typeof line === 'string') return line;
+	let out = '';
+	for (const span of line) out += span.text;
+	return out;
+}
 
 /**
  * Is this a Mac, by the same signal xterm uses?
@@ -650,14 +794,29 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		readHistory: () => {
 			const buffer = term.buffer.active;
 			const scrollback = buffer.type !== 'alternate';
-			const lines: string[] = [];
+			const lines: HistoryLine[] = [];
+			/**
+			 * ⚠ ONE CELL OBJECT FOR THE WHOLE WALK. `getCell(x, cell)` fills the one it is
+			 * given; calling it without one allocates per cell, and a 5000-line buffer at
+			 * 200 columns is a million allocations for a button press.
+			 */
+			const cell = buffer.getNullCell();
 			for (let index = 0; index < buffer.length; index++) {
-				// `true` trims trailing whitespace: a terminal pads every line to the full
-				// width, and without this every copied line carries 80–200 spaces.
-				lines.push(buffer.getLine(index)?.translateToString(true) ?? '');
+				const line = buffer.getLine(index);
+				const read = line ? readLine(line, cell) : '';
+				/**
+				 * ⚠ A WRAPPED ROW IS NOT A LINE. xterm stores a buffer by rows, so one long
+				 * command is already several of them and a sheet that printed each row
+				 * separately would carry the PANE's width around forever instead of
+				 * reflowing to the reader's. `isWrapped` marks a continuation, and joining
+				 * is also what makes a long line long enough to be worth folding. The
+				 * remote path asks tmux for the same thing with `capture-pane -J`.
+				 */
+				if (line?.isWrapped && lines.length > 0) lines[lines.length - 1] = joinLines(lines[lines.length - 1] as HistoryLine, read);
+				else lines.push(read);
 			}
 			// Blank tail lines are the unused part of the buffer, not content.
-			while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+			while (lines.length > 0 && plainOf(lines[lines.length - 1] as HistoryLine) === '') lines.pop();
 			return { lines, scrollback };
 		},
 		dispose: () => {

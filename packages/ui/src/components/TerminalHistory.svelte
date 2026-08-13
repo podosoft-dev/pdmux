@@ -16,6 +16,8 @@
 	 * first time something they remembered was missing, so `scrollback: false` earns a
 	 * visible note rather than silence.
 	 */
+	import { type HistoryLine, type HistorySpan, historyFoldable, historyPlain, xterm256 } from '@pdmux/core';
+	import { TERMINAL_THEME } from '../adapters/terminal-surface.js';
 	import { type Translate, translator } from '../i18n.js';
 
 	let {
@@ -26,7 +28,11 @@
 		onClose,
 		onCopy,
 	}: {
-		lines?: readonly string[];
+		/**
+		 * The output. A bare string is a line with no attributes — most of them — so a
+		 * consumer that has nothing to say about colour keeps passing strings.
+		 */
+		lines?: readonly HistoryLine[];
 		/** False when the pane is on the alternate buffer — one screen, not a history. */
 		scrollback?: boolean;
 		title?: string;
@@ -36,7 +42,75 @@
 	} = $props();
 
 	const tr = $derived(translator(t));
-	const text = $derived(lines.join('\n'));
+	/** What a copy gets: the plain text, never the markup and never the escapes. */
+	const text = $derived(historyPlain(lines));
+
+	/**
+	 * Which lines are folded right now.
+	 *
+	 * ⚠ FOLDING HIDES, IT DOES NOT TRUNCATE. The full text stays in the DOM and CSS
+	 * clips it, so a selection, a browser find and `textContent` all still see the whole
+	 * line. Slicing the string instead would have made the sheet quietly lossy in
+	 * exactly the case it was added for — one enormous line nobody can read.
+	 */
+	let unfolded = $state(new Set<number>());
+	const foldable = $derived(lines.map((line) => historyFoldable(line)));
+
+	function toggleFold(index: number): void {
+		const next = new Set(unfolded);
+		if (!next.delete(index)) next.add(index);
+		unfolded = next;
+	}
+
+	/** One run's colours, resolved against the palette the terminal beside it paints with. */
+	function spanStyle(span: HistorySpan): string {
+		// Inverse swaps the two, which is how a selection or a prompt marker is drawn.
+		const fg = span.inverse ? span.bg : span.fg;
+		const bg = span.inverse ? span.fg : span.bg;
+		const parts: string[] = [];
+		const fgColor = resolve(fg, span.inverse ? TERMINAL_THEME.background : undefined);
+		const bgColor = resolve(bg, span.inverse ? TERMINAL_THEME.foreground : undefined);
+		if (fgColor) parts.push(`color:${fgColor}`);
+		if (bgColor) parts.push(`background-color:${bgColor}`);
+		if (span.bold) parts.push('font-weight:600');
+		// Dim is opacity rather than a dimmer colour: it has to work over any background.
+		if (span.dim) parts.push('opacity:0.65');
+		if (span.italic) parts.push('font-style:italic');
+		if (span.underline && span.strike) parts.push('text-decoration:underline line-through');
+		else if (span.underline) parts.push('text-decoration:underline');
+		else if (span.strike) parts.push('text-decoration:line-through');
+		return parts.join(';');
+	}
+
+	function resolve(color: HistorySpan['fg'], fallback: string | undefined): string | undefined {
+		if (!color) return fallback;
+		if (color.kind === 'rgb') return hex(color.value);
+		// 0-15 are the product's own palette — the same sixteen the pane is painted with,
+		// so the sheet and the terminal cannot disagree about what "red" is.
+		const named = PALETTE[color.index];
+		return named ?? hex(xterm256(color.index));
+	}
+
+	const PALETTE: readonly string[] = [
+		TERMINAL_THEME.black,
+		TERMINAL_THEME.red,
+		TERMINAL_THEME.green,
+		TERMINAL_THEME.yellow,
+		TERMINAL_THEME.blue,
+		TERMINAL_THEME.magenta,
+		TERMINAL_THEME.cyan,
+		TERMINAL_THEME.white,
+		TERMINAL_THEME.brightBlack,
+		TERMINAL_THEME.brightRed,
+		TERMINAL_THEME.brightGreen,
+		TERMINAL_THEME.brightYellow,
+		TERMINAL_THEME.brightBlue,
+		TERMINAL_THEME.brightMagenta,
+		TERMINAL_THEME.brightCyan,
+		TERMINAL_THEME.brightWhite,
+	];
+
+	const hex = (value: number): string => `#${value.toString(16).padStart(6, '0')}`;
 
 	function keydown(event: KeyboardEvent): void {
 		if (event.key === 'Escape') onClose?.();
@@ -122,7 +196,33 @@
 		aria-label={tr('pdmux.history.body', 'Output')}
 		tabindex="0"
 	>
-		<pre class="pdmux-history-text">{text}</pre>
+		<!--
+			⚠ SPANS AND LITERAL NEWLINES, NEVER ONE BLOCK PER LINE. `textContent` of
+			`<div>a</div><div>b</div>` is `ab` — the newlines simply vanish, and with them
+			every copy, every browser find and the assertion that this sheet reads as the
+			text it was given. Inline runs separated by real `\n` text nodes keep the block
+			byte-identical to `lines.join('\n')` while still carrying colour.
+		-->
+		<pre class="pdmux-history-text">{#each lines as line, index (index)}{#if index > 0}{'\n'}{/if}<span
+					class="pdmux-history-line"
+					data-pdmux-line={index}
+					data-pdmux-folded={foldable[index] && !unfolded.has(index) ? 'true' : undefined}
+					>{#if typeof line === 'string'}{line}{:else}{#each line as span, at (at)}<span
+								style={spanStyle(span)}>{span.text}</span
+							>{/each}{/if}</span
+				>{#if foldable[index]}<button
+						class="pdmux-history-fold"
+						type="button"
+						data-pdmux-fold-line={index}
+						aria-expanded={unfolded.has(index)}
+						title={unfolded.has(index)
+							? tr('pdmux.history.foldLine', 'Fold this line')
+							: tr('pdmux.history.unfoldLine', 'Show the whole line')}
+						aria-label={unfolded.has(index)
+							? tr('pdmux.history.foldLine', 'Fold this line')
+							: tr('pdmux.history.unfoldLine', 'Show the whole line')}
+						onclick={() => toggleFold(index)}
+					></button>{/if}{/each}</pre>
 	</div>
 
 	{#if lines.length === 0}
