@@ -63,7 +63,19 @@ func (a *Agent) handleExec(ctx context.Context, command protocol.AgentExec) {
 		cwd = *command.Cwd
 	}
 	started := time.Now()
-	outcome := sys.Run(ctx, command.Command, command.Args, sys.Options{
+	/**
+	 * ⚠ RESOLVED, NOT JUST LOOKED UP ON PATH. A service manager's PATH is not a
+	 * person's: launchd hands the agent neither homebrew prefix, and systemd omits
+	 * whatever a user installed under their home. The session collector already
+	 * resolves the same way and for the same reason (`collect/sessions.go`), and the
+	 * copy-mode control added on top of `exec` reaches `tmux` through this line — a
+	 * macOS host would otherwise answer COMMAND_NOT_FOUND for a binary it has.
+	 *
+	 * Additive: an absolute path is returned untouched, a PATH hit wins first, and a
+	 * genuinely missing binary comes back unchanged and still fails as COMMAND_NOT_FOUND.
+	 */
+	binary := sys.ResolveBinary(command.Command, "")
+	outcome := sys.Run(ctx, binary, command.Args, sys.Options{
 		TimeoutMs: command.TimeoutMs,
 		Dir:       cwd,
 		MaxOutput: execOutputMax,

@@ -339,6 +339,13 @@ The agent execs the binary directly, so `;`, `&&` and `$(…)` stay characters i
 When a real shell is genuinely needed, the caller says `command: "sh"` explicitly and takes on
 the quoting.
 
+⚠ **The executable is RESOLVED, not merely looked up on `PATH`.** A service manager's
+environment is not a person's: launchd passes neither homebrew prefix and systemd omits
+whatever a user installed under their home, so `tmux` or `node` can be plainly present and
+still miss. The agent applies the same resolution its session collector uses (an absolute
+path is honoured as given, `PATH` wins first, a small set of well-known bin directories is
+searched last). A genuinely absent binary still comes back as `COMMAND_NOT_FOUND`.
+
 ⚠ **The terminal frames (C5) cannot substitute for this.** A PTY gives a stream mixing prompts,
 echo and ANSI, and **carries no exit code** — the caller cannot tell success from failure. This
 frame gives up interactivity in exchange for an answer.

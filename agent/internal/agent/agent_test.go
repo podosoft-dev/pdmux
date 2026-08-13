@@ -1229,6 +1229,44 @@ func TestExec(t *testing.T) {
 		}
 	})
 
+	t.Run("[TC-PDMCP-003] finds a binary a service manager's PATH does not carry", func(t *testing.T) {
+		// ⚠ A SERVICE MANAGER'S PATH IS NOT A PERSON'S. launchd hands the agent neither
+		// homebrew prefix and systemd omits a user's own installs, so a plain PATH lookup
+		// answers COMMAND_NOT_FOUND for binaries the host plainly has — which is how the
+		// pane scroll control would fail on a Mac while `tmux` sat in /opt/homebrew/bin.
+		home := t.TempDir()
+		binDir := filepath.Join(home, ".local", "bin")
+		if err := os.MkdirAll(binDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		script := filepath.Join(binDir, "pdmux-offpath-probe")
+		if err := os.WriteFile(script, []byte("#!/bin/sh\necho found-off-path\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("HOME", home)
+		// Deliberately NOT on PATH: that is the whole condition under test.
+		t.Setenv("PATH", "/usr/bin:/bin")
+
+		h := start(t, nil)
+		h.welcome(nil)
+		waitUntil(t, "the welcome to be adopted", func() bool { return h.agent.HostID() == testHostID })
+
+		command := protocol.NewAgentExec()
+		command.CommandID = "00000000-0000-4000-8000-00000000000e"
+		command.Command = "pdmux-offpath-probe"
+		command.TimeoutMs = 5_000
+		h.session.send(&protocol.ExecFrame{Exec: command})
+
+		waitUntil(t, "the result to come back", func() bool { return len(framesOf[*protocol.ExecResultFrame](h)) == 1 })
+		got := framesOf[*protocol.ExecResultFrame](h)[0].Result
+		if got.Code != nil {
+			t.Fatalf("code = %v, want nil: the binary is there, just not on PATH", *got.Code)
+		}
+		if !strings.Contains(got.Stdout, "found-off-path") {
+			t.Fatalf("stdout = %q, want the off-PATH binary's output", got.Stdout)
+		}
+	})
+
 	t.Run("[TC-PDMCP-003] announces the capability, so the server never sends into silence", func(t *testing.T) {
 		h := start(t, nil)
 		h.welcome(nil)
