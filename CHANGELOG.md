@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## 0.6.0
+
+- **A host card folds to its header, and stays folded.** A fleet that grows past a
+  screenful spends the left column on machines nobody is watching, so each card now has
+  a chevron and the fold is remembered per host on the server — the same row the widget
+  switches already use, so it follows the operator to another device rather than living
+  in one browser. Collapsing is deliberately not a widget: `CARD_WIDGETS` is the render
+  order, the settings popover's switch list and the key set of `CardPrefs` all at once,
+  and a fourth entry there would have grown a bogus switch and widened a type every
+  consumer destructures. The agent-update row survives a fold, because folding is
+  decluttering and not muting — a rarely-watched host is exactly the one whose agent
+  goes stale unnoticed, and that row is the only place it says so.
+- **A pane's scrollback is reachable whatever is running in it.** Reported as one pane
+  scrolling with the wheel and another not, both running a coding agent under the same
+  multiplexer. Neither was misbehaving: a program that turns on mouse tracking makes the
+  terminal encode the wheel as a report for it and skip its own scrollback and cursor-key
+  fallbacks outright, so from there the gesture means whatever that program decides. The
+  pane that worked, worked *because* the wheel reached it — claiming the plain wheel
+  would have fixed one by breaking the other, and taken the mouse from every full-screen
+  program that uses it for menus or selection. So the plain wheel is untouched and Shift
+  is the escape hatch, the way terminal emulators have settled this for years. On a
+  multiplexer pane there is no local history to move, so a header control asks tmux for
+  its own copy-mode and from there the ordinary wheel scrolls anything. The output sheet
+  is backed by the same history instead of only the visible screen. The program in the
+  pane is never sent a key: every alternative ended in typing into a live session, either
+  a prefix the operator may have rebound or a PageUp the measured programs ignore.
+- **A card says how much the machine is paging.** Swap sits under memory rather than at
+  the end of the row, because it answers the question the line above it just raised, and
+  it carries its own threshold — a shared 80% rule leaves a host that is already paging
+  looking black, while lowering the general one turns healthy long-lived servers red and
+  teaches people to ignore the colour. A host with swap turned off reports `0%`, not a
+  dash: it answered, and a dash has to keep meaning nobody looked.
+- **The agent finds binaries the way panes always have.** `exec` consulted `PATH` alone
+  while a pane's multiplexer is resolved through the prefixes a service manager omits, so
+  the same agent could run tmux for a terminal and report it missing for a command —
+  measured on a Mac whose panes were attached to tmux sessions at that moment. launchd
+  passes neither homebrew prefix; systemd drops what a user installed under their home.
+  Agent 0.1.17 carries this, and macOS hosts need it before the new scroll control can
+  reach tmux at all.
+
 ## 0.5.1
 
 - **A terminal no longer dies just because nobody typed in it.** The browser's terminal
