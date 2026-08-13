@@ -117,6 +117,38 @@ test.describe('pdmux ui geometry', () => {
 		expect(measured.gutterDrift, 'the line numbers scrolled away with the code').toBe(0);
 	});
 
+	/**
+	 * ⚠ FOUND IN THE FILE EXPLORER'S PREVIEW, FIXED IN THE SHARED VIEW. `.pdmux-blob`
+	 * is a two-column grid and the truncation note was a THIRD grid item, so it was
+	 * auto-placed into the line-number column and its max-content contribution sized
+	 * that column. Measured in a 420px dock: gutter 268px, code 140px — the file was
+	 * off its own panel, and only ever for files big enough to be truncated, which is
+	 * exactly when somebody is squinting at a long file.
+	 */
+	test('[TC-PDUI-221] the truncation note does not widen the line-number column', async ({ page }) => {
+		await page.goto('/?screen=tree');
+		await page.locator('[data-harness="tree"] .pdmux-blob').waitFor();
+		const measured = await page.evaluate(() => {
+			const box = (selector: string): number => {
+				const node = document.querySelector(`[data-harness="tree"] ${selector}`) as HTMLElement | null;
+				return node ? Math.round(node.getBoundingClientRect().width) : -1;
+			};
+			return {
+				gutter: box('.pdmux-blob-gutter'),
+				code: box('.pdmux-blob-code'),
+				note: box('[data-pdmux-blob-truncated]'),
+				blob: box('.pdmux-blob'),
+			};
+		});
+
+		// The note must actually be on screen, or this measures nothing.
+		expect(measured.note, 'the truncation note is not drawn — the fixture stopped being truncated').toBeGreaterThan(0);
+		// Two digits of line number, whatever the font: nowhere near a sentence.
+		expect(measured.gutter, 'the gutter is sized by the prose beside it').toBeLessThan(60);
+		// And the code keeps the rest of the width rather than a sliver.
+		expect(measured.code).toBeGreaterThan(measured.blob / 2);
+	});
+
 	test('[TC-PDUI-042] clicking a commit shows the detail INSIDE the viewport', async ({ page }) => {
 		await page.locator('.pdmux-graph-row').nth(3).click();
 		const detail = page.locator('[data-pdmux-detail]');

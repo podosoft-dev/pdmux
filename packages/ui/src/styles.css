@@ -2755,6 +2755,18 @@
 	max-height: 100%;
 	min-height: 0;
 }
+/*
+ * ⚠ THE TRUNCATION NOTE SPANS BOTH COLUMNS, AND THAT IS NOT COSMETIC. Auto-placed
+ * it lands in the GUTTER's column, and its max-content contribution then SIZES that
+ * `auto` track. Measured in the file explorer's preview at 420px wide: line numbers
+ * 268px, code 140px — a file rendered almost entirely off its own panel, and only
+ * ever for files big enough to be truncated. Any prose added inside `.pdmux-blob`
+ * needs the same treatment.
+ */
+.pdmux .pdmux-blob > .pdmux-meta {
+	grid-column: 1 / -1;
+}
+
 .pdmux .pdmux-blob-gutter,
 .pdmux .pdmux-blob-code {
 	margin: 0;

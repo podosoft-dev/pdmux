@@ -166,6 +166,9 @@
 				'const wide = ' + "'x'".repeat(120) + ';',
 				'const narrow = 1;',
 			],
+			// ⚠ TRUNCATED ON PURPOSE. The note it draws used to be auto-placed into the
+			// line-number column and set that column's width — see the spec below.
+			truncated: true,
 		}}
 	/>
 </div>
