@@ -9,6 +9,7 @@
 import { ApiError } from "@podosoft/podokit-api-client";
 import type { CommitDetail, GitBlob, GitTree, WorkingDiff } from "@pdmux/protocol";
 import { api } from "$lib/api";
+import type { FsDirView } from "@pdmux/ui";
 import type {
   AgentEnrollmentView,
   AgentTokenView,
@@ -31,6 +32,7 @@ import type {
   PrefsView,
   RepoGraphResponse,
   RepoRow,
+  FsFileView,
 } from "./types";
 
 export interface HostInput {
@@ -242,6 +244,80 @@ export const terminalApi = {
   history: (hostId: string, session: string): Promise<{ lines: string[]; reachedOldest: boolean }> =>
     api.post<{ lines: string[]; reachedOldest: boolean }>(`/terminal/${hostId}/history`, { session }),
 };
+
+/**
+ * A host's own files, under the account the agent runs as.
+ *
+ * ⚠ NOTHING IS CACHED, and that is the difference from the git tree beside it. A
+ * tree is immutable per sha and can be kept forever; a directory is true for an
+ * instant, so somebody who creates a file and refreshes has to see it.
+ */
+export const filesApi = {
+  list: (hostId: string, path: string): Promise<FsDirView> =>
+    api.get<FsDirView>(`/hosts/${hostId}/files?path=${encodeURIComponent(path)}`),
+  read: (hostId: string, path: string): Promise<FsFileView> =>
+    api.get<FsFileView>(`/hosts/${hostId}/files/content?path=${encodeURIComponent(path)}`),
+  /**
+   * A URL, not a fetch — and that is the design, not a shortcut.
+   *
+   * ⚠ FETCHING IT OURSELVES WOULD MEAN HOLDING THE WHOLE FILE IN MEMORY to hand
+   * back a blob URL, which fails on exactly the large files this exists for. Given
+   * a URL instead, the browser streams it to disk with its own progress, its own
+   * cancel, and its own resume — and the same URL is what an `<img>` reads for the
+   * preview. `inline` is a REQUEST, not a decision: the server renders only what
+   * is on its allowlist.
+   */
+  url: (hostId: string, path: string, inline = false): string =>
+    `/api/hosts/${hostId}/files/download?path=${encodeURIComponent(path)}${inline ? "&inline=1" : ""}`,
+  /**
+   * Upload one file, reporting progress.
+   *
+   * ⚠ `XMLHttpRequest`, NOT `fetch`, AND THAT IS THE WHOLE REASON IT IS HERE.
+   * `fetch` has no upload-progress event — the only way to get one is a
+   * `ReadableStream` body, which needs HTTP/2 and is refused outright by several
+   * browsers. A 200 MB upload with no progress bar reads as a hung page.
+   */
+  upload: (
+    hostId: string,
+    path: string,
+    file: File,
+    onProgress: (sent: number, total: number) => void,
+    signal?: AbortSignal,
+  ): Promise<void> =>
+    new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open("POST", `/api/hosts/${hostId}/files/upload?path=${encodeURIComponent(path)}`);
+      // The API reads the socket itself for this type; anything Express parses
+      // would be buffered whole before the handler ever ran.
+      request.setRequestHeader("content-type", "application/octet-stream");
+      request.upload.addEventListener("progress", (event) => {
+        onProgress(event.loaded, event.lengthComputable ? event.total : file.size);
+      });
+      request.addEventListener("load", () => {
+        if (request.status >= 200 && request.status < 300) return resolve();
+        reject(new Error(messageOfResponse(request.responseText) ?? `Upload failed (${request.status})`));
+      });
+      request.addEventListener("error", () => reject(new Error("Upload failed")));
+      request.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      signal?.addEventListener("abort", () => request.abort());
+      request.send(file);
+    }),
+  remove: (hostId: string, path: string, recursive: boolean): Promise<{ removed: number; error: string | null }> =>
+    api.del<{ removed: number; error: string | null }>(
+      `/hosts/${hostId}/files?path=${encodeURIComponent(path)}${recursive ? "&recursive=1" : ""}`,
+    ),
+};
+
+/** The API's error envelope, when the failure came back as one. */
+function messageOfResponse(text: string): string | null {
+  try {
+    const body: unknown = JSON.parse(text);
+    const error = (body as { error?: { message?: unknown } }).error;
+    return typeof error?.message === "string" ? error.message : null;
+  } catch {
+    return null;
+  }
+}
 
 export const prefsApi = {
   read: (): Promise<PrefsView> => api.get<PrefsView>("/prefs"),

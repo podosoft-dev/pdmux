@@ -68,6 +68,15 @@ const (
 	// assuming — an old agent would ignore the frame silently and the caller would
 	// wait for an answer that is never coming.
 	CapabilityExec AgentCapability = "exec"
+	// CapabilityFiles reports that this agent can list a directory and read a file
+	// under its user's home. Read the way `exec` is read: an older agent ignores
+	// the frame, so the screen has to know not to offer the explorer rather than
+	// leave somebody waiting on an answer that is not coming.
+	//
+	// ⚠ IT ALSO MEANS THE HOME EXISTS. It is announced only when `$HOME` resolved
+	// to a real directory — a service account with no home has nothing to browse,
+	// and that is a fact about the host rather than an error to report.
+	CapabilityFiles AgentCapability = "files"
 )
 
 // RestartMode names what would start the agent again after it replaces its own
@@ -482,6 +491,109 @@ type GitBlob struct {
 	// Bytes is the size on disk, so "truncated" can say how much was left.
 	Bytes int     `json:"bytes"`
 	Error *string `json:"error"`
+}
+
+// FsEntry is one entry of a directory on this host.
+//
+// ⚠ Symlink is REPORTED, NOT RESOLVED. The agent browses through a root handle
+// that cannot leave the home directory, so a link pointing outside it simply
+// fails to open — and a reader who was not told it was a link reads that refusal
+// as a bug. Saying so up front turns it into a fact about the file.
+type FsEntry struct {
+	Name    string `json:"name"`
+	Dir     bool   `json:"dir"`
+	Symlink bool   `json:"symlink"`
+	Size    int    `json:"size"`
+	// Modified is unix seconds, for a column that says how fresh something is.
+	Modified int `json:"modified"`
+}
+
+// FsDir is one directory of this host, as it is right now.
+//
+// ⚠ Path IS RELATIVE TO THE HOME DIRECTORY, ALWAYS. The server never names a
+// place on the disk: it names a path inside a root this agent opened for itself,
+// and every name is resolved through that handle — so `..`, an absolute path and
+// a symlink out of the tree are refused by construction rather than by a check.
+//
+// ⚠ AND UNLIKE A GIT TREE, THIS IS TRUE ONLY FOR AN INSTANT. A tree is immutable
+// per sha and can be stored and re-served forever; this answers "what is there
+// now" and must never be cached the same way.
+type FsDir struct {
+	// RequestID echoes the request's id.
+	//
+	// ⚠ CORRELATION CANNOT BE BY PATH, and that is the difference from a git tree.
+	// A tree is immutable per sha, so any answer for a sha is the right one. A
+	// directory is true for an instant: two reads of the same path a second apart
+	// are different answers, and matching on the path alone would let a stale one
+	// settle a newer request.
+	RequestID string `json:"requestId"`
+	Path      string `json:"path"`
+	// Home is the absolute home directory Path is relative to, for DISPLAY only.
+	//
+	// ⚠ NOTHING SENDS IT BACK. Requests stay relative to the root handle; this
+	// exists so a path bar can show what `pwd` would print, and so a pasted
+	// absolute path can be read as a place inside the home.
+	Home    string    `json:"home"`
+	Entries []FsEntry `json:"entries"`
+	// Dropped counts entries left out by the cap, so the UI can say how many.
+	Dropped   int  `json:"dropped"`
+	Truncated bool `json:"truncated"`
+	// Error is set when the directory could not be read at all, refusals included.
+	Error *string `json:"error"`
+}
+
+// FsFile is one file from this host's disk, shaped like GitBlob for one viewer.
+type FsFile struct {
+	RequestID string   `json:"requestId"`
+	Path      string   `json:"path"`
+	Lines     []string `json:"lines"`
+	Binary    bool     `json:"binary"`
+	Truncated bool     `json:"truncated"`
+	// Bytes is the size on disk, so "truncated" can say how much was left.
+	Bytes int     `json:"bytes"`
+	Error *string `json:"error"`
+}
+
+// FsChunk is one slice of a file, addressed by byte offset.
+//
+// ⚠ THE OFFSET IS WHY RESUME NEEDS NO STATE. Nothing is held between slices, so a
+// download that stops halfway leaves nothing on the host and is resumed by asking
+// for the next offset.
+type FsChunk struct {
+	RequestID string `json:"requestId"`
+	Path      string `json:"path"`
+	Offset    int    `json:"offset"`
+	// Data is base64. Empty at or past the end, which is not an error.
+	Data string `json:"data"`
+	// Size is the whole file, so a caller can set Content-Length from slice one.
+	Size int `json:"size"`
+	// EOF says nothing follows this slice.
+	EOF   bool    `json:"eof"`
+	Error *string `json:"error"`
+}
+
+// FsWrote is what a write did.
+//
+// ⚠ IT CARRIES NO CONTENT, EVER — not the bytes, not a preview. The MCP gateway
+// states the same rule for command arguments; a file being uploaded is that
+// surface exactly.
+type FsWrote struct {
+	RequestID string `json:"requestId"`
+	Path      string `json:"path"`
+	// Written counts bytes accepted in THIS request.
+	Written int `json:"written"`
+	// Size is the file afterwards, so a caller can verify a sliced upload.
+	Size  int     `json:"size"`
+	Error *string `json:"error"`
+}
+
+// FsRemoved is what a delete did. `Removed` counts entries actually unlinked, so
+// "nothing was there" and "one file went" stay different answers.
+type FsRemoved struct {
+	RequestID string  `json:"requestId"`
+	Path      string  `json:"path"`
+	Removed   int     `json:"removed"`
+	Error     *string `json:"error"`
 }
 
 // RepoSnapshot is one checkout as of one collector pass.

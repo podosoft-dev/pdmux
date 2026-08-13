@@ -47,6 +47,13 @@ export type GridCell = TerminalSlot | null;
 export type ClickAction = 'zoom' | 'focus';
 
 /** Which repository the read-only commit dock shows. */
+/** Where the file explorer was last looking, so reopening it lands there. */
+export interface FilesTarget {
+	hostId: string;
+	/** Relative to that host's home directory; '' is the home itself. */
+	path: string;
+}
+
 export interface DockTarget {
 	hostId: string;
 	repo: string | null;
@@ -69,6 +76,34 @@ export interface TerminalLayout {
 	sidebarWidth: number;
 	dockOpen: boolean;
 	dockWidth: number;
+	/**
+	 * The file explorer, which shares the dock COLUMN with the commit dock rather
+	 * than taking a track of its own.
+	 *
+	 * ⚠ IT IS ITS OWN FLAG, NOT A MODE OF `dockOpen`. The two answer different
+	 * questions — "what changed in this repository" and "what is on this machine" —
+	 * and an operator watching a build wants both at once. A single enum would have
+	 * made that impossible and would have thrown away whichever panel was open
+	 * every time the other was wanted.
+	 */
+	filesOpen: boolean;
+	/**
+	 * How much of the dock column the file explorer takes, as a percentage.
+	 *
+	 * A share rather than pixels: the column itself is resizable, and a stored
+	 * height would either overflow it or leave a gap the moment the column moved.
+	 */
+	filesShare: number;
+	/**
+	 * Where the file explorer was last looking.
+	 *
+	 * ⚠ THE PATH TRAVELS WITH THE HOST, AND IT IS RELATIVE TO THAT HOST'S HOME. A
+	 * dock that reopens on an empty panel every reload is a dock nobody uses twice;
+	 * the commit dock stores its target for the same reason. What is NOT stored is a
+	 * selection — a directory is true for an instant, and restoring a name that is
+	 * gone would mark a row that no longer exists.
+	 */
+	filesTarget: FilesTarget | null;
 	/** Whether the dock shows the repository's refs panel beside the graph. */
 	/**
 	 * The refs panel is part of the graph, so it is **shown** unless the user hides
@@ -140,6 +175,9 @@ export const defaultLayout = (): TerminalLayout => ({
 	sidebarWidth: 300,
 	dockOpen: false,
 	dockWidth: 420,
+	filesOpen: false,
+	filesShare: 50,
+	filesTarget: null,
 	dockRefsHidden: false,
 	dockDetailHeight: null,
 	dockTarget: null,
@@ -544,6 +582,24 @@ export function setClickAction(layout: TerminalLayout, action: string): Terminal
 }
 
 /** Show/hide the commit dock. Only the column collapses — the view stays mounted. */
+export function toggleFiles(layout: TerminalLayout): TerminalLayout {
+	return { ...layout, filesOpen: !layout.filesOpen };
+}
+
+/** Clamped so neither panel can be dragged away to nothing. */
+export const FILES_SHARE_MIN = 20;
+export const FILES_SHARE_MAX = 80;
+
+export function setFilesShare(layout: TerminalLayout, share: number): TerminalLayout {
+	return Number.isFinite(share)
+		? { ...layout, filesShare: clamp(Math.round(share), FILES_SHARE_MIN, FILES_SHARE_MAX) }
+		: layout;
+}
+
+export function setFilesTarget(layout: TerminalLayout, hostId: string | null, path: string): TerminalLayout {
+	return { ...layout, filesTarget: hostId ? { hostId, path } : null };
+}
+
 export function toggleDock(layout: TerminalLayout): TerminalLayout {
 	return { ...layout, dockOpen: !layout.dockOpen };
 }
@@ -768,6 +824,10 @@ export function normalizeLayout(
 			? clamp(input.sidebarWidth as number, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX)
 			: base.sidebarWidth,
 		dockOpen: typeof input.dockOpen === 'boolean' ? input.dockOpen : base.dockOpen,
+		filesOpen: typeof input.filesOpen === 'boolean' ? input.filesOpen : base.filesOpen,
+		filesShare: Number.isFinite(input.filesShare)
+			? clamp(input.filesShare as number, FILES_SHARE_MIN, FILES_SHARE_MAX)
+			: base.filesShare,
 		// The legacy `dockRefs` key is deliberately NOT read: it was written false by
 		// default, so honouring it would keep the panel hidden for every user who
 		// opened the dock before this changed.
@@ -779,12 +839,19 @@ export function normalizeLayout(
 			? clamp(input.dockWidth as number, DOCK_WIDTH_MIN, DOCK_WIDTH_MAX)
 			: base.dockWidth,
 		dockTarget: null,
+		filesTarget: null,
 		cards: sanitizeCardPrefs(input.cards),
 	};
 	const target = input.dockTarget as { hostId?: unknown; repo?: unknown } | null;
 	layout.dockTarget =
 		target && typeof target.hostId === 'string'
 			? { hostId: target.hostId, repo: typeof target.repo === 'string' ? target.repo : null }
+			: null;
+
+	const files = input.filesTarget as { hostId?: unknown; path?: unknown } | null;
+	layout.filesTarget =
+		files && typeof files.hostId === 'string'
+			? { hostId: files.hostId, path: typeof files.path === 'string' ? files.path : '' }
 			: null;
 
 	const has = (id: unknown): boolean => typeof id === 'string' && layout.slots.some((s) => s?.id === id);

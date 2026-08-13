@@ -43,6 +43,11 @@ const (
 	UpstreamPong         UpstreamType = "pong"
 	UpstreamUpdateStatus UpstreamType = "updateStatus"
 	UpstreamExecResult   UpstreamType = "execResult"
+	UpstreamFsDir        UpstreamType = "fsDir"
+	UpstreamFsFile       UpstreamType = "fsFile"
+	UpstreamFsChunk      UpstreamType = "fsChunk"
+	UpstreamFsWrote      UpstreamType = "fsWrote"
+	UpstreamFsRemoved    UpstreamType = "fsRemoved"
 )
 
 // DownstreamType discriminates server -> agent frames.
@@ -60,6 +65,11 @@ const (
 	DownstreamFileTree     DownstreamType = "fileTree"
 	DownstreamFileContent  DownstreamType = "fileContent"
 	DownstreamExec         DownstreamType = "exec"
+	DownstreamFsList       DownstreamType = "fsList"
+	DownstreamFsRead       DownstreamType = "fsRead"
+	DownstreamFsGet        DownstreamType = "fsGet"
+	DownstreamFsPut        DownstreamType = "fsPut"
+	DownstreamFsDelete     DownstreamType = "fsDelete"
 )
 
 // TerminalServerType discriminates agent -> server -> browser terminal frames.
@@ -153,6 +163,63 @@ type UpdateStatusFrame struct {
 type ExecResultFrame struct {
 	Type   UpstreamType `json:"type"`
 	Result ExecResult   `json:"result"`
+}
+
+// FsDirFrame carries one directory listing back to the server.
+//
+// ⚠ A FRAME OF ITS OWN, NOT A FIELD ON ReposFrame. A repository snapshot is
+// addressed by a checkout path and a sha; this is neither, and folding it in
+// would put a live listing inside a document whose whole design is that it is
+// immutable once written.
+type FsDirFrame struct {
+	Type UpstreamType `json:"type"`
+	Dir  FsDir        `json:"dir"`
+}
+
+// FsFileFrame carries one file's contents back to the server.
+type FsFileFrame struct {
+	Type UpstreamType `json:"type"`
+	File FsFile       `json:"file"`
+}
+
+type FsChunkFrame struct {
+	Type  UpstreamType `json:"type"`
+	Chunk FsChunk      `json:"chunk"`
+}
+
+type FsWroteFrame struct {
+	Type  UpstreamType `json:"type"`
+	Wrote FsWrote      `json:"wrote"`
+}
+
+type FsRemovedFrame struct {
+	Type    UpstreamType `json:"type"`
+	Removed FsRemoved    `json:"removed"`
+}
+
+func (f *FsDirFrame) stampUpstream() UpstreamType {
+	f.Type = UpstreamFsDir
+	return UpstreamFsDir
+}
+
+func (f *FsFileFrame) stampUpstream() UpstreamType {
+	f.Type = UpstreamFsFile
+	return UpstreamFsFile
+}
+
+func (f *FsChunkFrame) stampUpstream() UpstreamType {
+	f.Type = UpstreamFsChunk
+	return UpstreamFsChunk
+}
+
+func (f *FsWroteFrame) stampUpstream() UpstreamType {
+	f.Type = UpstreamFsWrote
+	return UpstreamFsWrote
+}
+
+func (f *FsRemovedFrame) stampUpstream() UpstreamType {
+	f.Type = UpstreamFsRemoved
+	return UpstreamFsRemoved
 }
 
 func (f *HelloFrame) stampUpstream() UpstreamType {
@@ -276,6 +343,67 @@ type FileContentFrame struct {
 	Path     string         `json:"path"`
 }
 
+// FsListFrame asks for one directory under the agent user's home.
+//
+// ⚠ Path IS RELATIVE TO THAT HOME, and an empty string is the home itself. The
+// server never names a place on the disk — see FsDir for why that is the whole
+// security property rather than a convention.
+type FsListFrame struct {
+	Type      DownstreamType `json:"type"`
+	RequestID string         `json:"requestId"`
+	Path      string         `json:"path"`
+}
+
+// FsReadFrame asks for one file under the agent user's home.
+//
+// ⚠ SEPARATE FROM FsListFrame, for the reason FileTreeFrame records: listing a
+// directory and reading a file cost different things, and folding them together
+// would re-list the directory every time somebody opened another file in it.
+type FsReadFrame struct {
+	Type      DownstreamType `json:"type"`
+	RequestID string         `json:"requestId"`
+	Path      string         `json:"path"`
+}
+
+// FsPutFrame writes bytes into a file under the home, at an offset.
+//
+// ⚠ THE FIRST DELIBERATE WRITE IN THIS CONTRACT. It is a different axis from
+// git's read-only stance, not an exception to it: git is read-only because those
+// checkouts are somebody's work in progress, while this is a person handling
+// files in their own home from a browser instead of the terminal beside it.
+type FsPutFrame struct {
+	Type      DownstreamType `json:"type"`
+	RequestID string         `json:"requestId"`
+	Path      string         `json:"path"`
+	Offset    int            `json:"offset"`
+	// Data is base64, at most FS_CHUNK_BYTES decoded.
+	Data string `json:"data"`
+	// Create truncates first: this slice starts the file.
+	Create bool `json:"create"`
+}
+
+// FsDeleteFrame removes one entry under the home.
+//
+// ⚠ Recursive is never implied by the path being a directory — the two are
+// different sentences on screen, and a UI that cannot tell them apart cannot ask
+// honestly.
+type FsDeleteFrame struct {
+	Type      DownstreamType `json:"type"`
+	RequestID string         `json:"requestId"`
+	Path      string         `json:"path"`
+	Recursive bool           `json:"recursive"`
+}
+
+// FsGetFrame asks for BYTES of one file, from an offset — for a download or an
+// image, as opposed to FsReadFrame's lines for a viewer.
+type FsGetFrame struct {
+	Type      DownstreamType `json:"type"`
+	RequestID string         `json:"requestId"`
+	Path      string         `json:"path"`
+	Offset    int            `json:"offset"`
+	Length    int            `json:"length"`
+}
+
 // DetailAckFrame says "I have these". Details are immutable per sha, so an agent
 // that knows what the server already stored never rebuilds them — without this, a
 // restarted agent spends its whole per-pass budget re-producing patches the
@@ -324,6 +452,31 @@ func (f *CollectFrame) stampDownstream() DownstreamType {
 func (f *CommitDetailFrame) stampDownstream() DownstreamType {
 	f.Type = DownstreamCommitDetail
 	return DownstreamCommitDetail
+}
+
+func (f *FsListFrame) stampDownstream() DownstreamType {
+	f.Type = DownstreamFsList
+	return DownstreamFsList
+}
+
+func (f *FsReadFrame) stampDownstream() DownstreamType {
+	f.Type = DownstreamFsRead
+	return DownstreamFsRead
+}
+
+func (f *FsGetFrame) stampDownstream() DownstreamType {
+	f.Type = DownstreamFsGet
+	return DownstreamFsGet
+}
+
+func (f *FsPutFrame) stampDownstream() DownstreamType {
+	f.Type = DownstreamFsPut
+	return DownstreamFsPut
+}
+
+func (f *FsDeleteFrame) stampDownstream() DownstreamType {
+	f.Type = DownstreamFsDelete
+	return DownstreamFsDelete
 }
 
 func (f *FileTreeFrame) stampDownstream() DownstreamType {
@@ -460,6 +613,27 @@ func NewReposFrame(ts int64) *ReposFrame {
 	return &ReposFrame{Type: UpstreamRepos, Ts: ts, Repos: []RepoSnapshot{}}
 }
 
+// NewFsDirFrame and NewFsFileFrame stamp a filesystem answer for the wire.
+func NewFsDirFrame(dir FsDir) *FsDirFrame {
+	return &FsDirFrame{Type: UpstreamFsDir, Dir: dir}
+}
+
+func NewFsFileFrame(file FsFile) *FsFileFrame {
+	return &FsFileFrame{Type: UpstreamFsFile, File: file}
+}
+
+func NewFsChunkFrame(chunk FsChunk) *FsChunkFrame {
+	return &FsChunkFrame{Type: UpstreamFsChunk, Chunk: chunk}
+}
+
+func NewFsWroteFrame(wrote FsWrote) *FsWroteFrame {
+	return &FsWroteFrame{Type: UpstreamFsWrote, Wrote: wrote}
+}
+
+func NewFsRemovedFrame(removed FsRemoved) *FsRemovedFrame {
+	return &FsRemovedFrame{Type: UpstreamFsRemoved, Removed: removed}
+}
+
 // NewCommitDetailFrame returns a commitDetail request with an empty sha list.
 func NewCommitDetailFrame(repoPath string) *CommitDetailFrame {
 	return &CommitDetailFrame{Type: DownstreamCommitDetail, RepoPath: repoPath, Shas: []string{}}
@@ -559,6 +733,16 @@ func decodeDownstream(raw []byte) (DownstreamFrame, error) {
 		frame = new(FileTreeFrame)
 	case DownstreamFileContent:
 		frame = new(FileContentFrame)
+	case DownstreamFsList:
+		frame = new(FsListFrame)
+	case DownstreamFsRead:
+		frame = new(FsReadFrame)
+	case DownstreamFsGet:
+		frame = new(FsGetFrame)
+	case DownstreamFsPut:
+		frame = new(FsPutFrame)
+	case DownstreamFsDelete:
+		frame = new(FsDeleteFrame)
 	default:
 		return nil, fmt.Errorf("unknown downstream frame type %q", kind)
 	}

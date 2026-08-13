@@ -57,7 +57,10 @@ npm i @pdmux/ui @pdmux/core svelte
 |---|---|
 | `.pdmux .pdmux-shell` | a 100dvh five-track grid (cards │ handle │ terminals │ handle │ dock). Controlled by `data-sidebar="open\|hidden"`, `data-dock="open"`, `--pdmux-left`/`--pdmux-right`. ⚠ The dock track **yields to the viewport** via `clamp()` — even if a stored `--pdmux-right` was chosen on a wide monitor, a narrow window protects the terminal area's 300 px floor first and shrinks the dock (the stored value is untouched, only the display; TC-PDUI-170) |
 | `.pdmux-panel` | the terminal column wrapper (all remaining height) |
-| `.pdmux-graph` | the dock column wrapper (graph + detail) |
+| `.pdmux-dock-column` | the LAST track: a flex column holding the commit graph and the file explorer, either or both. It wears `data-pdmux-region="dock"` (the shell places the track by that name, and a phone's `Git` tab shows it), plus `data-pdmux-split="both\|single"` |
+| `.pdmux-dock-slot` | one panel inside that column. Its `flex-basis` is the stored share; both it and its child need `min-height: 0` so an inner scroll box can shrink |
+| `.pdmux-graph` | the commit panel (graph + detail) |
+| `.pdmux-files` | the file explorer panel (listing + preview) |
 | `.pdmux-graph-body` | the row placing **refs panel │ graph** side by side, each scrolling itself |
 
 ### The style boundary — what is shadcn/Tailwind and what is this stylesheet

@@ -86,8 +86,12 @@
    * `data-dock` follows the dashboard's dock rather than the preference alone: the last
    * two grid tracks are filled by the dashboard page only, so leaving them open on
    * `/hosts` would reserve an empty ~420px column beside the host list.
+   *
+   * ⚠ EITHER PANEL OPENS THE TRACK. The column holds the commit graph and the file
+   * explorer, and reading only `dockOpen` would give the explorer a zero-width column
+   * whenever the graph was closed — visible as "the toggle does nothing".
    */
-  const dockOpen = $derived(page.url.pathname === "/" && layout.dockOpen);
+  const dockOpen = $derived(page.url.pathname === "/" && (layout.dockOpen || layout.filesOpen));
 
   const nowSeconds = $derived(Math.floor(shell.feed.now / 1000));
   const fresh = $derived(freshMetrics(metricsFeed(shell.feed.hosts, shell.feed.now), shell.feed.now));

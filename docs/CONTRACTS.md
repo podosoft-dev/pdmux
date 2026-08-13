@@ -370,6 +370,89 @@ it just lacks this feature).
 
 ---
 
+## C6-3. Host file frames (`fsList` / `fsRead` → `fsDir` / `fsFile`)
+
+List one directory, or read one file, under the agent account's home.
+
+```
+server -> agent   { type: 'fsList', requestId, path }
+server -> agent   { type: 'fsRead', requestId, path }
+server -> agent   { type: 'fsGet',  requestId, path, offset, length }
+agent  -> server  { type: 'fsDir',   dir:   { requestId, path, home, entries[], dropped,
+                                              truncated, error } }
+agent  -> server  { type: 'fsFile',  file:  { requestId, path, lines[], binary, truncated,
+                                              bytes, error } }
+server -> agent   { type: 'fsPut',    requestId, path, offset, data, create }
+server -> agent   { type: 'fsDelete', requestId, path, recursive }
+agent  -> server  { type: 'fsChunk',  chunk:   { requestId, path, offset, data, size, eof,
+                                                 error } }
+agent  -> server  { type: 'fsWrote',  wrote:   { requestId, path, written, size, error } }
+agent  -> server  { type: 'fsRemoved', removed: { requestId, path, removed, error } }
+```
+
+⚠ **`fsRead` AND `fsGet` ARE DIFFERENT QUESTIONS, NOT A FLAG.** `fsRead` answers with
+LINES for a viewer — capped, and reporting binary content as a fact rather than sending it.
+`fsGet` answers with BYTES (base64, `FS_CHUNK_BYTES` at a time) for a download or an
+`<img>`, and has no opinion about what is in them. One function with a mode would have caps,
+truncation and binary handling all depending on that mode, which is how a caller ends up
+with lines it cannot use or bytes it never asked for.
+
+⚠ **`offset` IS WHY RESUME NEEDS NO MACHINERY.** Nothing is held between slices — the agent
+opens and closes the file inside each request — so an abandoned download leaves nothing on
+the host to time out, and a resumed one just asks for the next offset. It is also what lets
+the server answer an HTTP `Range` without reading the bytes in front of it. `length: 0`
+means "as much as you allow"; the agent caps anything larger regardless. `eof` and an empty
+`data` past the end are answers, not errors.
+
+⚠ **`path` IS RELATIVE TO THE HOME, ALWAYS.** The agent opens that directory once as an `os.Root`
+handle and resolves every name through it, so `..`, an absolute path and a symlink leaving the tree
+are refused **by construction** (`ARCHITECTURE.md` §4-1). An absolute path in a request would leave
+the handle with nothing to be relative to.
+
+⚠ **`home` travels one way only.** It is the absolute home the listing is relative to, sent so a
+path bar can print what `pwd` would print and so a pasted absolute path can be understood. Nothing
+accepts it back as an address. It is `''` from an agent built before the field existed, which reads
+as "not told" — an account with no usable home announces no `files` capability at all, so there is
+no third case.
+
+⚠ **Correlation is by `requestId`, not by path** — the difference from a git tree. A tree at a sha
+is immutable, so any answer for that sha is the right one; a directory is true for an instant, and
+two reads of the same path a second apart are different answers. Matching on the path would let a
+stale one settle a newer request.
+
+**A refusal travels in the frame**, not as a dropped message: `error` carries the operating system's
+own words (a permission denial is the OS answering correctly), and the caps in `FS_CAPS` report
+themselves — `dropped` counts entries left out, `truncated` says the file was cut. Bytes are
+truncated **before** lines are split, so a huge file is never fully materialised on the way to being
+refused.
+
+⚠ **`files` is declared as a capability in `hello`**, for the reason `exec` is: an older agent
+ignores the frame silently, so the server reads the capability first and answers
+`HOST_FILES_UNSUPPORTED` rather than waiting out a timeout.
+
+### Writing (`fsPut` / `fsDelete`)
+
+⚠ **THESE ARE THE FIRST FRAMES THAT CHANGE A MACHINE ON PURPOSE** (`exec` aside), and that
+is a different axis from §4's read-only git rather than an exception to it — see
+`ARCHITECTURE.md` §4-1.
+
+- **`create` belongs to the first slice only.** It truncates. On every slice it would leave a
+  file containing nothing but its last megabyte, with nothing anywhere reporting a problem.
+- **`recursive` is never inferred from the path being a directory.** The screen asks "delete
+  this folder" or "delete this folder and everything in it", and it can only ask honestly
+  because the agent refuses the second without being told.
+- **A new file is created 0600.** Something arriving from a browser is not handed to the rest
+  of the machine by default; widening it is a deliberate act in the terminal beside the panel.
+- **A symlink is unlinked as a link, never followed.** The link is inside the home, so
+  following it is what `os.Root` would allow — and it would delete a target that may be
+  anywhere.
+- **`fsWrote` and `fsRemoved` carry no content, ever.** Not the bytes, not a preview: an
+  upload is the surface most likely to carry a secret, which is the rule §MCP already states
+  for command arguments. The audit entry records that a file was written or removed and
+  where, and nothing else.
+
+---
+
 ## C7. HTTP response conventions
 
 - Errors follow the **error envelope**:

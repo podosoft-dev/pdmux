@@ -191,6 +191,18 @@
       "screenOnly": "이 pane 은 멀티플렉서로 실행 중이라 히스토리를 자체적으로 갖고 있습니다 — 여기서는 보이는 화면만 가져올 수 있습니다.",
       "foldLine": "이 줄 접기",
       "unfoldLine": "줄 전체 보기"
+    },
+    "files": {
+      "home": "홈",
+      "path": "경로",
+      "close": "닫기",
+      "loading": "디렉토리를 읽는 중…",
+      "empty": "빈 디렉토리입니다",
+      "symlink": "링크",
+      "dropped": "{count}개 항목이 더 있지만 표시되지 않았습니다",
+      "unavailable": "이 호스트의 에이전트는 아직 파일을 탐색할 수 없습니다 — 업데이트하면 사용할 수 있습니다",
+      "open": "파일 탐색",
+      "pickHost": "탐색할 호스트를 선택하세요"
     }
   },
   "dash": {
@@ -811,6 +823,23 @@
         }
       },
       "noAccess": "접근 권한 없음"
+    },
+    "files": {
+      "pickHost": "호스트 선택",
+      "refresh": "이 디렉토리 다시 읽기",
+      "pathLabel": "경로",
+      "editPath": "경로 입력",
+      "go": "이 경로로 이동",
+      "toggle": "파일 탐색기 접기/펴기",
+      "download": "{count}개 파일 다운로드",
+      "downloadLabel": "다운로드",
+      "upload": "이 폴더로 업로드",
+      "delete": "선택 삭제",
+      "deleteTitle": "삭제할까요?",
+      "deleteWarning": "이 호스트에서 {count}개를 삭제합니다: {names}. 되돌릴 수 없습니다.",
+      "deleteFolderWarning": "이 호스트에서 {count}개를 삭제합니다: {names}. 폴더는 안의 내용까지 함께 사라집니다. 되돌릴 수 없습니다.",
+      "deleteConfirm": "삭제",
+      "queued": " · {count}개 남음"
     }
   }
 }

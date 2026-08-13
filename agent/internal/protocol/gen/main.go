@@ -80,6 +80,11 @@ var unionBranches = map[string]map[string]string{
 		"pong":         "PongFrame",
 		"updateStatus": "UpdateStatusFrame",
 		"execResult":   "ExecResultFrame",
+		"fsDir":        "FsDirFrame",
+		"fsFile":       "FsFileFrame",
+		"fsChunk":      "FsChunkFrame",
+		"fsWrote":      "FsWroteFrame",
+		"fsRemoved":    "FsRemovedFrame",
 	},
 	"agentDownstream": {
 		"welcome":      "WelcomeFrame",
@@ -93,6 +98,11 @@ var unionBranches = map[string]map[string]string{
 		"fileTree":     "FileTreeFrame",
 		"fileContent":  "FileContentFrame",
 		"exec":         "ExecFrame",
+		"fsList":       "FsListFrame",
+		"fsRead":       "FsReadFrame",
+		"fsGet":        "FsGetFrame",
+		"fsPut":        "FsPutFrame",
+		"fsDelete":     "FsDeleteFrame",
 	},
 	"terminalServerFrame": {
 		"ready":  "TerminalReady",

@@ -20,6 +20,12 @@ const FORWARDED_HEADERS = [
   "origin",
   "referer",
   "user-agent",
+  // ⚠ A DOWNLOAD RESUMES ONLY IF THIS CROSSES THE PROXY. The browser retries a
+  // dropped transfer with `Range: bytes=N-`; dropped here, the API answers 200
+  // from byte zero and the download silently starts over — which is the failure
+  // the offset-addressed file transfer exists to avoid.
+  "range",
+  "if-range",
 ];
 const RELAYED_RESPONSE_HEADERS = [
   "content-type",
@@ -30,6 +36,14 @@ const RELAYED_RESPONSE_HEADERS = [
   "mcp-protocol-version",
   "mcp-session-id",
   "www-authenticate",
+  // File downloads. Without `content-disposition` the browser invents a name from
+  // the URL (`download`), without `content-length` it can show no progress at all,
+  // and without the range pair a resumed transfer cannot be answered.
+  "content-disposition",
+  "content-length",
+  "content-range",
+  "accept-ranges",
+  "x-content-type-options",
 ];
 
 // The API's address and the client-IP spelling are shared with `server.js`, which

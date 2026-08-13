@@ -10,12 +10,16 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"time"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/collect"
+	"github.com/podosoft-dev/pdmux/agent/internal/fs"
 	"github.com/podosoft-dev/pdmux/agent/internal/git"
 	"github.com/podosoft-dev/pdmux/agent/internal/log"
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
+	"github.com/podosoft-dev/pdmux/agent/internal/term"
 )
 
 // heartbeatPass takes one pass over the host and ships it.
@@ -206,4 +210,149 @@ func estimateBytes(snapshot protocol.RepoSnapshot) int {
 		}
 	}
 	return bytes
+}
+
+// fsListPass answers "what is in this directory", one level, under the home.
+//
+// ⚠ THE ROOT IS OPENED HERE AND NOWHERE ELSE, per request. The path from the
+// server is relative to it and is resolved THROUGH it, so this pass never
+// assembles a filesystem path of its own — that is the whole security property
+// (`internal/fs`), and building one here would quietly throw it away.
+//
+// ⚠ AND A FAILURE TRAVELS IN THE FRAME, the way a tree's does. A home that has
+// gone missing, a directory this account cannot read: both are facts the screen
+// has to be able to state, and sending nothing leaves it looking like the click
+// was lost.
+func (a *Agent) fsListPass(_ context.Context, id string, path string) {
+	home := term.HomeDir()
+	root, err := fs.Open(home)
+	if err != nil {
+		dir := protocol.NewFsDir()
+		dir.RequestID = id
+		dir.Path = path
+		a.client.Send(protocol.NewFsDirFrame(fsFailedDir(dir, err)))
+		return
+	}
+	defer root.Close()
+	dir := fs.List(root, path, 0)
+	dir.RequestID = id
+	// For the path bar only. It is never accepted back as an address — see the
+	// note on the field in the contract.
+	dir.Home = home
+	a.client.Send(protocol.NewFsDirFrame(dir))
+}
+
+// fsGetPass answers "give me these bytes of this file".
+//
+// ⚠ ONE SLICE PER REQUEST, AND NOTHING KEPT BETWEEN THEM. The root and the file
+// are opened and closed inside the pass, so a download the browser abandons
+// leaves nothing on this host — no handle, no timer, nothing to reap. The cost is
+// one open per megabyte, which is nothing beside the transfer itself.
+func (a *Agent) fsGetPass(_ context.Context, id string, path string, offset int, length int) {
+	root, err := fs.Open(term.HomeDir())
+	if err != nil {
+		chunk := protocol.NewFsChunk()
+		chunk.RequestID = id
+		chunk.Path = path
+		chunk.Offset = offset
+		a.client.Send(protocol.NewFsChunkFrame(fsFailedChunk(chunk, err)))
+		return
+	}
+	defer root.Close()
+	chunk := fs.Chunk(root, path, int64(offset), length)
+	chunk.RequestID = id
+	a.client.Send(protocol.NewFsChunkFrame(chunk))
+}
+
+// fsPutPass writes one slice of an upload.
+//
+// ⚠ THE BYTES ARE NEVER LOGGED, not even their length at info level. An upload is
+// the surface most likely to carry a secret — the same argument the MCP gateway
+// makes for command arguments — so what is recorded is that a write happened and
+// where, and the answer frame carries no content either.
+func (a *Agent) fsPutPass(_ context.Context, id string, path string, offset int, data string, create bool) {
+	wrote := protocol.NewFsWrote()
+	wrote.RequestID = id
+	wrote.Path = path
+
+	raw, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		a.client.Send(protocol.NewFsWroteFrame(fsFailedWrote(wrote, errors.New("slice is not base64"))))
+		return
+	}
+	root, err := fs.Open(term.HomeDir())
+	if err != nil {
+		a.client.Send(protocol.NewFsWroteFrame(fsFailedWrote(wrote, err)))
+		return
+	}
+	defer root.Close()
+	result := fs.Write(root, path, int64(offset), raw, create)
+	result.RequestID = id
+	a.client.Send(protocol.NewFsWroteFrame(result))
+}
+
+// fsDeletePass removes one entry.
+func (a *Agent) fsDeletePass(_ context.Context, id string, path string, recursive bool) {
+	removed := protocol.NewFsRemoved()
+	removed.RequestID = id
+	removed.Path = path
+
+	root, err := fs.Open(term.HomeDir())
+	if err != nil {
+		a.client.Send(protocol.NewFsRemovedFrame(fsFailedRemoved(removed, err)))
+		return
+	}
+	defer root.Close()
+	result := fs.Remove(root, path, recursive)
+	result.RequestID = id
+	a.client.Send(protocol.NewFsRemovedFrame(result))
+}
+
+// fsReadPass answers "what is in this file", one file per request — split from
+// the listing for the reason `blobPass` records: a person opens a handful of
+// files out of a directory, and sending every file's contents would be the
+// largest frame in the protocol for content nobody renders.
+func (a *Agent) fsReadPass(_ context.Context, id string, path string) {
+	root, err := fs.Open(term.HomeDir())
+	if err != nil {
+		file := protocol.NewFsFile()
+		file.RequestID = id
+		file.Path = path
+		a.client.Send(protocol.NewFsFileFrame(fsFailedFile(file, err)))
+		return
+	}
+	defer root.Close()
+	file := fs.Read(root, path)
+	file.RequestID = id
+	a.client.Send(protocol.NewFsFileFrame(file))
+}
+
+func fsFailedDir(dir protocol.FsDir, err error) protocol.FsDir {
+	message := err.Error()
+	dir.Error = &message
+	return dir
+}
+
+func fsFailedFile(file protocol.FsFile, err error) protocol.FsFile {
+	message := err.Error()
+	file.Error = &message
+	return file
+}
+
+func fsFailedChunk(chunk protocol.FsChunk, err error) protocol.FsChunk {
+	message := err.Error()
+	chunk.Error = &message
+	return chunk
+}
+
+func fsFailedWrote(wrote protocol.FsWrote, err error) protocol.FsWrote {
+	message := err.Error()
+	wrote.Error = &message
+	return wrote
+}
+
+func fsFailedRemoved(removed protocol.FsRemoved, err error) protocol.FsRemoved {
+	message := err.Error()
+	removed.Error = &message
+	return removed
 }

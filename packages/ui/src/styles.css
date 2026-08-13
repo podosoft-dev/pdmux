@@ -2904,3 +2904,304 @@
 	font-size: 0.75rem;
 	color: var(--pdmux-muted, rgb(0 0 0 / 60%));
 }
+
+/* --- host file explorer --------------------------------------------------- */
+
+/*
+ * ⚠ THIS WAS A CENTRED SHEET AND IT WAS WRONG, which is worth keeping written down:
+ * a modal covers the terminals, so the one thing a person does with a file listing —
+ * read it while typing beside it — was the thing it prevented. It is now a panel in
+ * the dock column, sharing that column with the commit graph, and it fills whatever
+ * height the split gives it.
+ */
+.pdmux-files {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	flex: 1;
+	background: var(--pdmux-card);
+}
+
+/* The breadcrumb wraps rather than scrolling: a deep path is still navigable
+   on a narrow screen, and a horizontal scroller hides the left end, which is
+   the one crumb that always works. */
+.pdmux-files-crumbs {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 2px;
+	min-width: 0;
+	font-size: 12px;
+}
+
+.pdmux-files-crumb {
+	appearance: none;
+	padding: 2px 4px;
+	font: inherit;
+	color: var(--pdmux-muted);
+	background: none;
+	border: 0;
+	border-radius: var(--pdmux-radius-sm);
+	cursor: pointer;
+}
+
+.pdmux-files-crumb:hover {
+	background: var(--pdmux-hover);
+	color: var(--pdmux-hover-fg);
+}
+
+/* The directory being shown is not a link to itself. */
+.pdmux-files-crumb[aria-current='location'] {
+	color: var(--pdmux-fg);
+	font-weight: 600;
+	cursor: default;
+}
+
+.pdmux-files-sep {
+	color: var(--pdmux-muted);
+	opacity: 0.6;
+}
+
+.pdmux-files-body {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	scrollbar-width: thin;
+}
+
+.pdmux-files-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.pdmux-files-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 3px 6px;
+	font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	text-align: start;
+	color: inherit;
+	background: none;
+	border: 0;
+	border-radius: var(--pdmux-radius-sm);
+	cursor: pointer;
+}
+
+.pdmux-files-row:hover {
+	background: var(--pdmux-hover);
+	color: var(--pdmux-hover-fg);
+}
+
+.pdmux-files-row[data-pdmux-selected='true'] {
+	background: var(--pdmux-hover);
+	color: var(--pdmux-fg);
+	outline: 1px solid var(--pdmux-ring);
+	outline-offset: -1px;
+}
+
+/*
+ * ⚠ THE COLOURS ARE THE CODE PALETTE, NOT A NEW ONE. Those six roles are already
+ * defined for light AND dark a few hundred lines up, and a second palette is a
+ * second thing to keep contrast-correct — the git dock has been through exactly
+ * that. `@pdmux/core`'s `fileKindOf()` decides the role; this only paints it.
+ *
+ * Five colours, not nine: images and video are one thing to the eye (assets), and
+ * an archive and an executable are one thing too (not readable here). Prose and
+ * unknown files stay the body colour, because most of a directory is those and a
+ * listing where everything is coloured says nothing.
+ */
+.pdmux-files-row[data-pdmux-file-kind='dir'] .pdmux-files-name {
+	color: var(--pdmux-code-title, #0550ae);
+	font-weight: 500;
+}
+
+.pdmux-files-row[data-pdmux-file-kind='code'] .pdmux-files-name {
+	color: var(--pdmux-code-keyword, #8250df);
+}
+
+.pdmux-files-row[data-pdmux-file-kind='data'] .pdmux-files-name {
+	color: var(--pdmux-code-number, #b1531a);
+}
+
+.pdmux-files-row[data-pdmux-file-kind='image'] .pdmux-files-name,
+.pdmux-files-row[data-pdmux-file-kind='media'] .pdmux-files-name {
+	color: var(--pdmux-code-string, #0a7d3f);
+}
+
+.pdmux-files-row[data-pdmux-file-kind='archive'] .pdmux-files-name,
+.pdmux-files-row[data-pdmux-file-kind='binary'] .pdmux-files-name {
+	color: var(--pdmux-code-type, #953800);
+}
+
+/* The name takes the room; a long one truncates rather than pushing the size
+   column off the sheet. */
+.pdmux-files-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pdmux-files-size {
+	flex: none;
+	color: var(--pdmux-muted);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
+.pdmux-files-tag {
+	flex: none;
+	padding: 0 5px;
+	font-size: 10px;
+	color: var(--pdmux-muted);
+	border: 1px solid var(--pdmux-line);
+	border-radius: 999px;
+}
+
+/*
+ * The preview is a face: a header saying WHICH file, and a body that is the only
+ * part that scrolls. `flex-basis` rather than a height, so it takes a share of
+ * whatever the dock split hands the panel.
+ */
+.pdmux-files-preview {
+	display: flex;
+	flex-direction: column;
+	/*
+	 * ⚠ NO GROW. Measured with `flex: 1 1 45%`: the listing above it has a zero
+	 * basis, so the two shared the free space equally and the LISTING — the surface
+	 * this panel exists for — came out at 107px against the preview's 283. It takes
+	 * its share and no more.
+	 */
+	flex: 0 1 45%;
+	min-height: 0;
+	border-top: 1px solid var(--pdmux-line);
+}
+
+.pdmux-files-preview-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 6px;
+	border-bottom: 1px solid var(--pdmux-line);
+	background: var(--pdmux-card);
+}
+
+.pdmux-files-preview-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.75rem;
+	font-weight: 500;
+}
+
+.pdmux-files-preview-body {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	scrollbar-width: thin;
+}
+
+/*
+ * An image preview sizes to the panel, never the other way round: a 6000px photo
+ * in a 420px dock must not give the column a horizontal scrollbar, and the
+ * checkerboard is what makes a transparent PNG readable in either theme.
+ */
+.pdmux-files-image {
+	display: block;
+	max-width: 100%;
+	max-height: 100%;
+	margin: 8px auto;
+	object-fit: contain;
+	background-color: var(--pdmux-hover);
+	background-image:
+		linear-gradient(45deg, var(--pdmux-line) 25%, transparent 25%),
+		linear-gradient(-45deg, var(--pdmux-line) 25%, transparent 25%),
+		linear-gradient(45deg, transparent 75%, var(--pdmux-line) 75%),
+		linear-gradient(-45deg, transparent 75%, var(--pdmux-line) 75%);
+	background-size: 16px 16px;
+	background-position:
+		0 0,
+		0 8px,
+		8px -8px,
+		-8px 0;
+}
+
+.pdmux-files-preview-body[data-pdmux-preview-kind='image'] {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* An upload's progress, pinned under the panel it is going into. */
+.pdmux-files-upload {
+	flex: none;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px 8px;
+	border-top: 1px solid var(--pdmux-line);
+	font-size: 0.75rem;
+	background: var(--pdmux-card);
+}
+
+.pdmux-files-bar {
+	height: 4px;
+	border-radius: 999px;
+	background: var(--pdmux-hover);
+	overflow: hidden;
+}
+
+.pdmux-files-bar-fill {
+	height: 100%;
+	background: var(--pdmux-accent);
+	transition: width 120ms linear;
+}
+
+/*
+ * ⚠ AN INSET OUTLINE, NOT A BORDER. A border added on hover changes the panel's
+ * box and shifts every row under the pointer — which cancels the drag in some
+ * browsers because the element under the cursor changed mid-gesture.
+ */
+.pdmux-files-dock[data-pdmux-dragging='true'] {
+	outline: 2px dashed var(--pdmux-accent);
+	outline-offset: -2px;
+}
+
+/* --- the dock column ------------------------------------------------------ */
+
+/*
+ * ⚠ ONE GRID TRACK, TWO PANELS. The shell grid has exactly five columns and the
+ * last one is the dock; adding a sixth for the file explorer would have meant a
+ * second resizable column in a window that already gives the terminals what is
+ * left. So the track holds a flex column instead, and the two panels split its
+ * height between them.
+ */
+.pdmux-dock-column {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+	background: var(--pdmux-card);
+}
+
+/*
+ * Each panel is a flex ITEM whose basis is the stored share, and a flex CONTAINER
+ * for the panel inside it. `min-height: 0` on both is what lets an inner scroll box
+ * shrink — without it a long commit list makes the column taller than the window
+ * and the splitter walks off the bottom.
+ */
+.pdmux-dock-slot {
+	display: flex;
+	flex-direction: column;
+	flex-grow: 1;
+	flex-shrink: 1;
+	min-height: 0;
+	min-width: 0;
+}

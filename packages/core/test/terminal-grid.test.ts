@@ -5,6 +5,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+	FILES_SHARE_MAX,
+	FILES_SHARE_MIN,
+	setFilesShare,
+	setFilesTarget,
 	GRID_COLUMNS,
 	GRID_SIZE,
 	type GridCell,
@@ -45,6 +49,7 @@ import {
 	swapSlots,
 	toProtocolTarget,
 	toggleDock,
+	toggleFiles,
 	toggleDockRefs,
 	toggleSidebar,
 	toggleZoom,
@@ -639,6 +644,60 @@ describe('[TC-PDCORE-020] the commit dock is a toggle with a clamped width and a
 		// which is what kept the panel invisible for the person who asked for it. The
 		// legacy key must be ignored, not honoured.
 		expect(normalizeLayout({ dockRefs: false }, []).dockRefsHidden).toBe(false);
+	});
+});
+
+describe('[TC-PDCORE-099] the dock column is shared by the graph and the file explorer', () => {
+	it('opens each half independently', () => {
+		// ⚠ TWO FLAGS, NOT A MODE. One enum would mean opening the files half throws
+		// away the graph, and the pair answers two questions an operator asks at the
+		// same time — what changed, and what is on the machine.
+		const base = normalizeLayout(null, []);
+		expect([base.dockOpen, base.filesOpen]).toEqual([false, false]);
+		const files = toggleFiles(base);
+		expect([files.dockOpen, files.filesOpen]).toEqual([false, true]);
+		const both = toggleDock(files);
+		expect([both.dockOpen, both.filesOpen]).toEqual([true, true]);
+		// Closing one leaves the other exactly as it was.
+		expect(toggleFiles(both).dockOpen).toBe(true);
+		expect(toggleDock(both).filesOpen).toBe(true);
+	});
+
+	it('stores the split as a clamped share and repairs junk', () => {
+		const base = normalizeLayout(null, []);
+		expect(base.filesShare).toBe(50);
+		// A share, not pixels: the column itself is resizable, so a stored height
+		// would overflow it or leave a gap the moment the column moved.
+		expect(setFilesShare(base, 70).filesShare).toBe(70);
+		expect(setFilesShare(base, 1).filesShare).toBe(FILES_SHARE_MIN);
+		expect(setFilesShare(base, 200).filesShare).toBe(FILES_SHARE_MAX);
+		expect(setFilesShare(base, 33.6).filesShare).toBe(34);
+		expect(setFilesShare(base, Number.NaN).filesShare).toBe(base.filesShare);
+		const saved = setFilesShare(toggleFiles(base), 65);
+		const restored = normalizeLayout(JSON.parse(JSON.stringify(saved)), []);
+		expect([restored.filesOpen, restored.filesShare]).toEqual([true, 65]);
+		expect(normalizeLayout({ filesShare: 'half' }, []).filesShare).toBe(50);
+	});
+
+	it('remembers where the explorer was looking, and nothing more', () => {
+		// Without this the dock reopens empty on every reload, which is a dock nobody
+		// opens twice. The commit dock stores its target for the same reason.
+		const base = normalizeLayout(null, []);
+		expect(base.filesTarget).toBeNull();
+		const at = setFilesTarget(base, 'h1', 'Project/pdmux');
+		expect(at.filesTarget).toEqual({ hostId: 'h1', path: 'Project/pdmux' });
+		expect(normalizeLayout(JSON.parse(JSON.stringify(at)), []).filesTarget).toEqual({
+			hostId: 'h1',
+			path: 'Project/pdmux',
+		});
+		// A target without a host is not a target.
+		expect(setFilesTarget(at, null, 'anything').filesTarget).toBeNull();
+		expect(normalizeLayout({ filesTarget: { path: 'x' } }, []).filesTarget).toBeNull();
+		// A stored path that is not a string falls back to the home, never to junk.
+		expect(normalizeLayout({ filesTarget: { hostId: 'h1', path: 7 } }, []).filesTarget).toEqual({
+			hostId: 'h1',
+			path: '',
+		});
 	});
 });
 

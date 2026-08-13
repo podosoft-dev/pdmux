@@ -32,6 +32,7 @@ import { hostsApi, prefsApi } from "./api";
  *  route rendered, so `/hosts` and `/account` need no tab of their own. */
 export type ShellView = "hosts" | "terminal" | "git" | "page";
 import { FleetFeed } from "./fleet-feed.svelte";
+import { FilesDock } from "./files-dock.svelte";
 import { GitDock } from "./git-dock.svelte";
 import { gridHosts } from "./map";
 import {
@@ -107,6 +108,7 @@ export function initialLayout(seed: ShellSeed): { layout: TerminalLayout; fresh:
 export class ShellState {
   readonly feed: FleetFeed;
   readonly dock = new GitDock();
+  readonly files = new FilesDock();
   readonly relay: TerminalRelay;
   /** Usage providers the fleet reports; the cards render a row per provider. */
   readonly providers: readonly string[];

@@ -357,6 +357,192 @@ func (x *ExecResult) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, (*plain)(x))
 }
 
+// NewFsChunk returns a new FsChunk, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewFsChunk() FsChunk {
+	var value FsChunk
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero FsChunk.
+func (x *FsChunk) applyDefaults() {
+	x.Data = ""
+	x.EOF = false
+	x.Error = nil
+	x.Offset = 0
+	x.Size = 0
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so FsChunk inside a list is defaulted exactly like one at the root.
+func (x *FsChunk) UnmarshalJSON(data []byte) error {
+	*x = FsChunk{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain FsChunk
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewFsDir returns a new FsDir, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewFsDir() FsDir {
+	var value FsDir
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero FsDir.
+func (x *FsDir) applyDefaults() {
+	x.Dropped = 0
+	x.Entries = []FsEntry{}
+	x.Error = nil
+	x.Home = ""
+	x.Truncated = false
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so FsDir inside a list is defaulted exactly like one at the root.
+func (x *FsDir) UnmarshalJSON(data []byte) error {
+	*x = FsDir{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain FsDir
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewFsEntry returns a new FsEntry, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewFsEntry() FsEntry {
+	var value FsEntry
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero FsEntry.
+func (x *FsEntry) applyDefaults() {
+	x.Dir = false
+	x.Modified = 0
+	x.Size = 0
+	x.Symlink = false
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so FsEntry inside a list is defaulted exactly like one at the root.
+func (x *FsEntry) UnmarshalJSON(data []byte) error {
+	*x = FsEntry{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain FsEntry
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewFsFile returns a new FsFile, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewFsFile() FsFile {
+	var value FsFile
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero FsFile.
+func (x *FsFile) applyDefaults() {
+	x.Binary = false
+	x.Bytes = 0
+	x.Error = nil
+	x.Lines = []string{}
+	x.Truncated = false
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so FsFile inside a list is defaulted exactly like one at the root.
+func (x *FsFile) UnmarshalJSON(data []byte) error {
+	*x = FsFile{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain FsFile
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewFsRemoved returns a new FsRemoved, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewFsRemoved() FsRemoved {
+	var value FsRemoved
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero FsRemoved.
+func (x *FsRemoved) applyDefaults() {
+	x.Error = nil
+	x.Removed = 0
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so FsRemoved inside a list is defaulted exactly like one at the root.
+func (x *FsRemoved) UnmarshalJSON(data []byte) error {
+	*x = FsRemoved{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain FsRemoved
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewFsWrote returns a new FsWrote, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewFsWrote() FsWrote {
+	var value FsWrote
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero FsWrote.
+func (x *FsWrote) applyDefaults() {
+	x.Error = nil
+	x.Size = 0
+	x.Written = 0
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so FsWrote inside a list is defaulted exactly like one at the root.
+func (x *FsWrote) UnmarshalJSON(data []byte) error {
+	*x = FsWrote{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain FsWrote
+	return json.Unmarshal(data, (*plain)(x))
+}
+
 // NewGitBlob returns a new GitBlob, seeded with every default the contract declares.
 // Build values this way rather than as a struct literal: a literal leaves
 // slices nil (they marshal to null, which the server rejects) and non-zero

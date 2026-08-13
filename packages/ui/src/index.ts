@@ -33,6 +33,7 @@ export { default as CommitDetail } from './components/CommitDetail.svelte';
 export { default as DiffView } from './components/DiffView.svelte';
 export { default as BlobView } from './components/BlobView.svelte';
 export { default as FileList } from './components/FileList.svelte';
+export { default as FileExplorer } from './components/FileExplorer.svelte';
 export { default as FileTree } from './components/FileTree.svelte';
 export { default as RepoTreeView } from './components/RepoTreeView.svelte';
 
@@ -54,6 +55,9 @@ export type { Translate } from './i18n.js';
 export type { ShellViewTab } from './components/ShellViewTabs.svelte';
 export type {
 	HostDetail,
+	FsDirView,
+	FsEntryView,
+	FsFileView,
 	HostResources,
 	HostState,
 	HostSummary,
@@ -62,4 +66,5 @@ export type {
 	PickerHost,
 	PickerTarget,
 	RepoHead,
+	SelectMode,
 } from './types.js';

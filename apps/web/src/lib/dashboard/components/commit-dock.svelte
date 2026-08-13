@@ -307,7 +307,11 @@
   onDestroy(() => dock.suspend());
 </script>
 
-<div class="pdmux pdmux-graph" data-pdmux-region="dock" data-testid="commit-dock">
+<!-- ⚠ `region="graph"`, NOT `"dock"`. The shell places its LAST TRACK by
+     `[data-pdmux-region='dock']`, and that track is now the column holding this panel
+     and the file explorer — wearing the name here as well would mean two elements
+     answering to the region that decides what a phone shows. -->
+<div class="pdmux pdmux-graph" data-pdmux-region="graph" data-testid="commit-dock">
   <header class="flex items-center gap-2 border-b px-2 py-1.5 text-xs">
     {#if hosts.length}
       <Select.Root

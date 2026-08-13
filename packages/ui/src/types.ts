@@ -102,3 +102,53 @@ export interface RepoHead {
 	/** Absolute path on the host; the panel shows it as the repository's identity. */
 	path?: string | null;
 }
+
+/**
+ * One entry of a host directory, as the explorer draws it.
+ *
+ * Declared here rather than imported from the contract for the reason the rest
+ * of this file exists: this package takes data as props and must not depend on
+ * the agent protocol to be installable.
+ */
+export interface FsEntryView {
+	name: string;
+	dir: boolean;
+	/** Marked because such a link may refuse to open — see `FileExplorer`. */
+	symlink: boolean;
+	size: number;
+	modified: number;
+}
+
+/** How a click on a listing row asked for the selection to change. */
+export type SelectMode = 'single' | 'toggle' | 'range';
+
+/**
+ * One file read from a host's disk — the shape `BlobView` already renders.
+ *
+ * The app declares the same shape for its API layer; this copy exists so the
+ * package's own props are typed without importing from an app, which
+ * `[TC-PDUI-030]` forbids.
+ */
+export interface FsFileView {
+	path: string;
+	lines: string[];
+	binary: boolean;
+	truncated: boolean;
+	bytes: number;
+	error: string | null;
+}
+
+export interface FsDirView {
+	path: string;
+	/**
+	 * The absolute home this listing is relative to, for display only. Empty when
+	 * the agent is too old to say — the path bar then writes `~`.
+	 */
+	home?: string;
+	entries: readonly FsEntryView[];
+	/** Entries the host left out, so the panel can say how many. */
+	dropped: number;
+	truncated: boolean;
+	/** A refusal is shown as it is — a permission error is the OS answering. */
+	error: string | null;
+}

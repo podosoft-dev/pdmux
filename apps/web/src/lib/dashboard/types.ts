@@ -443,3 +443,13 @@ export interface McpTokenPolicy {
   tiers: readonly ("read" | "operate" | "admin")[];
   expiryDays: readonly number[];
 }
+
+/** One file from a host's disk — the shape `BlobView` already renders. */
+export interface FsFileView {
+  path: string;
+  lines: string[];
+  binary: boolean;
+  truncated: boolean;
+  bytes: number;
+  error: string | null;
+}

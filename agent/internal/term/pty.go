@@ -403,6 +403,14 @@ func utf8Locale() string {
 	return "C.UTF-8"
 }
 
+// HomeDir is where a terminal opens when the caller does not say — and, because
+// it is exported, also the root the file explorer browses.
+//
+// ⚠ ONE DEFINITION ON PURPOSE. The explorer showing a different directory from
+// the one a pane opens in would be a quiet lie: the two are meant to be the same
+// place, and a second copy of this logic is how they would drift apart.
+func HomeDir() string { return homeDir() }
+
 // homeDir is where a terminal opens when the caller does not say.
 //
 // The agent's own working directory is the wrong answer: under systemd it is

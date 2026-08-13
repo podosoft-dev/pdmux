@@ -223,6 +223,74 @@ is handled with a **per-pass budget** instead (fill newest-first, and report wha
 
 ---
 
+## 4-1. Browsing a host's files: the fence is a **handle**, not a check
+
+The dock's second panel lists and reads files on a host. Three decisions hold it up, and they are
+the same shape as §4's:
+
+**The root is the agent account's `$HOME`.** The agent runs as the person who installed it, not as
+root, and a pane's shell is that same account — so the permission check is **the operating system**,
+and a file that account cannot read fails with `EACCES` exactly as it would in the terminal beside
+it. Rooting the view at that account's home makes "how far can this see" a fact about the account
+rather than a list somebody maintains.
+
+**The confinement is `os.Root`.** The agent opens the home once (`os.OpenRoot`) and resolves every
+name **through that handle**. `..`, an absolute path and a symlink pointing out of the tree are
+refused by construction — there is no path-validation code to get wrong, which is why there is none.
+
+- ⚠ **The contract therefore carries relative paths only.** An absolute path in a request would
+  leave the handle with nothing to be relative to, and the fence would silently become a string
+  comparison. `fsDir.home` travels the OTHER way (host → screen) for display and for reading a path
+  a person pasted; nothing accepts it back as an address.
+- ⚠ **A link written as an absolute path is refused even when it points inside the home.** Measured.
+  The listing marks symlinks for that reason — an unexplained refusal reads as a defect.
+
+**MCP cannot reach it.** The routes are ordinary REST under the session's scope gate, and the MCP
+gateway does not proxy REST — it enumerates tools. So a token that was never meant to browse a
+machine does not gain the ability when a route is added. That is deliberate: a dashboard user with a
+terminal on that host can already run `cat`, so the explorer is convenience over a permission they
+hold; a token holder with no terminal is a different grade, and giving it file access would be a new
+one.
+
+**Caps mirror the blob view's** (`FS_CAPS`), one directory per request, bytes truncated **before**
+lines are split — the same order `git/tree.go` records, and for the same reason: a 40 MB file must
+not become 40 MB of strings on the way to being refused.
+
+**Downloads are the browser's job.** `GET /hosts/:id/files/download` streams the file and answers
+`Range`; progress, cancel, the downloads shelf and resume-after-a-drop are then Chrome's and
+Safari's, which do them well. Doing it in the page would mean holding the whole file in memory to
+produce a blob URL — the one thing that breaks on exactly the large files the feature exists for.
+The server pulls `FS_CHUNK_BYTES` at a time from the agent and writes each slice out with
+back-pressure, checking for an aborted response **before** asking for the next one.
+
+**Writing is a different axis from §4, not an exception to it.** git is read-only here because
+those checkouts are somebody's work in progress and a dashboard has no business touching them;
+the explorer writes because a person is handling files in *their own home*, from a browser
+instead of from the terminal beside it — where they could already do it. The two rules do not
+contradict each other, and this paragraph exists because read together without it they look
+like they do.
+
+What that costs, and what pays for it:
+
+- The fence is the same handle, so a write cannot land outside the home either.
+- ⚠ **A path that escapes is REFUSED, not reinterpreted.** The obvious normalisation
+  (`path.Clean("/" + name)`) folds `../escaped.txt` into `escaped.txt` — measured while
+  building the upload path, that created `~/escaped.txt` and reported success. Reading had the
+  same hole and only looked safe because the reinterpreted name rarely exists.
+- A new file is created **0600**; a non-empty directory is refused unless the caller says
+  `recursive`; a symlink is unlinked as a link rather than followed.
+- **Deleting always asks, and the question names what goes.** A count is not a question —
+  "delete 4 items" reads the same whether they are scratch files or a week's work.
+- The audit records **that** a file was written or removed and **where**. Never a byte of it.
+
+⚠ **`inline` is a REQUEST, not a decision.** Content rendered from this origin runs as the app, an
+SVG carries script and an HTML file plainly is script — and the explorer is a way to put such a file
+on a host. So the allowlist (`@pdmux/core`'s `INLINE_SAFE`) is raster images, everything else is an
+attachment however it was asked for, and `X-Content-Type-Options: nosniff` stops the browser from
+overruling a type that was itself guessed from a name.
+
+---
+
 ## 5. Why the components are separate packages
 
 The dashboard UI is not only this app's. Another project should be able to take just the "host card"

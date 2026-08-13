@@ -9,7 +9,8 @@
         "git",
         "usage",
         "services",
-        "exec"
+        "exec",
+        "files"
       ],
       "type": "string"
     },
@@ -344,6 +345,150 @@
             "type",
             "repoPath",
             "sha",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "path": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "requestId": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": {
+              "const": "fsList",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "requestId",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "path": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "requestId": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": {
+              "const": "fsRead",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "requestId",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "create": {
+              "default": false,
+              "type": "boolean"
+            },
+            "data": {
+              "default": "",
+              "maxLength": 2097152,
+              "type": "string"
+            },
+            "offset": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "requestId": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": {
+              "const": "fsPut",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "requestId",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "path": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "recursive": {
+              "default": false,
+              "type": "boolean"
+            },
+            "requestId": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": {
+              "const": "fsDelete",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "requestId",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "length": {
+              "default": 0,
+              "maximum": 1048576,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "offset": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "path": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "requestId": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": {
+              "const": "fsGet",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "requestId",
             "path"
           ],
           "type": "object"
@@ -710,6 +855,91 @@
             "result"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "dir": {
+              "$ref": "#/$defs/fsDir"
+            },
+            "type": {
+              "const": "fsDir",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "dir"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "file": {
+              "$ref": "#/$defs/fsFile"
+            },
+            "type": {
+              "const": "fsFile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "file"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "chunk": {
+              "$ref": "#/$defs/fsChunk"
+            },
+            "type": {
+              "const": "fsChunk",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "chunk"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "type": {
+              "const": "fsWrote",
+              "type": "string"
+            },
+            "wrote": {
+              "$ref": "#/$defs/fsWrote"
+            }
+          },
+          "required": [
+            "type",
+            "wrote"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "removed": {
+              "$ref": "#/$defs/fsRemoved"
+            },
+            "type": {
+              "const": "fsRemoved",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "removed"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -937,6 +1167,265 @@
       "required": [
         "commandId",
         "exitCode"
+      ],
+      "type": "object"
+    },
+    "fsChunk": {
+      "additionalProperties": true,
+      "properties": {
+        "data": {
+          "default": "",
+          "maxLength": 2097152,
+          "type": "string"
+        },
+        "eof": {
+          "default": false,
+          "type": "boolean"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "size": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requestId",
+        "path"
+      ],
+      "type": "object"
+    },
+    "fsDir": {
+      "additionalProperties": true,
+      "properties": {
+        "dropped": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "entries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/fsEntry"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "home": {
+          "default": "",
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requestId",
+        "path"
+      ],
+      "type": "object"
+    },
+    "fsEntry": {
+      "additionalProperties": true,
+      "properties": {
+        "dir": {
+          "default": false,
+          "type": "boolean"
+        },
+        "modified": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "size": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "symlink": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "fsFile": {
+      "additionalProperties": true,
+      "properties": {
+        "binary": {
+          "default": false,
+          "type": "boolean"
+        },
+        "bytes": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "lines": {
+          "default": [],
+          "items": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "maxItems": 4000,
+          "type": "array"
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requestId",
+        "path"
+      ],
+      "type": "object"
+    },
+    "fsRemoved": {
+      "additionalProperties": true,
+      "properties": {
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "removed": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "path"
+      ],
+      "type": "object"
+    },
+    "fsWrote": {
+      "additionalProperties": true,
+      "properties": {
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "size": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "written": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requestId",
+        "path"
       ],
       "type": "object"
     },

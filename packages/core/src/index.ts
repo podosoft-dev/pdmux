@@ -22,3 +22,4 @@ export * from './commit-files.js';
 export * from './listeners.js';
 export * from './commit-graph.js';
 export * from './terminal-keys.js';
+export * from './file-kind.js';

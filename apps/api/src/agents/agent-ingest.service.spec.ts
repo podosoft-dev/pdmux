@@ -17,6 +17,7 @@ import { fakeDataSource } from "../testing/fake-data-source";
 import { FakeRepository } from "../testing/fake-repository";
 import { AgentAckService } from "./agent-ack.service";
 import { AgentExecService } from "./agent-exec.service";
+import { AgentFilesService } from "./agent-files.service";
 import { AgentIngestService } from "./agent-ingest.service";
 import { AgentRegistryService } from "./agent-registry.service";
 
@@ -58,6 +59,7 @@ function build(): {
   published: unknown[];
   registry: AgentRegistryService;
   exec: { settle: (result: unknown) => number; settled: unknown[] };
+  files: { settle: (answer: unknown) => number; listed: unknown[] };
 } {
   const hostRepo = new FakeRepository<Host>({ tags: [], capabilities: [], sortOrder: 0, enabled: true });
   const serviceRepo = new FakeRepository<HostService>();
@@ -90,6 +92,10 @@ function build(): {
   // the double here only has to record that it was handed over.
   const settled: unknown[] = [];
   const exec = { settle: (result: unknown) => settled.push(result), settled };
+  // A directory listing is relayed the same way and stored nowhere either — it is
+  // true for an instant, so there is nothing a row could keep.
+  const listed: unknown[] = [];
+  const files = { settle: (answer: unknown) => listed.push(answer), listed };
   const ingest = new AgentIngestService(
     hosts,
     metrics,
@@ -99,8 +105,9 @@ function build(): {
     registry,
     ack as unknown as AgentAckService,
     exec as unknown as AgentExecService,
+    files as unknown as AgentFilesService,
   );
-  return { ingest, hosts, hostRepo, settings, samples, events, published, registry, exec };
+  return { ingest, hosts, hostRepo, settings, samples, events, published, registry, exec, files };
 }
 
 describe("AgentIngestService", () => {

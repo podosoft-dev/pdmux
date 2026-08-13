@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/collect"
+	"github.com/podosoft-dev/pdmux/agent/internal/fs"
 	"github.com/podosoft-dev/pdmux/agent/internal/git"
 	"github.com/podosoft-dev/pdmux/agent/internal/log"
 	"github.com/podosoft-dev/pdmux/agent/internal/net"
@@ -419,6 +420,14 @@ func BuildHello(hostname, version, serverURL string, ability protocol.AgentUpdat
 		protocol.CapabilityServices,
 		protocol.CapabilityExec,
 	}
+	// ⚠ ANNOUNCED ONLY WHEN THERE IS SOMEWHERE TO BROWSE. A service account with
+	// no usable home has nothing to offer, and a screen that drew the control
+	// anyway would put a button there that can only ever answer with an error.
+	// The server reads this exactly the way it reads `exec`.
+	if fsRoot, err := fs.Open(term.HomeDir()); err == nil {
+		fsRoot.Close()
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles)
+	}
 	hello.Update = ability
 	return hello
 }
@@ -464,6 +473,23 @@ func (a *Agent) onDownstream(frame protocol.DownstreamFrame) {
 	case *protocol.FileContentFrame:
 		repoPath, sha, path := f.RepoPath, f.SHA, f.Path
 		a.spawnPass("blob", func(ctx context.Context) { a.blobPass(ctx, repoPath, sha, path) })
+	case *protocol.FsListFrame:
+		// Off the read loop like every other pass: a directory on a cold disk can
+		// take longer than the socket may be left unread.
+		id, path := f.RequestID, f.Path
+		a.spawnPass("fsList", func(ctx context.Context) { a.fsListPass(ctx, id, path) })
+	case *protocol.FsReadFrame:
+		id, path := f.RequestID, f.Path
+		a.spawnPass("fsRead", func(ctx context.Context) { a.fsReadPass(ctx, id, path) })
+	case *protocol.FsGetFrame:
+		id, path, offset, length := f.RequestID, f.Path, f.Offset, f.Length
+		a.spawnPass("fsGet", func(ctx context.Context) { a.fsGetPass(ctx, id, path, offset, length) })
+	case *protocol.FsPutFrame:
+		id, path, offset, data, create := f.RequestID, f.Path, f.Offset, f.Data, f.Create
+		a.spawnPass("fsPut", func(ctx context.Context) { a.fsPutPass(ctx, id, path, offset, data, create) })
+	case *protocol.FsDeleteFrame:
+		id, path, recursive := f.RequestID, f.Path, f.Recursive
+		a.spawnPass("fsDelete", func(ctx context.Context) { a.fsDeletePass(ctx, id, path, recursive) })
 	case *protocol.DetailAckFrame:
 		// The server HAS these, so they are never rebuilt again — across restarts.
 		a.ledger.Ack(f.RepoPath, f.Shas)

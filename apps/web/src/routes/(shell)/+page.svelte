@@ -19,7 +19,7 @@
   import "@xterm/xterm/css/xterm.css";
   import { onMount, untrack } from "svelte";
   import { SplitHandle, TerminalGrid, TerminalTargetPicker } from "@pdmux/ui";
-  import type { PickerTarget } from "@pdmux/ui";
+  import type { FsDirView, PickerTarget } from "@pdmux/ui";
   import { MediaQuery } from "svelte/reactivity";
   import {
     SHELL_STACK_MAX_WIDTH,
@@ -44,8 +44,11 @@
     soloIndex,
     soloLayout,
     soloStep,
+    setFilesShare,
+    setFilesTarget,
     toggleDock,
     toggleDockRefs,
+    toggleFiles,
     toggleSidebar,
     toggleZoom,
   } from "@pdmux/core";
@@ -53,6 +56,7 @@
   import { errorCode, terminalApi } from "$lib/dashboard/api";
   import { fmt, getI18n } from "$lib/i18n";
   import CommitDock from "$lib/dashboard/components/commit-dock.svelte";
+  import FilesDockPanel from "$lib/dashboard/components/files-dock.svelte";
   import ConfirmDialog from "$lib/dashboard/components/confirm-dialog.svelte";
   import TerminalToolbar from "$lib/dashboard/components/terminal-toolbar.svelte";
   import { gridHosts, pickerHosts } from "$lib/dashboard/map";
@@ -215,6 +219,50 @@
     shell.apply(next);
   }
 
+  /**
+   * The dock column's own split, measured as a SHARE.
+   *
+   * ⚠ THE DELTA IS PIXELS AND THE STATE IS A PERCENTAGE, so the column's height has
+   * to be read at the moment of the drag — a share computed against a remembered
+   * height drifts the instant the window is resized. `invert` on the handle means a
+   * drag upward grows the panel below it, which is the file explorer.
+   */
+  let dockColumn = $state<HTMLElement | null>(null);
+  let filesBase: number | null = null;
+
+  function dragFilesSplit(delta: number, commit: boolean): void {
+    const height = dockColumn?.getBoundingClientRect().height ?? 0;
+    if (height <= 0) return;
+    filesBase ??= layout.filesShare;
+    const next = setFilesShare(layout, filesBase + (delta / height) * 100);
+    if (commit) filesBase = null;
+    shell.apply(next);
+  }
+
+  // --- files dock -----------------------------------------------------------
+  /**
+   * ⚠ THE LAYOUT REMEMBERS WHERE IT WAS LOOKING, and this is where that is written.
+   * The store owns the fetching and knows nothing about persistence; recording it
+   * here keeps "what the user is doing" in one document with the rest of the shell.
+   */
+  function rememberFiles(): void {
+    const at = layout.filesTarget;
+    if (at?.hostId === shell.files.hostId && at?.path === shell.files.path) return;
+    shell.apply(setFilesTarget(layout, shell.files.hostId, shell.files.path));
+  }
+
+  function openFilesHost(hostId: string): void {
+    void shell.files.openHost(hostId).then(rememberFiles);
+  }
+
+  function openFilesDir(path: string): void {
+    void shell.files.openDir(path).then(rememberFiles);
+  }
+
+  function navigateFiles(input: string): void {
+    void shell.files.navigate(input, shell.files.dir?.home ?? null).then(rememberFiles);
+  }
+
   // --- commit dock ----------------------------------------------------------
   function openDockHost(hostId: string): void {
     shell.apply(setDockTarget(layout, { hostId, repo: null }));
@@ -280,6 +328,17 @@
     const target = layout.dockTarget ?? { hostId: data.hosts[0]?.id ?? null, repo: null };
     if (target.hostId) void shell.dock.openHost(target.hostId, target.repo);
   });
+
+  onMount(() => {
+    // Same contract as the dock above: already pointed somewhere means a return from
+    // another route, and re-opening would re-read a directory for nothing.
+    // ⚠ NO FALLBACK TO THE FIRST HOST. A repository graph is the same question on any
+    // host; a home directory is not, and opening somebody's files because they opened
+    // a panel is a decision the panel does not get to make.
+    if (shell.files.hostId) return;
+    const at = layout.filesTarget;
+    if (at?.hostId) void shell.files.open(at.hostId, at.path);
+  });
 </script>
 
 <svelte:head><title>{i18n.t.dash.title} · pdmux</title></svelte:head>
@@ -295,6 +354,7 @@
     onPage={paged}
     onToggleSidebar={() => shell.apply(toggleSidebar(layout))}
     onToggleDock={() => shell.apply(toggleDock(layout))}
+    onToggleFiles={() => shell.apply(toggleFiles(layout))}
     onToggleClickAction={() => shell.apply(setClickAction(layout, layout.clickAction === "zoom" ? "focus" : "zoom"))}
     onAdd={(element: HTMLElement) => openPicker(null, element)}
     compact={stacked.current}
@@ -324,18 +384,64 @@
 
 <SplitHandle invert {t} onDrag={(delta) => dragDock(delta, false)} onCommit={(delta) => dragDock(delta, true)} />
 
-<CommitDock
-  dock={shell.dock}
-  hosts={shell.feed.hosts}
-  {t}
-  refsOpen={!layout.dockRefsHidden}
-  detailHeight={layout.dockDetailHeight}
-  onDetailResize={dragDetail}
-  onHostChange={openDockHost}
-  onRepoChange={openDockRepo}
-  onToggleRefs={() => shell.apply(toggleDockRefs(layout))}
-  onDetach={detachDock}
-/>
+<!--
+  ⚠ THIS ELEMENT IS THE DOCK REGION — it wears `data-pdmux-region="dock"` because the
+  shell's LAST TRACK is placed by that name, and on a phone the same name is what the
+  `Git` tab shows. Handing it to the commit panel instead (where it used to live) left
+  the column unplaced: measured on a 390px viewport, the tab showed nothing at all.
+
+  ⚠ ONE GRID TRACK, TWO PANELS. The shell grid has five columns and the last is the
+  dock; the file explorer shares it rather than taking a sixth, because a second
+  resizable column would come out of the terminals' width — and the terminals are why
+  anyone opened the page. Each panel toggles on its own, so an operator can watch a
+  build and read the tree it is building at the same time.
+-->
+<div
+  class="pdmux pdmux-dock-column"
+  data-pdmux-region="dock"
+  data-pdmux-split={layout.dockOpen && layout.filesOpen ? "both" : "single"}
+  bind:this={dockColumn}
+>
+  {#if layout.dockOpen}
+    <div class="pdmux-dock-slot" style:flex-basis={`${layout.filesOpen ? 100 - layout.filesShare : 100}%`}>
+      <CommitDock
+        dock={shell.dock}
+        hosts={shell.feed.hosts}
+        {t}
+        refsOpen={!layout.dockRefsHidden}
+        detailHeight={layout.dockDetailHeight}
+        onDetailResize={dragDetail}
+        onHostChange={openDockHost}
+        onRepoChange={openDockRepo}
+        onToggleRefs={() => shell.apply(toggleDockRefs(layout))}
+        onDetach={detachDock}
+      />
+    </div>
+  {/if}
+
+  {#if layout.dockOpen && layout.filesOpen}
+    <SplitHandle
+      axis="y"
+      invert
+      {t}
+      onDrag={(delta) => dragFilesSplit(delta, false)}
+      onCommit={(delta) => dragFilesSplit(delta, true)}
+    />
+  {/if}
+
+  {#if layout.filesOpen}
+    <div class="pdmux-dock-slot" style:flex-basis={`${layout.dockOpen ? layout.filesShare : 100}%`}>
+      <FilesDockPanel
+        files={shell.files}
+        hosts={shell.feed.hosts}
+        {t}
+        onHostChange={openFilesHost}
+        onOpenDir={openFilesDir}
+        onNavigate={navigateFiles}
+      />
+    </div>
+  {/if}
+</div>
 
 <ConfirmDialog
   bind:open={closeOpen}

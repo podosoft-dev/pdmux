@@ -91,6 +91,14 @@
 		 */
 		onScrollback?: (slot: TerminalSlot, action: "enter" | "exit") => void;
 		/**
+		 * Open this host's file explorer.
+		 *
+		 * ⚠ ABSENT = NO CONTROL, which here also carries a fact: the app passes it
+		 * only when the host's agent announced it can browse. A button that could
+		 * only ever answer "this agent is too old" is the scroll buttons' original
+		 * bug, and this is the same rule.
+		 */
+		/**
 		 * The pane's real history, when the consumer can fetch it. Returning null (or not
 		 * passing this at all) falls back to the local buffer — see `openHistory`.
 		 */

@@ -191,6 +191,18 @@
       "screenOnly": "This pane runs a multiplexer, which keeps its own history — only the visible screen is available here.",
       "foldLine": "Fold this line",
       "unfoldLine": "Show the whole line"
+    },
+    "files": {
+      "home": "Home",
+      "path": "Path",
+      "close": "Close",
+      "loading": "Reading the directory…",
+      "empty": "This directory is empty",
+      "symlink": "link",
+      "dropped": "{count} more entries are not listed",
+      "unavailable": "This host's agent cannot browse files yet — update it to use this view",
+      "open": "Browse files",
+      "pickHost": "Choose a host to browse it"
     }
   },
   "dash": {
@@ -811,6 +823,23 @@
         }
       },
       "noAccess": "No access"
+    },
+    "files": {
+      "pickHost": "Choose a host",
+      "refresh": "Re-read this directory",
+      "pathLabel": "Path",
+      "editPath": "Type a path",
+      "go": "Go to this path",
+      "toggle": "Toggle file explorer",
+      "download": "Download {count} file(s)",
+      "downloadLabel": "Download",
+      "upload": "Upload files here",
+      "delete": "Delete selected",
+      "deleteTitle": "Delete these?",
+      "deleteWarning": "{count} item(s) will be deleted on this host: {names}. This cannot be undone.",
+      "deleteFolderWarning": "{count} item(s) will be deleted on this host: {names}. A folder takes everything inside it. This cannot be undone.",
+      "deleteConfirm": "Delete",
+      "queued": " · {count} waiting"
     }
   }
 }

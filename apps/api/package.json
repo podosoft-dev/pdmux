@@ -34,6 +34,7 @@
     "@nestjs/swagger": "^11.4.5",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^11.0.3",
+    "@pdmux/core": "*",
     "@pdmux/mcp": "^0.6.0",
     "@pdmux/protocol": "*",
     "@podosoft/podokit-auth": "^0.3.0",
@@ -85,10 +86,11 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "moduleNameMapper": {
-      "^@pdmux/protocol$": "<rootDir>/../../../packages/protocol/src/index.ts",
+      "^(\\.{1,2}/.*)\\.js$": "$1",
+      "^@pdmux/core$": "<rootDir>/../../../packages/core/src/index.ts",
       "^@pdmux/mcp$": "<rootDir>/testing/pdmux-mcp.stub.ts",
-      "^@thallesp/nestjs-better-auth$": "<rootDir>/testing/nestjs-better-auth.stub.ts",
-      "^(\\.{1,2}/.*)\\.js$": "$1"
+      "^@pdmux/protocol$": "<rootDir>/../../../packages/protocol/src/index.ts",
+      "^@thallesp/nestjs-better-auth$": "<rootDir>/testing/nestjs-better-auth.stub.ts"
     },
     "transform": {
       "^.+\\.ts$": [

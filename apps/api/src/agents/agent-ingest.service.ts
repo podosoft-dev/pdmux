@@ -7,6 +7,7 @@ import { HostsService } from "../hosts/hosts.service";
 import { MetricsService } from "../metrics/metrics.service";
 import { AgentAckService } from "./agent-ack.service";
 import { AgentExecService } from "./agent-exec.service";
+import { AgentFilesService, type FsAnswer } from "./agent-files.service";
 import { AgentRegistryService } from "./agent-registry.service";
 
 export type IngestOutcome =
@@ -33,6 +34,7 @@ export class AgentIngestService {
     private readonly registry: AgentRegistryService,
     private readonly ack: AgentAckService,
     private readonly exec: AgentExecService,
+    private readonly files: AgentFilesService,
   ) {}
 
   /**
@@ -128,8 +130,42 @@ export class AgentIngestService {
         this.exec.settle(frame.result);
         return { ok: true, type: "execResult" };
 
+      case "fsDir":
+      case "fsFile":
+      case "fsChunk":
+      case "fsWrote":
+      case "fsRemoved":
+        // Nothing is stored, for the reason the service records: a directory is
+        // true for an instant, so the answer belongs to the request waiting on it
+        // rather than to the host's row. A byte slice is the same — it is one
+        // answer to one question a response stream is blocked on.
+        this.files.settle(fsAnswerOf(frame));
+        return { ok: true, type: frame.type };
+
       default:
         return { ok: false, error: "unsupported frame" };
     }
+  }
+}
+
+/**
+ * The payload of a file answer, whatever kind it is.
+ *
+ * ⚠ EVERY BRANCH IS NAMED, and the union is what makes that safe: adding a sixth
+ * answer frame to the contract stops compiling here rather than silently landing
+ * in the `default` above, where the request waiting on it would only time out.
+ */
+function fsAnswerOf(frame: Extract<AgentUpstream, { type: "fsDir" | "fsFile" | "fsChunk" | "fsWrote" | "fsRemoved" }>): FsAnswer {
+  switch (frame.type) {
+    case "fsDir":
+      return frame.dir;
+    case "fsFile":
+      return frame.file;
+    case "fsChunk":
+      return frame.chunk;
+    case "fsWrote":
+      return frame.wrote;
+    case "fsRemoved":
+      return frame.removed;
   }
 }

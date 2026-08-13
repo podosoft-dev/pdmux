@@ -410,6 +410,176 @@ export const gitBlobSchema = z.object({
 });
 export type GitBlob = z.infer<typeof gitBlobSchema>;
 
+// ---------------------------------------------------------------------------
+// The host's own files, under the agent user's home
+// ---------------------------------------------------------------------------
+
+/**
+ * Caps for browsing a live directory, which are NOT the git tree's caps.
+ *
+ * ⚠ A DIRECTORY IS LISTED ONE AT A TIME, so the entry cap is far below
+ * `TREE_CAPS`: that one bounds a whole repository at a commit, this one bounds a
+ * single `node_modules` somebody happened to open. The file caps deliberately
+ * match `BLOB_CAPS` — the same viewer renders both, and two numbers for "how much
+ * of a file is too much" is one number that will eventually disagree with itself.
+ */
+export const FS_CAPS = {
+	maxEntries: 1_000,
+	maxBytes: BLOB_CAPS.maxBytes,
+	maxLines: BLOB_CAPS.maxLines,
+	maxLineChars: BLOB_CAPS.maxLineChars,
+	/** Longest relative path accepted, matching every other path in this contract. */
+	maxPathChars: 1024,
+} as const;
+
+/**
+ * One entry of a directory.
+ *
+ * ⚠ `symlink` IS REPORTED, NOT RESOLVED. The agent browses through a handle that
+ * cannot leave the home directory, so a link pointing outside it simply fails to
+ * open — and a reader who was not told it was a link reads that refusal as a bug.
+ * Saying so up front turns it into a fact about the file.
+ */
+export const fsEntrySchema = z.object({
+	name: z.string().max(FS_CAPS.maxPathChars),
+	dir: z.boolean().default(false),
+	symlink: z.boolean().default(false),
+	size: z.number().int().nonnegative().default(0),
+	/** Unix seconds, for a column that says how fresh something is. */
+	modified: z.number().int().nonnegative().default(0),
+});
+export type FsEntry = z.infer<typeof fsEntrySchema>;
+
+/**
+ * One directory, as it is right now.
+ *
+ * ⚠ `path` IS RELATIVE TO THE HOME DIRECTORY, ALWAYS, AND SO IS EVERY REQUEST.
+ * The agent opens its root once and resolves every name through that handle, so
+ * `..`, an absolute path and a symlink out of the tree are all refused by
+ * construction rather than by a check. Carrying an absolute path here would throw
+ * that guarantee away — there would be nothing left for the handle to be relative
+ * to, and the fence would become a string comparison somebody has to get right.
+ */
+export const fsDirSchema = z.object({
+	/**
+	 * Echoes the request's id.
+	 *
+	 * ⚠ CORRELATION CANNOT BE BY PATH HERE, AND THAT IS THE DIFFERENCE FROM A GIT
+	 * TREE. A tree is immutable per sha, so any answer for a sha is the right one
+	 * and a late duplicate is harmless. A directory is true for an instant: two
+	 * reads of the same path a second apart are different answers, and matching on
+	 * the path alone would let a stale one settle a newer request.
+	 */
+	requestId: z.string().uuid(),
+	path: z.string().max(FS_CAPS.maxPathChars),
+	/**
+	 * The absolute home directory this listing is relative to — for DISPLAY, and
+	 * for reading a path a person pasted.
+	 *
+	 * ⚠ IT IS NOT AN ADDRESS AND NOTHING MAY SEND IT BACK. Requests stay relative
+	 * (see the note above); this is here because a path bar showing `Project/pdmux`
+	 * cannot be compared with what `pwd` prints, and because pasting that output in
+	 * has to land somewhere sensible. Empty means "not told" — an agent from before
+	 * this field existed still answers, and the panel falls back to `~`. Empty and
+	 * absent are deliberately the SAME answer, which is why this has a default
+	 * rather than being optional: an agent with no home offers no `files`
+	 * capability at all, so there is no third case to tell apart.
+	 */
+	home: z.string().max(FS_CAPS.maxPathChars).default(''),
+	entries: z.array(fsEntrySchema).max(FS_CAPS.maxEntries).default([]),
+	/** Entries left out by the cap — a count, so the UI can say how many. */
+	dropped: z.number().int().nonnegative().default(0),
+	truncated: z.boolean().default(false),
+	/** Set when the directory could not be read at all — including a refusal. */
+	error: z.string().max(512).nullable().default(null),
+});
+export type FsDir = z.infer<typeof fsDirSchema>;
+
+/**
+ * How much of a file one `fsChunk` carries, before base64.
+ *
+ * ⚠ THIS IS A TRANSFER SIZE, NOT A VIEWING CAP, so it is deliberately unrelated to
+ * `FS_CAPS.maxBytes`. That one bounds what a person is shown at once; this one is
+ * chosen against the wire: 1 MiB becomes ~1.4 MB of base64 in one frame, comfortably
+ * under the agent's 4 MiB downstream limit and the server's default payload ceiling,
+ * while keeping the number of round trips for a large file sane.
+ */
+export const FS_CHUNK_BYTES = 1_048_576;
+
+/**
+ * A slice of a file, addressed by BYTE OFFSET.
+ *
+ * ⚠ THE OFFSET IS WHY RESUME NEEDS NO EXTRA MACHINERY. A download that stops halfway
+ * is resumed by asking for the next offset — there is no session, no handle held open
+ * on the host, and nothing to clean up if the browser never comes back. It is also
+ * what lets an HTTP `Range` request be served without reading what precedes it.
+ */
+export const fsChunkSchema = z.object({
+	requestId: z.string().uuid(),
+	path: z.string().max(FS_CAPS.maxPathChars),
+	/** Where this slice starts, in bytes from the beginning of the file. */
+	offset: z.number().int().nonnegative().default(0),
+	/** base64. Empty at or past the end, which is not an error. */
+	data: z.string().max(2 * FS_CHUNK_BYTES).default(''),
+	/** The whole file's size, so a caller can set `Content-Length` from the first slice. */
+	size: z.number().int().nonnegative().default(0),
+	/** Nothing follows this slice. */
+	eof: z.boolean().default(false),
+	error: z.string().max(512).nullable().default(null),
+});
+export type FsChunk = z.infer<typeof fsChunkSchema>;
+
+/**
+ * What a write did.
+ *
+ * ⚠ WRITING IS THE FIRST THING IN THIS CONTRACT THAT CHANGES A MACHINE ON PURPOSE
+ * (`exec` aside), so the answer says what happened rather than merely that nothing
+ * threw: how many bytes landed, and where the file now ends. A caller uploading in
+ * slices checks that against what it sent instead of assuming.
+ *
+ * ⚠ AND IT CARRIES NO CONTENT, EVER — not the bytes, not a preview of them. The
+ * MCP gateway states the same rule for command arguments ("the surface most likely
+ * to carry a secret"), and a file being uploaded is that surface exactly.
+ */
+export const fsWroteSchema = z.object({
+	requestId: z.string().uuid(),
+	path: z.string().max(FS_CAPS.maxPathChars),
+	/** Bytes accepted in THIS request. */
+	written: z.number().int().nonnegative().default(0),
+	/** The file's size afterwards, so a caller can verify the whole upload. */
+	size: z.number().int().nonnegative().default(0),
+	error: z.string().max(512).nullable().default(null),
+});
+export type FsWrote = z.infer<typeof fsWroteSchema>;
+
+/**
+ * What a delete did.
+ *
+ * `removed` counts entries actually unlinked, so "nothing was there" and "one file
+ * went" are different answers — a UI that says "deleted" for both teaches people to
+ * distrust it.
+ */
+export const fsRemovedSchema = z.object({
+	requestId: z.string().uuid(),
+	path: z.string().max(FS_CAPS.maxPathChars),
+	removed: z.number().int().nonnegative().default(0),
+	error: z.string().max(512).nullable().default(null),
+});
+export type FsRemoved = z.infer<typeof fsRemovedSchema>;
+
+/** One file from the host's disk. Same shape as a git blob, for the same viewer. */
+export const fsFileSchema = z.object({
+	requestId: z.string().uuid(),
+	path: z.string().max(FS_CAPS.maxPathChars),
+	lines: z.array(z.string().max(FS_CAPS.maxLineChars)).max(FS_CAPS.maxLines).default([]),
+	binary: z.boolean().default(false),
+	truncated: z.boolean().default(false),
+	/** Size on disk, so "truncated" can say how much was left. */
+	bytes: z.number().int().nonnegative().default(0),
+	error: z.string().max(512).nullable().default(null),
+});
+export type FsFile = z.infer<typeof fsFileSchema>;
+
 export const repoSnapshotSchema = z.object({
 	/** Stable identity of the checkout on that host. */
 	path: z.string().max(1024),
@@ -536,6 +706,17 @@ export const agentCapabilitySchema = z.enum([
 	 * ignore the frame and the caller would wait for an answer that never comes.
 	 */
 	'exec',
+	/**
+	 * Can list a directory and read a file under the agent user's home (`fsList` /
+	 * `fsRead`). Read like `exec`, and for the same reason: an older agent ignores
+	 * the frame, so the screen has to know not to offer the explorer rather than
+	 * leaving somebody waiting on an answer that is not coming.
+	 *
+	 * ⚠ IT ALSO MEANS THE HOME EXISTS. The agent only announces this when `$HOME`
+	 * resolved to a real directory — a service account with no home has nothing to
+	 * browse, and that is a fact about the host rather than an error to report.
+	 */
+	'files',
 ]);
 export type AgentCapability = z.infer<typeof agentCapabilitySchema>;
 
@@ -705,6 +886,17 @@ export const agentUpstreamSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('pong'), ts: epochSeconds }),
 	z.object({ type: z.literal('updateStatus'), update: updateStatusSchema }),
 	z.object({ type: z.literal('execResult'), result: execResultSchema }),
+	/**
+	 * ⚠ FRAMES OF THEIR OWN, NOT A FIELD ON `repos`. A repository snapshot is
+	 * addressed by a checkout path and a sha; this is neither, and folding it in
+	 * would put a live directory listing inside a document whose whole design is
+	 * that it is immutable once written.
+	 */
+	z.object({ type: z.literal('fsDir'), dir: fsDirSchema }),
+	z.object({ type: z.literal('fsFile'), file: fsFileSchema }),
+	z.object({ type: z.literal('fsChunk'), chunk: fsChunkSchema }),
+	z.object({ type: z.literal('fsWrote'), wrote: fsWroteSchema }),
+	z.object({ type: z.literal('fsRemoved'), removed: fsRemovedSchema }),
 ]);
 export type AgentUpstream = z.infer<typeof agentUpstreamSchema>;
 
@@ -866,6 +1058,83 @@ export const agentDownstreamSchema = z.discriminatedUnion('type', [
 		repoPath: z.string().max(1024),
 		sha: z.string().min(7).max(40),
 		path: z.string().max(1024),
+	}),
+	/**
+	 * The host's own files, under the agent user's home directory.
+	 *
+	 * ⚠ RELATIVE TO THAT HOME AND NOTHING ELSE. The server never names a place on
+	 * the disk: it names a path INSIDE a root the agent opened for itself, and the
+	 * agent resolves it through that handle. An empty string is the home directory.
+	 *
+	 * ⚠ THIS IS NOT THE GIT TREE WITH A DIFFERENT SOURCE. That one answers "what
+	 * existed at this commit" from the object database and is immutable per sha, so
+	 * it can be stored and re-served forever. This one answers "what is there now",
+	 * which is true for an instant — nothing here may be cached the way a tree is.
+	 */
+	z.object({
+		type: z.literal('fsList'),
+		/** Pairs the answer with the request that is waiting on it — see `fsDir`. */
+		requestId: z.string().uuid(),
+		path: z.string().max(FS_CAPS.maxPathChars),
+	}),
+	z.object({
+		type: z.literal('fsRead'),
+		requestId: z.string().uuid(),
+		path: z.string().max(FS_CAPS.maxPathChars),
+	}),
+	/**
+	 * Write bytes into a file under the home, at an offset.
+	 *
+	 * ⚠ THIS IS THE FIRST DELIBERATE WRITE IN THE CONTRACT, and it is a different
+	 * axis from git's read-only stance rather than an exception to it
+	 * (`ARCHITECTURE.md` §4-1). git is read-only because those checkouts belong to
+	 * somebody else's work in progress; this is a person handling files in their
+	 * own home, from a browser instead of from the terminal beside it.
+	 *
+	 * ⚠ `offset` MAKES A RESUMED UPLOAD THE SAME REQUEST AS A FIRST ONE. `create`
+	 * says "start this file" — it truncates — and every later slice appends at its
+	 * own offset, so nothing is held open on the host between them.
+	 */
+	z.object({
+		type: z.literal('fsPut'),
+		requestId: z.string().uuid(),
+		path: z.string().max(FS_CAPS.maxPathChars),
+		offset: z.number().int().nonnegative().default(0),
+		/** base64, at most `FS_CHUNK_BYTES` decoded. */
+		data: z.string().max(2 * FS_CHUNK_BYTES).default(''),
+		/** Truncate first: this slice starts the file. */
+		create: z.boolean().default(false),
+	}),
+	/**
+	 * Delete one entry under the home.
+	 *
+	 * ⚠ `recursive` IS NEVER IMPLIED BY THE PATH BEING A DIRECTORY. A non-empty
+	 * directory is refused unless the caller says so in the frame, because the two
+	 * are different sentences on screen — "delete this folder" and "delete this
+	 * folder and the 4,000 things in it" — and a UI that cannot tell them apart
+	 * cannot ask honestly.
+	 */
+	z.object({
+		type: z.literal('fsDelete'),
+		requestId: z.string().uuid(),
+		path: z.string().max(FS_CAPS.maxPathChars),
+		recursive: z.boolean().default(false),
+	}),
+	/**
+	 * Bytes, for downloading and for showing an image — as opposed to `fsRead`,
+	 * which answers with LINES for a text viewer and refuses binary on purpose.
+	 */
+	z.object({
+		type: z.literal('fsGet'),
+		requestId: z.string().uuid(),
+		path: z.string().max(FS_CAPS.maxPathChars),
+		offset: z.number().int().nonnegative().default(0),
+		/**
+		 * How many bytes to send. **0 means "as much as you allow"**, which is the
+		 * ordinary case — the agent caps anything larger at `FS_CHUNK_BYTES` anyway,
+		 * so a caller that has no reason to ask for less says nothing.
+		 */
+		length: z.number().int().nonnegative().max(FS_CHUNK_BYTES).default(0),
 	}),
 	/**
 	 * "I have these." Details are immutable per sha, so an agent that knows what

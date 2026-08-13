@@ -13,6 +13,7 @@
   import type { GridMode, TerminalLayout } from "@pdmux/core";
   import { GRID_SIZE } from "@pdmux/core";
   import { Button } from "$lib/components/ui/button";
+  import FolderTreeIcon from "@lucide/svelte/icons/folder-tree";
   import { fmt, getI18n } from "$lib/i18n";
   import type { RelayStatus } from "../terminal-relay";
 
@@ -27,6 +28,7 @@
     onPage,
     onToggleSidebar,
     onToggleDock,
+    onToggleFiles,
     onToggleClickAction,
     onAdd,
   }: {
@@ -48,6 +50,7 @@
     onPage: (delta: number) => void;
     onToggleSidebar: () => void;
     onToggleDock: () => void;
+    onToggleFiles: () => void;
     onToggleClickAction: () => void;
     onAdd: (anchor: HTMLElement) => void;
   } = $props();
@@ -151,6 +154,19 @@
       aria-label={i18n.t.dash.dockToggle}
       data-testid="toggle-dock"
       onclick={onToggleDock}>{layout.dockOpen ? "◨" : "▤"}</Button
+    >
+    <!-- Its own toggle, beside the graph's: the two panels share the dock column and
+         either can be open alone. `variant` says which is on, the way the refs button
+         inside the graph does. -->
+    <Button
+      variant={layout.filesOpen ? "default" : "outline"}
+      size="sm"
+      class="h-7 px-2"
+      title={i18n.t.dash.files.toggle}
+      aria-label={i18n.t.dash.files.toggle}
+      aria-pressed={layout.filesOpen}
+      data-testid="toggle-files"
+      onclick={onToggleFiles}><FolderTreeIcon class="size-4" /></Button
     >
   {/if}
 </div>

@@ -21,6 +21,8 @@ import { AgentEnrollmentsService } from "./agent-enrollments.service";
 import { AgentGateway } from "./agent.gateway";
 import { AgentIngestService } from "./agent-ingest.service";
 import { AgentExecService } from "./agent-exec.service";
+import { AgentFilesService } from "./agent-files.service";
+import { HostFilesController } from "./host-files.controller";
 import { AgentRegistryService } from "./agent-registry.service";
 import { AgentReleaseModule } from "./agent-release.module";
 import { AgentUpdateController, FleetAgentUpdateController } from "./agent-update.controller";
@@ -42,6 +44,7 @@ import { AgentTokensService } from "./agent-tokens.service";
     AgentReleaseModule,
   ],
   controllers: [
+    HostFilesController,
     AgentTokensController,
     AgentEnrollmentsController,
     AgentEnrollController,
@@ -60,6 +63,7 @@ import { AgentTokensService } from "./agent-tokens.service";
     AgentDisconnectService,
     AgentAckService,
     AgentExecService,
+    AgentFilesService,
     AgentDetailRequestService,
     AgentIngestService,
     AgentUpdateService,
@@ -69,6 +73,6 @@ import { AgentTokensService } from "./agent-tokens.service";
   // sendToHost. Exported so the browser side can be wired without reaching in.
   // `AgentUpdateService` is exported for the MCP fleet surface, which offers the same
   // update the dashboard does rather than reimplementing the canary rule beside it.
-  exports: [AgentRegistryService, AgentTokensService, AgentEnrollmentsService, AgentExecService, AgentUpdateService],
+  exports: [AgentRegistryService, AgentTokensService, AgentEnrollmentsService, AgentExecService, AgentFilesService, AgentUpdateService],
 })
 export class AgentsModule {}

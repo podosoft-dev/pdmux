@@ -70,16 +70,16 @@ const EXPECTED_DEFS = [
 	'diffFile',
 	'epochSeconds',
 	'execResult',
-	// Added with the `File tree` face: a repository listing at one commit, and one
-	// file's contents. `gitBlob` carries LINES rather than bytes — a binary file is
-	// answered as `binary: true`, because a browser renders none of its bytes.
+	'fsChunk',
+	'fsDir',
+	'fsEntry',
+	'fsFile',
+	'fsRemoved',
+	'fsWrote',
 	'gitBlob',
 	'gitCommit',
 	'gitHead',
 	'gitRef',
-	// Added with the on-demand remote check. `gitRemoteRef` is deliberately not
-	// `gitRef`: one is a local pointer (including remote-TRACKING refs, which are
-	// as old as the last fetch) and the other is what the remote advertises now.
 	'gitRemoteCheck',
 	'gitRemoteRef',
 	'gitStatusFile',
@@ -316,7 +316,20 @@ describe('[TC-PDPROTO-013] what the Go side reads out of the artefact', () => {
 		const upstream = (defs.agentUpstream?.anyOf as JsonObject[]).map(
 			(branch) => ((branch.properties as JsonObject).type as JsonObject).const,
 		);
-		expect(upstream).toEqual(['hello', 'heartbeat', 'repos', 'terminal', 'pong', 'updateStatus', 'execResult']);
+		expect(upstream).toEqual([
+			'hello',
+			'heartbeat',
+			'repos',
+			'terminal',
+			'pong',
+			'updateStatus',
+			'execResult',
+			'fsDir',
+			'fsFile',
+			'fsChunk',
+			'fsWrote',
+			'fsRemoved',
+		]);
 	});
 
 	it('[TC-PDPROTO-013] marks itself generated without constraining the roots', () => {
