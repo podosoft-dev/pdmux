@@ -37,11 +37,18 @@ function fakeSurface(): {
 	disposed: () => number;
 	/** What `canScroll` answers next — a real one changes its mind as the program runs. */
 	setScrollable: (next: boolean) => void;
+	/**
+	 * Whether `readHistory` claims to be a real history. A real surface answers `false`
+	 * on the alternate buffer, which is where every multiplexer pane lives — and that is
+	 * exactly the case the remote fetch exists for.
+	 */
+	setScrollback: (next: boolean) => void;
 } {
 	const written: string[] = [];
 	const listeners = new Set<(data: string) => void>();
 	let disposals = 0;
 	let scrollable = true;
+	let scrollback = true;
 	const scrolled: number[] = [];
 	const surface: TerminalSurface = {
 		write: (data) => written.push(data),
@@ -49,7 +56,8 @@ function fakeSurface(): {
 		focus: () => undefined,
 		scrollPages: (delta) => scrolled.push(delta),
 		canScroll: () => scrollable,
-		readHistory: () => ({ lines: written.join('').split('\n'), scrollback: true }),
+		readHistory: () => ({ lines: written.join('').split('\n'), scrollback }),
+		onScrollbackRequest: () => () => undefined,
 		onData: (listener) => {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
@@ -68,6 +76,9 @@ function fakeSurface(): {
 		disposed: () => disposals,
 		setScrollable: (next) => {
 			scrollable = next;
+		},
+		setScrollback: (next) => {
+			scrollback = next;
 		},
 	};
 }
@@ -202,6 +213,103 @@ describe('[TC-PDUI-012] a pane header offers its actions and classifies its gest
 		// Flushed first: a Svelte 5 state change lands on a microtask, and querying before
 		// it does reads the old DOM.
 		await tick();
+		expect(container.querySelector('[data-testid="terminal-history"]')).not.toBeNull();
+	});
+
+	it('[TC-PDUI-217] offers scroll mode only when someone can serve it, and says it is on', async () => {
+		const surface = fakeSurface();
+		const slot = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };
+		const base = {
+			slot,
+			index: 0,
+			hostName: 'alpha',
+			adapter: new EchoTerminalAdapter(),
+			createSurface: surface.factory,
+		};
+
+		// ⚠ NO CALLBACK, NO CONTROL. A button that announces "scroll mode" and reaches
+		// nothing is the scroll buttons' original bug — it was reported as "they do
+		// nothing and then vanish", and the lesson was to draw only what can act.
+		const bare = render(TerminalPane, { props: base });
+		expect(bare.container.querySelector('[data-pdmux-scrollback]')).toBeNull();
+		cleanup();
+
+		const onScrollback = vi.fn();
+		const { container } = render(TerminalPane, { props: { ...base, onScrollback } });
+		const button = container.querySelector('[data-pdmux-scrollback]') as HTMLButtonElement;
+		expect(button.getAttribute('aria-pressed')).toBe('false');
+		expect(container.querySelector('[data-pdmux-scroll-hint]')).toBeNull();
+
+		button.click();
+		await tick();
+		expect(onScrollback).toHaveBeenCalledWith(slot, 'enter');
+		expect(button.getAttribute('aria-pressed')).toBe('true');
+		// ⚠ THE PANE LOOKS IDENTICAL IN THIS MODE, and the keys stop reaching the program.
+		// Without a line saying so, "my terminal stopped accepting input" is the next report.
+		expect(container.querySelector('[data-pdmux-scroll-hint]')).not.toBeNull();
+
+		button.click();
+		await tick();
+		expect(onScrollback).toHaveBeenLastCalledWith(slot, 'exit');
+		expect(button.getAttribute('aria-pressed')).toBe('false');
+		expect(container.querySelector('[data-pdmux-scroll-hint]')).toBeNull();
+	});
+
+	it('[TC-PDUI-217] paints the local buffer first, then replaces it with the real history', async () => {
+		const surface = fakeSurface();
+		// A multiplexer pane: xterm holds no scrollback, so the sheet has only the screen.
+		surface.setScrollback(false);
+		const slot = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };
+		const onReadHistory = vi.fn(async () => ({ lines: ['much older', 'echo terminal'], scrollback: true }));
+		const { container } = render(TerminalPane, {
+			props: {
+				slot,
+				index: 0,
+				hostName: 'alpha',
+				adapter: new EchoTerminalAdapter(),
+				createSurface: surface.factory,
+				onReadHistory,
+			},
+		});
+
+		// The echo adapter's banner arrives on a microtask, so wait for the pane to have a
+		// buffer at all — otherwise this measures an empty sheet either way.
+		await vi.waitFor(() => expect(surface.written.length).toBeGreaterThan(0));
+		(container.querySelector('[data-pdmux-history]') as HTMLButtonElement).click();
+		await tick();
+		// ⚠ SOMETHING IS ON SCREEN BEFORE THE ROUND TRIP. The fetch crosses to another
+		// machine; a sheet that opens empty and fills in later reads as a broken one.
+		const body = () => container.querySelector('[data-pdmux-history-body]')?.textContent ?? '';
+		expect(body()).toContain('echo terminal');
+
+		await vi.waitFor(() => expect(body()).toContain('much older'));
+		expect(onReadHistory).toHaveBeenCalledWith(slot);
+	});
+
+	it('[TC-PDUI-217] keeps the visible screen, and its notice, when the history cannot be had', async () => {
+		const surface = fakeSurface();
+		surface.setScrollback(false);
+		const slot = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };
+		const { container } = render(TerminalPane, {
+			props: {
+				slot,
+				index: 0,
+				hostName: 'alpha',
+				adapter: new EchoTerminalAdapter(),
+				createSurface: surface.factory,
+				// A host with no tmux, an agent too old for `exec`, a dead network: the sheet
+				// must fall back to what it can prove rather than opening blank.
+				onReadHistory: vi.fn(async () => {
+					throw new Error('nope');
+				}),
+			},
+		});
+
+		await vi.waitFor(() => expect(surface.written.length).toBeGreaterThan(0));
+		(container.querySelector('[data-pdmux-history]') as HTMLButtonElement).click();
+		await tick();
+		await tick();
+		expect(container.querySelector('[data-pdmux-history-body]')?.textContent).toContain('echo terminal');
 		expect(container.querySelector('[data-testid="terminal-history"]')).not.toBeNull();
 	});
 
@@ -823,6 +931,8 @@ describe('[TC-PDUI-048] the terminal opens on the previous client’s palette, n
 				loadAddon(): void {}
 				open(): void {}
 				attachCustomKeyEventHandler(): void {}
+				attachCustomWheelEventHandler(): void {}
+				scrollLines(): void {}
 				onSelectionChange(): { dispose(): void } {
 					return { dispose(): void {} };
 				}

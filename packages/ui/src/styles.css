@@ -1280,7 +1280,8 @@
 }
 
 .pdmux-chip[aria-pressed='true'],
-.pdmux-btn[aria-pressed='true'] {
+.pdmux-btn[aria-pressed='true'],
+.pdmux-ico[aria-pressed='true'] {
 	background: var(--pdmux-accent);
 	border-color: var(--pdmux-accent);
 	color: #fff;
@@ -1386,6 +1387,27 @@
 	cursor: grab;
 	user-select: none;
 	touch-action: none;
+}
+
+/*
+ * The scroll-mode notice.
+ *
+ * ⚠ ABOVE THE TERMINAL, NOT OVER IT. The one thing the user is doing in this mode is
+ * READING what the pane already drew, so a floating strip would cover the very rows
+ * they came back for. `flex: none` in the pane's column keeps it out of the terminal's
+ * height calculation, and the surface refits around it.
+ */
+.pdmux-pane-hint {
+	flex: none;
+	margin: 0;
+	padding: 3px 8px;
+	font-size: 11px;
+	color: var(--pdmux-muted);
+	background: var(--pdmux-hover);
+	border-block-end: 1px solid var(--pdmux-line);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .pdmux-pane.pdmux-dragging {

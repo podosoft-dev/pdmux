@@ -36,6 +36,7 @@ const surface = (): TerminalSurface => ({
 	dispose: () => undefined,
 	scrollPages: () => undefined,
 	canScroll: () => true,
+	onScrollbackRequest: () => () => undefined,
 	readHistory: () => ({ lines: [], scrollback: true }),
 });
 

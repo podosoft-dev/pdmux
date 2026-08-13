@@ -461,6 +461,17 @@ export type RepoSnapshot = z.infer<typeof repoSnapshotSchema>;
 // ---------------------------------------------------------------------------
 
 /**
+ * What a session may be called.
+ *
+ * ⚠ NAMED, NOT INLINED, BECAUSE IT IS ALSO AN ARGUMENT LIST. A session name reaches
+ * the agent and becomes argv for `tmux` — both as the target of the PTY it spawns and,
+ * for the copy-mode control, as `-t <name>`. Anything that puts a name in front of that
+ * binary has to narrow it the same way, and a second copy of the pattern is a second
+ * copy that eventually disagrees with this one.
+ */
+export const SESSION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+
+/**
  * What a terminal attaches to.
  *  - `session`: attach to (or create) a named multiplexer session — survives a
  *    dropped connection, which is why it is the default.
@@ -469,7 +480,7 @@ export type RepoSnapshot = z.infer<typeof repoSnapshotSchema>;
 export const terminalTargetSchema = z.object({
 	kind: z.enum(['session', 'shell']).default('session'),
 	/** Session name for `kind: 'session'`; ignored for `shell`. */
-	session: z.string().regex(/^[A-Za-z0-9_-]{1,32}$/).optional(),
+	session: z.string().regex(SESSION_NAME_PATTERN).optional(),
 	cols: z.number().int().positive().max(1000).default(80),
 	rows: z.number().int().positive().max(500).default(24),
 });

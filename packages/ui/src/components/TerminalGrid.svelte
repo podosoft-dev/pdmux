@@ -66,6 +66,9 @@
 		onDetach?: (slot: TerminalSlot) => void;
 		onSwap?: (from: number, to: number) => void;
 		onExit?: (slotId: string, code: number | null) => void;
+		/** Passed straight to every pane — see `TerminalPane` for why the app owns these. */
+		onScrollback?: (slot: TerminalSlot, action: "enter" | "exit") => void;
+		onReadHistory?: (slot: TerminalSlot) => Promise<{ lines: string[]; scrollback: boolean } | null>;
 	}
 
 	let {
@@ -87,6 +90,8 @@
 		onDetach,
 		onSwap,
 		onExit,
+		onScrollback,
+		onReadHistory,
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -240,6 +245,8 @@
 			{onClose}
 			{onDetach}
 			{onExit}
+			{onScrollback}
+			{onReadHistory}
 			onDragStart={(index) => {
 				dragFrom = index;
 				rects = measure();

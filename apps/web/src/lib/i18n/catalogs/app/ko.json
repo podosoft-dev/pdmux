@@ -82,7 +82,12 @@
       "retarget": "대상 변경",
       "unreachable": "이 호스트에 연결할 수 없습니다",
       "zoom": "확대 전환",
-      "history": "출력 보기"
+      "history": "출력 보기",
+      "scrollback": "이 세션의 이전 내용 보기",
+      "scrollbackHint": "이전 내용 보는 중 — 휠로 이동, Esc 로 종료",
+      "scrollbackFailed": "이 세션을 스크롤하지 못했습니다: {reason}",
+      "scrollbackNoMux": "에이전트가 이 호스트에서 tmux 를 찾지 못했습니다 — 에이전트를 업데이트하세요",
+      "scrollbackUnavailable": "호스트가 응답하지 않았습니다"
     },
     "picker": {
       "addTitle": "터미널 추가",

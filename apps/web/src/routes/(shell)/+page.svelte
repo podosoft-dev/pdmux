@@ -47,6 +47,8 @@
     toggleSidebar,
     toggleZoom,
   } from "@pdmux/core";
+  import { toast } from "svelte-sonner";
+  import { errorCode, terminalApi } from "$lib/dashboard/api";
   import { fmt, getI18n } from "$lib/i18n";
   import CommitDock from "$lib/dashboard/components/commit-dock.svelte";
   import ConfirmDialog from "$lib/dashboard/components/confirm-dialog.svelte";
@@ -150,6 +152,48 @@
     const params = new URLSearchParams({ host: slot.hostId, kind: slot.kind });
     if (slot.session) params.set("session", slot.session);
     window.open(`/terminal?${params.toString()}`, "_blank", "noopener");
+  }
+
+  // --- reaching a pane's scrollback -----------------------------------------
+  /**
+   * The pane asks; this owns the network, because `@pdmux/ui` may not (`[TC-PDUI-030]`).
+   *
+   * ⚠ ONLY A MULTIPLEXER PANE HAS ANY OF THIS TO OFFER. A `shell` pane has no session
+   * to address, and xterm is already holding its scrollback — Shift+wheel scrolls it in
+   * the browser and never reaches here.
+   */
+  function muxSession(slot: TerminalSlot): string | null {
+    return slot.kind === "shell" || !slot.session ? null : slot.session;
+  }
+
+  async function scrollback(slot: TerminalSlot, action: "enter" | "exit"): Promise<void> {
+    const session = muxSession(slot);
+    if (!session) return;
+    try {
+      await terminalApi.copyMode(slot.hostId, session, action);
+    } catch (cause) {
+      // A refusal here is worth saying out loud: the gesture did nothing, and the pane
+      // looks exactly the same either way. Branch on the code, never the message.
+      const reason =
+        errorCode(cause) === "MUX_NOT_FOUND"
+          ? i18n.t.pdmux.pane.scrollbackNoMux
+          : i18n.t.pdmux.pane.scrollbackUnavailable;
+      toast.error(fmt(i18n.t.pdmux.pane.scrollbackFailed, { reason }));
+    }
+  }
+
+  async function readHistory(slot: TerminalSlot): Promise<{ lines: string[]; scrollback: boolean } | null> {
+    const session = muxSession(slot);
+    if (!session) return null;
+    try {
+      const { lines } = await terminalApi.history(slot.hostId, session);
+      // `scrollback: true` retires the sheet's "visible screen only" notice — which is
+      // now only true when this fetch is unavailable or came back with nothing.
+      return lines.length > 0 ? { lines, scrollback: true } : null;
+    } catch {
+      // The sheet keeps the local buffer it already painted, notice and all.
+      return null;
+    }
   }
 
   // --- dock splitter --------------------------------------------------------
@@ -267,6 +311,8 @@
     onFocus={(slotId: string) => shell.apply(focusSlot(layout, slotId))}
     onSwap={(from: number, to: number) => shell.apply(swapSlots(layout, from, to))}
     onDetach={detach}
+    onScrollback={(slot: TerminalSlot, action: "enter" | "exit") => void scrollback(slot, action)}
+    onReadHistory={readHistory}
   />
 </div>
 

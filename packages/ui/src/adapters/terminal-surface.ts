@@ -44,6 +44,15 @@ export interface TerminalSurface {
 	 * `createXtermSurface`, and `TerminalPane`, which asks again as output arrives.
 	 */
 	canScroll(): boolean;
+	/**
+	 * Shift+wheel landed on a buffer with no local history — the pane is attached to a
+	 * multiplexer and only IT can show what scrolled past.
+	 *
+	 * ⚠ A REQUEST, NOT AN ACTION. This package may not talk to a server (`[TC-PDUI-030]`), and the
+	 * answer is a command on a remote host; the consumer decides whether, and how often,
+	 * to ask. `-1` is back through the history.
+	 */
+	onScrollbackRequest(listener: (direction: -1 | 1) => void): () => void;
 	/** The buffer as text, newest last. */
 	readHistory(): TerminalHistory;
 }
@@ -553,10 +562,69 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		}
 	};
 
+	// --- Shift+wheel: take the wheel back from the program ---------------------
+	/**
+	 * REPORTED: one pane scrolls with the wheel and another does not, both running a
+	 * coding agent under the same multiplexer.
+	 *
+	 * ⚠ NEITHER PANE IS BEHAVING INCORRECTLY, WHICH IS WHY NOTHING HERE CHANGES THE
+	 * PLAIN WHEEL. When a program turns on mouse tracking, xterm encodes the wheel as a
+	 * report for it and skips its own scrollback and cursor-key fallbacks outright
+	 * (`Terminal.ts`: `if (requestedEvents.wheel) return`). From there the gesture means
+	 * whatever the program decides — one moves its transcript, another ignores it. The
+	 * one that works today is working BECAUSE the wheel reaches it, so hijacking the
+	 * plain wheel would fix one pane by breaking the other, and would also take away
+	 * every legitimate mouse use (menus, selection) a full-screen program has.
+	 *
+	 * So the escape hatch is SHIFT, which is what terminal emulators have used for this
+	 * exact standoff for years: hold it and the wheel belongs to the terminal again.
+	 *
+	 * `attachCustomWheelEventHandler` is the only seam that can do this, because xterm
+	 * consults it on BOTH wheel paths — the mouse-report one and the fallback one.
+	 * Returning `false` is what keeps the report off the wire.
+	 */
+	const scrollbackWanted = new Set<(direction: -1 | 1) => void>();
+
+	term.attachCustomWheelEventHandler((event: WheelEvent): boolean => {
+		if (!event.shiftKey || event.deltaY === 0) return true;
+		const direction: -1 | 1 = event.deltaY < 0 ? -1 : 1;
+
+		if (term.buffer.active.type !== 'alternate') {
+			/**
+			 * A plain shell: xterm is holding the history itself, so scroll it HERE rather
+			 * than returning `true`. Handing the event back would be no use — a program
+			 * that captured the mouse has already caused the fallback branch to be skipped,
+			 * and that branch is the one that would have scrolled.
+			 */
+			const height = rowHeight();
+			const lines =
+				event.deltaMode === WheelEvent.DOM_DELTA_LINE
+					? Math.round(event.deltaY)
+					: height > 0
+						? Math.round(event.deltaY / height)
+						: 0;
+			term.scrollLines(lines || direction * WHEEL_NOTCH_LINES);
+			return false;
+		}
+
+		/**
+		 * The alternate buffer, which is where a multiplexer pane always is: xterm keeps
+		 * NO scrollback here, so there is nothing local to move — the history is the
+		 * multiplexer's and only it can show it. Say so upward and swallow the event; the
+		 * consumer owns the network and decides what to ask for.
+		 */
+		for (const listener of scrollbackWanted) listener(direction);
+		return false;
+	});
+
 	const sub = term.onData((data) => emit(data));
 
 	return {
 		write: (data) => term.write(data),
+		onScrollbackRequest: (listener) => {
+			scrollbackWanted.add(listener);
+			return () => scrollbackWanted.delete(listener);
+		},
 		fit: () => {
 			fitAddon.fit();
 			return { cols: term.cols, rows: term.rows };

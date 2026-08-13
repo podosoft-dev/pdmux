@@ -82,7 +82,12 @@
       "retarget": "Change target",
       "unreachable": "This host is not reachable",
       "zoom": "Toggle zoom",
-      "history": "Show output"
+      "history": "Show output",
+      "scrollback": "Scroll back through this session",
+      "scrollbackHint": "Scrolling this session — wheel to move, Esc to leave",
+      "scrollbackFailed": "Could not scroll this session: {reason}",
+      "scrollbackNoMux": "the agent could not find tmux here — update the agent",
+      "scrollbackUnavailable": "the host did not answer"
     },
     "picker": {
       "addTitle": "Add a terminal",

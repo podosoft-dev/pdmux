@@ -80,6 +80,20 @@
 		onDragMove?: (index: number, point: { x: number; y: number }) => void;
 		onDragEnd?: (index: number, point: { x: number; y: number }) => void;
 		onExit?: (slotId: string, code: number | null) => void;
+		/**
+		 * Put this pane's multiplexer into its own scroll mode, or take it back out.
+		 *
+		 * ⚠ THE PACKAGE CANNOT DO THIS ITSELF. Reaching a multiplexer's history means a
+		 * command on the host, and `[TC-PDUI-030]` keeps fetches out of here — so the pane
+		 * asks and the app answers, the same split the card's settings panel uses. Absent =
+		 * no scroll control is drawn, which is right for a consumer with no such path.
+		 */
+		onScrollback?: (slot: TerminalSlot, action: "enter" | "exit") => void;
+		/**
+		 * The pane's real history, when the consumer can fetch it. Returning null (or not
+		 * passing this at all) falls back to the local buffer — see `openHistory`.
+		 */
+		onReadHistory?: (slot: TerminalSlot) => Promise<{ lines: string[]; scrollback: boolean } | null>;
 	}
 
 	let {
@@ -110,6 +124,8 @@
 		onDragMove,
 		onDragEnd,
 		onExit,
+		onScrollback,
+		onReadHistory,
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -170,6 +186,9 @@
 				}),
 			);
 			cleanups.push(opened.onExit((code) => onExit?.(slot.id, code)));
+			// Shift+wheel on a buffer with no local history. The surface decides that it
+			// has nothing to scroll; what to do about it is this pane's business.
+			cleanups.push(created.onScrollbackRequest(() => askScrollback()));
 			// The Ctrl latch is spent HERE, on the surface -> connection bridge, because a
 			// soft keyboard's characters do not arrive as `keydown` on iOS — they only reach
 			// this callback. A latch that waited for a key event would never fire on a phone.
@@ -301,6 +320,43 @@
 	}
 
 	/**
+	 * Scroll mode: the multiplexer's own history, asked for on the user's behalf.
+	 *
+	 * ⚠ THIS FLAG IS A HINT, NOT A MIRROR OF THE HOST. tmux is asked with `copy-mode -e`,
+	 * which LEAVES on its own the moment the user scrolls back to the bottom — the usual
+	 * way out, and one nothing here can observe. So the flag only drives a line of advice
+	 * and a pressed-looking button; nothing depends on it being true, and pressing the
+	 * control again sends `exit`, which is harmless on a pane that already left.
+	 */
+	let scrollMode = $state(false);
+
+	/**
+	 * ⚠ ONE GESTURE IS MANY EVENTS. A single flick of a wheel fires a dozen of them, and
+	 * each would otherwise be a POST that runs a command on someone's machine. Entering
+	 * the mode is idempotent, so the throttle costs nothing but the requests.
+	 */
+	const SCROLLBACK_ASK_MS = 700;
+	let lastAsk = 0;
+
+	function askScrollback(): void {
+		if (!onScrollback) return;
+		const now = Date.now();
+		if (scrollMode && now - lastAsk < SCROLLBACK_ASK_MS) return;
+		lastAsk = now;
+		scrollMode = true;
+		onScrollback(slot, 'enter');
+	}
+
+	function toggleScrollMode(): void {
+		if (!onScrollback) return;
+		lastAsk = Date.now();
+		scrollMode = !scrollMode;
+		onScrollback(slot, scrollMode ? 'enter' : 'exit');
+		// The keyboard must not close, exactly as for the scroll buttons.
+		surface?.focus();
+	}
+
+	/**
 	 * The pane's output, as text, or null when the sheet is closed.
 	 *
 	 * ⚠ IT IS NOT ALWAYS A HISTORY, AND THE SHEET HAS TO SAY SO. A pane attached to a
@@ -308,11 +364,31 @@
 	 * that buffer at all — the history lives inside tmux, not here. So a session pane can
 	 * only ever show its visible screen. Calling that "the full history" would be a lie the
 	 * user cannot check, which is why `scrollback` travels with the lines.
+	 *
+	 * ⚠ UNLESS SOMEONE CAN GO AND GET IT. `onReadHistory` is the consumer offering to ask
+	 * the multiplexer directly, which turns the notice above from a permanent limitation
+	 * into a fallback. The local buffer is still the answer when that fetch is absent or
+	 * fails, because a sheet that opens empty is worse than one that admits its scope.
 	 */
 	let history = $state<{ lines: string[]; scrollback: boolean } | null>(null);
+	let historyPending = $state(false);
 
-	function openHistory(): void {
-		history = surface?.readHistory() ?? { lines: [], scrollback: false };
+	async function openHistory(): Promise<void> {
+		const local = surface?.readHistory() ?? { lines: [], scrollback: false };
+		// Paint what is already here first: the fetch is a round trip to another machine,
+		// and an empty sheet that fills in later reads as a broken one.
+		history = local;
+		if (!onReadHistory || local.scrollback) return;
+		historyPending = true;
+		try {
+			const remote = await onReadHistory(slot);
+			// `history` going null means the user closed the sheet while we were away.
+			if (remote && remote.lines.length > 0 && history !== null) history = remote;
+		} catch {
+			// Keep the visible screen and its notice — that is the honest fallback.
+		} finally {
+			historyPending = false;
+		}
 	}
 
 	let down: PointerSample | null = null;
@@ -481,6 +557,27 @@
 				onclick={(event) => onAssign?.(index, event.currentTarget as HTMLElement)}>▾</button
 			>
 			<!--
+				Scroll mode: hand the wheel back to the multiplexer.
+
+				⚠ NOT `⇞`/`⇟`. Those are the phone key row's page-scroll buttons, and a
+				control that wears a familiar face while doing something else is worse than
+				one nobody recognises. This turns a mode ON; it does not move by a page.
+
+				⚠ AND IT IS NOT DRAWN WITHOUT SOMEWHERE TO SEND IT — a button that reports
+				"scroll mode" and changes nothing is the scroll buttons' old bug again.
+			-->
+			{#if onScrollback}
+				<button
+					class="pdmux-ico"
+					type="button"
+					title={tr('pdmux.pane.scrollback', 'Scroll back through this session')}
+					aria-label={tr('pdmux.pane.scrollback', 'Scroll back through this session')}
+					aria-pressed={scrollMode}
+					data-pdmux-scrollback
+					onclick={toggleScrollMode}>⇕</button
+				>
+			{/if}
+			<!--
 				History. Reading the buffer is the only way to see output that has scrolled past
 				a small pane, and on a phone there is no wheel to reach it with at all.
 				⚠ It is NOT always a history — see `openHistory`.
@@ -491,7 +588,7 @@
 				title={tr('pdmux.pane.history', 'Show output')}
 				aria-label={tr('pdmux.pane.history', 'Show output')}
 				data-pdmux-history
-				onclick={openHistory}>☰</button
+				onclick={() => void openHistory()}>☰</button
 			>
 			<button
 				class="pdmux-ico"
@@ -517,6 +614,19 @@
 			>
 		</span>
 	</div>
+	<!--
+		⚠ SAY WHAT JUST CHANGED, BECAUSE THE PANE LOOKS IDENTICAL. In the multiplexer's
+		scroll mode the keys stop reaching the program — they drive the scroll instead —
+		and nothing on screen would otherwise explain why typing does nothing. One line,
+		naming the two ways out (the wheel, which leaves by itself at the bottom, and
+		Escape), and it takes the place of no pane content: it is above the terminal, not
+		over it.
+	-->
+	{#if scrollMode}
+		<p class="pdmux-pane-hint" data-pdmux-scroll-hint>
+			{tr('pdmux.pane.scrollbackHint', 'Scrolling this session — wheel to move, Esc to leave')}
+		</p>
+	{/if}
 	<!-- The pane body classifies the press; see `paneDown`. It listens rather than covers,
 	     so a drag reaches the terminal and can be selected.
 

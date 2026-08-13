@@ -152,6 +152,8 @@ export function createBenchSurface(renderer: BenchRenderer): TerminalSurfaceFact
 			},
 			scrollPages: (delta) => term.scrollPages(delta),
 			canScroll: () => term.buffer.active.type !== 'alternate',
+			// The bench measures paint latency, not scrollback: nothing here asks.
+			onScrollbackRequest: () => () => undefined,
 			readHistory: () => ({ lines: [], scrollback: true }),
 			dispose: () => term.dispose(),
 		};

@@ -228,6 +228,20 @@ export const gitApi = {
     ),
 };
 
+/**
+ * Reaching a pane's scrollback, which is inside the multiplexer on the host.
+ *
+ * Both of these run one `tmux` command through the agent's `exec` capability and touch
+ * nothing else — in particular, neither ever sends a key to the program in the pane.
+ * See `apps/api/src/terminal/terminal-mux.controller.ts` for why that matters.
+ */
+export const terminalApi = {
+  copyMode: (hostId: string, session: string, action: "enter" | "exit"): Promise<{ ok: true }> =>
+    api.post<{ ok: true }>(`/terminal/${hostId}/copy-mode`, { session, action }),
+  history: (hostId: string, session: string): Promise<{ lines: string[]; truncated: boolean }> =>
+    api.post<{ lines: string[]; truncated: boolean }>(`/terminal/${hostId}/history`, { session }),
+};
+
 export const prefsApi = {
   read: (): Promise<PrefsView> => api.get<PrefsView>("/prefs"),
   putLayout: (name: string, payload: Record<string, unknown>, isDefault = true): Promise<unknown> =>

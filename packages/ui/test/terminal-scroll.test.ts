@@ -77,6 +77,14 @@ interface FakeTerminal {
 	buffer: { active: { type: 'normal' | 'alternate'; baseY: number } };
 	modes: { mouseTrackingMode: string; applicationCursorKeysMode: boolean };
 	sent: string[];
+	/** What xterm's own viewport was asked to do, in lines. */
+	scrolled: number[];
+	/**
+	 * The handler the surface installed, called the way xterm calls it. Returning `false`
+	 * is what stops xterm — on BOTH of its wheel paths, which is the whole reason this
+	 * seam is the one being used.
+	 */
+	wheelHandler: ((event: WheelEvent) => boolean) | null;
 }
 
 /**
@@ -100,6 +108,8 @@ async function surfaceWithFakeTerminal(rowHeight = 20, rows = 24) {
 		buffer: { active: { type: 'alternate' as 'normal' | 'alternate', baseY: 0 } },
 		modes: { mouseTrackingMode: 'none', applicationCursorKeysMode: false },
 		sent: [] as string[],
+		scrolled: [] as number[],
+		wheelHandler: null as ((event: WheelEvent) => boolean) | null,
 	};
 
 	vi.doMock('@xterm/xterm', () => ({
@@ -113,6 +123,12 @@ async function surfaceWithFakeTerminal(rowHeight = 20, rows = 24) {
 				host.append(element);
 			}
 			public attachCustomKeyEventHandler(): void {}
+			public attachCustomWheelEventHandler(handler: (event: WheelEvent) => boolean): void {
+				state.wheelHandler = handler;
+			}
+			public scrollLines(lines: number): void {
+				state.scrolled.push(lines);
+			}
 			// Copy-on-select subscribes here; without it the surface cannot be constructed.
 			public onSelectionChange(): { dispose(): void } {
 				return { dispose(): void {} };
@@ -412,6 +428,93 @@ describe('[TC-PDUI-196] the scroll buttons are a wheel, and the gate is never la
 		// Leaving `vim` has to bring them BACK, which the latched version could never do.
 		term.buffer.active.type = 'alternate';
 		expect(surface.canScroll()).toBe(true);
+		surface.dispose();
+	});
+});
+
+describe('[TC-PDUI-216] Shift takes the wheel back from the program, and only Shift', () => {
+	afterEach(() => {
+		vi.doUnmock('@xterm/xterm');
+		vi.doUnmock('@xterm/addon-fit');
+		document.body.innerHTML = '';
+	});
+
+	/** A wheel event shaped the way a mouse sends one. */
+	const wheel = (over: Partial<WheelEventInit> = {}): WheelEvent =>
+		new WheelEvent('wheel', { deltaY: -3, deltaMode: WheelEvent.DOM_DELTA_LINE, ...over });
+	/** The same gesture with the escape hatch held down. */
+	const shifted = (over: Partial<WheelEventInit> = {}): WheelEvent => wheel({ shiftKey: true, ...over });
+
+	it('leaves the plain wheel entirely alone, whatever the program is doing', async () => {
+		/**
+		 * ⚠ THIS IS THE HALF THAT PROTECTS THE PANE THAT ALREADY WORKS. The report was
+		 * "one pane scrolls, the other does not" — and the one that scrolls does so
+		 * BECAUSE the wheel reaches the program as a mouse report. Claiming the plain
+		 * wheel here would fix the broken pane by breaking the working one, and would take
+		 * the mouse away from every full-screen program that uses it for anything else.
+		 */
+		const { surface, term } = await surfaceWithFakeTerminal();
+		const asked: number[] = [];
+		surface.onScrollbackRequest((direction) => asked.push(direction));
+
+		for (const mode of ['none', 'vt200', 'any']) {
+			term.modes.mouseTrackingMode = mode;
+			for (const type of ['normal', 'alternate'] as const) {
+				term.buffer.active.type = type;
+				expect(term.wheelHandler?.(wheel()), `plain wheel was claimed in ${mode}/${type}`).toBe(true);
+			}
+		}
+		expect(term.scrolled).toEqual([]);
+		expect(asked).toEqual([]);
+		surface.dispose();
+	});
+
+	it('scrolls xterm itself when xterm is the one holding the history', async () => {
+		const { surface, term } = await surfaceWithFakeTerminal();
+		term.buffer.active.type = 'normal';
+		// A program has captured the mouse, which is exactly when handing the event back
+		// would achieve nothing: xterm skips its own scrollback branch outright then.
+		term.modes.mouseTrackingMode = 'vt200';
+
+		expect(term.wheelHandler?.(shifted({ deltaY: -3 }))).toBe(false);
+		expect(term.scrolled).toEqual([-3]);
+		// Pixels are divided by the row height the surface measures (24 rows x 20px).
+		expect(term.wheelHandler?.(shifted({ deltaY: 40, deltaMode: WheelEvent.DOM_DELTA_PIXEL }))).toBe(false);
+		expect(term.scrolled).toEqual([-3, 2]);
+		surface.dispose();
+	});
+
+	it('asks upward when there is no local history to scroll, and never types', async () => {
+		const { surface, term } = await surfaceWithFakeTerminal();
+		// A multiplexer pane: xterm keeps NO scrollback in the alternate buffer, so the
+		// history is tmux's and only tmux can show it.
+		term.buffer.active.type = 'alternate';
+		const asked: number[] = [];
+		const stop = surface.onScrollbackRequest((direction) => asked.push(direction));
+
+		expect(term.wheelHandler?.(shifted({ deltaY: -3 }))).toBe(false);
+		expect(term.wheelHandler?.(shifted({ deltaY: 3 }))).toBe(false);
+		expect(asked).toEqual([-1, 1]);
+		// ⚠ NOT ONE BYTE. Every rejected design for this ended in typing something into
+		// somebody's running program — a prefix that may be rebound, or a PageUp the
+		// measured programs do not answer to. A scroll gesture must never edit a session.
+		expect(term.sent).toEqual([]);
+		expect(term.scrolled).toEqual([]);
+
+		stop();
+		term.wheelHandler?.(shifted());
+		expect(asked, 'the unsubscribe did not take').toEqual([-1, 1]);
+		surface.dispose();
+	});
+
+	it('ignores a wheel event that carries no movement', async () => {
+		// A horizontal scroll (or a trackpad settling) fires with `deltaY: 0`; entering a
+		// scroll mode on it would be a mode the user never asked for.
+		const { surface, term } = await surfaceWithFakeTerminal();
+		const asked: number[] = [];
+		surface.onScrollbackRequest((direction) => asked.push(direction));
+		expect(term.wheelHandler?.(shifted({ deltaY: 0 }))).toBe(true);
+		expect(asked).toEqual([]);
 		surface.dispose();
 	});
 });
