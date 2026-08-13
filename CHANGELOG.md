@@ -1,5 +1,56 @@
 # CHANGELOG
 
+## 0.7.0
+
+- **A host's files, in the dock beside its commits.** The panel lists the home
+  directory of the account the agent runs as, reads a file into the same viewer the
+  git blobs use, and shares the dock column with the commit graph so an operator can
+  watch a build and read the tree it is building at once. It is not a new power:
+  whoever can reach it can already open a terminal on that host as that account and
+  `cat` anything it reaches, which is exactly why an MCP credential cannot — the
+  gateway enumerates tools rather than proxying REST, so a token with no terminal
+  gains nothing from a new route.
+- **The fence is a handle, not a check.** The agent opens `os.OpenRoot($HOME)` once per
+  request and resolves every name through it, so `..`, an absolute path and a symlink
+  leaving the tree are impossible rather than rejected — and there is no path-validation
+  code, because validation is code that can be wrong. A path that escapes is refused
+  rather than reinterpreted: the obvious normalisation folds `../escaped.txt` into
+  `escaped.txt`, which on the write path created a real file and reported success.
+  The price is recorded too — an absolute symlink target is refused even when it points
+  back inside the home, so such links are listed and marked rather than silently broken.
+- **Downloads belong to the browser, and resume for free.** Transfers are addressed by
+  byte offset, so a resumed download is the same request as a first one and an abandoned
+  one leaves nothing on the host — no session, no open handle, nothing to reap. The page
+  is given a `Range`-capable URL rather than bytes, because routing a file through the
+  app means holding it in memory to make a blob URL, which fails on exactly the large
+  files the feature is for. Progress, cancel and the downloads shelf are then the
+  browser's, which does them well.
+- **Uploading, and deleting that asks first.** Files arrive by toolbar picker or by drag
+  from Finder or Explorer, sliced on the way through so a two-gigabyte upload is never
+  two gigabytes of server memory. A new file is created `0600`. A non-empty directory is
+  refused unless the caller says `recursive`, because "delete this folder" and "delete
+  this folder and the four thousand things in it" are different sentences and the screen
+  can only ask the second honestly if the first cannot quietly do it. A symlink is
+  unlinked as a link rather than followed. The confirmation names what goes: a count is
+  not a question. Neither the audit entry nor the answer frames carry any content — an
+  upload is the surface most likely to hold a secret.
+- **Writing is a different axis from git's read-only stance, not an exception to it.**
+  git is read-only here because those checkouts are somebody's work in progress; this is
+  a person handling files in their own home. `ARCHITECTURE.md` §4-1 says so, because read
+  together without it the two rules look like a contradiction.
+- **A file is read by colour.** Directory, code, data, prose, image, archive — the roles
+  map onto the six code-highlighting tokens the blob view already defines for light and
+  dark, rather than a second palette to keep contrast-correct. The path bar shows the
+  full path with every segment clickable, and pasting what `pwd` printed navigates there.
+- **A truncated file no longer renders off its own panel.** The blob view's truncation
+  note was a third grid item, so it was auto-placed into the line-number column and its
+  sentence sized that track — measured at 268px of line numbers beside 140px of code.
+  It was always wrong in the commit dock; the file explorer is where somebody finally
+  looked.
+- Agent 0.1.21 carries all of it. An older agent ignores the new frames, so the server
+  reads the `files` capability first and the panel says the host cannot answer rather
+  than waiting out a timeout.
+
 ## 0.6.0
 
 - **A host card folds to its header, and stays folded.** A fleet that grows past a
