@@ -13,6 +13,7 @@ export const CORE_VERSION = '0.1.0';
 export * from './time.js';
 export * from './cards.js';
 export * from './terminal-grid.js';
+export * from './terminal-history.js';
 export * from './viewport.js';
 export * from './metrics.js';
 export * from './usage.js';
