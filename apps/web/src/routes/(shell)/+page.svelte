@@ -24,6 +24,7 @@
   import {
     SHELL_STACK_MAX_WIDTH,
     type GridMode,
+    type HistoryLine,
     type TerminalSlot,
     clampedPage,
     clearSlot,
@@ -31,6 +32,7 @@
     focusSlot,
     movePage,
     pageCount,
+    parseAnsiLines,
     pickerApply,
     removeSlot,
     setClickAction,
@@ -182,14 +184,18 @@
     }
   }
 
-  async function readHistory(slot: TerminalSlot): Promise<{ lines: string[]; scrollback: boolean } | null> {
+  async function readHistory(slot: TerminalSlot): Promise<{ lines: HistoryLine[]; scrollback: boolean } | null> {
     const session = muxSession(slot);
     if (!session) return null;
     try {
       const { lines } = await terminalApi.history(slot.hostId, session);
+      // ⚠ THE PARSE HAPPENS HERE, NOT ON THE SERVER. What crosses the wire is what tmux
+      // wrote, escapes included; turning it into runs is a rendering decision and it
+      // keeps the API from having an opinion about colour it would then have to keep.
+      const parsed = parseAnsiLines(lines);
       // `scrollback: true` retires the sheet's "visible screen only" notice — which is
       // now only true when this fetch is unavailable or came back with nothing.
-      return lines.length > 0 ? { lines, scrollback: true } : null;
+      return parsed.length > 0 ? { lines: parsed, scrollback: true } : null;
     } catch {
       // The sheet keeps the local buffer it already painted, notice and all.
       return null;

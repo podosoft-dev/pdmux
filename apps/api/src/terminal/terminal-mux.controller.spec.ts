@@ -60,23 +60,69 @@ describe("[TC-PDTERM-136] reaching a pane's scrollback without typing into it", 
     }
   });
 
-  it("reads real history and trims the padding tmux adds", async () => {
-    ctx = build(ok("first line   \nsecond\n   \n\n"));
-    const { lines, truncated } = await ctx.controller.history(SESSION, HOST, { session: "main" });
-    expect(ctx.calls[0]?.args).toEqual(["tmux", "capture-pane", "-p", "-S", "-400", "-t", "main"]);
-    expect(lines).toEqual(["first line", "second"]);
-    expect(truncated).toBe(false);
+  it("[TC-PDTERM-137] walks the history in windows, newest first, and says where it stopped", async () => {
+    // Three windows of output and then a short one, which is how tmux answers a request
+    // that reaches past its own `history-limit`.
+    const full = (mark: string) => ok(Array.from({ length: 200 }, (_, i) => `${mark}${i}`).join("\n") + "\n");
+    ctx = build(full("c"), full("b"), ok("a0\na1\n"));
+    const { lines, reachedOldest } = await ctx.controller.history(SESSION, HOST, { session: "main" });
+
+    // ⚠ `-e` IS THE COLOUR and `-J` IS THE LINE. Without `-e` tmux returns plain text;
+    // without `-J` a long command is already N rows of the pane's width, so nothing is
+    // ever long enough to fold and the sheet carries the pane's width around with it.
+    expect(ctx.calls[0]?.args).toEqual(["tmux", "capture-pane", "-p", "-e", "-J", "-S", "-200", "-t", "main"]);
+    // The newest window takes the visible screen with it, so it passes no `-E` at all —
+    // `-E 0` would mean the FIRST line of the screen rather than its last.
+    expect(ctx.calls[0]?.args).not.toContain("-E");
+    expect(ctx.calls[1]?.args).toEqual([
+      "tmux", "capture-pane", "-p", "-e", "-J", "-S", "-400", "-E", "-200", "-t", "main",
+    ]);
+    expect(ctx.calls[2]?.args).toEqual([
+      "tmux", "capture-pane", "-p", "-e", "-J", "-S", "-600", "-E", "-400", "-t", "main",
+    ]);
+
+    // ⚠ OLDEST FIRST IN THE ANSWER, NEWEST FIRST ON THE WIRE. The walk goes backwards so
+    // that stopping early loses the OLD end; the sheet still reads top to bottom.
+    expect(lines).toHaveLength(402);
+    expect(lines[0]).toBe("a0");
+    expect(lines[lines.length - 1]).toBe("c199");
+    // A short window is the top of the history, and nothing is asked for beyond it.
+    expect(reachedOldest).toBe(true);
+    expect(ctx.calls).toHaveLength(3);
   });
 
-  it("asks for less rather than showing the wrong half of a clipped capture", async () => {
-    // The agent clips at 64 KiB by keeping the FIRST bytes, and the first lines of a
-    // capture are the oldest — so a clipped result is precisely the part nobody wants.
+  it("[TC-PDTERM-137] halves a window that still arrives clipped instead of giving up on it", async () => {
+    // One pane of very long lines should cost extra round trips, not lose its colour —
+    // and never return the clipped result, whose surviving half is the OLDEST output.
     const clipped = { ...ok("ancient\n"), truncated: true };
-    ctx = build(clipped, ok("recent\n"));
-    const { lines, truncated } = await ctx.controller.history(SESSION, HOST, { session: "main" });
-    expect(ctx.calls[1]?.args).toEqual(["tmux", "capture-pane", "-p", "-S", "-100", "-t", "main"]);
+    ctx = build(clipped, clipped, ok("recent\n"));
+    const { lines } = await ctx.controller.history(SESSION, HOST, { session: "main" });
+
+    expect(ctx.calls[0]?.args).toContain("-200");
+    expect(ctx.calls[1]?.args).toContain("-100");
+    expect(ctx.calls[2]?.args).toContain("-50");
     expect(lines).toEqual(["recent"]);
-    expect(truncated).toBe(true);
+    expect(lines).not.toContain("ancient");
+  });
+
+  it("[TC-PDTERM-137] stops at once on an empty pane rather than walking its whole budget", async () => {
+    ctx = build(ok(""));
+    const { lines, reachedOldest } = await ctx.controller.history(SESSION, HOST, { session: "main" });
+    expect(lines).toEqual([]);
+    expect(reachedOldest).toBe(true);
+    expect(ctx.calls).toHaveLength(1);
+  });
+
+  it("[TC-PDTERM-137] leaves the bytes alone, because only the parser can read them", async () => {
+    /**
+     * ⚠ THE TRIMMING THAT USED TO LIVE HERE WAS DEAD THE MOMENT `-e` ARRIVED: with
+     * escapes in the stream a line ends in `ESC[0m` AFTER its padding, so `/\s+$/`
+     * matched nothing. Trimming here would now be a second opinion about bytes this
+     * layer cannot read, so padding and blank tails belong to `parseAnsiLines`.
+     */
+    ctx = build(ok("\u001b[31mred\u001b[0m   \n   \n"));
+    const { lines } = await ctx.controller.history(SESSION, HOST, { session: "main" });
+    expect(lines).toEqual(["\u001b[31mred\u001b[0m   ", "   "]);
   });
 
   it("separates an agent that cannot find tmux from a command tmux refused", async () => {

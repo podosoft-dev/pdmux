@@ -238,8 +238,9 @@ export const gitApi = {
 export const terminalApi = {
   copyMode: (hostId: string, session: string, action: "enter" | "exit"): Promise<{ ok: true }> =>
     api.post<{ ok: true }>(`/terminal/${hostId}/copy-mode`, { session, action }),
-  history: (hostId: string, session: string): Promise<{ lines: string[]; truncated: boolean }> =>
-    api.post<{ lines: string[]; truncated: boolean }>(`/terminal/${hostId}/history`, { session }),
+  /** Raw capture lines, escapes and all — the browser is what turns them into colour. */
+  history: (hostId: string, session: string): Promise<{ lines: string[]; reachedOldest: boolean }> =>
+    api.post<{ lines: string[]; reachedOldest: boolean }>(`/terminal/${hostId}/history`, { session }),
 };
 
 export const prefsApi = {

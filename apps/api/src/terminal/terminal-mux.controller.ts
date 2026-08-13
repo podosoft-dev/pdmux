@@ -39,8 +39,25 @@ import { MuxCopyModeDto, MuxHistoryDto } from "./dto/terminal-mux.dto";
 @ApiTags("terminal")
 @Controller("terminal")
 export class TerminalMuxController {
-  /** tmux keeps a pane's history in lines, and this is asked for in one exec. */
-  private static readonly HISTORY_LINES = 400;
+  /**
+   * How much history to walk back through, and in what bites.
+   *
+   * ⚠ ONE BIG REQUEST CANNOT WORK, AND THE FIRST VERSION OF THIS PROVED IT. `exec`
+   * carries 64 KiB, the agent clips an over-long result by keeping its FIRST bytes, and
+   * the first lines of a capture are the OLDEST — so a wide pane returned ancient
+   * output and dropped everything the reader came back for. The retry that guarded
+   * against it dropped to a quarter of the lines, which is why the sheet was reported
+   * as far too short: 400 lines of a 160-column pane trips the cap, so what people
+   * actually saw was 100 lines.
+   *
+   * So the capture is walked in WINDOWS, newest first. Each window is small enough to
+   * arrive whole, and stopping early therefore loses the OLD end — the harmless one.
+   */
+  private static readonly WINDOW_LINES = 200;
+  /** tmux's own `history-limit` defaults to 2000; asking past what it holds is free. */
+  private static readonly MAX_LINES = 5_000;
+  /** A ceiling on round trips, so a pathological pane cannot hold the request open. */
+  private static readonly MAX_WINDOWS = 40;
 
   constructor(private readonly exec: AgentExecService) {}
 
@@ -66,36 +83,65 @@ export class TerminalMuxController {
     @Session() session: UserSession,
     @Param("hostId", ParseUUIDPipe) hostId: string,
     @Body() dto: MuxHistoryDto,
-  ): Promise<{ lines: string[]; truncated: boolean }> {
-    const result = await this.run(session, hostId, [
-      "capture-pane",
-      "-p",
-      "-S",
-      `-${TerminalMuxController.HISTORY_LINES}`,
-      "-t",
-      dto.session,
-    ]);
+  ): Promise<{ lines: string[]; reachedOldest: boolean }> {
+    const { WINDOW_LINES, MAX_LINES, MAX_WINDOWS } = TerminalMuxController;
+    /** Newest-first while gathering; reversed once, at the end. */
+    const chunks: string[][] = [];
+    let lines = 0;
+    let end = 0; // lines above the visible screen; 0 is the screen itself
+    let reachedOldest = false;
 
-    /**
-     * ⚠ TRUNCATION CUTS THE WRONG END, WHICH IS WHY IT IS HANDLED RATHER THAN REPORTED.
-     * The agent clips an over-long result by keeping its FIRST 64 KiB, and the first
-     * lines of a capture are the OLDEST — so a wide pane full of long lines would
-     * return ancient output and silently drop everything the user actually came back
-     * for. One narrower retry costs a round trip and cannot lie; passing `truncated`
-     * up and rendering it anyway would have looked like history and not been it.
-     */
-    if (result.truncated) {
-      const narrower = await this.run(session, hostId, [
-        "capture-pane",
-        "-p",
-        "-S",
-        `-${Math.floor(TerminalMuxController.HISTORY_LINES / 4)}`,
-        "-t",
-        dto.session,
-      ]);
-      return { lines: splitLines(narrower.stdout), truncated: true };
+    for (let window = 0; window < MAX_WINDOWS && lines < MAX_LINES; window += 1) {
+      let span = Math.min(WINDOW_LINES, MAX_LINES - lines);
+      let captured: string[] | null = null;
+
+      // A window that still arrives clipped is halved rather than abandoned: one pane
+      // full of very long lines should cost extra round trips, not lose its colour.
+      for (let attempt = 0; attempt < 4 && span >= 1; attempt += 1) {
+        const result = await this.run(session, hostId, this.captureArgs(dto.session, end + span, end));
+        if (!result.truncated) {
+          captured = splitLines(result.stdout);
+          break;
+        }
+        span = Math.floor(span / 2);
+      }
+      if (captured === null) break;
+
+      // tmux answers a request that reaches past its `history-limit` with what it has,
+      // so a window that comes back short (or empty) IS the top of the history.
+      if (captured.length < span) reachedOldest = true;
+      if (captured.length > 0) {
+        chunks.push(captured);
+        lines += captured.length;
+      }
+      if (reachedOldest) break;
+      end += span;
     }
-    return { lines: splitLines(result.stdout), truncated: false };
+
+    return { lines: chunks.reverse().flat(), reachedOldest };
+  }
+
+  /**
+   * One window of a capture, addressed from the END of the history backwards.
+   *
+   * `-S`/`-E` count lines above the visible screen, so `-S -400 -E -201` is "the 200
+   * lines that sit 201-400 back". `-e` is what keeps the colour: without it tmux
+   * returns plain text, which is why the sheet was grey.
+   */
+  private captureArgs(session: string, start: number, end: number): string[] {
+    /**
+     * ⚠ `-J` OR THERE IS NOTHING TO FOLD. tmux stores a pane by ROWS, so a 3,000-character
+     * command line is already twenty-five 120-column rows by the time it is captured —
+     * measured: the longest line of a capture without `-J` was 177 characters, which is
+     * the pane width plus its escapes. Rejoining them is what restores the line the user
+     * actually typed, and it is the difference between a sheet that reflows to the reader's
+     * width and one that carries the pane's width around with it forever.
+     */
+    const args = ["capture-pane", "-p", "-e", "-J", "-S", `-${start}`];
+    // `-E 0` would mean the first line of the visible screen rather than its last, so
+    // the newest window asks for no end at all and takes the screen with it.
+    if (end > 0) args.push("-E", `-${end}`);
+    return [...args, "-t", session];
   }
 
   private async run(session: UserSession, hostId: string, args: string[]): Promise<ExecResult> {
@@ -137,9 +183,21 @@ export class TerminalMuxController {
   }
 }
 
-/** tmux pads every captured line to the pane width; the tail is unused buffer. */
+/**
+ * Split a capture into lines and nothing else.
+ *
+ * ⚠ THE TRIMMING THAT USED TO BE HERE WAS SILENTLY DEAD ONCE `-e` ARRIVED. tmux pads
+ * every line to the pane width, but with escapes in the stream a line ends in
+ * `ESC[0m` AFTER that padding — so `/\s+$/` matched nothing, every line stayed 80-200
+ * columns wide, and the "is this line blank" test never fired either. Only something
+ * that has separated text from escapes can answer, so both jobs moved to the parser in
+ * `@pdmux/core` (`parseAnsiLines`). This function must stay dumb: a trim here would be
+ * a second opinion about bytes it cannot read.
+ *
+ * The trailing empty element from a final newline goes, and nothing else.
+ */
 function splitLines(stdout: string): string[] {
-  const lines = stdout.split("\n").map((line) => line.replace(/\s+$/, ""));
-  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  const lines = stdout.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   return lines;
 }
