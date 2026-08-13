@@ -161,8 +161,9 @@
 		</div>
 
 		{#if file || fileLoading || image}
-			<!-- A face of its own: a header that says WHICH file, and a body that is the
-			     only thing that scrolls (`ui-changes.md` §헤더와 본문을 나눈다). -->
+			<!-- A face of its own: a header that says WHICH file, and a body that is
+			     the only thing that scrolls. A title that scrolls away mid-file leaves
+			     the reader with no way back to "which file is this". -->
 			<section class="pdmux-files-preview" data-pdmux-files-preview>
 				<div class="pdmux-files-preview-head">
 					<span class="pdmux-files-preview-name" data-pdmux-preview-name
