@@ -235,6 +235,33 @@ test.describe.serial("pdmux dashboard", () => {
     await page.waitForTimeout(1200);
   });
 
+  test("[TC-PDUI-215] a folded card is remembered per host, and folding is not hiding", async ({ page }) => {
+    await ready(page, "/");
+    const card = page.locator("[data-pdmux-host]").first();
+    const hostId = await card.getAttribute("data-pdmux-host");
+    expect(hostId).toBeTruthy();
+    const before = await card.locator("[data-pdmux-widget]").count();
+    expect(before, "the fixture card shows nothing, so folding it would prove nothing").toBeGreaterThan(0);
+
+    await card.locator("[data-pdmux-fold]").click();
+    await expect(card).toHaveAttribute("data-pdmux-collapsed", "true");
+
+    // Written per host to the server, so another device (and this reload) agrees. The
+    // trap this guards is `sanitizeCardPrefs` dropping a key it does not know: the card
+    // folds on screen, the row is written, and the reload quietly comes back open.
+    await page.waitForTimeout(1500);
+    await ready(page, "/");
+    const same = page.locator(`[data-pdmux-host='${hostId}']`);
+    await expect(same).toHaveAttribute("data-pdmux-collapsed", "true");
+
+    // ⚠ THE WIDGETS ARE HIDDEN, NOT TURNED OFF. Unfolding has to bring back exactly what
+    // was there — if the fold wrote through the widget switches, this count would drop.
+    await same.locator("[data-pdmux-fold]").click();
+    await expect(same).toHaveAttribute("data-pdmux-collapsed", "false");
+    await expect(same.locator("[data-pdmux-widget]")).toHaveCount(before);
+    await page.waitForTimeout(1200);
+  });
+
   test("[TC-PDUI-136] the refs panel sits beside the graph and never lengthens the page", async ({
     page,
     request,

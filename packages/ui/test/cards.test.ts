@@ -105,6 +105,59 @@ describe('[TC-PDUI-001] a host card renders only the widgets its preferences all
 		expect((container.querySelector('.pdmux-launcher select') as HTMLSelectElement).disabled).toBe(true);
 	});
 
+	it('[TC-PDUI-213] folds a card to its header, keeps what it must, and can be unfolded', () => {
+		const onToggleCollapse = vi.fn();
+		const host = { id: 'h1', name: 'alpha' };
+		const update = { kind: 'urgent' as const, label: 'update agent' };
+		const props = {
+			host: { ...host, update },
+			agents: AGENTS,
+			services: SERVICES,
+			onToggleCollapse,
+			onUpdateAgent: vi.fn(),
+		};
+
+		const open = render(HostCard, { props });
+		const fold = open.container.querySelector('[data-pdmux-fold]') as HTMLElement;
+		// Open cards say so too — a chevron with no state is a chevron nobody trusts.
+		expect(fold.getAttribute('aria-expanded')).toBe('true');
+		expect(fold.getAttribute('aria-label')).toBe('collapse card');
+		expect(open.container.querySelector('[data-pdmux-collapsed]')?.getAttribute('data-pdmux-collapsed')).toBe(
+			'false',
+		);
+		fireEvent.click(fold);
+		expect(onToggleCollapse).toHaveBeenCalledWith('h1');
+		cleanup();
+
+		const { container } = render(HostCard, { props: { ...props, collapsed: true } });
+		expect(container.querySelector('[data-pdmux-host]')?.getAttribute('data-pdmux-collapsed')).toBe('true');
+		for (const widget of ['agents', 'resources', 'links']) {
+			expect(container.querySelector(`[data-pdmux-widget="${widget}"]`)).toBeNull();
+		}
+		// ⚠ THE HEADER IS STILL A HEADER. Folding must not cost the identity or the way
+		// back out — a card that hides its own chevron is a card that never reopens.
+		expect(container.querySelector('[data-pdmux-name]')?.textContent).toBe('alpha');
+		expect(container.querySelector('.pdmux-state-dot')).not.toBeNull();
+		expect(container.querySelector('.pdmux-cog')).not.toBeNull();
+		const folded = container.querySelector('[data-pdmux-fold]') as HTMLElement;
+		expect(folded.getAttribute('aria-expanded')).toBe('false');
+		expect(folded.getAttribute('aria-label')).toBe('expand card');
+		// ⚠ AND THE UPDATE ROW SURVIVES. Decluttering must not mute the only notice that
+		// asks for an action — a rarely-watched host is the one whose agent goes stale.
+		expect(container.querySelector('[data-pdmux-widget="update"]')).not.toBeNull();
+	});
+
+	it('[TC-PDUI-213] never folds a card that has no way back', () => {
+		// A saved fold outlives a consumer that stopped passing the callback. Drawing the
+		// header alone then would strand the card with nothing on screen to explain it.
+		const { container } = render(HostCard, {
+			props: { host: { id: 'h1', name: 'alpha' }, agents: AGENTS, services: SERVICES, collapsed: true },
+		});
+		expect(container.querySelector('[data-pdmux-fold]')).toBeNull();
+		expect(container.querySelector('[data-pdmux-host]')?.getAttribute('data-pdmux-collapsed')).toBe('false');
+		expect(container.querySelector('[data-pdmux-widget="agents"]')).not.toBeNull();
+	});
+
 
 /**
  * The mark that says an agent is behind — the one place a person looking at the

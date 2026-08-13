@@ -19,6 +19,7 @@
   import { CardSettingsPopover, HostSidebar, ShellViewTabs, SplitHandle } from "@pdmux/ui";
   import {
     type CardWidget,
+    cardCollapsed,
     cardPrefs,
     freshMetrics,
     setSidebarWidth,
@@ -127,6 +128,7 @@
       history: shell.feed.history[host.id] ?? null,
       services: serviceOptionsFor(host),
       prefs: cardPrefs(layout.cards, host.id),
+      collapsed: cardCollapsed(layout.cards, host.id),
     })),
   );
 
@@ -308,6 +310,7 @@
     {t}
     onOpenService={(url: string) => window.open(url, "_blank", "noopener")}
     onOpenSettings={openSettings}
+    onToggleCollapse={(hostId: string) => shell.toggleCollapsed(hostId)}
   onUpdateAgent={data.canManage ? openUpdate : undefined}
     onAddHost={data.canManage ? () => (addOpen = true) : undefined}
   >

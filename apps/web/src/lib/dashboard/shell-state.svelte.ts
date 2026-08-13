@@ -17,11 +17,13 @@
 import { getContext, setContext } from "svelte";
 import { browser } from "$app/environment";
 import {
+  type CardPrefsMap,
   type CardWidget,
   type TerminalLayout,
   defaultLayout,
   normalizeLayout,
   starterCells,
+  toggleCardCollapsed,
   toggleCardWidget,
 } from "@pdmux/core";
 import { hostsApi, prefsApi } from "./api";
@@ -199,10 +201,23 @@ export class ShellState {
   }
 
   toggleWidget(hostId: string, widget: CardWidget): void {
-    const cards = toggleCardWidget(this.layout.cards, hostId, widget);
+    this.writeCard(hostId, toggleCardWidget(this.layout.cards, hostId, widget));
+  }
+
+  toggleCollapsed(hostId: string): void {
+    this.writeCard(hostId, toggleCardCollapsed(this.layout.cards, hostId));
+  }
+
+  /**
+   * Adopt a new card map and push the one row that changed.
+   *
+   * The per-host row is the authoritative copy for a single card, so it is written
+   * immediately rather than waiting for the debounced whole-layout save. It carries the
+   * WHOLE row — widgets and fold together — because `PUT /prefs/hosts/:id` replaces the
+   * stored object rather than merging into it.
+   */
+  private writeCard(hostId: string, cards: CardPrefsMap): void {
     this.apply({ ...this.layout, cards });
-    // The per-host row is the authoritative copy for a single card, so it is written
-    // immediately rather than waiting for the debounced whole-layout save.
     void prefsApi.putHostPref(hostId, (cards[hostId] ?? {}) as Record<string, unknown>).catch(() => {
       // A failed preference write is not worth interrupting the screen for; the
       // layout save carries the same value moments later.

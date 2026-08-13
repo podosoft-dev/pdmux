@@ -1,6 +1,8 @@
 {
   "pdmux": {
     "card": {
+      "collapse": "collapse card",
+      "expand": "expand card",
       "settings": "card settings",
       "settingsFor": "card settings",
       "update": "update agent"

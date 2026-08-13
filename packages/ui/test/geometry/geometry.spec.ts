@@ -474,6 +474,69 @@ test.describe('pdmux ui geometry', () => {
 		expect(long.truncated, 'the fixture is not actually long enough to truncate').toBe(true);
 	});
 
+	test('[TC-PDUI-214] folding a card shortens it without reshaping its header', async ({ page }) => {
+		/**
+		 * The fold control is a FOURTH thing in a header that already truncates its name,
+		 * and both of its costs are invisible to a DOM query: the chevron can steal width
+		 * from the name, and its 36px box can make the header taller than the ⚙ was
+		 * holding it. Neither shows up as a missing element, so both are measured.
+		 *
+		 * ⚠ ONE CARD, BOTH STATES. Comparing two different cards would compare two
+		 * different names; the regression is a single card changing shape as it folds.
+		 *
+		 * Measured: Chromium (bundled, headless), macOS, dpr 1, 2026-08-13. Only
+		 * differences and orderings are asserted — never an absolute pixel count — so the
+		 * numbers below do not have to be reproduced on another engine.
+		 */
+		const card = page.locator('.pdmux-card').first();
+		const read = async () =>
+			card.evaluate((el) => {
+				const head = el.querySelector('.pdmux-card-head') as HTMLElement;
+				const name = el.querySelector('[data-pdmux-name]') as HTMLElement;
+				const fold = el.querySelector('[data-pdmux-fold]') as HTMLElement;
+				const cog = el.querySelector('.pdmux-cog') as HTMLElement;
+				return {
+					card: Math.round(el.getBoundingClientRect().height),
+					head: Math.round(head.getBoundingClientRect().height),
+					name: Math.round(name.getBoundingClientRect().width),
+					widgets: el.querySelectorAll('[data-pdmux-widget]').length,
+					expanded: fold.getAttribute('aria-expanded'),
+					// ⚠ MEASURED AGAINST THE ⚙, NEVER WRITTEN DOWN. These two buttons share one
+					// box in the stylesheet precisely so the header's height has a single
+					// definition; asserting a literal 36 would pass a card whose two controls
+					// had quietly drifted apart, and would have to be re-measured on every
+					// engine. Comparing them catches the drift and travels.
+					foldBox: Math.round(fold.getBoundingClientRect().height),
+					cogBox: Math.round(cog.getBoundingClientRect().height),
+					// The chevron opens the header, the ⚙ closes it: anything else means one
+					// of them jumped the name it is meant to sit beside.
+					order: fold.getBoundingClientRect().left < name.getBoundingClientRect().left,
+					cogInside: Math.round(cog.getBoundingClientRect().right - el.getBoundingClientRect().right),
+					foldInside: Math.round(el.getBoundingClientRect().left - fold.getBoundingClientRect().left),
+				};
+			});
+
+		const open = await read();
+		expect(open.expanded).toBe('true');
+		expect(open.order, 'the chevron must precede the name it discloses').toBe(true);
+		expect(open.widgets).toBeGreaterThan(0);
+		expect(open.foldBox, 'the fold control is not the size of the ⚙ beside it').toBe(open.cogBox);
+
+		await card.locator('[data-pdmux-fold]').click();
+		const shut = await read();
+
+		expect(shut.expanded).toBe('false');
+		// The point of the feature: the card gives its column back.
+		expect(shut.card, 'folding did not shorten the card').toBeLessThan(open.card);
+		expect(shut.widgets, 'a folded card still draws widgets').toBe(0);
+		// …and the point of this test: the header did not move while it happened.
+		expect(shut.head, 'the header changed height as the card folded').toBe(open.head);
+		expect(shut.name, 'the header reflowed and resized the name').toBe(open.name);
+		expect(shut.order).toBe(true);
+		expect(shut.cogInside, 'the settings button left the card').toBeLessThanOrEqual(0);
+		expect(shut.foldInside, 'the chevron left the card').toBeLessThanOrEqual(0);
+	});
+
 	test('[TC-PDUI-183] an agent name is written properly and still fits its column', async ({ page }) => {
 		/**
 		 * The provider id is a wire value — lowercase, matched against a process name — and

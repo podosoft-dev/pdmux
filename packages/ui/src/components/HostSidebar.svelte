@@ -19,6 +19,8 @@
 		history?: HostSeries | null;
 		services?: readonly ServiceOption[];
 		prefs?: CardPrefs;
+		/** Folded to its header. Resolved by the consumer, one entry at a time. */
+		collapsed?: boolean;
 	}
 
 	interface Props {
@@ -36,6 +38,8 @@
 		footer?: Snippet;
 		onOpenService?: (url: string, hostId: string) => void;
 		onOpenSettings?: (hostId: string, anchor: HTMLElement) => void;
+		/** Absent = no card draws a fold control. */
+		onToggleCollapse?: (hostId: string) => void;
 		onUpdateAgent?: (hostId: string, anchor: HTMLElement) => void;
 		/**
 		 * Offer "add a host" as the LAST tile in the column, cards or no cards.
@@ -58,6 +62,7 @@
 		footer,
 		onOpenService,
 		onOpenSettings,
+		onToggleCollapse,
 		onUpdateAgent,
 		onAddHost,
 	}: Props = $props();
@@ -76,12 +81,14 @@
 				history={entry.history}
 				services={entry.services}
 				prefs={entry.prefs}
+				collapsed={entry.collapsed}
 				{now}
 				{windowSec}
 				{windowLabels}
 				{t}
 				{onOpenService}
 				{onOpenSettings}
+				{onToggleCollapse}
 				{onUpdateAgent}
 			/>
 		{/each}

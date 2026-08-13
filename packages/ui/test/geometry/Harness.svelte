@@ -60,7 +60,13 @@
 		'h1',
 	);
 
-	const cards = hosts.map((host) => ({
+	// Folding is measured by DOING it, not by rendering a fixture that is already
+	// folded: the regression the geometry guards is the header changing shape as the
+	// chevron turns, and only a real toggle puts both states on the same card.
+	let folded = $state<Record<string, boolean>>({});
+
+	const cards = $derived(
+		hosts.map((host) => ({
 		host: {
 			id: host.id,
 			name: host.name,
@@ -93,7 +99,9 @@
 		history,
 		services: serviceOptions([{ id: 'web', label: 'web', url: 'https://web.test', status: 'up' as const }]),
 		prefs: cardPrefs({}, host.id),
-	}));
+		collapsed: folded[host.id] === true,
+		})),
+	);
 
 	// Enough rows that the list must scroll — the whole point of the check.
 	const commits = Array.from({ length: 80 }, (_, i) => ({
@@ -170,7 +178,13 @@
 	>
 		<!-- `onAddHost` is supplied so the column carries its trailing tile here too: it is the
 		     last thing in the scroll content, and the geometry checks measure that content. -->
-		<HostSidebar {cards} now={seconds} onAddHost={() => {}} onUpdateAgent={() => {}} />
+		<HostSidebar
+			{cards}
+			now={seconds}
+			onAddHost={() => {}}
+			onUpdateAgent={() => {}}
+			onToggleCollapse={(hostId) => (folded = { ...folded, [hostId]: !folded[hostId] })}
+		/>
 		<SplitHandle onCommit={(delta) => (layout = setSidebarWidth(layout, layout.sidebarWidth + delta))} />
 		<div class="pdmux pdmux-panel">
 			<TerminalGrid

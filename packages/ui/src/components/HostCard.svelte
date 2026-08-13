@@ -44,12 +44,16 @@
 		history?: HostSeries | null;
 		services?: readonly ServiceOption[];
 		prefs?: CardPrefs;
+		/** Folded to its header. The widgets keep their own settings while hidden. */
+		collapsed?: boolean;
 		now?: number;
 		windowSec?: number;
 		windowLabels?: Record<string, string>;
 		t?: Translate;
 		onOpenService?: (url: string, hostId: string) => void;
 		onOpenSettings?: (hostId: string, anchor: HTMLElement) => void;
+		/** Absent = no fold control is drawn, and the card is always open. */
+		onToggleCollapse?: (hostId: string) => void;
 		/** Absent = no control is drawn, even when `host.update` says one is offered. */
 		onUpdateAgent?: (hostId: string, anchor: HTMLElement) => void;
 	}
@@ -61,12 +65,14 @@
 		history = null,
 		services = [],
 		prefs,
+		collapsed = false,
 		now,
 		windowSec = 3600,
 		windowLabels = {},
 		t,
 		onOpenService,
 		onOpenSettings,
+		onToggleCollapse,
 		onUpdateAgent,
 	}: Props = $props();
 
@@ -81,6 +87,17 @@
 			: reach === 'unknown'
 				? tr('pdmux.host.unknown', 'unknown')
 				: tr('pdmux.host.online', 'online'),
+	);
+	/**
+	 * ⚠ A CARD IS ONLY FOLDED IF SOMETHING CAN UNFOLD IT. `collapsed` arrives from a
+	 * persisted preference and `onToggleCollapse` from the consumer, and they can
+	 * disagree — a saved fold outlives the app that stopped passing the callback. Then
+	 * the honest answer is OPEN: a header with no chevron and no body is a card the
+	 * user cannot get back, and nothing on screen would say why.
+	 */
+	const folded = $derived(collapsed && onToggleCollapse !== undefined);
+	const foldLabel = $derived(
+		folded ? tr('pdmux.card.expand', 'expand card') : tr('pdmux.card.collapse', 'collapse card'),
 	);
 	// SWAP sits under MEM, not at the end: it is the same question one level down,
 	// and a person reading "MEM 94%" wants the next line to say whether the machine
@@ -100,8 +117,50 @@
 	]);
 </script>
 
-<article class="pdmux pdmux-card" data-pdmux-host={host.id} data-pdmux-state={host.state ?? 'online'}>
+<article
+	class="pdmux pdmux-card"
+	data-pdmux-host={host.id}
+	data-pdmux-state={host.state ?? 'online'}
+	data-pdmux-collapsed={folded ? 'true' : 'false'}
+>
 	<header class="pdmux-card-head">
+		<!--
+			The disclosure control, and it goes FIRST — before the thing it discloses,
+			which is where every tree and accordion has taught people to look for it. The
+			right-hand cluster (reach mark, ⚙) is already two controls wide in a 300px
+			column, and a third there would be the busy/idle chip's mistake again: spending
+			the header's scarce width on something that has a better home.
+
+			⚠ One path, rotated by the stylesheet. Drawing a second chevron for the open
+			state would be two shapes to keep in agreement, and the rotation is also what
+			makes the state legible while it changes.
+
+			Path data is lucide's `chevron-right` (ISC, © Lucide Icons and Contributors),
+			copied for the same reason the ⚙ and the link marks are.
+		-->
+		{#if onToggleCollapse}
+			<button
+				class="pdmux-card-fold"
+				type="button"
+				aria-expanded={!folded}
+				aria-label={foldLabel}
+				title={foldLabel}
+				data-pdmux-fold
+				onclick={() => onToggleCollapse(host.id)}
+			>
+				<svg
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="m9 18 6-6-6-6" />
+				</svg>
+			</button>
+		{/if}
 		<span data-pdmux-name title={host.name}>{host.name}</span>
 		<!--
 			Reachability, drawn. ONE FAMILY, THREE SILHOUETTES: a chain link that is joined,
@@ -175,7 +234,7 @@
 		</button>
 	</header>
 
-	{#if widgets.agents}
+	{#if widgets.agents && !folded}
 		<ul class="pdmux-widget" data-pdmux-widget="agents">
 			{#each agents as row (row.provider)}
 				<UsageGaugeRow {row} {windowLabels} {t} />
@@ -183,7 +242,7 @@
 		</ul>
 	{/if}
 
-	{#if widgets.resources}
+	{#if widgets.resources && !folded}
 		<ul class="pdmux-widget" data-pdmux-widget="resources">
 			{#each rows as row (row.key)}
 				<ResourceRow
@@ -200,7 +259,7 @@
 		</ul>
 	{/if}
 
-	{#if widgets.links}
+	{#if widgets.links && !folded}
 		<div data-pdmux-widget="links">
 			<ServiceLauncher options={services} disabled={offline} {t} onOpen={(url) => onOpenService?.(url, host.id)} />
 		</div>
@@ -219,6 +278,14 @@
 		⚠ THE WORD CARRIES THE STATE, NOT THE COLOUR. `label` is the whole sentence and
 		it is also the accessible name, so the card still works in greyscale and to a
 		screen reader — the rule the reachability mark survived by and the chip did not.
+
+		⚠ AND IT SURVIVES A FOLD — the one thing here that does. Folding is decluttering,
+		not muting: the widgets it hides answer "how is this host doing right now", which
+		is a question you can ask again whenever you like, while this row is the only
+		place an agent that needs updating ever says so. A rarely-watched host is exactly
+		the one whose agent goes stale unnoticed, so hiding this behind a chevron would
+		make the fold quietly harmful. It is conditional already, so an up-to-date fleet
+		still folds to bare headers.
 	-->
 	{#if host.update}
 		{#if host.update.kind === 'busy'}

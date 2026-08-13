@@ -1,6 +1,8 @@
 {
   "pdmux": {
     "card": {
+      "collapse": "카드 접기",
+      "expand": "카드 펼치기",
       "settings": "카드 설정",
       "settingsFor": "카드 설정",
       "update": "에이전트 업데이트"

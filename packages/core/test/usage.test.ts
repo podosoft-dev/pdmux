@@ -3,13 +3,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+	CARD_WIDGETS,
+	type CardPrefsMap,
 	GAUGE,
 	agentRow,
 	agentRows,
+	cardCollapsed,
 	cardPrefs,
 	gaugeCell,
 	providerLabel,
 	sanitizeCardPrefs,
+	toggleCardCollapsed,
 	toggleCardWidget,
 	usageAge,
 } from '../src/index.js';
@@ -112,6 +116,41 @@ describe('[TC-PDCORE-030] card widgets are per card, default on, and survive a r
 		// has a card, and one that comes back should not be reset.
 		expect(cardPrefs(sanitizeCardPrefs({ ghost: { agents: false } }), 'ghost').agents).toBe(false);
 		expect(cardPrefs(undefined, 'h1')).toEqual({ agents: true, resources: true, links: true });
+	});
+});
+
+describe('[TC-PDCORE-096] a card folds to its header, per host, and stays folded', () => {
+	it('is not a widget, survives a hydrate, and outlives a widget toggle', () => {
+		let cards: CardPrefsMap = {};
+		expect(cardCollapsed(cards, 'h1')).toBe(false);
+		expect(cardCollapsed(undefined, 'h1')).toBe(false);
+
+		cards = toggleCardCollapsed(cards, 'h1');
+		expect(cardCollapsed(cards, 'h1')).toBe(true);
+		// Per card: the operator folds the host they rarely look at, not the column.
+		expect(cardCollapsed(cards, 'h2')).toBe(false);
+		expect(toggleCardCollapsed(cards, '')).toBe(cards);
+
+		// ⚠ FOLDING IS NOT HIDING EVERY WIDGET. A folded card still remembers what it
+		// shows when it opens again, so the two settings must not overwrite each other.
+		expect(cardPrefs(cards, 'h1')).toEqual({ agents: true, resources: true, links: true });
+		cards = toggleCardWidget(cards, 'h1', 'resources');
+		expect(cardPrefs(cards, 'h1').resources).toBe(false);
+		expect(cardCollapsed(cards, 'h1')).toBe(true);
+		cards = toggleCardCollapsed(cards, 'h1');
+		expect(cardCollapsed(cards, 'h1')).toBe(false);
+		expect(cardPrefs(cards, 'h1').resources).toBe(false);
+
+		// The reload path. Everything persisted goes through `sanitizeCardPrefs`, and it
+		// DROPS keys it does not know — which is exactly how a fold would come back open.
+		const reloaded = sanitizeCardPrefs(JSON.parse(JSON.stringify(toggleCardCollapsed(cards, 'h1'))));
+		expect(cardCollapsed(reloaded, 'h1')).toBe(true);
+		expect(cardPrefs(reloaded, 'h1').resources).toBe(false);
+		// A row that carries nothing but the fold still has to be kept.
+		expect(cardCollapsed(sanitizeCardPrefs({ lone: { collapsed: true } }), 'lone')).toBe(true);
+		// …and junk is still junk.
+		expect(cardCollapsed(sanitizeCardPrefs({ h1: { collapsed: 'yes' } }), 'h1')).toBe(false);
+		expect(CARD_WIDGETS).not.toContain('collapsed');
 	});
 });
 

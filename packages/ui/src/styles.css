@@ -736,11 +736,19 @@
 	white-space: nowrap;
 }
 
-.pdmux-cog {
+/*
+ * The card header's two icon buttons share ONE box.
+ *
+ * ⚠ THE NUMBERS LIVE HERE ONCE. A second 36px/-6px pair copied for the fold control
+ * is a pair that drifts, and the header's height is exactly what the negative margins
+ * are holding at 24px — the ⚙ and the chevron have to agree to the pixel or the row
+ * grows on whichever card happens to draw both. The coarse-pointer block near the end
+ * of this file raises both to 44px for the same reason.
+ */
+.pdmux-cog,
+.pdmux-card-fold {
 	flex: none;
-	margin-inline-start: auto;
 	margin-block: -6px;
-	margin-inline-end: -6px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -757,14 +765,27 @@
 		color 0.12s ease;
 }
 
-.pdmux-cog:hover {
+/* The ⚙ is the LAST thing in the header; the chevron is the first, so only one of them
+   claims the space the name did not use. */
+.pdmux-cog {
+	margin-inline-start: auto;
+	margin-inline-end: -6px;
+}
+
+.pdmux-card-fold {
+	margin-inline-start: -6px;
+}
+
+.pdmux-cog:hover,
+.pdmux-card-fold:hover {
 	background: var(--pdmux-hover);
 	color: var(--pdmux-hover-fg);
 }
 
 /* `:focus-visible`, never `:focus` — a mouse click on a popover trigger should not leave
    a ring behind on the card it opened from. */
-.pdmux-cog:focus-visible {
+.pdmux-cog:focus-visible,
+.pdmux-card-fold:focus-visible {
 	outline: none;
 	color: var(--pdmux-fg);
 	box-shadow: 0 0 0 3px color-mix(in oklab, var(--pdmux-ring) 50%, transparent);
@@ -772,10 +793,31 @@
 
 /* Clicks belong to the button; without this the target of a click is sometimes a path
    inside the icon, which `event.currentTarget` handles but hit-testing does not. */
-.pdmux-cog svg {
+.pdmux-cog svg,
+.pdmux-card-fold svg {
 	inline-size: 16px;
 	block-size: 16px;
 	pointer-events: none;
+}
+
+/*
+ * OPEN POINTS DOWN, CLOSED POINTS RIGHT — one path, turned.
+ *
+ * The rotation is on the svg rather than the button so the 36px hit box never moves,
+ * and it is a transition so the state is legible as it changes rather than only after.
+ */
+.pdmux-card-fold svg {
+	transition: transform 0.12s ease;
+}
+
+.pdmux-card-fold[aria-expanded='true'] svg {
+	transform: rotate(90deg);
+}
+
+/* A folded card is a header and nothing else, so the padding that framed four widgets
+   is suddenly most of its height. */
+.pdmux-card[data-pdmux-collapsed='true'] {
+	padding-block: 8px;
 }
 
 .pdmux-widget {
@@ -2163,6 +2205,7 @@
 	.pdmux-chip,
 	.pdmux-btn,
 	.pdmux-cog,
+	.pdmux-card-fold,
 	.pdmux-pick-row {
 		min-width: 44px;
 		min-height: 44px;
