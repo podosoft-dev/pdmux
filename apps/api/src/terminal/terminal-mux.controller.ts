@@ -83,13 +83,14 @@ export class TerminalMuxController {
     @Session() session: UserSession,
     @Param("hostId", ParseUUIDPipe) hostId: string,
     @Body() dto: MuxHistoryDto,
-  ): Promise<{ lines: string[]; reachedOldest: boolean }> {
+  ): Promise<{ lines: string[]; reachedOldest: boolean; screenOnly: boolean }> {
     const { WINDOW_LINES, MAX_LINES, MAX_WINDOWS } = TerminalMuxController;
     /** Newest-first while gathering; reversed once, at the end. */
     const chunks: string[][] = [];
     let lines = 0;
     let end = 0; // lines above the visible screen; 0 is the screen itself
     let reachedOldest = false;
+    const pane = await this.paneFacts(session, hostId, dto.session);
 
     for (let window = 0; window < MAX_WINDOWS && lines < MAX_LINES; window += 1) {
       let span = Math.min(WINDOW_LINES, MAX_LINES - lines);
@@ -107,18 +108,81 @@ export class TerminalMuxController {
       }
       if (captured === null) break;
 
-      // tmux answers a request that reaches past its `history-limit` with what it has,
-      // so a window that comes back short (or empty) IS the top of the history.
-      if (captured.length < span) reachedOldest = true;
-      if (captured.length > 0) {
-        chunks.push(captured);
-        lines += captured.length;
+      // Nothing left up there, whatever the pane claims to hold.
+      if (captured.length === 0) {
+        reachedOldest = true;
+        break;
       }
-      if (reachedOldest) break;
+      /**
+       * ⚠ A WINDOW ASKED FOR PAST THE TOP COMES BACK AS THE VISIBLE SCREEN, NOT AS NOTHING.
+       *
+       * Measured (tmux 3.7b, isolated 80x24 pane, `history_size` 379, 2026-08-17): every one of
+       * `-S -400 -E -300`, `-S -600 -E -400`, `-S -800 -E -600` and `-S -2000 -E -1800` returned
+       * the same 24 rows — the newest lines, the ones already in the first window. Within the
+       * history the same tmux pages exactly as documented (`-S -200 -E -100` returned lines 178
+       * to 278), so this is the boundary behaving oddly rather than `-E` being broken.
+       *
+       * It matters because `captured.length < span` no longer stops the walk: 24 rows used to be
+       * read as "the top", which is right by accident. Now the walk would ask forty times and the
+       * sheet would carry forty copies of one screen. `reachedOldest` is true — a window that
+       * runs past the top is exactly how a walk learns there is nothing above it.
+       */
+      const newest = chunks[0];
+      if (newest && repeatsTail(newest, captured)) {
+        reachedOldest = true;
+        break;
+      }
+
+      chunks.push(captured);
+      lines += captured.length;
       end += span;
+      /**
+       * ⚠ THE OLD STOP CONDITION WAS `captured.length < span`, AND `-J` MADE IT WRONG. Joining
+       * wrapped rows is the whole point of `-J` (a 3,000-character command is twenty-five rows
+       * of a 120-column pane), so a full window legitimately comes back as FEWER lines than the
+       * rows asked for — measured in an isolated session, 210 rows of wrapped output arrived as
+       * 54 joined lines, which the old test read as "the top of the history" and stopped at the
+       * first window. `MAX_LINES` was unreachable by construction.
+       *
+       * tmux itself knows how much it holds, so ask it instead of inferring: `#{history_size}`
+       * counts exactly the lines above the visible screen, which is what `end` walks through.
+       */
+      if (end >= pane.historySize) {
+        reachedOldest = true;
+        break;
+      }
     }
 
-    return { lines: chunks.reverse().flat(), reachedOldest };
+    return { lines: chunks.reverse().flat(), reachedOldest, screenOnly: pane.alternate };
+  }
+
+  /**
+   * What the pane can be asked for, in one round trip.
+   *
+   * ⚠ `#{alternate_on}` IS THE DIFFERENCE BETWEEN A SHORT HISTORY AND NO HISTORY, and only the
+   * host can answer it. A full-screen program (a coding agent's TUI, `vim`) draws on the pane's
+   * ALTERNATE screen, and tmux keeps history for the normal one — so a capture returns that
+   * program's current screenful and nothing before it. Measured on two hosts in one fleet on
+   * 2026-08-17: one pane `alternate_on 1` with `history_size` 48, the other `alternate_on 0`
+   * with 1991. The sheet shows both, so it has to be able to say which it is holding; calling
+   * the first one a history is a claim the reader cannot check.
+   *
+   * A pane that cannot be measured is not an error — the capture below is still worth trying,
+   * and the caller degrades to the budget it already has.
+   */
+  private async paneFacts(
+    session: UserSession,
+    hostId: string,
+    target: string,
+  ): Promise<{ historySize: number; alternate: boolean }> {
+    const args = ["display-message", "-p", "-t", target, "#{history_size} #{alternate_on}"];
+    const result = await this.run(session, hostId, args);
+    const [size, alternate] = result.stdout.trim().split(/\s+/);
+    const parsed = Number.parseInt(size ?? "", 10);
+    return {
+      historySize: Number.isFinite(parsed) && parsed >= 0 ? parsed : TerminalMuxController.MAX_LINES,
+      alternate: alternate === "1",
+    };
   }
 
   /**
@@ -200,4 +264,19 @@ function splitLines(stdout: string): string[] {
   const lines = stdout.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   return lines;
+}
+
+/**
+ * Is `window` just the end of `newest` again?
+ *
+ * The walk asks for older and older windows, so a window whose every line is already the TAIL of
+ * the newest one is not older output — it is the visible screen a second time, which is what tmux
+ * answers a window that starts above the oldest line it holds. Comparing the whole run rather
+ * than one line matters: a single repeated line is ordinary (a blank line, a repeated prompt), a
+ * repeated screenful is not.
+ */
+function repeatsTail(newest: string[], window: string[]): boolean {
+  if (window.length === 0 || window.length > newest.length) return false;
+  const offset = newest.length - window.length;
+  return window.every((line, index) => line === newest[offset + index]);
 }
