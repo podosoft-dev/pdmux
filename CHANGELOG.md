@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 0.8.1
+
+- **A drag is scaled to whoever answers the wheel.** Reported from an iPhone once the gesture
+  worked at all: it scrolled far too slowly. One notch per three rows of travel tracks the finger
+  exactly while the terminal answers — its cursor keys and its own viewport both move three lines
+  per notch — but a program holding the mouse decides for itself and moves less, so three rows
+  bought a fraction of a screen. The notch is one row while mouse reporting is on and three rows
+  otherwise, asked per move because a program turns reporting on and off as it runs. The fling cap
+  is now twelve rows of travel rather than a notch count, so the ceiling means the same thing on
+  both scales.
+
 ## 0.8.0
 
 - **A finger reaches what the wheel reaches.** Reported from an iPhone: a pane running a
