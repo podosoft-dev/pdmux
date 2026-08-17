@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## 0.8.0
+
+- **A finger reaches what the wheel reaches.** Reported from an iPhone: a pane running a
+  coding agent would not scroll, so the progress had to be read on a desktop. Everything
+  that scrolls a pane is now one path — a drag, the ⇞/⇟ buttons and `scrollPages()` all
+  dispatch a wheel event and let the terminal route it, because which of three answers is
+  right (a mouse report for a program that asked for one, cursor keys for a buffer with no
+  scrollback, or its own viewport) is only knowable at that instant and only the terminal
+  knows it. The drag used to hand-roll the middle answer and stand down whenever the program
+  held the pointer, which is precisely the state a full-screen agent TUI is in — so a phone
+  had no gesture at all on the panes this product exists to watch. The surface declares
+  `touch-action: pan-x pinch-zoom` so the engine cannot claim the vertical axis and make the
+  gesture uncancellable; pinch-zoom and the browser's own back swipe stay.
+- **The output sheet says what it cannot hold.** A sheet with one screen in it, a sheet still
+  fetching and a sheet whose fetch was refused were the same picture, and in the worst case it
+  said "nothing has been printed yet" about a pane that had printed for hours. Each state now
+  has its own line, including the one that matters most: when a full-screen program owns the
+  pane, the multiplexer kept nothing above its screen either, so the note points at the
+  program rather than at a history nobody has. An empty answer is reported as an answer and a
+  refusal as a refusal.
+- **The whole capture, not the first two windows.** The walk stopped as soon as a window came
+  back with fewer lines than the rows it asked for — which `-J` makes routine, since joining
+  wrapped rows is the point of that flag. It now walks to `#{history_size}`, the number the
+  multiplexer itself keeps: measured against a live pane, 814 lines where it used to stop near
+  400. A window asked for past the top returns the visible screen rather than nothing, so a
+  window that repeats the newest one ends the walk.
+- **A pane comes back when the tab does.** A phone freezes a backgrounded tab, timers
+  included, so a socket that died overnight stayed down well past the screen coming back and
+  the pane showed its last frame — indistinguishable from a session that stopped. Returning to
+  the tab now cancels the pending backoff and reconnects immediately, and the keyboard sensor
+  re-measures at the same moment, so a shell suspended with the keyboard open no longer stays
+  short.
+
 ## 0.7.0
 
 - **A host's files, in the dock beside its commits.** The panel lists the home

@@ -1,6 +1,6 @@
 {
   "name": "@pdmux/mcp",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "The pdmux tool surface for MCP clients: read one host's state and run a command on it.",
   "license": "Apache-2.0",
