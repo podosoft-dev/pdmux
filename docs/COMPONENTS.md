@@ -282,9 +282,16 @@ knows it (`@xterm/xterm` 5.5.0, `Terminal.ts`):
 
 ⚠ **A gesture must not carry a copy of that routing.** The drag used to hand-roll case 2 and stand down
 whenever the program held the mouse — which is the case a coding agent's TUI creates, so a phone had no
-gesture at all on the panes this product exists to watch while a desktop wheel worked. Notches, not one
-large delta: a mouse report carries no magnitude, so the COUNT of events is the message (three lines per
-notch, at most three notches per touch move).
+gesture at all on the panes this product exists to watch while a desktop wheel worked.
+
+⚠ **Notches, not one large delta — and their SCALE depends on who answers.** A mouse report carries no
+magnitude, so the count of events is the whole message. While xterm answers (cursor keys, or its own
+viewport) one notch moves three lines, so three rows of finger travel per notch tracks the finger
+exactly. A program holding the mouse decides for itself and moves less, so there it is one row per
+notch — at three it was reported from a phone as scrolling far too slowly. The ratio cannot be exact by
+construction, because nothing ever reports how far the program went. Either way one move is capped at
+twelve rows of travel, so a discontinuity (the keyboard opening, a rotation, a re-fit) cannot arrive as
+a single jump.
 
 Two things hold it together: `.pdmux-pane-surface` declares `touch-action: pan-x pinch-zoom` (the
 engine must not claim the vertical axis and make `touchmove` uncancellable; pinch-zoom and the

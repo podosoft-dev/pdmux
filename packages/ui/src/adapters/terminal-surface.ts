@@ -561,11 +561,12 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	/** Finger travel, in px, before the gesture commits to an axis. */
 	const AXIS_LOCK_PX = 8;
 	/**
-	 * A fling must not become a page-long jump; one move event is worth at most this many
-	 * notches. Three is nine lines, which is where the hand-rolled version's cap already sat
-	 * (eight lines) — so replacing it with a wheel is not also a change of speed.
+	 * A fling must not become a page-long jump: one move event is worth at most this much finger
+	 * travel, counted in ROWS rather than notches so the ceiling does not move when the notch
+	 * does. Twelve rows is about half a phone pane, and it is what stops a discontinuity — the
+	 * keyboard opening, a rotation, a pane re-fit — from arriving as one enormous jump.
 	 */
-	const MAX_NOTCHES_PER_MOVE = 3;
+	const MAX_ROWS_PER_MOVE = 12;
 	/**
 	 * One notch, in lines. Three is what a mouse reports and what `vim` assumes of one.
 	 *
@@ -573,6 +574,27 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	 * all measure in this unit, so a pane answers a drag and a button press at the same scale.
 	 */
 	const WHEEL_NOTCH_LINES = 3;
+	/**
+	 * How far the finger travels per notch, in rows — and it depends on WHO ANSWERS THE WHEEL,
+	 * because their answers are different sizes.
+	 *
+	 * ⚠ REPORTED FROM AN IPHONE AFTER THE GESTURE STARTED WORKING: "it scrolls far too slowly."
+	 * The gesture emitted one notch per three rows of travel, which tracks the finger exactly
+	 * while xterm is the one answering — its cursor-key fallback and its own viewport both move
+	 * WHEEL_NOTCH_LINES per notch, so three rows of finger buy three lines of output.
+	 *
+	 * A program holding the mouse is a different bargain. A mouse report carries no magnitude, so
+	 * how far one notch scrolls is entirely that program's choice — and a coding agent's TUI
+	 * moves much less than three lines for it. Three rows of travel then bought a fraction of a
+	 * screen, which is what the report was about. One row per notch is the closest this code can
+	 * get to "the content follows the finger" without knowing what the program will do.
+	 *
+	 * ⚠ AND IT CANNOT BE EXACT, BY CONSTRUCTION. A multiplexer in copy-mode moves several lines
+	 * per report; such a pane is now faster than the finger rather than slower. There is no
+	 * feedback channel to calibrate against — the program never says how far it went — so this is
+	 * a choice about which case to be right for, and the reported one wins.
+	 */
+	const notchRows = (): number => (term.modes.mouseTrackingMode !== 'none' ? 1 : WHEEL_NOTCH_LINES);
 
 	let armed = false;
 	let axis: 'none' | 'x' | 'y' = 'none';
@@ -639,7 +661,10 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 			lastX = touch.clientX;
 			lastY = touch.clientY;
 			if (axis !== 'y') return;
-			const notch = rowHeight() * WHEEL_NOTCH_LINES;
+			// Asked per move, never cached: a program turns mouse reporting on and off while it
+			// runs, and the scale of a notch changes with it.
+			const rows = notchRows();
+			const notch = rowHeight() * rows;
 			if (notch <= 0) return;
 			carry += dy;
 			const notches = Math.trunc(carry / notch);
@@ -647,7 +672,8 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 			carry -= notches * notch;
 			// A finger travelling DOWN pulls earlier output down into view, which is a wheel
 			// turned BACK — the same direction the ⇞ button asks for.
-			spinWheel(notches > 0 ? -1 : 1, Math.min(Math.abs(notches), MAX_NOTCHES_PER_MOVE));
+			const cap = Math.max(1, Math.floor(MAX_ROWS_PER_MOVE / rows));
+			spinWheel(notches > 0 ? -1 : 1, Math.min(Math.abs(notches), cap));
 			if (event.cancelable) event.preventDefault();
 		},
 		{ passive: false },

@@ -18,6 +18,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+/** The surface's own `WHEEL_NOTCH_LINES`, restated so a case can reason in it. */
+const WHEEL_NOTCH_LINES_IN_SPEC = 3;
+
 const cssPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'styles.css');
 const css = readFileSync(cssPath, 'utf8');
 
@@ -279,9 +282,18 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 		term.modes.mouseTrackingMode = 'vt200';
 		const wheeled = recordWheel(term);
 		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 160 }]);
-		// One notch, which xterm encodes as one mouse report — the magnitude is not carried, so
-		// the COUNT is the whole message.
-		expect(wheeled.length).toBe(1);
+		/**
+		 * ⚠ THREE NOTCHES FOR 60px, NOT ONE — AND THAT IS THE SECOND HALF OF THE FIX.
+		 *
+		 * Reported from an iPhone once the gesture worked at all: "it scrolls far too slowly."
+		 * A mouse report carries no magnitude, so how far one notch moves is the PROGRAM's
+		 * choice, and a coding agent's TUI moves much less than the three lines xterm's own
+		 * fallbacks move. At three rows of travel per notch the same drag therefore bought a
+		 * fraction of what it buys on a pane xterm answers for. One row per notch here is as
+		 * close to "the content follows the finger" as this code can get without knowing what
+		 * the program will do.
+		 */
+		expect(wheeled.length).toBe(3);
 		expect(term.sent).toEqual([]);
 		surface.dispose();
 	});
@@ -416,13 +428,51 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 	it('caps one move, so a fling cannot become a page-long jump', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
 		const wheeled = recordWheel(term);
-		// 600px in one event is ten notches; the handler is bounded at three per move — nine
-		// lines, which is where the cap sat when this sent keys, so the change of mechanism is
-		// not also a change of speed. Every notch is a frame on the socket once xterm encodes
-		// it, and a coalesced move on a tall pane could otherwise be a dozen.
+		// The cap is TWELVE ROWS OF TRAVEL, not a notch count, so it means the same thing on both
+		// scales: 600px is 30 rows here, and at three rows per notch that is four notches. Every
+		// notch is a frame on the socket once xterm encodes it, and a discontinuity — the
+		// keyboard opening, a rotation, a re-fit — could otherwise arrive as one enormous jump.
 		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 700 }]);
-		expect(wheeled.length).toBe(3);
+		expect(wheeled.length).toBe(4);
 		surface.dispose();
+	});
+
+	it('caps a fling by travel, so the ceiling is the same on both scales', async () => {
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		term.modes.mouseTrackingMode = 'vt200';
+		const wheeled = recordWheel(term);
+		// Same 600px = 30 rows, but a notch is one row here: twelve, not thirty-six. Expressing
+		// the cap in notches would have made the mouse path three times as jumpy as the other.
+		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 700 }]);
+		expect(wheeled.length).toBe(12);
+		surface.dispose();
+	});
+
+	it('scales the notch to who answers the wheel, not to a constant', async () => {
+		/**
+		 * ⚠ THE TWO RATIOS ARE THE POINT, AND UNIFYING THEM BREAKS ONE CASE OR THE OTHER.
+		 * xterm's own answers move `WHEEL_NOTCH_LINES` per notch, so three rows of travel per
+		 * notch tracks the finger. A program holding the mouse decides for itself and moves less,
+		 * so it needs a notch per row. One constant for both is either too slow on the pane this
+		 * dashboard is nearly always showing (the reported bug) or three times the finger on the
+		 * others.
+		 */
+		const same = { x: 50, y: 100 };
+		const to = [{ x: 50, y: 160 }];
+
+		const xtermAnswers = await surfaceWithFakeTerminal();
+		const slow = recordWheel(xtermAnswers.term);
+		drag(xtermAnswers.host, same, to);
+		xtermAnswers.surface.dispose();
+
+		const programAnswers = await surfaceWithFakeTerminal();
+		programAnswers.term.modes.mouseTrackingMode = 'vt200';
+		const fast = recordWheel(programAnswers.term);
+		drag(programAnswers.host, same, to);
+		programAnswers.surface.dispose();
+
+		expect(slow.length).toBe(1);
+		expect(fast.length).toBe(WHEEL_NOTCH_LINES_IN_SPEC * slow.length);
 	});
 
 	it('adds slow drags up instead of rounding them away', async () => {
