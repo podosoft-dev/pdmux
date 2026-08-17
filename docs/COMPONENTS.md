@@ -269,6 +269,49 @@ it from the terminal's hidden textarea, and at that moment a mobile browser clos
 the row would be removing its own reason to exist. `TerminalPane` renders it via the `keyBar` prop, so
 no wiring to `TerminalConnection.send` or `surface.focus()` is needed.
 
+### Reaching earlier output — the gesture, the buttons and the sheet
+
+**Everything that scrolls a pane is one path: it dispatches a WHEEL EVENT and lets xterm route it.**
+A finger drag on the surface, the ⇞/⇟ buttons in the key row and `surface.scrollPages()` all end up in
+the same call, because which of three answers is right is only knowable at that instant and only xterm
+knows it (`@xterm/xterm` 5.5.0, `Terminal.ts`):
+
+1. the program asked for wheel mouse reports → one report is encoded for it;
+2. else the buffer keeps no scrollback → `ESC[A`/`ESC[B` for the program (this is a multiplexer pane);
+3. else → xterm scrolls its own viewport (a `shell` pane's 5000 lines).
+
+⚠ **A gesture must not carry a copy of that routing.** The drag used to hand-roll case 2 and stand down
+whenever the program held the mouse — which is the case a coding agent's TUI creates, so a phone had no
+gesture at all on the panes this product exists to watch while a desktop wheel worked. Notches, not one
+large delta: a mouse report carries no magnitude, so the COUNT of events is the message (three lines per
+notch, at most three notches per touch move).
+
+Two things hold it together: `.pdmux-pane-surface` declares `touch-action: pan-x pinch-zoom` (the
+engine must not claim the vertical axis and make `touchmove` uncancellable; pinch-zoom and the
+browser's own back gesture stay), and `scrollback: 5000` must stay larger than a pane's rows — on the
+normal buffer that is what keeps case 3 reachable instead of case 2 typing `ESC[A` at a shell prompt.
+
+**The output sheet** (`TerminalHistory`, opened from the pane's ☰) shows the same output as selectable
+text, and its job is to be honest about what it is holding:
+
+| prop | meaning |
+|---|---|
+| `lines` | attributed lines, oldest first |
+| `scrollback` | `false` = this is one screen, not a history (xterm's alternate buffer) |
+| `screenOnly` | the MULTIPLEXER has nothing either: a full-screen program owns the pane |
+| `pending` / `failed` | a fetch is in flight / could not be made |
+
+`onReadHistory` (`TerminalGrid`, `TerminalPane`) is the consumer offering to ask the host; returning
+`null` means **the ask failed**, and an empty result means the pane really is that short. Both used to
+be the same silence, and a sheet showing one screen with a note about the multiplexer's history sent
+people to another machine to look for output nobody had kept.
+
+⚠ **A full-screen program's earlier output is not in the multiplexer.** It draws on the pane's
+*alternate* screen and tmux keeps history for the normal one, so no capture can produce it — measured
+across one fleet: 48 lines of history behind such a pane against 1991 behind a pane whose program prints
+normally. The only thing that can show it is the program itself, which is why the gesture above matters
+more than the sheet does.
+
 ### `TerminalTargetPicker`
 
 | prop | type | description |
