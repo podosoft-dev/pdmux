@@ -496,69 +496,89 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		true,
 	);
 
-	// --- Touch: reach the same scrollback the wheel reaches --------------------
+	// --- Touch: BE the wheel, because a phone does not have one ----------------
 	/**
-	 * REPORTED FROM A PHONE: a mouse wheel reaches earlier output, a finger drag does not.
+	 * REPORTED FROM A PHONE, TWICE. First: a mouse wheel reaches earlier output, a finger drag
+	 * does not. Then, after that fix shipped: from an iPhone, a pane running a coding agent
+	 * still would not scroll, and the operator had to go back to a desktop to read what the
+	 * agent had done while they were away.
 	 *
-	 * THE ASYMMETRY, read out of xterm's own source. xterm handles BOTH gestures, but not the
-	 * same way, and the difference only shows up in the case this product is nearly always in:
+	 * THE FIRST FIX WAS RIGHT ABOUT THE ASYMMETRY AND WRONG ABOUT THE REMEDY. xterm handles
+	 * both gestures, but not the same way (`Terminal.ts`, 5.5.0):
 	 *
-	 *  - `Terminal.ts` `touchstart`/`touchmove` call `Viewport.handleTouch*`, which does
-	 *    `viewportElement.scrollTop += deltaY` — it can only ever move xterm's OWN viewport.
-	 *  - the `wheel` listener in the same file does that too, but FIRST checks
-	 *    `if (!this.buffer.hasScrollback)` and, when there is none, converts the wheel into
-	 *    `ESC[A`/`ESC[B` and sends them to the program ("this enables scrolling in apps hosted
-	 *    in the alt buffer such as vim or tmux"). There is no touch equivalent.
+	 *  - `touchstart`/`touchmove` call `Viewport.handleTouch*`, which does
+	 *    `viewportElement.scrollTop += deltaY` — it can only ever move xterm's OWN viewport —
+	 *    and both listeners stand down entirely while the program is capturing the pointer
+	 *    (`if (!this.coreMouseService.areMouseEventsActive)`).
+	 *  - the `wheel` listener re-decides between THREE answers on every single event: a mouse
+	 *    report for a program that asked for one, else `ESC[A`/`ESC[B` for a buffer that keeps
+	 *    no scrollback, else xterm's own viewport.
 	 *
-	 * A pane pointed at a session runs `tmux new -A -s <name>`, a multiplexer lives in the
-	 * ALTERNATE buffer, and for that buffer xterm keeps no scrollback at all
+	 * So the first fix hand-rolled the middle answer for a drag, and with it inherited a copy
+	 * of xterm's stand-down — because a touch produces no mouse report to hand over. That is
+	 * exactly the case this product is nearly always in: a pane pointed at a session runs
+	 * `tmux new -A -s <name>` in the ALTERNATE buffer, where xterm keeps no scrollback at all
 	 * (`common/buffer/BufferSet.ts:44` constructs it with `hasScrollback = false`, which
-	 * `Buffer.ts:92` then returns). Measured on such a pane: `scrollHeight` 579,
-	 * `clientHeight` 579 — the viewport is not scrollable, so a finger had nothing to move.
-	 * The wheel, on the same pane, put `ESC O A ESC O A ESC O A` on the wire for one notch.
-	 * That is the whole bug: one gesture was translated for the program, the other was not.
+	 * `Buffer.ts:92` then returns; measured on such a pane, `scrollHeight` 579 and
+	 * `clientHeight` 579), AND the coding agent inside it captures the mouse. Measured on the
+	 * reported host: `#{alternate_on}` 1, `cmd=claude`. Both touch paths were empty at the same
+	 * time — xterm's and ours — while the ⇞/⇟ buttons kept working, because those had already
+	 * stopped deciding and started DISPATCHING A WHEEL (see `spinWheel` below).
 	 *
-	 * So this does for a drag exactly what xterm does for a wheel, and nothing more. Measured
-	 * after the fix, same pane, one 140px drag: nine `ESC O A` frames, i.e. the wheel's own
-	 * sequence at the wheel's own scale.
+	 * A GESTURE MUST NOT CARRY A SECOND COPY OF THAT ROUTING. So this one does what the buttons
+	 * do: it turns finger travel into wheel notches and lets xterm answer. All three cases come
+	 * back for free, including the reported one, and there is no longer a decision here to
+	 * drift out of step with xterm's.
 	 *
-	 * ⚠ NOT COVERED, because the wheel is not covered either: a multiplexer with mouse
-	 * reporting on (`set -g mouse on`, which shows as `enable-mouse-events` on `.xterm`).
-	 * There xterm hands the wheel to the program as a mouse report and tmux scrolls its own
-	 * history, while a touch produces no mouse report to hand over — so the finger still has
-	 * no equivalent. Both this code and xterm's own touch path stand down in that mode
-	 * (`areMouseEventsActive`), which is the honest behaviour: the program asked for the
-	 * pointer. The host this was measured on runs with mouse reporting off.
+	 * ⚠ THE PRICE OF DROPPING THE `alternate` GUARD IS `scrollback: 5000` ABOVE. On the normal
+	 * buffer `hasScrollback` is `maxLength > rows` (`Buffer.ts:91`) and `maxLength` is
+	 * `rows + scrollback`, so it is true even on an empty buffer: a wheel there can only reach
+	 * the viewport, never the cursor-key branch. Set `scrollback` to `rows` or less and a drag
+	 * at a shell prompt would start recalling shell history instead. The two numbers are one
+	 * decision, and a spec pins it.
 	 *
 	 * HOW IT IS BOUNDED — it must not steal a gesture from anything else on the screen:
 	 *  - bubble phase on the HOST, so xterm's own listeners on `.xterm` run first; a move it
 	 *    already consumed arrives with `defaultPrevented` and is left alone. Never two scrolls.
-	 *  - it only ever acts when xterm has no scrollback of its own (`alternate`). The normal
-	 *    buffer is xterm's to scroll, and it does — measured on a shell pane after `seq 1 500`,
-	 *    the same synthesized drag moved `scrollTop` 7131 -> 6991 through xterm's own handler,
-	 *    which announced itself by cancelling every move (`defaultPrevented` true on the
-	 *    bubble, checked below). This code sent nothing on that pane.
+	 *    Measured on a shell pane after `seq 1 500`: xterm's own handler moved `scrollTop`
+	 *    7131 -> 6991 and cancelled every move, which is precisely the signal read here
+	 *    (`Viewport.ts` `_bubbleScroll` calls `preventDefault` only when it really scrolled).
 	 *  - single touch only, and the axis is LOCKED on first real movement: a horizontal drag is
-	 *    released for good, so the browser's edge/back swipe keeps working.
+	 *    released for good, and THAT is what keeps the browser's edge/back swipe — a
+	 *    `touch-action` declaration could not, because that gesture is the browser's own.
 	 *  - `preventDefault` happens ONLY on a move this actually consumed. A tap never reaches
 	 *    the threshold, so click synthesis (tap-to-focus, which raises the keyboard) is intact,
 	 *    and the page's `overscroll-behavior: none` still owns everything this declines.
-	 *  - it mirrors xterm's own `areMouseEventsActive` bail: when the program asked for mouse
-	 *    reporting the touch belongs to the program, not to us.
 	 *  - the pane header (drag-to-reorder), the key bar and the composer are all OUTSIDE this
 	 *    element, so none of their `pointerdown` handling is touched.
+	 *
+	 * ⚠ ONE THING IS DELIBERATELY LOST. On a mouse-capturing pane a drag past the axis lock used
+	 * to reach the program as a synthesized CLICK — iOS makes `mousedown`/`mouseup` out of a
+	 * touch and xterm encodes a button report — because this code stood down and left that
+	 * synthesis alone. Consumed moves are cancelled now, so the click is gone. A TAP still
+	 * clicks, which is the gesture that meant to.
 	 */
 	/** Finger travel, in px, before the gesture commits to an axis. */
 	const AXIS_LOCK_PX = 8;
-	/** A fling must not turn into a hundred keypresses; one move event is worth at most this. */
-	const MAX_LINES_PER_MOVE = 8;
-	const ESC = '\u001b';
+	/**
+	 * A fling must not become a page-long jump; one move event is worth at most this many
+	 * notches. Three is nine lines, which is where the hand-rolled version's cap already sat
+	 * (eight lines) — so replacing it with a wheel is not also a change of speed.
+	 */
+	const MAX_NOTCHES_PER_MOVE = 3;
+	/**
+	 * One notch, in lines. Three is what a mouse reports and what `vim` assumes of one.
+	 *
+	 * Shared vocabulary: the finger below, the two scroll buttons and the Shift+wheel fallback
+	 * all measure in this unit, so a pane answers a drag and a button press at the same scale.
+	 */
+	const WHEEL_NOTCH_LINES = 3;
 
 	let armed = false;
 	let axis: 'none' | 'x' | 'y' = 'none';
 	let lastX = 0;
 	let lastY = 0;
-	/** Sub-line remainder, so slow drags still add up instead of being rounded away. */
+	/** Sub-notch remainder, so slow drags still add up instead of being rounded away. */
 	let carry = 0;
 
 	/** Height of one row, from the box actually on screen. */
@@ -619,18 +639,15 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 			lastX = touch.clientX;
 			lastY = touch.clientY;
 			if (axis !== 'y') return;
-			// The normal buffer is xterm's own scrollback; only stand in where it has none.
-			if (term.buffer.active.type !== 'alternate') return;
-			if (term.modes.mouseTrackingMode !== 'none') return;
-			const height = rowHeight();
-			if (height <= 0) return;
+			const notch = rowHeight() * WHEEL_NOTCH_LINES;
+			if (notch <= 0) return;
 			carry += dy;
-			const lines = Math.trunc(carry / height);
-			if (lines === 0) return;
-			carry -= lines * height;
-			// A finger travelling DOWN pulls earlier output down into view, i.e. cursor up.
-			const key = `${ESC}${term.modes.applicationCursorKeysMode ? 'O' : '['}${lines > 0 ? 'A' : 'B'}`;
-			term.input(key.repeat(Math.min(Math.abs(lines), MAX_LINES_PER_MOVE)), true);
+			const notches = Math.trunc(carry / notch);
+			if (notches === 0) return;
+			carry -= notches * notch;
+			// A finger travelling DOWN pulls earlier output down into view, which is a wheel
+			// turned BACK — the same direction the ⇞ button asks for.
+			spinWheel(notches > 0 ? -1 : 1, Math.min(Math.abs(notches), MAX_NOTCHES_PER_MOVE));
 			if (event.cancelable) event.preventDefault();
 		},
 		{ passive: false },
@@ -639,9 +656,12 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	listen('touchend', release, { passive: true });
 	listen('touchcancel', release, { passive: true });
 
-	// --- The scroll buttons: BE the wheel rather than guess what it would have done -------
+	// --- The one wheel path: BE the wheel rather than guess what it would have done -------
 	/**
 	 * REPORTED FROM A PHONE: the two scroll buttons do nothing, and vanish on the tap.
+	 *
+	 * This is where the answer was found first, and the finger above now comes through here
+	 * too — the buttons and the drag are two ways of asking for the same notch.
 	 *
 	 * The vanishing was a latch (`canScroll` below, and `TerminalPane`). The doing nothing was
 	 * this: the buttons called `term.scrollPages()`, which moves xterm's OWN viewport and
@@ -671,10 +691,18 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	 * the same problem needed elsewhere — a terminal multiplexer solving it for its own panes
 	 * landed on per-event routing on the same three facts, having started from a latch.
 	 */
-	/** One notch, in lines. Three is what a mouse reports and what `vim` assumes of one. */
-	const WHEEL_NOTCH_LINES = 3;
-
-	const spinWheel = (direction: -1 | 1): void => {
+	/**
+	 * Turn the wheel `notches` times.
+	 *
+	 * ⚠ NOTCHES, NOT ONE LARGE EVENT. A mouse report carries no magnitude — case 1 above reads
+	 * `deltaY` only to check that it is non-zero — so a single event scrolls a capturing program
+	 * by one notch however big the delta is. The count is therefore the whole message.
+	 *
+	 * ⚠ DECLARED WITH `function` SO IT HOISTS. The touch handler above is the other caller and
+	 * it is installed first; a `const` here would be a forward reference that only works by
+	 * accident of when events fire.
+	 */
+	function spinWheel(direction: -1 | 1, notches: number): void {
 		const element = term.element;
 		if (!element) return;
 		// The screen element is what xterm measures a mouse report against, and both wheel
@@ -682,14 +710,6 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		// reported at a cell that exists.
 		const target = (element.querySelector('.xterm-screen') as HTMLElement | null) ?? element;
 		const box = target.getBoundingClientRect();
-		/**
-		 * A page, delivered as the notches a hand would have had to spin.
-		 *
-		 * ⚠ ONE LARGE EVENT WOULD NOT DO. A mouse report carries no magnitude — case 1 above
-		 * reads `deltaY` only to check that it is non-zero — so a single event scrolls a
-		 * capturing program by one notch however big the delta is.
-		 */
-		const notches = Math.max(1, Math.ceil(Math.max(1, term.rows - 1) / WHEEL_NOTCH_LINES));
 		for (let notch = 0; notch < notches; notch += 1) {
 			target.dispatchEvent(
 				new WheelEvent('wheel', {
@@ -704,7 +724,10 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 				}),
 			);
 		}
-	};
+	}
+
+	/** A page, in the notches a hand would have had to spin for it. */
+	const pageNotches = (): number => Math.max(1, Math.ceil(Math.max(1, term.rows - 1) / WHEEL_NOTCH_LINES));
 
 	// --- Shift+wheel: take the wheel back from the program ---------------------
 	/**
@@ -778,7 +801,7 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 			emitters.add(listener);
 			return () => emitters.delete(listener);
 		},
-		scrollPages: (delta) => spinWheel(delta < 0 ? -1 : 1),
+		scrollPages: (delta) => spinWheel(delta < 0 ? -1 : 1, pageNotches()),
 		/**
 		 * Whether a wheel would reach anything here — the three cases in `spinWheel`, in order.
 		 *

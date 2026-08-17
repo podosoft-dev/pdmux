@@ -1457,9 +1457,24 @@
 	background: var(--pdmux-term-bg);
 }
 
+/* `touch-action` — WE CLAIM THE VERTICAL AXIS AND NOTHING ELSE.
+   The pane's drag-to-scroll (`terminal-surface.ts`) only works if its `touchmove` stays
+   cancellable, and an engine that has already committed the gesture to a native pan hands
+   over uncancellable moves from then on. There is no scroll container above this box
+   (`.pdmux-shell` is `overflow: hidden`), so that mostly cannot happen — what this shuts is
+   the remaining two paths: `touchstart` is registered `passive: true`, which invites the
+   engine to decide the gesture without us, and a pinch-zoomed page can pan its visual
+   viewport instead.
+
+   ⚠ NOT `none`. `app.html` ships no `user-scalable=no`, so pinch-zoom works today and taking
+   it away would be an accessibility regression (WCAG 1.4.4). `pan-x` keeps the horizontal
+   axis with the browser, which is also what the handler does — it releases a horizontal drag
+   for good on the first movement. The browser's edge/back swipe is a browser-level gesture
+   and is not governed by this property either way; the axis lock is what protects it. */
 .pdmux-pane-surface {
 	position: absolute;
 	inset: 0;
+	touch-action: pan-x pinch-zoom;
 }
 
 /* --- the terminal's own scrollbar ----------------------------------------------

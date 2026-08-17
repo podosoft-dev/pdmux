@@ -235,7 +235,10 @@ test.describe("reaching a pane's scrollback from a phone", () => {
       await page.waitForTimeout(300);
       expect((await sentInputs(page)).slice(beforeTap), "a tap was turned into keystrokes").toEqual([]);
 
-      // A horizontal drag belongs to the shell's view swipe and the browser's back gesture.
+      // A horizontal drag belongs to the browser's back gesture — which on a phone IS this
+      // app's view navigation (`mobile-view.svelte.ts` puts each view in history on purpose).
+      // There is no in-app swipe handler to compete with; the axis lock is protecting the
+      // platform's own gesture.
       const beforeSwipe = (await sentInputs(page)).length;
       const box = await tmux.boundingBox();
       const cdp = await page.context().newCDPSession(page);
@@ -266,6 +269,165 @@ test.describe("reaching a pane's scrollback from a phone", () => {
       expect(sent, `frames the drag produced: ${JSON.stringify(sent)}`).toMatch(/^(\u001b(\[|O)A)+$/);
       // Bounded: a 140px drag is worth about ten rows, not a hundred keypresses.
       expect(sent.length / 3).toBeLessThanOrEqual(20);
+    } finally {
+      await writeLayout(request, saved);
+    }
+  });
+
+  /**
+   * THE CASE THE REPORT WAS ABOUT, and the only one a real engine can settle.
+   *
+   * A pane running a coding agent is in the alternate buffer AND has mouse reporting on, and
+   * there xterm skips its own scrollback and cursor-key fallbacks outright (`if
+   * (requestedEvents.wheel) return`) to encode a report for the program instead. The finger used
+   * to stand down in that mode, mirroring xterm's own touch bail — so from a phone there was NO
+   * gesture at all on exactly the panes this product exists to watch, while a desktop wheel
+   * worked. Reported from an iPhone against a deployed dashboard.
+   *
+   * ⚠ A CODING AGENT IS NOT REQUIRED TO REPRODUCE IT, WHICH IS WHY THIS SPEC EXISTS. `mouse on`
+   * puts a multiplexer in the same mode, so the fleet's own session can prove it. The option is
+   * set WITHOUT `-g` on purpose: a global one belongs to the whole tmux server, and other
+   * people's sessions live there.
+   *
+   * ⚠ AND IN A SESSION OF ITS OWN, WHICH COST A RED RUN TO LEARN. Written against the shared
+   * `pdmux-e2e` session, this left `mouse on` behind — the teardown types the option back off
+   * through the pane and it does not always land — and the NEXT test in this serial file
+   * (`[TC-PDTERM-135]`, which asserts the buttons send cursor keys) got thirteen
+   * `ESC[<64;24;19M` mouse reports instead. A test that arms the terminal differently has to own
+   * the terminal it arms.
+   */
+  test("[TC-PDTERM-130] a finger reaches a program that captured the mouse", async ({ page, request, browserName }) => {
+    test.skip(browserName !== "chromium", "the drag is dispatched over CDP; WebKit is covered by the unit spec");
+    const host = await onlineHost(request);
+    test.skip(!host, "no online host — start an agent to exercise the terminal relay");
+    if (!host) return;
+    test.slow();
+
+    const saved = await readLayout(request);
+    await recordSocket(page);
+    try {
+      await seedSoloPane(request, saved, { id: "scroll5", hostId: host.id, kind: "new", session: "pdmux-e2e-mouse" });
+      await ready(page, "/");
+      const surface = page.locator("[data-pdmux-surface]").first();
+      await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 30_000 });
+      /**
+       * ⚠ WAIT FOR OUTPUT, NOT FOR THE ELEMENT. `.xterm-rows` exists the moment the pane mounts,
+       * and `scrollHeight === clientHeight` is true of an EMPTY pane as well as an attached
+       * multiplexer — so both are satisfied before the socket has opened the PTY, and a line
+       * typed then is dropped for good ("input typed while the relay is away is genuinely lost",
+       * `terminal-relay.ts`). Measured: with only those checks this spec failed on a cold session
+       * and passed on the retry, which is the shape of a race, not of a slow machine.
+       *
+       * Painted text is the round trip actually completing.
+       */
+      await expect
+        .poll(async () => (await surface.locator(".xterm-rows").innerText()).trim().length, {
+          timeout: 30_000,
+          message: "the pane never printed anything, so the multiplexer is not attached yet",
+        })
+        .toBeGreaterThan(0);
+
+      const composer = page.locator("[data-testid='terminal-composer-input']");
+      await expect(composer).toBeVisible();
+      /**
+       * ⚠ THE STARTING STATE IS NOT ASSERTED, AND THAT IS DELIBERATE. `mouse` is a SESSION option
+       * that outlives the run which set it, so the obvious guard — "it is off before we arm it" —
+       * has to be established rather than assumed. Turning it off and waiting was tried and
+       * MEASURED NOT TO WORK: with the pane already armed, `tmux set mouse off` did not clear
+       * xterm's `enable-mouse-events` within 20s, so the spec went red on a dirty session and
+       * green on a clean one — a coin toss, not a test.
+       *
+       * It is not needed either. What is under test is that a DRAG reaches a program holding the
+       * mouse, and the SGR frames below cannot appear unless mouse reporting is really active on
+       * this pane. Nothing else in this file uses this session, so nothing else can be misled by
+       * what it leaves behind.
+       */
+      await composer.fill("tmux set mouse on");
+      await composer.press("Enter");
+      // xterm's own signal that the program asked for the pointer: `areMouseEventsActive` puts
+      // this class on the element. Waiting for the state rather than for a delay is what keeps
+      // this from passing for the wrong reason on a slow relay.
+      await expect(surface.locator(".xterm.enable-mouse-events")).toBeVisible({ timeout: 20_000 });
+
+      const before = (await sentInputs(page)).length;
+      await dragDown(page);
+      await expect
+        .poll(async () => (await sentInputs(page)).slice(before).length, {
+          timeout: 5_000,
+          message: "a drag on a mouse-capturing pane still reaches nothing — the old stand-down is back",
+        })
+        .toBeGreaterThan(0);
+      const sent = (await sentInputs(page)).slice(before).join("");
+      /**
+       * SGR (1006) wheel reports, which is what the drag has to become here — 64 is wheel-up, at
+       * a cell the pane actually has. Cursor keys would mean this code is translating again
+       * instead of handing the event over, and nothing at all would be the reported bug.
+       */
+      expect(sent, `frames the drag produced: ${JSON.stringify(sent)}`).toMatch(/^(\x1b\[<64;\d+;\d+M)+$/);
+    } finally {
+      // Leave the session as it was found — and CONFIRM it, because typing into a pane that is
+      // about to be torn down is not a guarantee. The start of the test repairs what this misses.
+      const composer = page.locator("[data-testid='terminal-composer-input']");
+      if (await composer.isVisible().catch(() => false)) {
+        await composer.fill("tmux set mouse off").catch(() => undefined);
+        await composer.press("Enter").catch(() => undefined);
+        await expect(page.locator("[data-pdmux-surface]").first().locator(".xterm.enable-mouse-events"))
+          .toHaveCount(0, { timeout: 10_000 })
+          .catch(() => undefined);
+      }
+      await writeLayout(request, saved);
+    }
+  });
+
+  /**
+   * THE PRICE OF DROPPING THE OLD `alternate` GUARD, pinned.
+   *
+   * The handler no longer asks which buffer it is in; it asks whether anybody else consumed the
+   * move. At the very top of a shell pane's scrollback xterm has nothing left to scroll, so it
+   * stops cancelling — and the drag falls through to a wheel. That is only harmless because
+   * `scrollback: 5000` keeps xterm's `hasScrollback` true on the normal buffer, which sends the
+   * wheel to the viewport rather than down the socket as a cursor key. Lower that number and
+   * this spec turns red, with shell history being recalled at a prompt.
+   */
+  test("[TC-PDTERM-130] a drag past the top of the scrollback still types nothing", async ({
+    page,
+    request,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "the drag is dispatched over CDP; WebKit is covered by the unit spec");
+    const host = await onlineHost(request);
+    test.skip(!host, "no online host — start an agent to exercise the terminal relay");
+    if (!host) return;
+    test.slow();
+
+    const saved = await readLayout(request);
+    await recordSocket(page);
+    try {
+      await seedSoloPane(request, saved, { id: "scroll6", hostId: host.id, kind: "shell", session: null });
+      await ready(page, "/");
+      const surface = page.locator("[data-pdmux-surface]").first();
+      await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 30_000 });
+      const viewport = surface.locator(".xterm-viewport");
+      const composer = page.locator("[data-testid='terminal-composer-input']");
+      await composer.fill("seq 1 500");
+      await composer.press("Enter");
+      await expect
+        .poll(async () => viewport.evaluate((el: HTMLElement) => el.scrollHeight - el.clientHeight), { timeout: 25_000 })
+        .toBeGreaterThan(0);
+
+      // Jump to the oldest line rather than dragging there — the point is the boundary, not the
+      // journey, and ten drags would only make this slower.
+      await viewport.evaluate((el: HTMLElement) => {
+        el.scrollTop = 0;
+      });
+      const before = (await sentInputs(page)).length;
+      await dragDown(page);
+      await page.waitForTimeout(300);
+      expect(await viewport.evaluate((el: HTMLElement) => el.scrollTop)).toBe(0);
+      expect(
+        (await sentInputs(page)).slice(before),
+        "a drag at the top of the scrollback typed at the shell instead of doing nothing",
+      ).toEqual([]);
     } finally {
       await writeLayout(request, saved);
     }

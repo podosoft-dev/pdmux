@@ -74,6 +74,8 @@ describe('[TC-PDTERM-129] a pane says when there is scrollback behind it', () =>
 interface FakeTerminal {
 	rows: number;
 	element: HTMLElement;
+	/** What the surface asked xterm for. `scrollback` is load-bearing — see the gesture cases. */
+	options: { scrollback?: number };
 	buffer: { active: { type: 'normal' | 'alternate'; baseY: number } };
 	modes: { mouseTrackingMode: string; applicationCursorKeysMode: boolean };
 	sent: string[];
@@ -105,6 +107,7 @@ async function surfaceWithFakeTerminal(rowHeight = 20, rows = 24) {
 	const state = {
 		rows,
 		element,
+		options: {} as { scrollback?: number },
 		buffer: { active: { type: 'alternate' as 'normal' | 'alternate', baseY: 0 } },
 		modes: { mouseTrackingMode: 'none', applicationCursorKeysMode: false },
 		sent: [] as string[],
@@ -114,6 +117,9 @@ async function surfaceWithFakeTerminal(rowHeight = 20, rows = 24) {
 
 	vi.doMock('@xterm/xterm', () => ({
 		Terminal: class {
+			public constructor(options: { scrollback?: number }) {
+				state.options = options;
+			}
 			public rows = state.rows;
 			public element = element;
 			public buffer = state.buffer;
@@ -172,15 +178,27 @@ function touch(type: string, points: { x: number; y: number }[]): Event {
 	return event;
 }
 
+/**
+ * Dispatch where a finger actually lands, which is the DEEPEST element, and let it bubble.
+ *
+ * ⚠ NOT ON THE HOST. A real touch targets `.xterm-screen`, so the event passes xterm's own
+ * listeners on `.xterm` before it reaches the surface's on the host — and the whole
+ * double-scroll guard is "did one of those cancel it". Dispatching straight at the host skips
+ * the element in the middle, which is the one case that has to be reproducible here.
+ */
+function fire(host: HTMLElement, event: Event): void {
+	(host.querySelector('.xterm-screen') ?? host).dispatchEvent(event);
+}
+
 function drag(host: HTMLElement, from: { x: number; y: number }, moves: { x: number; y: number }[]): Event[] {
-	host.dispatchEvent(touch('touchstart', [from]));
+	fire(host, touch('touchstart', [from]));
 	const dispatched: Event[] = [];
 	for (const move of moves) {
 		const event = touch('touchmove', [move]);
-		host.dispatchEvent(event);
+		fire(host, event);
 		dispatched.push(event);
 	}
-	host.dispatchEvent(touch('touchend', []));
+	fire(host, touch('touchend', []));
 	return dispatched;
 }
 
@@ -191,71 +209,174 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 		document.body.innerHTML = '';
 	});
 
-	it('sends the wheel’s own keys when the alternate buffer holds no scrollback', async () => {
+	/**
+	 * ⚠ WHAT THIS FILE CAN AND CANNOT DECIDE, because it matters to every case below.
+	 *
+	 * The drag no longer translates anything: it dispatches a wheel event and xterm routes it
+	 * (a mouse report for a program that asked for one, else cursor keys for a buffer with no
+	 * scrollback, else its own viewport). This mock has no routing, so the ROUTING is not
+	 * testable here — `tests/ui/pdmux-terminal-scroll.mobile.spec.ts` drives a real engine for
+	 * that. What is decidable here is that the gesture produces exactly the wheel a mouse would
+	 * have, and that it invents nothing of its own.
+	 *
+	 * So the negative assertion (`term.sent` empty) is never left on its own: it passes just as
+	 * happily against no feature at all. Every case pairs it with the wheel it expects.
+	 */
+	it('turns the drag into the notches a mouse would have spun', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
-		// 60px down over three moves, 20px to a row: three lines of earlier output.
+		const wheeled = recordWheel(term);
+		// 20px to a row and three rows to a notch: 60px of travel is one notch, and 120px is
+		// two. The first move also has to clear the 8px axis lock, which it does.
 		const events = drag(host, { x: 50, y: 100 }, [
-			{ x: 50, y: 120 },
-			{ x: 50, y: 140 },
 			{ x: 50, y: 160 },
+			{ x: 50, y: 220 },
 		]);
-		// Cursor UP is what xterm's own wheel handler sends for a wheel that pulls earlier
-		// output down, and a finger travelling down is the same intent.
-		expect(term.sent.join('')).toBe('\u001b[A\u001b[A\u001b[A');
-		// …and it only claimed the moves it acted on, so nothing else on the page loses a
-		// gesture it would otherwise have seen.
+		expect(wheeled.length).toBe(2);
+		for (const event of wheeled) {
+			// A finger travelling DOWN pulls earlier output down into view, which is a wheel
+			// turned back — the same sign the ⇞ button sends.
+			expect(event.deltaY).toBe(-3);
+			// Lines, not pixels: a pixel delta is divided by a row height xterm measures on a
+			// canvas, and the remainder is carried between events rather than used.
+			expect(event.deltaMode).toBe(WheelEvent.DOM_DELTA_LINE);
+			// It has to reach the listeners on the outer element to be routed at all.
+			expect(event.bubbles).toBe(true);
+			// …and be cancellable, because routing it ends in `preventDefault`.
+			expect(event.cancelable).toBe(true);
+			// Aimed at the screen, which is what a mouse report is measured against.
+			expect((event.target as HTMLElement).className).toBe('xterm-screen');
+		}
+		// AND NOTHING OF ITS OWN. Anything on the wire from a mock with no routing would be
+		// this handler's invention — which is exactly what the hand-rolled version was.
+		expect(term.sent).toEqual([]);
+		// It claimed only the moves it acted on, so nothing else on the page loses a gesture.
 		expect(events.every((event) => event.defaultPrevented)).toBe(true);
 		surface.dispose();
 	});
 
-	it('follows the terminal into application-cursor mode', async () => {
+	it('turns the wheel forward when the finger travels up', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
-		term.modes.applicationCursorKeysMode = true;
-		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 130 }]);
-		// `ESC O A`, not `ESC [ A` — a full-screen program that asked for application keys
-		// does not recognise the other form. Measured on a live tmux pane: `ESC O A`.
-		expect(term.sent.join('')).toBe('\u001bOA');
-		surface.dispose();
-	});
-
-	it('sends cursor down when the finger travels up', async () => {
-		const { host, surface, term } = await surfaceWithFakeTerminal();
-		drag(host, { x: 50, y: 200 }, [{ x: 50, y: 160 }]);
-		expect(term.sent.join('')).toBe('\u001b[B\u001b[B');
-		surface.dispose();
-	});
-
-	it('leaves the normal buffer to xterm, which scrolls its own viewport', async () => {
-		const { host, surface, term } = await surfaceWithFakeTerminal();
-		term.buffer.active.type = 'normal';
-		const events = drag(host, { x: 50, y: 100 }, [
-			{ x: 50, y: 140 },
-			{ x: 50, y: 180 },
-		]);
-		// Nothing sent and nothing cancelled: xterm's own touch handling owns this buffer, and
-		// a second scroller on top of it would double every drag.
+		const wheeled = recordWheel(term);
+		drag(host, { x: 50, y: 200 }, [{ x: 50, y: 140 }]);
+		expect(wheeled.map((event) => event.deltaY)).toEqual([3]);
 		expect(term.sent).toEqual([]);
-		expect(events.some((event) => event.defaultPrevented)).toBe(false);
 		surface.dispose();
 	});
 
-	it('stands down when the program asked for the mouse', async () => {
+	/**
+	 * THE REGRESSION THIS ROUND EXISTS FOR — reported from an iPhone against a deployed
+	 * dashboard, on a pane running a coding agent.
+	 *
+	 * The handler used to return early whenever the program had asked for mouse reporting,
+	 * mirroring xterm's own `areMouseEventsActive` bail. But xterm bails there because it is
+	 * about to move its own viewport, which would be the wrong answer; the wheel path has a
+	 * right answer for that case and only that path knows it. Standing down meant a phone had
+	 * NO gesture at all on exactly the panes this product exists to watch, while a desktop
+	 * wheel worked — so the operator had to walk to a computer to read what the agent had done.
+	 */
+	it('reaches a program that captured the mouse, which is what a phone could not do', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
 		term.modes.mouseTrackingMode = 'vt200';
+		const wheeled = recordWheel(term);
 		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 160 }]);
-		// Mirrors xterm's own `areMouseEventsActive` bail: the touch belongs to the program.
+		// One notch, which xterm encodes as one mouse report — the magnitude is not carried, so
+		// the COUNT is the whole message.
+		expect(wheeled.length).toBe(1);
 		expect(term.sent).toEqual([]);
 		surface.dispose();
 	});
 
-	it('does not turn a tap into a keypress', async () => {
+	it('turns the wheel on the normal buffer too, when nobody else consumed the move', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
+		term.buffer.active.type = 'normal';
+		const wheeled = recordWheel(term);
+		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 160 }]);
+		/**
+		 * The old guard was `type !== 'alternate' → return`, which read as "the normal buffer is
+		 * xterm's". It is — but only while xterm is actually scrolling it, which it announces by
+		 * cancelling the move (the case below). At the top or bottom of its scrollback it stops
+		 * cancelling, and there a wheel is what a program with the mouse would still want.
+		 */
+		expect(wheeled.length).toBe(1);
+		expect(term.sent).toEqual([]);
+		surface.dispose();
+	});
+
+	it('stands aside for a move xterm has already consumed, so a drag is never scrolled twice', async () => {
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		/**
+		 * ⚠ THIS IS THE REAL GUARD, AND IT IS WHY THIS LISTENER IS ON THE OUTER ELEMENT.
+		 * xterm's own touch listeners sit on `.xterm` (`term.element` here — the same place the
+		 * real ones go), and `Viewport._bubbleScroll` calls `preventDefault` only on a move it
+		 * actually scrolled. Standing in for that listener is a faithful stand-in rather than a
+		 * proxy, because the position and the signal are both the real ones.
+		 */
+		term.element.addEventListener('touchmove', (event) => event.preventDefault());
+		const wheeled = recordWheel(term);
+		drag(host, { x: 50, y: 100 }, [
+			{ x: 50, y: 160 },
+			{ x: 50, y: 220 },
+		]);
+		expect(wheeled).toEqual([]);
+		expect(term.sent).toEqual([]);
+		surface.dispose();
+	});
+
+	it('never asks the multiplexer for its history — that is Shift’s job, not a drag’s', async () => {
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const asked: number[] = [];
+		const off = surface.onScrollbackRequest((direction) => asked.push(direction));
+		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 220 }]);
+		/**
+		 * The synthesized wheel carries no Shift, and the Shift branch is the only thing that
+		 * fires this. It matters more than it looks: the listener ends in an HTTP request that
+		 * runs `tmux copy-mode` on somebody's machine, so a drag that woke it would put a
+		 * command on a remote host on every touchmove.
+		 */
+		expect(asked).toEqual([]);
+		expect(term.sent).toEqual([]);
+		off();
+		surface.dispose();
+	});
+
+	it('keeps xterm’s own scrollback bigger than the pane, or a drag at a prompt would recall history', async () => {
+		const { surface, term } = await surfaceWithFakeTerminal();
+		/**
+		 * ⚠ THE COUPLING THE `alternate` GUARD USED TO HIDE. xterm picks the cursor-key branch
+		 * when `hasScrollback` is false, and that is `maxLength > rows` with
+		 * `maxLength = rows + scrollback` (`Buffer.ts:91`) — true even on an empty buffer, so a
+		 * wheel on the normal buffer can only ever reach the viewport. Set `scrollback` to
+		 * `rows` or less and the same drag starts sending `ESC[A` at a shell prompt, which is
+		 * the shell's own history recall. The two numbers are one decision.
+		 */
+		expect(term.options.scrollback).toBeGreaterThan(term.rows);
+		surface.dispose();
+	});
+
+	it('declares the axis it claims, so the engine cannot commit the gesture first', async () => {
+		/**
+		 * An engine that has decided a touch is a native pan hands over uncancellable moves from
+		 * then on, and `preventDefault` becomes a silent no-op. `touchstart` is registered
+		 * `passive: true` (it only records a position), which is an invitation to decide without
+		 * us — so the axis is declared in CSS as well as enforced in JS.
+		 *
+		 * ⚠ AND NOT `none`: pinch-zoom has to survive (`app.html` ships no `user-scalable=no`),
+		 * and the horizontal axis is released by the handler anyway.
+		 */
+		const surfaceRule = block('.pdmux-pane-surface');
+		expect(surfaceRule).toContain('touch-action: pan-x pinch-zoom');
+	});
+
+	it('does not turn a tap into a scroll', async () => {
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
 		// A finger never lands perfectly still. Under the axis-lock threshold nothing is
 		// claimed, which is what keeps tap-to-focus — and therefore the software keyboard.
 		const events = drag(host, { x: 50, y: 100 }, [
 			{ x: 51, y: 103 },
 			{ x: 52, y: 105 },
 		]);
+		expect(wheeled).toEqual([]);
 		expect(term.sent).toEqual([]);
 		expect(events.some((event) => event.defaultPrevented)).toBe(false);
 		surface.dispose();
@@ -263,13 +384,14 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 
 	it('releases a horizontal drag for good', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
-		// The axis is locked on the first real movement: the shell's view swipe and the
-		// browser's back gesture are horizontal, and a scroller that grabbed them would be a
-		// worse bug than the one being fixed. The later vertical travel must not revive it.
+		// The axis is locked on the first real movement: the browser's edge/back gesture is
+		// horizontal, and a scroller that grabbed it would be a worse bug than the one being
+		// fixed. The later vertical travel must not revive it.
 		const events = drag(host, { x: 100, y: 100 }, [
 			{ x: 160, y: 104 },
 			{ x: 200, y: 200 },
 		]);
+		expect(recordWheel(term)).toEqual([]);
 		expect(term.sent).toEqual([]);
 		expect(events.some((event) => event.defaultPrevented)).toBe(false);
 		surface.dispose();
@@ -277,45 +399,55 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 
 	it('ignores a second finger, so a pinch is not a scroll', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
-		host.dispatchEvent(touch('touchstart', [{ x: 50, y: 100 }]));
-		host.dispatchEvent(
+		const wheeled = recordWheel(term);
+		fire(host, touch('touchstart', [{ x: 50, y: 100 }]));
+		fire(
+			host,
 			touch('touchmove', [
 				{ x: 50, y: 160 },
 				{ x: 80, y: 200 },
 			]),
 		);
+		expect(wheeled).toEqual([]);
 		expect(term.sent).toEqual([]);
 		surface.dispose();
 	});
 
-	it('caps one move, so a fling cannot become a hundred keypresses', async () => {
+	it('caps one move, so a fling cannot become a page-long jump', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
-		// 600px in one event is 30 rows; the handler is bounded at 8 per move.
+		const wheeled = recordWheel(term);
+		// 600px in one event is ten notches; the handler is bounded at three per move — nine
+		// lines, which is where the cap sat when this sent keys, so the change of mechanism is
+		// not also a change of speed. Every notch is a frame on the socket once xterm encodes
+		// it, and a coalesced move on a tall pane could otherwise be a dozen.
 		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 700 }]);
-		expect(term.sent).toEqual(['\u001b[A'.repeat(8)]);
+		expect(wheeled.length).toBe(3);
 		surface.dispose();
 	});
 
 	it('adds slow drags up instead of rounding them away', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
-		// Four 12px moves over a 20px row: the remainder is carried, so the drag is worth two
-		// lines rather than nothing. The first move also has to clear the 8px axis lock.
+		const wheeled = recordWheel(term);
+		// Three 25px moves against a 60px notch: each one alone rounds to nothing, and together
+		// they are worth one notch with 15px carried on. The first also clears the axis lock.
 		drag(host, { x: 50, y: 100 }, [
-			{ x: 50, y: 112 },
-			{ x: 50, y: 124 },
-			{ x: 50, y: 136 },
-			{ x: 50, y: 148 },
+			{ x: 50, y: 125 },
+			{ x: 50, y: 150 },
+			{ x: 50, y: 175 },
 		]);
-		expect(term.sent.join('')).toBe('\u001b[A\u001b[A');
+		expect(wheeled.length).toBe(1);
+		expect(term.sent).toEqual([]);
 		surface.dispose();
 	});
 
 	it('stops listening when the surface is disposed', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
 		surface.dispose();
 		// The host outlives the surface — retargeting a pane builds a new surface on the same
 		// element — so a leaked listener would scroll a terminal that is gone.
-		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 160 }]);
+		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 220 }]);
+		expect(wheeled).toEqual([]);
 		expect(term.sent).toEqual([]);
 	});
 });
