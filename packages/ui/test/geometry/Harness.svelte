@@ -40,7 +40,29 @@
 	];
 
 	let layout = $state<TerminalLayout>({ ...defaultLayout(), slots: buildDefaultSlots(hosts, { pad: 2 }) });
-	const adapter = new EchoTerminalAdapter();
+	/**
+	 * ⚠ THE SHEET'S NOTES ONLY EXIST ON AN ALTERNATE-BUFFER PANE, so `?history=` puts the
+	 * terminal there the way the real thing does: `ESC[?1049h` is the switch a multiplexer sends
+	 * on attach, and it is what makes xterm report `scrollback: false` and the pane go and ask
+	 * the host. Without it `openHistory` never makes the round trip at all (measured: the sheet
+	 * showed 51px of local echo and no note), so the states below would be unreachable.
+	 *
+	 * Left out of the default page on purpose — every other check here measures the ordinary
+	 * pane, and switching buffers for all of them would change what they are measuring.
+	 */
+	const altScreen = new URLSearchParams(globalThis.location?.search ?? '').has('history');
+	const adapter = new EchoTerminalAdapter(
+		altScreen
+			? {
+					// A screenful, so the sheet has a body worth measuring in every state — a one-line
+					// pane would make a crushed scroller and a short pane look exactly the same.
+					banner: () =>
+						'\u001b[?1049h\u001b[H' +
+						Array.from({ length: 40 }, (_, i) => `full-screen program row ${i}`).join('\r\n') +
+						'\r\n',
+				}
+			: {},
+	);
 
 	const seconds = Math.floor(NOW / 1000);
 	const history = historySeries(
@@ -102,6 +124,27 @@
 		collapsed: folded[host.id] === true,
 		})),
 	);
+
+	/**
+	 * What the output sheet's remote fetch answers, chosen by the URL.
+	 *
+	 * ⚠ THE SHEET'S NOTE IS A ROW ABOVE ITS SCROLLER, so each state is a different LAYOUT and
+	 * only a browser can say whether the body still fits and still scrolls. That is the class of
+	 * bug this harness exists for: a row added above a flex scroller is exactly how the commit
+	 * detail once ended up 7,300px below the viewport. `?history=` selects one:
+	 *
+	 *   full   — a real history came back (no note)
+	 *   screen — a full-screen program owns the pane (the multiplexer kept nothing)
+	 *   failed — the host could not be asked
+	 *   never  — the fetch never settles, so the sheet stays in its pending state
+	 */
+	const historyState = new URLSearchParams(globalThis.location?.search ?? '').get('history') ?? 'full';
+	const historyAnswer = async (): Promise<{ lines: string[]; scrollback: boolean; screenOnly?: boolean } | null> => {
+		if (historyState === 'never') return new Promise(() => {});
+		if (historyState === 'failed') return null;
+		if (historyState === 'screen') return { lines: [], scrollback: false, screenOnly: true };
+		return { lines: Array.from({ length: 400 }, (_, i) => `line ${i} of a history long enough to need scrolling`), scrollback: true };
+	};
 
 	// Enough rows that the list must scroll — the whole point of the check.
 	const commits = Array.from({ length: 80 }, (_, i) => ({
@@ -195,6 +238,7 @@
 				{hosts}
 				{adapter}
 				sweepMs={0}
+				onReadHistory={historyAnswer}
 				onZoom={(slotId) => (layout = toggleZoom(layout, slotId))}
 			/>
 		</div>

@@ -44,6 +44,59 @@ describe('[TC-PDUI-180] the output sheet shows the buffer and admits what it can
 		expect(container.querySelector('[data-pdmux-history-note]')).toBeNull();
 	});
 
+	/**
+	 * THE THREE SILENCES, reported from a phone as "the popup has nothing in it".
+	 *
+	 * A sheet holding one screen looked exactly like a sheet still fetching and exactly like a
+	 * sheet whose fetch had been refused — and in the worst case it said "nothing has been printed
+	 * yet" about a pane that had printed for hours. The reader's only way to tell them apart was
+	 * to open the dashboard on another machine, which is what actually happened.
+	 */
+	it('says it is still fetching, and does not call the pane empty while it is', () => {
+		const { container } = render(TerminalHistory, { props: { lines: [], scrollback: false, pending: true } });
+		expect(container.querySelector('[data-pdmux-history-note="pending"]')).not.toBeNull();
+		// ⚠ THE LIE THIS REMOVES. "Nothing has been printed yet" is a claim about the pane, and
+		// while the answer is in flight this process knows nothing about the pane.
+		expect(container.querySelector('[data-pdmux-empty="history"]')).toBeNull();
+	});
+
+	it('says the host could not be asked, rather than presenting the screen as the history', () => {
+		const { container } = render(TerminalHistory, {
+			props: { lines: ['one screen'], scrollback: false, failed: true },
+		});
+		const note = container.querySelector('[data-pdmux-history-note="failed"]');
+		expect(note, 'a refused fetch was shown as an ordinary short pane').not.toBeNull();
+		// And not the multiplexer note, which would send the reader looking for a history that
+		// nobody has been able to ask for.
+		expect(container.querySelector('[data-pdmux-history-note="multiplexer"]')).toBeNull();
+	});
+
+	it('points at the program, not the multiplexer, when a full-screen program owns the pane', () => {
+		/**
+		 * ⚠ THE DIFFERENCE BETWEEN A SHORT HISTORY AND NO HISTORY. A coding agent's TUI draws on
+		 * the pane's ALTERNATE screen and the multiplexer keeps history for the normal one, so
+		 * there is nothing above the screen to fetch — measured across one fleet on 2026-08-17,
+		 * 48 lines behind such a pane against 1991 behind one whose program prints normally. The
+		 * old note named the multiplexer as the place the history lives, which in this case is
+		 * wrong, and the only thing that can still show earlier output is the program itself.
+		 */
+		const { container } = render(TerminalHistory, {
+			props: { lines: ['agent screen'], scrollback: true, screenOnly: true },
+		});
+		expect(container.querySelector('[data-pdmux-history-note="screen"]')).not.toBeNull();
+		expect(container.querySelector('[data-pdmux-history-note="multiplexer"]')).toBeNull();
+	});
+
+	it('prefers the fetch state over the shape of what it is holding', () => {
+		// Both are true of the same sheet at different moments; a reader can only act on one, and
+		// "we are still asking" outranks "this is one screen".
+		const { container } = render(TerminalHistory, {
+			props: { lines: ['one screen'], scrollback: false, screenOnly: true, pending: true },
+		});
+		expect(container.querySelector('[data-pdmux-history-note="pending"]')).not.toBeNull();
+		expect(container.querySelectorAll('[data-pdmux-history-note]').length).toBe(1);
+	});
+
 	it('hands the whole buffer to a copy, joined as it reads', () => {
 		// Copying a stack trace out of here is half the reason the sheet exists.
 		const onCopy = vi.fn();

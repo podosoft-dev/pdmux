@@ -313,6 +313,69 @@ describe('[TC-PDUI-012] a pane header offers its actions and classifies its gest
 		expect(container.querySelector('[data-testid="terminal-history"]')).not.toBeNull();
 	});
 
+	it('[TC-PDUI-217] says the ask failed instead of passing the screen off as the history', async () => {
+		/**
+		 * ⚠ THE FALLBACK WAS RIGHT AND THE SILENCE WAS NOT. Keeping the visible screen is correct
+		 * — a blank sheet would be worse — but the sheet then carried the multiplexer's note, which
+		 * tells the reader the history is over there and reachable. It was not: nobody could ask.
+		 * Reported from a phone as "the popup has nothing in it", and answered by opening the
+		 * dashboard on a desktop, which is the trip this is supposed to save.
+		 */
+		const surface = fakeSurface();
+		surface.setScrollback(false);
+		const slot = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };
+		const { container } = render(TerminalPane, {
+			props: {
+				slot,
+				index: 0,
+				hostName: 'alpha',
+				adapter: new EchoTerminalAdapter(),
+				createSurface: surface.factory,
+				// `null` is the consumer's word for "the ask failed" — a throw is the same answer.
+				onReadHistory: vi.fn(async () => null),
+			},
+		});
+
+		await vi.waitFor(() => expect(surface.written.length).toBeGreaterThan(0));
+		(container.querySelector('[data-pdmux-history]') as HTMLButtonElement).click();
+		await tick();
+		await tick();
+		expect(container.querySelector('[data-pdmux-history-body]')?.textContent).toContain('echo terminal');
+		expect(container.querySelector('[data-pdmux-history-note="failed"]')).not.toBeNull();
+		expect(container.querySelector('[data-pdmux-history-note="multiplexer"]')).toBeNull();
+	});
+
+	it('[TC-PDUI-217] carries "a full-screen program owns this pane" through to the sheet', async () => {
+		/**
+		 * An empty answer is an ANSWER, not a failure: the multiplexer really has nothing above
+		 * the screen because the program is drawing on the alternate one. That is the case a
+		 * coding agent creates, it is the case the reader is most likely to hit, and it needs the
+		 * one note that does not send them looking for a history nobody kept.
+		 */
+		const surface = fakeSurface();
+		surface.setScrollback(false);
+		const slot = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };
+		const { container } = render(TerminalPane, {
+			props: {
+				slot,
+				index: 0,
+				hostName: 'alpha',
+				adapter: new EchoTerminalAdapter(),
+				createSurface: surface.factory,
+				onReadHistory: vi.fn(async () => ({ lines: [], scrollback: false, screenOnly: true })),
+			},
+		});
+
+		await vi.waitFor(() => expect(surface.written.length).toBeGreaterThan(0));
+		(container.querySelector('[data-pdmux-history]') as HTMLButtonElement).click();
+		await tick();
+		await tick();
+		// The local screen is still what is shown…
+		expect(container.querySelector('[data-pdmux-history-body]')?.textContent).toContain('echo terminal');
+		// …and the note is the one that tells the reader where earlier output actually is.
+		expect(container.querySelector('[data-pdmux-history-note="screen"]')).not.toBeNull();
+	});
+
 	it('zooms on a click and only focuses on a drag, so a selection is not eaten', () => {
 		const onZoom = vi.fn();
 		const onFocus = vi.fn();

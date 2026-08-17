@@ -102,7 +102,15 @@
 		 * The pane's real history, when the consumer can fetch it. Returning null (or not
 		 * passing this at all) falls back to the local buffer — see `openHistory`.
 		 */
-		onReadHistory?: (slot: TerminalSlot) => Promise<{ lines: HistoryLine[]; scrollback: boolean } | null>;
+		/**
+		 * Fetch what the multiplexer holds. `null` means the ask FAILED — the sheet says so
+		 * rather than presenting the visible screen as if it were the whole history.
+		 * `screenOnly` is the host's answer to "is a full-screen program holding this pane",
+		 * which is the difference between a short history and no history at all.
+		 */
+		onReadHistory?: (
+			slot: TerminalSlot,
+		) => Promise<{ lines: HistoryLine[]; scrollback: boolean; screenOnly?: boolean } | null>;
 	}
 
 	let {
@@ -379,22 +387,36 @@
 	 * into a fallback. The local buffer is still the answer when that fetch is absent or
 	 * fails, because a sheet that opens empty is worse than one that admits its scope.
 	 */
-	let history = $state<{ lines: HistoryLine[]; scrollback: boolean } | null>(null);
+	let history = $state<{ lines: HistoryLine[]; scrollback: boolean; screenOnly?: boolean } | null>(null);
 	let historyPending = $state(false);
+	/**
+	 * ⚠ A FAILED FETCH USED TO LOOK EXACTLY LIKE AN EMPTY PANE. The `catch` below kept the local
+	 * screen and said nothing, so "the host refused", "still asking" and "this pane printed
+	 * nothing" were one picture — and the reader's only way to tell them apart was to go to
+	 * another machine. Both states are now carried to the sheet, which has a line for each.
+	 */
+	let historyFailed = $state(false);
 
 	async function openHistory(): Promise<void> {
 		const local = surface?.readHistory() ?? { lines: [], scrollback: false };
 		// Paint what is already here first: the fetch is a round trip to another machine,
 		// and an empty sheet that fills in later reads as a broken one.
 		history = local;
+		historyFailed = false;
 		if (!onReadHistory || local.scrollback) return;
 		historyPending = true;
 		try {
 			const remote = await onReadHistory(slot);
 			// `history` going null means the user closed the sheet while we were away.
-			if (remote && remote.lines.length > 0 && history !== null) history = remote;
+			if (history === null) return;
+			if (remote === null) historyFailed = true;
+			else if (remote.lines.length > 0) history = remote;
+			// A fetch that came back with nothing is not a failure: the pane really is that
+			// short, and `screenOnly` (if the consumer knows it) explains why.
+			else history = { ...local, screenOnly: remote.screenOnly };
 		} catch {
-			// Keep the visible screen and its notice — that is the honest fallback.
+			// Keep the visible screen, and say that this is why it is all there is.
+			historyFailed = true;
 		} finally {
 			historyPending = false;
 		}
@@ -689,6 +711,9 @@
 		<TerminalHistory
 			lines={history.lines}
 			scrollback={history.scrollback}
+			screenOnly={history.screenOnly ?? false}
+			pending={historyPending}
+			failed={historyFailed}
 			title={label}
 			{t}
 			onClose={() => (history = null)}

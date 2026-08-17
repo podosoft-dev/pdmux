@@ -463,6 +463,62 @@ test.describe('pdmux ui geometry', () => {
 		await expect(page.locator('[data-testid="terminal-history"]')).toBeHidden();
 	});
 
+	test('[TC-PDUI-181] a note above the sheet’s scroller costs the body nothing', async ({ page }) => {
+		/**
+		 * ⚠ THE NOTE IS A NEW ROW ABOVE A FLEX SCROLLER, which is the exact shape of this file's
+		 * founding bug: a box added above one pushed the real content ~7,300px below a viewport
+		 * that clips, and every DOM assertion stayed green because the content was still THERE.
+		 * So each of the sheet's states is measured, not just rendered.
+		 *
+		 * The states differ only in that row: `screen` (a full-screen program owns the pane),
+		 * `failed` (the host could not be asked) and `never` (the answer has not arrived) each add
+		 * one line that `full` does not have.
+		 */
+		for (const state of ['full', 'screen', 'failed', 'never'] as const) {
+			await page.goto(`/?history=${state}`);
+			await page.waitForSelector('[data-pdmux-grid]');
+			await page.locator('[data-pdmux-pane]:not([hidden]) [data-pdmux-history]').first().click();
+			await expect(page.locator('[data-testid="terminal-history"]')).toBeVisible();
+
+			const probe = await page.evaluate(() => {
+				const sheet = document.querySelector('[data-testid="terminal-history"]') as HTMLElement;
+				const body = sheet.querySelector('[data-pdmux-history-body]') as HTMLElement;
+				const note = sheet.querySelector('[data-pdmux-history-note]') as HTMLElement | null;
+				const sheetBox = sheet.getBoundingClientRect();
+				const bodyBox = body.getBoundingClientRect();
+				const noteBox = note?.getBoundingClientRect() ?? null;
+				return {
+					note: note?.dataset.pdmuxHistoryNote ?? null,
+					// The body has to keep real height and stay inside the sheet.
+					bodyHeight: Math.round(bodyBox.height),
+					bodyInsideSheet: bodyBox.bottom <= sheetBox.bottom + 1 && bodyBox.top >= sheetBox.top - 1,
+					// The note belongs ABOVE the scroller and inside the sheet — not over the text,
+					// which is the other way a row like this goes wrong.
+					noteAboveBody: noteBox === null || noteBox.bottom <= bodyBox.top + 1,
+					noteInsideSheet: noteBox === null || (noteBox.top >= sheetBox.top - 1 && noteBox.bottom <= sheetBox.bottom + 1),
+					sheetInViewport: sheetBox.bottom <= window.innerHeight + 1 && sheetBox.top >= -1,
+					scrolls: body.scrollHeight > body.clientHeight,
+					pageScroll: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+				};
+			});
+
+			expect(probe.note, `the ${state} sheet showed the wrong note`).toBe(
+				state === 'full' ? null : state === 'never' ? 'pending' : state === 'failed' ? 'failed' : 'screen',
+			);
+			// ⚠ NOT ZERO, AND NOT A SLIVER. A body squeezed to nothing is the failure mode here,
+			// and `isVisible()` cannot see it. The pane prints forty rows in every state, so a
+			// short body means the note took the height rather than that there was nothing to show.
+			expect(probe.bodyHeight, `the ${state} sheet crushed its own scroller`).toBeGreaterThan(100);
+			expect(probe.bodyInsideSheet, `the ${state} sheet pushed its body out of itself`).toBe(true);
+			expect(probe.noteAboveBody, `the ${state} sheet drew its note over the output`).toBe(true);
+			expect(probe.noteInsideSheet, `the ${state} sheet put its note outside itself`).toBe(true);
+			expect(probe.sheetInViewport, `the ${state} sheet left the viewport`).toBe(true);
+			expect(probe.pageScroll, 'the sheet made the page itself scroll').toBeLessThanOrEqual(1);
+			// The one state with a long history in it must still be the thing that scrolls.
+			if (state === 'full') expect(probe.scrolls, 'a 400-line history did not become scrollable').toBe(true);
+		}
+	});
+
 	test('[TC-PDUI-176] a long host name stays on one line and inside its card', async ({ page }) => {
 		/**
 		 * The header had no rule for `[data-pdmux-name]` at all. A flex item defaults to

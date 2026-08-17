@@ -69,7 +69,10 @@
 		onExit?: (slotId: string, code: number | null) => void;
 		/** Passed straight to every pane — see `TerminalPane` for why the app owns these. */
 		onScrollback?: (slot: TerminalSlot, action: "enter" | "exit") => void;
-		onReadHistory?: (slot: TerminalSlot) => Promise<{ lines: HistoryLine[]; scrollback: boolean } | null>;
+		/** Passed straight to the pane — `null` means the ask failed. See `TerminalPane`. */
+		onReadHistory?: (
+			slot: TerminalSlot,
+		) => Promise<{ lines: HistoryLine[]; scrollback: boolean; screenOnly?: boolean } | null>;
 	}
 
 	let {

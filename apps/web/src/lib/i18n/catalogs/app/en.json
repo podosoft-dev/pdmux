@@ -189,6 +189,10 @@
       "body": "Output",
       "empty": "Nothing has been printed yet",
       "screenOnly": "This pane runs a multiplexer, which keeps its own history — only the visible screen is available here.",
+      "programScreen": "A full-screen program owns this pane, so nothing above its screen was kept — scroll the program itself to see earlier output.",
+      "pending": "Fetching what the multiplexer holds…",
+      "failed": "The host could not be asked for its history — this is the visible screen.",
+      "failedToast": "Could not fetch this session’s history: {reason}",
       "foldLine": "Fold this line",
       "unfoldLine": "Show the whole line"
     },

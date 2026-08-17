@@ -240,9 +240,16 @@ export const gitApi = {
 export const terminalApi = {
   copyMode: (hostId: string, session: string, action: "enter" | "exit"): Promise<{ ok: true }> =>
     api.post<{ ok: true }>(`/terminal/${hostId}/copy-mode`, { session, action }),
-  /** Raw capture lines, escapes and all — the browser is what turns them into colour. */
-  history: (hostId: string, session: string): Promise<{ lines: string[]; reachedOldest: boolean }> =>
-    api.post<{ lines: string[]; reachedOldest: boolean }>(`/terminal/${hostId}/history`, { session }),
+  /**
+   * Raw capture lines, escapes and all — the browser is what turns them into colour.
+   *
+   * `screenOnly` is the host saying a FULL-SCREEN program owns the pane, so what came back is
+   * that program's current screen and the multiplexer kept nothing above it. It is the
+   * difference between "your history is short" and "there is no history to fetch", and only
+   * the host can tell them apart (`#{alternate_on}`).
+   */
+  history: (hostId: string, session: string): Promise<{ lines: string[]; reachedOldest: boolean; screenOnly: boolean }> =>
+    api.post<{ lines: string[]; reachedOldest: boolean; screenOnly: boolean }>(`/terminal/${hostId}/history`, { session }),
 };
 
 /**

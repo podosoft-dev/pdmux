@@ -188,20 +188,35 @@
     }
   }
 
-  async function readHistory(slot: TerminalSlot): Promise<{ lines: HistoryLine[]; scrollback: boolean } | null> {
+  async function readHistory(
+    slot: TerminalSlot,
+  ): Promise<{ lines: HistoryLine[]; scrollback: boolean; screenOnly?: boolean } | null> {
     const session = muxSession(slot);
     if (!session) return null;
     try {
-      const { lines } = await terminalApi.history(slot.hostId, session);
+      const { lines, screenOnly } = await terminalApi.history(slot.hostId, session);
       // ⚠ THE PARSE HAPPENS HERE, NOT ON THE SERVER. What crosses the wire is what tmux
       // wrote, escapes included; turning it into runs is a rendering decision and it
       // keeps the API from having an opinion about colour it would then have to keep.
       const parsed = parseAnsiLines(lines);
-      // `scrollback: true` retires the sheet's "visible screen only" notice — which is
-      // now only true when this fetch is unavailable or came back with nothing.
-      return parsed.length > 0 ? { lines: parsed, scrollback: true } : null;
-    } catch {
-      // The sheet keeps the local buffer it already painted, notice and all.
+      /**
+       * ⚠ AN EMPTY ANSWER IS NOT A FAILURE, AND THE DIFFERENCE IS THE WHOLE POINT OF THIS
+       * ROUND TRIP. Returning `null` for both meant the sheet fell back to the visible screen
+       * with a note about the multiplexer holding the history — which is a lie when the
+       * multiplexer holds nothing, and that is exactly the case a coding agent's TUI creates
+       * (`screenOnly`). So an empty answer is reported as an answer.
+       */
+      return { lines: parsed, scrollback: parsed.length > 0, screenOnly };
+    } catch (cause) {
+      /**
+       * ⚠ SILENCE HERE COST SOMEBODY A TRIP TO ANOTHER MACHINE. The sheet used to keep the
+       * local buffer and say nothing, so a refusal read as "this pane printed one screen".
+       * `null` now means the ask failed, and the sheet has a line for that; the code is worth
+       * a toast as well, exactly as `scrollback()` above does — same reasons, same branch.
+       */
+      const reason =
+        errorCode(cause) === "MUX_NOT_FOUND" ? i18n.t.pdmux.pane.scrollbackNoMux : i18n.t.pdmux.pane.scrollbackUnavailable;
+      toast.error(fmt(i18n.t.pdmux.history.failedToast, { reason }));
       return null;
     }
   }

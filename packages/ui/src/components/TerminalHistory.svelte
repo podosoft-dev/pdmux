@@ -23,6 +23,9 @@
 	let {
 		lines = [],
 		scrollback = true,
+		screenOnly = false,
+		pending = false,
+		failed = false,
 		title = '',
 		t,
 		onClose,
@@ -35,6 +38,17 @@
 		lines?: readonly HistoryLine[];
 		/** False when the pane is on the alternate buffer — one screen, not a history. */
 		scrollback?: boolean;
+		/**
+		 * The MULTIPLEXER has no history for this pane either, because a full-screen program
+		 * owns the screen. This is a different sentence from `scrollback: false` and a much less
+		 * hopeful one: there is nowhere left to fetch from, so the note has to point at the
+		 * program instead of at the multiplexer.
+		 */
+		screenOnly?: boolean;
+		/** A fetch is in flight. Without this, waiting and empty look identical. */
+		pending?: boolean;
+		/** The fetch was refused or unreachable — say so rather than showing a bare screen. */
+		failed?: boolean;
 		title?: string;
 		t?: Translate;
 		onClose?: () => void;
@@ -157,13 +171,41 @@
 		>
 	</div>
 
-	{#if !scrollback}
+	<!--
+		ONE LINE THAT SAYS WHICH OF FOUR THINGS THE READER IS LOOKING AT, in the order they
+		matter. Three of these used to be the same silence: a sheet with one screen in it looked
+		exactly like a sheet still fetching and exactly like a sheet whose fetch was refused, and
+		the reader's only clue was that what they remembered was not there.
+	-->
+	{#if pending}
+		<p class="pdmux-meta" data-pdmux-history-note="pending">
+			{tr('pdmux.history.pending', 'Fetching what the multiplexer holds…')}
+		</p>
+	{:else if failed}
+		<p class="pdmux-meta" data-pdmux-history-note="failed">
+			{tr('pdmux.history.failed', 'The host could not be asked for its history — this is the visible screen.')}
+		</p>
+	{:else if screenOnly}
 		<!--
-			The honest note. A pane running a multiplexer has no scrollback in this process at
-			all, so this is one screen — and the place its history actually lives is worth
-			naming, or the user is left thinking the feature is broken.
+			⚠ THE MULTIPLEXER HAS NOTHING EITHER, so this note may not point at it. A full-screen
+			program (a coding agent's TUI, `vim`) draws on the pane's alternate screen and the
+			multiplexer keeps history for the normal one — measured on one fleet: `history_size` 48
+			behind such a pane against 1991 behind a pane whose program prints normally. The only
+			thing that can show earlier output is the program itself, so the note says how.
 		-->
-		<p class="pdmux-meta" data-pdmux-history-note>
+		<p class="pdmux-meta" data-pdmux-history-note="screen">
+			{tr(
+				'pdmux.history.programScreen',
+				'A full-screen program owns this pane, so nothing above its screen was kept — scroll the program itself to see earlier output.',
+			)}
+		</p>
+	{:else if !scrollback}
+		<!--
+			The original note: this process has no scrollback for the pane, but the multiplexer
+			does — naming where the history actually lives is what stops the feature reading as
+			broken.
+		-->
+		<p class="pdmux-meta" data-pdmux-history-note="multiplexer">
 			{tr(
 				'pdmux.history.screenOnly',
 				'This pane runs a multiplexer, which keeps its own history — only the visible screen is available here.',
@@ -225,7 +267,13 @@
 					></button>{/if}{/each}</pre>
 	</div>
 
-	{#if lines.length === 0}
+	<!--
+		⚠ "NOTHING HAS BEEN PRINTED YET" IS A CLAIM, AND IT WAS SOMETIMES FALSE. While a fetch is
+		in flight, or after one failed, the sheet knows nothing about what the pane printed — and
+		saying it printed nothing sent people to another machine to check. The note above owns
+		those two cases; this line is only for a pane that really is empty.
+	-->
+	{#if lines.length === 0 && !pending && !failed}
 		<p class="pdmux-meta" data-pdmux-empty="history">{tr('pdmux.history.empty', 'Nothing has been printed yet')}</p>
 	{/if}
 </div>
