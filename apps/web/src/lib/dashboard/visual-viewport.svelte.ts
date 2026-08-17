@@ -54,9 +54,26 @@ export function trackVisualViewport(): KeyboardWatcher {
     read();
     vv.addEventListener("resize", read);
     vv.addEventListener("scroll", read);
+    /**
+     * ⚠ AND ONCE MORE WHEN THE TAB COMES BACK. A phone freezes a backgrounded tab, and iOS may
+     * restore it from the page cache without firing either event above — so a shell that was
+     * suspended with the keyboard open keeps the keyboard's height in `--pdmux-vh` and stays
+     * short after the keyboard is long gone. This is the round trip the operator makes every
+     * day: give a coding agent an instruction, lock the phone, come back hours later.
+     *
+     * `pageshow` covers the page-cache restore and `visibilitychange` the ordinary return.
+     * Re-reading is cheap and idempotent — it is the same function the sensor calls.
+     */
+    const reread = (): void => {
+      if (document.visibilityState === "visible") read();
+    };
+    window.addEventListener("pageshow", reread);
+    document.addEventListener("visibilitychange", reread);
     return () => {
       vv.removeEventListener("resize", read);
       vv.removeEventListener("scroll", read);
+      window.removeEventListener("pageshow", reread);
+      document.removeEventListener("visibilitychange", reread);
     };
   });
 

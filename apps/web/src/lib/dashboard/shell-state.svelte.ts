@@ -226,13 +226,35 @@ export class ShellState {
     });
   }
 
+  /**
+   * Wake the transport when the tab is looked at again.
+   *
+   * ⚠ A PHONE DOES NOT TELL THE PAGE IT IS GOING TO SLEEP, IT JUST STOPS RUNNING IT. Timers
+   * freeze, the socket dies quietly, and nothing on screen changes — so the pane the operator
+   * left running shows its last frame and reads as a session that stalled. `pageshow` covers
+   * iOS restoring the page from its cache (where no `visibilitychange` fires at all) and
+   * `visibilitychange` covers the ordinary return to the tab.
+   */
+  private readonly wake = (): void => {
+    if (document.visibilityState !== "visible") return;
+    this.relay.wake();
+  };
+
   start(): void {
     this.feed.start();
+    if (browser) {
+      window.addEventListener("pageshow", this.wake);
+      document.addEventListener("visibilitychange", this.wake);
+    }
   }
 
   /** Called when the shell itself unmounts — leaving the group, not changing page. */
   stop(): void {
     this.feed.stop();
+    if (browser) {
+      window.removeEventListener("pageshow", this.wake);
+      document.removeEventListener("visibilitychange", this.wake);
+    }
     this.saver.flush();
     this.saver.dispose();
     this.relay.dispose();

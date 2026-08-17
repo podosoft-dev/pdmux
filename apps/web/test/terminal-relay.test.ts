@@ -209,6 +209,55 @@ describe("[TC-PDTERM-104] reconnection is visible", () => {
     expect(statuses).toContain("open");
   });
 
+  it("[TC-PDTERM-104] reconnects at once when the tab comes back, instead of waiting out the backoff", () => {
+    /**
+     * ⚠ THE BACKOFF IS RIGHT FOR A SERVER THAT IS DOWN AND WRONG FOR A PHONE THAT WAS ASLEEP.
+     * This is the round trip the dashboard exists for: give a coding agent an instruction, lock
+     * the phone, come back hours later — and a suspended tab freezes the retry timer, so the
+     * pane keeps showing the last frame it ever received. That is indistinguishable from a
+     * session that died, which is why it was reported as one.
+     */
+    const { relay, sockets, run } = harness();
+    const connection = relay.open(target);
+    sockets[0]?.accept();
+    const chunks: string[] = [];
+    connection.onData((chunk) => chunks.push(chunk));
+    sockets[0]?.deliver({ type: "ready", termId: "t1", pid: 42 });
+    sockets[0]?.drop();
+    expect(sockets).toHaveLength(1);
+
+    // No timer has fired — this is the state a frozen tab is in.
+    relay.wake();
+    expect(sockets, "waking the tab did not dial again").toHaveLength(2);
+    sockets[1]?.accept();
+    // The pane is re-opened, which is what reattaches to the multiplexer session.
+    expect(sockets[1]?.frames().filter((frame) => frame.type === "open")).toHaveLength(1);
+    expect(chunks.join("")).toContain("relay back");
+
+    // And the frozen retry does not then dial a THIRD socket on top of the live one.
+    run();
+    expect(sockets, "the pending retry opened a second socket for the same host").toHaveLength(2);
+  });
+
+  it("[TC-PDTERM-104] leaves a healthy socket alone when the tab comes back", () => {
+    // Waking is safe to ask for on every `visibilitychange`, which fires whenever somebody
+    // switches tabs — so the common case has to be free.
+    const { relay, sockets } = harness();
+    relay.open(target);
+    sockets[0]?.accept();
+    relay.wake();
+    expect(sockets).toHaveLength(1);
+  });
+
+  it("[TC-PDTERM-104] does not wake a disposed relay", () => {
+    const { relay, sockets } = harness();
+    relay.open(target);
+    sockets[0]?.accept();
+    relay.dispose();
+    relay.wake();
+    expect(sockets).toHaveLength(1);
+  });
+
   it("stops retrying once disposed", () => {
     const { relay, sockets, run } = harness();
     relay.open(target);

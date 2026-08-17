@@ -207,6 +207,36 @@ export class TerminalRelay implements TerminalAdapter {
     };
   }
 
+  /**
+   * The tab is in front of somebody again — stop waiting out the backoff.
+   *
+   * ⚠ THE BACKOFF IS RIGHT FOR A SERVER THAT IS DOWN AND WRONG FOR A PHONE THAT WAS ASLEEP.
+   * The delay doubles to eight seconds and the timer itself is frozen while the tab is
+   * suspended, so a socket that died during the night is reconnected at some point after the
+   * screen comes back — and until it does, the pane shows the last frame it ever received,
+   * which is indistinguishable from a session that stopped. That is the exact moment this
+   * dashboard is used for: give an agent an instruction, put the phone away, come back later
+   * and read what happened.
+   *
+   * Reconnecting is safe to ask for at any time: the default target is a multiplexer session,
+   * `onopen` reattaches every live pane, and a connection that is already open or connecting is
+   * left alone. Resetting `attempts` matters too — an hours-old failure count would otherwise
+   * make the FIRST retry after waking the longest one.
+   */
+  wake(): void {
+    if (this.disposed) return;
+    for (const connection of this.connections.values()) {
+      if (connection.socket) continue;
+      if (connection.retryHandle !== null) {
+        this.cancel(connection.retryHandle);
+        connection.retryHandle = null;
+      }
+      connection.attempts = 0;
+      this.ensureSocket(connection);
+    }
+    this.refreshStatus();
+  }
+
   /** Close every socket for good — call it when the page unmounts. */
   dispose(): void {
     this.disposed = true;
