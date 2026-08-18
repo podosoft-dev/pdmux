@@ -293,6 +293,23 @@ construction, because nothing ever reports how far the program went. Either way 
 twelve rows of travel, so a discontinuity (the keyboard opening, a rotation, a re-fit) cannot arrive as
 a single jump.
 
+⚠ **Notches leave at a hand's rate, and wait for the pane to answer.** A fling that emitted one
+per frame put about ninety reports a second on the wire; no mouse spins that fast, and a program is
+free to fold such a burst into a single scroll — one coding agent's TUI does, which is why the same
+gesture worked on the pane beside it and not on that one. Worse, sending ahead of a program that
+reads input on its own render loop builds a BACKLOG, which arrives later as "it scrolled by itself".
+So one notch is outstanding at a time: the next goes when the pane repaints (the only
+acknowledgement a terminal offers) or after a ceiling, and the queue is bounded in TIME rather than
+in notches. The wait applies only where something can answer — moving xterm's own viewport produces
+no output, so waiting there would throttle a plain shell pane that is working fine.
+
+⚠ **A drag on a multiplexer pane whose program is NOT holding the mouse asks for the history rather
+than sending cursor keys.** xterm's fallback is right when the full-screen program is the program
+and wrong when a multiplexer forwards keys to whatever runs inside it — there the arrow meant as a
+scroll walks a coding agent's prompt history. `onScrollbackRequest`'s listener answers `true` when
+it has taken the gesture, and then nothing is sent; `vim` in a plain pane is unaffected because a
+consumer with no multiplexer answers falsy.
+
 ⚠ **A release with speed on it flings.** One-to-one is right for placing the view and wrong for
 travelling — an hour of a coding agent's transcript is an hour of dragging — so velocity is measured
 over the last moves and decays after the release, feeding the same notch machinery the drag uses.
