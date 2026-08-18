@@ -502,6 +502,190 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 	});
 });
 
+
+// --- momentum ----------------------------------------------------------------
+
+/**
+ * Fake timers that also fake the FRAME CLOCK.
+ *
+ * ⚠ `vi.useFakeTimers()` alone does not, and the first version of these cases passed for the
+ * wrong reason: the fling was scheduled, never ran, and every "it stops" assertion was satisfied
+ * by a fling that had not started. `requestAnimationFrame` has to be faked with the rest, or
+ * advancing the clock advances nothing.
+ */
+function fakeFrames(): void {
+	vi.useFakeTimers({
+		toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance', 'Date'],
+	});
+}
+
+
+/**
+ * A touch event with a timestamp this file controls, because velocity is the whole subject.
+ *
+ * jsdom stamps a real `performance.now()` onto every event it constructs, which under fake timers
+ * is a clock that does not move — so a drag would read as infinitely fast. The handler prefers
+ * `event.timeStamp`, so setting it is enough to make a flick reproducible.
+ */
+function stamped(type: string, points: { x: number; y: number }[], at: number): Event {
+	const event = touch(type, points);
+	Object.defineProperty(event, 'timeStamp', { value: at });
+	return event;
+}
+
+/** Drag `steps` moves of `dy` pixels every `ms`, then lift. Returns the time it ended. */
+function flick(host: HTMLElement, opts: { dy: number; steps?: number; ms?: number; from?: number }): number {
+	const { dy, steps = 6, ms = 16, from = 1000 } = opts;
+	let at = from;
+	fire(host, stamped('touchstart', [{ x: 50, y: 100 }], at));
+	let y = 100;
+	for (let step = 0; step < steps; step += 1) {
+		at += ms;
+		y += dy;
+		fire(host, stamped('touchmove', [{ x: 50, y }], at));
+	}
+	fire(host, stamped('touchend', [], at));
+	return at;
+}
+
+describe('[TC-PDTERM-130] a flick keeps travelling after the finger leaves', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.doUnmock('@xterm/xterm');
+		vi.doUnmock('@xterm/addon-fit');
+		document.body.innerHTML = '';
+	});
+
+	/**
+	 * ⚠ REPORTED FROM A PHONE, THIRD ROUND — AND THE FIRST TWO ANSWERS WERE NOT WRONG, JUST
+	 * INCOMPLETE. Matching the finger is the right answer for placing the view and the wrong one
+	 * for travelling: an hour of a coding agent's transcript is an hour of dragging at 1:1. Every
+	 * touch platform ships both, so this one does too.
+	 */
+	it('keeps sending notches after the touch ends, and settles', async () => {
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
+		flick(host, { dy: 24 });
+		const duringDrag = wheeled.length;
+		expect(duringDrag, 'the drag itself sent nothing').toBeGreaterThan(0);
+
+		vi.advanceTimersByTime(300);
+		const afterFling = wheeled.length;
+		expect(afterFling, 'the flick stopped dead at the release').toBeGreaterThan(duringDrag);
+
+		// …and it does not run forever: friction takes it to a stop.
+		vi.advanceTimersByTime(5000);
+		const settled = wheeled.length;
+		vi.advanceTimersByTime(5000);
+		expect(wheeled.length, 'the fling never settles').toBe(settled);
+		surface.dispose();
+	});
+
+	it('carries a hard flick across screens, not across lines', async () => {
+		/**
+		 * ⚠ THE FLOOR IS THE WHOLE POINT, AND IT IS WHY THIS NUMBER IS ASSERTED AT ALL. "Too slow"
+		 * was reported three times, and each answer that only changed a ratio was still a drag per
+		 * screenful. Measured here (20px rows, one row per notch — the scale a mouse-capturing
+		 * program gets): a gentle flick reaches ~36 notches, a normal one ~111, a hard one ~281.
+		 * A change that quietly halves the friction budget shows up as this case going red.
+		 *
+		 * The ceiling is the fling's own cap: an unknown program must not be sent a thousand
+		 * reports for one gesture.
+		 */
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		term.modes.mouseTrackingMode = 'vt200';
+		const wheeled = recordWheel(term);
+		flick(host, { dy: 60 });
+		const drag = wheeled.length;
+		vi.advanceTimersByTime(8000);
+		const flung = wheeled.length - drag;
+		expect(flung, 'a hard flick barely travels — the friction budget shrank').toBeGreaterThan(150);
+		expect(flung, 'one gesture exceeded the fling cap').toBeLessThanOrEqual(400);
+		surface.dispose();
+	});
+
+	it('does not fling a deliberate drag', async () => {
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
+		// The same distance, taken slowly: 24px per 200ms is 0.12 px/ms, under the threshold.
+		flick(host, { dy: 24, ms: 200 });
+		const atRelease = wheeled.length;
+		vi.advanceTimersByTime(2000);
+		expect(wheeled.length, 'a slow, deliberate drag was turned into a fling').toBe(atRelease);
+		surface.dispose();
+	});
+
+	it('stops the moment a finger goes down again', async () => {
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
+		const ended = flick(host, { dy: 24 });
+		vi.advanceTimersByTime(100);
+		const moving = wheeled.length;
+
+		// ⚠ THIS IS WHAT MAKES A GENEROUS FLING SAFE: the way out of an overshoot is to touch the
+		// screen, exactly as in every scroll view.
+		fire(host, stamped('touchstart', [{ x: 50, y: 100 }], ended + 100));
+		vi.advanceTimersByTime(2000);
+		expect(wheeled.length, 'the fling ran on through a new touch').toBe(moving);
+		surface.dispose();
+	});
+
+	it('flings the way the finger went', async () => {
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
+		// Upward flick: the view goes forward, so the wheel turns forward.
+		flick(host, { dy: -24 });
+		// ⚠ ONLY WHAT CAME AFTER THE RELEASE. Counting the drag's own wheels here would let this
+		// case pass with no fling at all — measured, when the fling was removed to check exactly
+		// that.
+		const drag = wheeled.length;
+		vi.advanceTimersByTime(500);
+		const flung = wheeled.slice(drag);
+		expect(flung.length, 'nothing was flung').toBeGreaterThan(0);
+		expect(flung.every((event) => event.deltaY > 0), 'a fling reversed the drag').toBe(true);
+		surface.dispose();
+	});
+
+	it('does not deliver a dropped frame as distance', async () => {
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
+		flick(host, { dy: 24 });
+		const atRelease = wheeled.length;
+
+		/**
+		 * ⚠ A BACKGROUNDED TAB STOPS GETTING FRAMES AND RESUMES WITH A GAP OF SECONDS. Multiplying
+		 * that gap by the velocity would deliver a whole fling in one frame — to a program that has
+		 * been idle the entire time. A frame that arrives late is skipped, not scaled.
+		 */
+		vi.advanceTimersByTime(4000);
+		const settled = wheeled.length - atRelease;
+		// Whatever the fling was worth, it is bounded by friction rather than by the gap: a
+		// four-second jump at the release velocity would be thousands of notches.
+		expect(settled).toBeLessThan(400);
+		surface.dispose();
+	});
+
+	it('stops when the surface is disposed mid-fling', async () => {
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
+		flick(host, { dy: 24 });
+		vi.advanceTimersByTime(50);
+		const moving = wheeled.length;
+		// The host outlives the surface, so a frame loop still running would drive a terminal that
+		// is gone — the same reason the listeners come off.
+		surface.dispose();
+		vi.advanceTimersByTime(2000);
+		expect(wheeled.length).toBe(moving);
+	});
+});
+
 // --- the two scroll buttons --------------------------------------------------
 
 /** Every wheel event the surface handed the terminal, in order. */

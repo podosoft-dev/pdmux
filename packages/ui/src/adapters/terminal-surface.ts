@@ -596,18 +596,149 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	 */
 	const notchRows = (): number => (term.modes.mouseTrackingMode !== 'none' ? 1 : WHEEL_NOTCH_LINES);
 
+	/**
+	 * MOMENTUM — the flick keeps going after the finger leaves.
+	 *
+	 * ⚠ REPORTED FROM A PHONE, THIRD ROUND: with the scale already matched to the finger, reaching
+	 * an hour of transcript is still an hour of dragging. One-to-one is the right answer for
+	 * placing the view and the wrong one for travelling, which is why every touch platform ships
+	 * both — and asking for a coding agent's earlier output is travelling.
+	 *
+	 * The physics is the ordinary one: velocity is measured over the last moves, and after the
+	 * release it decays exponentially while the same notch machinery below turns the distance into
+	 * wheel events. Nothing here knows how far a notch actually moves the program (it never says),
+	 * so this is bounded twice — a ceiling per fling and a per-frame cap — rather than trusted.
+	 *
+	 * ⚠ A NEW TOUCH STOPS IT. That is what makes a fling safe to be generous with: the way out of
+	 * an overshoot is to put a finger down, the same as every scroll view.
+	 */
+	/** Below this (px per ms) a release was a deliberate stop, not a flick. */
+	const FLING_MIN_VELOCITY = 0.25;
+	/** Where the animation gives up rather than crawling. */
+	const FLING_STOP_VELOCITY = 0.02;
+	/**
+	 * Velocity kept per millisecond, and how much of the finger's own speed a flick is worth.
+	 *
+	 * ⚠ MEASURED AGAINST THE COMPLAINT, NOT CHOSEN FROM A PHYSICS TABLE. At 0.998 with no boost a
+	 * normal flick reached 44 notches and a hard one 112 (20px rows, one row per notch — the scale
+	 * a mouse-capturing program gets). The report that started this round was that reaching an
+	 * hour of transcript takes an hour, so both were raised until a hard flick crosses a few
+	 * screens and a chain of them crosses many.
+	 *
+	 * The boost is not physics: a flick is a REQUEST TO TRAVEL, and how fast the finger happened
+	 * to be moving under-states how far the person wants to go. Every scroll view on every
+	 * platform has the same fudge factor, for the same reason.
+	 */
+	const FLING_DECAY_PER_MS = 0.999;
+	const FLING_BOOST = 1.4;
+	/** A ceiling on one fling, so an unknown program cannot be sent a thousand reports. */
+	const FLING_MAX_NOTCHES = 400;
+	/**
+	 * ⚠ FLICKS COMPOUND, WITHIN A WINDOW. Repeating the gesture is how anyone asks for "further",
+	 * and starting each one from zero is what makes a long journey feel like work. A second flick
+	 * in the same direction within this window keeps half of what was left of the first.
+	 */
+	const FLING_CHAIN_MS = 300;
+	/** How much of the interrupted fling a chained one inherits. */
+	const FLING_CHAIN_SHARE = 0.5;
+
 	let armed = false;
 	let axis: 'none' | 'x' | 'y' = 'none';
 	let lastX = 0;
 	let lastY = 0;
 	/** Sub-notch remainder, so slow drags still add up instead of being rounded away. */
 	let carry = 0;
+	/** When the last move was seen, for the velocity the release needs. */
+	let lastAt = 0;
+	/** Finger speed, px per ms, smoothed — positive is downward, like `dy`. */
+	let velocity = 0;
+	/** The running fling's timer handle, and what it was doing when a finger interrupted it. */
+	let flingHandle: number | null = null;
+	let flingVelocity = 0;
+	let flingStoppedAt = 0;
+	let flingStoppedVelocity = 0;
 
 	/** Height of one row, from the box actually on screen. */
 	const rowHeight = (): number => {
 		const rows = term.rows;
 		const height = term.element?.clientHeight ?? host.clientHeight;
 		return rows > 0 && height > 0 ? height / rows : 0;
+	};
+
+	/** `performance.now()` where there is one; a fake clock in a test has both. */
+	const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+	const nextFrame = (fn: (at: number) => void): number =>
+		typeof requestAnimationFrame === 'function'
+			? requestAnimationFrame(fn)
+			: (setTimeout(() => fn(now()), 16) as unknown as number);
+
+	const cancelFrame = (handle: number): void => {
+		if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(handle);
+		else clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+	};
+
+	/**
+	 * Turn a distance in pixels into wheel notches, carrying the remainder.
+	 *
+	 * Shared by the drag and the fling so both answer at the same scale, and so the cap means the
+	 * same thing in both: at most `MAX_ROWS_PER_MOVE` rows of travel per event or per frame.
+	 */
+	const consume = (distance: number): number => {
+		const rows = notchRows();
+		const notch = rowHeight() * rows;
+		if (notch <= 0) return 0;
+		carry += distance;
+		const notches = Math.trunc(carry / notch);
+		if (notches === 0) return 0;
+		carry -= notches * notch;
+		const cap = Math.max(1, Math.floor(MAX_ROWS_PER_MOVE / rows));
+		const count = Math.min(Math.abs(notches), cap);
+		// A finger travelling DOWN pulls earlier output down into view, which is a wheel turned
+		// BACK — the same direction the ⇞ button asks for.
+		spinWheel(notches > 0 ? -1 : 1, count);
+		return count;
+	};
+
+	const stopFling = (): void => {
+		if (flingHandle === null) return;
+		cancelFrame(flingHandle);
+		flingHandle = null;
+		// Remember what it was doing: a second flick within the chain window inherits some of it.
+		flingStoppedAt = now();
+		flingStoppedVelocity = flingVelocity;
+		flingVelocity = 0;
+	};
+
+	const startFling = (initial: number): void => {
+		stopFling();
+		flingVelocity = initial;
+		carry = 0;
+		let spent = 0;
+		let previous = now();
+		const step = (at: number): void => {
+			flingHandle = null;
+			const dt = at - previous;
+			previous = at;
+			/**
+			 * ⚠ A DROPPED FRAME IS NOT DISTANCE. A backgrounded tab stops getting frames and
+			 * resumes with a gap of seconds; multiplying that by the velocity would deliver the
+			 * whole fling at once, to a program that has been idle the entire time.
+			 */
+			if (dt <= 0 || dt > 100) {
+				previous = at;
+				flingHandle = nextFrame(step);
+				return;
+			}
+			spent += consume(flingVelocity * dt);
+			flingVelocity *= Math.pow(FLING_DECAY_PER_MS, dt);
+			if (Math.abs(flingVelocity) < FLING_STOP_VELOCITY || spent >= FLING_MAX_NOTCHES) {
+				flingVelocity = 0;
+				return;
+			}
+			flingHandle = nextFrame(step);
+		};
+		flingHandle = nextFrame(step);
 	};
 
 	const listeners: (() => void)[] = [];
@@ -626,6 +757,7 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		armed = false;
 		axis = 'none';
 		carry = 0;
+		velocity = 0;
 	};
 
 	listen(
@@ -636,9 +768,14 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 				release();
 				return;
 			}
+			// A finger down stops the fling, the way it does in every scroll view — and that is
+			// what makes a generous fling safe: overshooting is undone by touching the screen.
+			stopFling();
 			armed = true;
 			axis = 'none';
 			carry = 0;
+			velocity = 0;
+			lastAt = event.timeStamp || now();
 			lastX = touch.clientX;
 			lastY = touch.clientY;
 		},
@@ -661,26 +798,53 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 			lastX = touch.clientX;
 			lastY = touch.clientY;
 			if (axis !== 'y') return;
-			// Asked per move, never cached: a program turns mouse reporting on and off while it
-			// runs, and the scale of a notch changes with it.
-			const rows = notchRows();
-			const notch = rowHeight() * rows;
-			if (notch <= 0) return;
-			carry += dy;
-			const notches = Math.trunc(carry / notch);
-			if (notches === 0) return;
-			carry -= notches * notch;
-			// A finger travelling DOWN pulls earlier output down into view, which is a wheel
-			// turned BACK — the same direction the ⇞ button asks for.
-			const cap = Math.max(1, Math.floor(MAX_ROWS_PER_MOVE / rows));
-			spinWheel(notches > 0 ? -1 : 1, Math.min(Math.abs(notches), cap));
+			/**
+			 * Speed, for the fling the release may start. Smoothed rather than taken from the last
+			 * move alone: a finger leaving the glass often reports one short move, and a raw
+			 * reading there turns a fast flick into a dead stop.
+			 */
+			const at = event.timeStamp || now();
+			const elapsed = at - lastAt;
+			if (elapsed > 0) velocity = elapsed < 100 ? 0.7 * (dy / elapsed) + 0.3 * velocity : dy / elapsed;
+			lastAt = at;
+			// `consume` is shared with the fling, so both scale a distance the same way — including
+			// asking `notchRows()` again, because a program turns mouse reporting on and off.
+			if (consume(dy) === 0) return;
 			if (event.cancelable) event.preventDefault();
 		},
 		{ passive: false },
 	);
 
-	listen('touchend', release, { passive: true });
-	listen('touchcancel', release, { passive: true });
+	listen(
+		'touchend',
+		(event: TouchEvent) => {
+			const flick = axis === 'y' && Math.abs(velocity) >= FLING_MIN_VELOCITY;
+			if (flick) {
+				/**
+				 * A second flick in the same direction, soon after one was interrupted, keeps part
+				 * of what that one had left. Chaining is how a person asks for "further" — starting
+				 * every flick from zero is what makes a long journey feel like work.
+				 */
+				const chained =
+					Math.sign(velocity) === Math.sign(flingStoppedVelocity) &&
+					(event.timeStamp || now()) - flingStoppedAt < FLING_CHAIN_MS
+						? flingStoppedVelocity * FLING_CHAIN_SHARE
+						: 0;
+				startFling((velocity + chained) * FLING_BOOST);
+			}
+			release();
+		},
+		{ passive: true },
+	);
+	listen(
+		'touchcancel',
+		() => {
+			// Cancelled is not released: the system took the gesture away, so nothing was meant.
+			stopFling();
+			release();
+		},
+		{ passive: true },
+	);
 
 	// --- The one wheel path: BE the wheel rather than guess what it would have done -------
 	/**
@@ -869,6 +1033,10 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 			return { lines, scrollback };
 		},
 		dispose: () => {
+			// ⚠ A FLING OUTLIVES THE GESTURE, SO IT CAN OUTLIVE THE SURFACE. Retargeting a pane
+			// builds a new surface on the same element; a frame loop still running would be
+			// dispatching wheels at a terminal that is gone.
+			stopFling();
 			sub.dispose();
 			selectionSub.dispose();
 			emitters.clear();
