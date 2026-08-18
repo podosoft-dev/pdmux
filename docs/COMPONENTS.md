@@ -293,6 +293,13 @@ construction, because nothing ever reports how far the program went. Either way 
 twelve rows of travel, so a discontinuity (the keyboard opening, a rotation, a re-fit) cannot arrive as
 a single jump.
 
+⚠ **A release with speed on it flings.** One-to-one is right for placing the view and wrong for
+travelling — an hour of a coding agent's transcript is an hour of dragging — so velocity is measured
+over the last moves and decays after the release, feeding the same notch machinery the drag uses.
+Flicks compound within 300ms, a finger down stops it (which is what makes it safe to be generous), and
+it is bounded three ways rather than trusted: a ceiling per fling, the per-frame cap, and a late frame
+is skipped rather than scaled — a backgrounded tab resumes with a gap of seconds.
+
 Two things hold it together: `.pdmux-pane-surface` declares `touch-action: pan-x pinch-zoom` (the
 engine must not claim the vertical axis and make `touchmove` uncancellable; pinch-zoom and the
 browser's own back gesture stay), and `scrollback: 5000` must stay larger than a pane's rows — on the
