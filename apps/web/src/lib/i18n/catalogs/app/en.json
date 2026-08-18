@@ -81,6 +81,7 @@
       "headerHint": "Click to zoom · drag to move",
       "retarget": "Change target",
       "unreachable": "This host is not reachable",
+      "reconnecting": "Reconnecting…",
       "zoom": "Toggle zoom",
       "history": "Show output",
       "scrollback": "Scroll back through this session",

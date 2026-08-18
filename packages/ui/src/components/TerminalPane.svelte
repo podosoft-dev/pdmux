@@ -30,7 +30,12 @@
 	import TerminalKeyBar from './TerminalKeyBar.svelte';
 	import TerminalHistory from './TerminalHistory.svelte';
 	import type { TerminalAdapter, TerminalConnection } from '../adapters/terminal-adapter.js';
-	import { type TerminalSurface, type TerminalSurfaceFactory, createXtermSurface } from '../adapters/terminal-surface.js';
+	import {
+		type GestureInfo,
+		type TerminalSurface,
+		type TerminalSurfaceFactory,
+		createXtermSurface,
+	} from '../adapters/terminal-surface.js';
 
 	interface Props {
 		slot: TerminalSlot;
@@ -111,6 +116,29 @@
 		onReadHistory?: (
 			slot: TerminalSlot,
 		) => Promise<{ lines: HistoryLine[]; scrollback: boolean; screenOnly?: boolean } | null>;
+		/**
+		 * Draw the gesture readout over this pane.
+		 *
+		 * ⚠ FOR A DEVICE WITH NO CONSOLE. "Scrolling works sometimes" can only be answered where
+		 * it happens, and on a phone that is the screen itself: the line reports which buffer the
+		 * terminal is in, whether the program is holding the mouse, and where the last gesture
+		 * actually went. Off unless the app turns it on — the app owns that decision because it
+		 * owns the URL the flag comes from.
+		 */
+		diagnostics?: boolean;
+		/**
+		 * What the transport is doing: `open` while frames can reach the host, anything else
+		 * while they cannot.
+		 *
+		 * ⚠ A PANE THAT CANNOT SEND MUST SAY SO, and on a multiplexer pane nothing else does.
+		 * The relay writes `[pdmux] reconnecting…` into the buffer, but a session pane is on the
+		 * alternate screen and the multiplexer repaints over it the moment it reattaches — so the
+		 * one place the fact could be seen was gone by the time anybody looked. Measured on a
+		 * phone: iOS suspends the tab (`WebSocket is closed due to suspension`, then a reconnect),
+		 * and gestures made in that window are dropped — "it does not work at first and then it
+		 * does", which is what the third round of this bug turned out to be.
+		 */
+		transport?: 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
 	}
 
 	let {
@@ -143,6 +171,8 @@
 		onExit,
 		onScrollback,
 		onReadHistory,
+		diagnostics = false,
+		transport = 'open',
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -206,6 +236,16 @@
 			// Shift+wheel on a buffer with no local history. The surface decides that it
 			// has nothing to scroll; what to do about it is this pane's business.
 			cleanups.push(created.onScrollbackRequest(() => askScrollback()));
+			// Subscribed only when asked for: a watcher that ran always would be a listener per
+			// pane doing nothing but allocating.
+			if (diagnostics) {
+				cleanups.push(
+					created.onGesture((info) => {
+						gesture = info;
+						gestureCount += 1;
+					}),
+				);
+			}
 			// The Ctrl latch is spent HERE, on the surface -> connection bridge, because a
 			// soft keyboard's characters do not arrive as `keydown` on iOS — they only reach
 			// this callback. A latch that waited for a key event would never fire on a phone.
@@ -345,6 +385,9 @@
 	 * and a pressed-looking button; nothing depends on it being true, and pressing the
 	 * control again sends `exit`, which is harmless on a pane that already left.
 	 */
+	/** The last gesture's decision, for the readout. Kept only while `diagnostics` is on. */
+	let gesture = $state<GestureInfo | null>(null);
+	let gestureCount = $state(0);
 	let scrollMode = $state(false);
 
 	/**
@@ -355,13 +398,30 @@
 	const SCROLLBACK_ASK_MS = 700;
 	let lastAsk = 0;
 
-	function askScrollback(): void {
-		if (!onScrollback) return;
+	/**
+	 * Ask the multiplexer for its history, and ANSWER WHETHER THIS TOOK THE GESTURE.
+	 *
+	 * ⚠ THE RETURN VALUE IS WHY A DRAG STOPPED TYPING ARROWS AT A CODING AGENT. On a pane
+	 * attached to a multiplexer whose program is NOT capturing the mouse, xterm's fallback turns
+	 * a wheel into cursor keys — and the multiplexer forwards keys to whatever is running, so
+	 * `ESC[A` arrives at the agent as ↑, which moves through its prompt history instead of
+	 * scrolling anything. Measured across one fleet: one pane had mouse reporting on (the wheel
+	 * reached the program and the gesture worked) and another had it off (the same gesture did
+	 * nothing useful and could disturb a draft prompt). That is the "sometimes it works" report.
+	 *
+	 * So `true` means "the history is being handled here, do not hand the program a key". Once
+	 * copy-mode is entered the answer becomes `false`, because from there the ordinary cursor keys
+	 * are exactly what scrolls it — they belong to copy-mode, not to the program.
+	 */
+	function askScrollback(): boolean {
+		if (!onScrollback) return false;
 		const now = Date.now();
-		if (scrollMode && now - lastAsk < SCROLLBACK_ASK_MS) return;
+		if (scrollMode && now - lastAsk < SCROLLBACK_ASK_MS) return false;
 		lastAsk = now;
+		const entering = !scrollMode;
 		scrollMode = true;
 		onScrollback(slot, 'enter');
+		return entering;
 	}
 
 	function toggleScrollMode(): void {
@@ -693,6 +753,41 @@
 			></button>
 		{/if}
 		<div class="pdmux-pane-surface" bind:this={surfaceHost} data-pdmux-surface></div>
+		{#if transport !== 'open'}
+			<!--
+				⚠ NOT AN ERROR, AND NOT THE UNREACHABLE OVERLAY. The host is fine; this browser's
+				socket is away, which lasts a moment and is worth exactly one line — a full-pane
+				treatment for a two-second reconnect would be worse than the silence it replaces.
+				It disappears on its own, and while it is up a gesture is going nowhere.
+			-->
+			<p class="pdmux-transport-note" data-pdmux-transport={transport} aria-live="polite">
+				{tr('pdmux.pane.reconnecting', 'Reconnecting…')}
+			</p>
+		{/if}
+		{#if diagnostics}
+			<!--
+				⚠ THE READOUT REPORTS THE DECISION, NOT THE OUTCOME. Whether the program then
+				scrolled is the one thing this process cannot see — which is exactly why the line
+				exists: it separates "the gesture did nothing" from "the gesture went somewhere and
+				the program ignored it", from a device with no console.
+
+				`buf` is which buffer the terminal is in, `mouse` is whether the program asked for
+				the pointer (`none` means it did not), and the route is where the drag went:
+				`wheel` (the program or xterm gets it), `scrollback` (the multiplexer was asked for
+				its history instead) or `yielded`. `#` counts gestures so a repeat is visible.
+			-->
+			<p class="pdmux-gesture-note" data-pdmux-gesture aria-hidden="true">
+				{#if gesture}
+					#{gestureCount} · buf={gesture.buffer} · mouse={gesture.mouse} · {gesture.route}{gesture.notches
+						? `×${gesture.notches}`
+						: ''}{gesture.queued ? ` +${gesture.queued}` : ''}{gesture.answerMs
+						? ` · draw ${gesture.answerMs}ms`
+						: ''}{gesture.fling ? ' · fling' : ''} · sock={transport}
+				{:else}
+					#0 · no gesture yet · sock={transport}
+				{/if}
+			</p>
+		{/if}
 	</div>
 	<!-- Under the terminal, above the keyboard: the keys a phone does not have. On the pane the
 	     user is LOOKING at, which is not the same thing as the pane that happens to hold

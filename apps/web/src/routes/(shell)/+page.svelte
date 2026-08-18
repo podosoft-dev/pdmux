@@ -18,6 +18,7 @@
   // always can, so it does — without it the terminal renders in the wrong place.
   import "@xterm/xterm/css/xterm.css";
   import { onMount, untrack } from "svelte";
+  import { page as appPage } from "$app/state";
   import { SplitHandle, TerminalGrid, TerminalTargetPicker } from "@pdmux/ui";
   import type { FsDirView, PickerTarget } from "@pdmux/ui";
   import { MediaQuery } from "svelte/reactivity";
@@ -103,6 +104,17 @@
   const soloAt = $derived(cursor ?? soloIndex(layout));
   const viewLayout = $derived(stacked.current ? soloLayout(layout, soloAt) : layout);
   const pages = $derived(pageCount(viewLayout));
+  /**
+   * `?gesture=1` draws the gesture readout over every pane.
+   *
+   * ⚠ IT EXISTS BECAUSE A PHONE HAS NO CONSOLE. "Scrolling works sometimes" could only be
+   * answered from the device it happens on, and the three routes a drag can take (a wheel to the
+   * program, a request for the multiplexer's history, or nothing) are invisible from the outside.
+   * The URL owns the flag rather than a setting: it is a debugging session, not a preference, and
+   * it must not survive into somebody else's screen.
+   */
+  const diagnostics = $derived(appPage.url.searchParams.get("gesture") === "1");
+
   const page = $derived(clampedPage(viewLayout));
 
   /**
@@ -394,6 +406,8 @@
     onDetach={detach}
     onScrollback={(slot: TerminalSlot, action: "enter" | "exit") => void scrollback(slot, action)}
     onReadHistory={readHistory}
+    {diagnostics}
+    transport={shell.relayStatus}
   />
 </div>
 

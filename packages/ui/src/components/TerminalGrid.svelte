@@ -69,6 +69,10 @@
 		onExit?: (slotId: string, code: number | null) => void;
 		/** Passed straight to every pane — see `TerminalPane` for why the app owns these. */
 		onScrollback?: (slot: TerminalSlot, action: "enter" | "exit") => void;
+		/** Draw the gesture readout over every pane. See `TerminalPane`; off by default. */
+		diagnostics?: boolean;
+		/** What the transport is doing — every pane says so while it is not `open`. */
+		transport?: 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
 		/** Passed straight to the pane — `null` means the ask failed. See `TerminalPane`. */
 		onReadHistory?: (
 			slot: TerminalSlot,
@@ -96,6 +100,8 @@
 		onExit,
 		onScrollback,
 		onReadHistory,
+		diagnostics = false,
+		transport = 'open',
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -251,6 +257,8 @@
 			{onExit}
 			{onScrollback}
 			{onReadHistory}
+			{diagnostics}
+			{transport}
 			onDragStart={(index) => {
 				dragFrom = index;
 				rects = measure();

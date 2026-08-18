@@ -81,6 +81,7 @@
       "headerHint": "클릭=확대 · 드래그=이동",
       "retarget": "대상 변경",
       "unreachable": "이 호스트에 연결할 수 없습니다",
+      "reconnecting": "다시 연결하는 중…",
       "zoom": "확대 전환",
       "history": "출력 보기",
       "scrollback": "이 세션의 이전 내용 보기",

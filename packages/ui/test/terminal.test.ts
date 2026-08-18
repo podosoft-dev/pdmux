@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { type GridHost, type TerminalLayout, buildDefaultSlots, defaultLayout, normalizeLayout } from '@pdmux/core';
 import { EchoTerminalAdapter } from '../src/adapters/terminal-adapter.js';
-import type { TerminalSurface } from '../src/adapters/terminal-surface.js';
+import type { GestureInfo, TerminalSurface } from '../src/adapters/terminal-surface.js';
 import EmptyCell from '../src/components/EmptyCell.svelte';
 import TerminalGrid from '../src/components/TerminalGrid.svelte';
 import TerminalPane from '../src/components/TerminalPane.svelte';
@@ -43,9 +43,12 @@ function fakeSurface(): {
 	 * exactly the case the remote fetch exists for.
 	 */
 	setScrollback: (next: boolean) => void;
+	/** Push a gesture decision at whoever subscribed, the way the real surface does. */
+	emitGesture: (info: GestureInfo) => void;
 } {
 	const written: string[] = [];
 	const listeners = new Set<(data: string) => void>();
+	const gestureWatchers = new Set<(info: GestureInfo) => void>();
 	let disposals = 0;
 	let scrollable = true;
 	let scrollback = true;
@@ -58,6 +61,10 @@ function fakeSurface(): {
 		canScroll: () => scrollable,
 		readHistory: () => ({ lines: written.join('').split('\n'), scrollback }),
 		onScrollbackRequest: () => () => undefined,
+		onGesture: (listener) => {
+			gestureWatchers.add(listener);
+			return () => gestureWatchers.delete(listener);
+		},
 		onData: (listener) => {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
@@ -70,6 +77,9 @@ function fakeSurface(): {
 		factory: () => surface,
 		written,
 		scrolled,
+		emitGesture: (info) => {
+			for (const watcher of gestureWatchers) watcher(info);
+		},
 		type: (data) => {
 			for (const listener of listeners) listener(data);
 		},
@@ -374,6 +384,94 @@ describe('[TC-PDUI-012] a pane header offers its actions and classifies its gest
 		expect(container.querySelector('[data-pdmux-history-body]')?.textContent).toContain('echo terminal');
 		// …and the note is the one that tells the reader where earlier output actually is.
 		expect(container.querySelector('[data-pdmux-history-note="screen"]')).not.toBeNull();
+	});
+
+
+	it('[TC-PDUI-217] draws the gesture readout only when the app asks for it', async () => {
+		/**
+		 * ⚠ A PHONE HAS NO CONSOLE, AND THAT IS THE WHOLE REASON THIS EXISTS. "Scrolling works
+		 * sometimes" could not be answered from the outside: the three routes a drag can take — a
+		 * wheel to the program, a request for the multiplexer's history, or nothing at all — are
+		 * invisible unless the device itself says which one it took.
+		 *
+		 * Off by default, because it is a debugging session rather than a feature: nobody else's
+		 * screen should carry it.
+		 */
+		const surface = fakeSurface();
+		const slot = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };
+		const props = {
+			slot,
+			index: 0,
+			hostName: 'alpha',
+			adapter: new EchoTerminalAdapter(),
+			createSurface: surface.factory,
+		};
+
+		const quiet = render(TerminalPane, { props });
+		await vi.waitFor(() => expect(surface.written.length).toBeGreaterThan(0));
+		expect(quiet.container.querySelector('[data-pdmux-gesture]')).toBeNull();
+		quiet.unmount();
+
+		// ⚠ THE LINE RENDERS BEFORE THE SURFACE EXISTS. Creating one is async, so waiting for the
+		// element would fire the gesture below at nobody — measured: the note stayed at #0. The
+		// pane's first write is what says the surface is up and therefore subscribed.
+		const written = surface.written.length;
+		const loud = render(TerminalPane, { props: { ...props, diagnostics: true } });
+		await vi.waitFor(() => expect(surface.written.length).toBeGreaterThan(written));
+		const note = loud.container.querySelector('[data-pdmux-gesture]') as HTMLElement;
+		expect(note, 'the readout was not drawn even though the app asked for it').not.toBeNull();
+		// Before anything is touched it still says so, so a blank line is never mistaken for
+		// "the gesture reported nothing".
+		expect(note.textContent).toContain('#0');
+
+		// And it reports what the surface decided, in the terms the routing uses.
+		surface.emitGesture({ buffer: 'alternate', mouse: 'none', route: 'scrollback', notches: 0, fling: false });
+		await tick();
+		expect(note.textContent).toContain('#1');
+		expect(note.textContent).toContain('scrollback');
+		expect(note.textContent).toContain('buf=alternate');
+		expect(note.textContent).toContain('mouse=none');
+	});
+
+
+	it('[TC-PDUI-217] says when the transport is away, because nothing else can', async () => {
+		/**
+		 * ⚠ MEASURED ON A PHONE, AND IT IS WHAT "IT DOES NOT WORK AT FIRST" TURNED OUT TO BE.
+		 * iOS suspends a backgrounded tab and the socket goes with it — the production log carries
+		 * `code=1001 reason=WebSocket is closed due to suspension` followed by a reconnect. Every
+		 * gesture made in that window is dropped, correctly and silently: the relay writes
+		 * `[pdmux] reconnecting…` into the buffer, but a multiplexer pane lives on the ALTERNATE
+		 * screen and the multiplexer repaints over it the instant it reattaches, so the one place
+		 * that fact existed was gone before anyone could read it.
+		 *
+		 * The gesture readout said `wheel×N` throughout — the drag was working perfectly and going
+		 * nowhere. That is exactly the pair of facts a person cannot tell apart from the outside.
+		 */
+		const surface = fakeSurface();
+		const slot = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };
+		const props = {
+			slot,
+			index: 0,
+			hostName: 'alpha',
+			adapter: new EchoTerminalAdapter(),
+			createSurface: surface.factory,
+		};
+
+		const live = render(TerminalPane, { props: { ...props, transport: 'open' as const } });
+		await vi.waitFor(() => expect(surface.written.length).toBeGreaterThan(0));
+		// It must not become wallpaper: the healthy state says nothing at all.
+		expect(live.container.querySelector('[data-pdmux-transport]')).toBeNull();
+		live.unmount();
+
+		for (const state of ['reconnecting', 'connecting', 'closed'] as const) {
+			const away = render(TerminalPane, { props: { ...props, transport: state } });
+			const note = away.container.querySelector('[data-pdmux-transport]') as HTMLElement | null;
+			expect(note, `a pane whose transport is ${state} said nothing`).not.toBeNull();
+			expect(note?.dataset.pdmuxTransport).toBe(state);
+			// Over the terminal, never in front of the finger.
+			expect(note?.getAttribute('aria-live')).toBe('polite');
+			away.unmount();
+		}
 	});
 
 	it('zooms on a click and only focuses on a drag, so a selection is not eaten', () => {

@@ -1457,6 +1457,52 @@
 	background: var(--pdmux-term-bg);
 }
 
+/* "Reconnecting…" — one line, over the terminal, while frames cannot reach the host.
+   ⚠ IT SITS AT THE BOTTOM AND THE DIAGNOSTIC LINE AT THE TOP, so the two never stack. Both take
+   no pointer events: the finger belongs to the terminal even while this is up. */
+.pdmux-transport-note {
+	position: absolute;
+	left: 4px;
+	bottom: 4px;
+	z-index: 3;
+	pointer-events: none;
+	padding: 2px 8px;
+	border-radius: var(--pdmux-radius-sm);
+	/* `--pdmux-idle` is the stylesheet's own word for "not reachable right now, and that is
+	   not an error" — the same meaning a host card gives it. Inventing a warning token here
+	   would be a second vocabulary for one idea. */
+	background: var(--pdmux-idle);
+	color: var(--pdmux-card);
+	font-size: 0.6875rem;
+	line-height: 1.4;
+}
+
+/* The gesture readout — a diagnostic line, off unless the app asks for it.
+   ⚠ IT MUST NOT BE PART OF THE LAYOUT. A phone has no console, so this is how "it works
+   sometimes" gets answered from the device it happens on; a row that pushed the terminal would
+   change the thing being measured. So it floats over the surface and takes no pointer events —
+   a finger dragging across it is dragging on the terminal. */
+.pdmux-gesture-note {
+	position: absolute;
+	left: 4px;
+	/* TOP, not bottom: a multiplexer paints its status line on the pane's last row, and that row
+	   is worth more to the person debugging than the first one is. */
+	top: 4px;
+	z-index: 3;
+	pointer-events: none;
+	max-width: calc(100% - 8px);
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	padding: 2px 6px;
+	border-radius: var(--pdmux-radius-sm);
+	background: rgb(0 0 0 / 55%);
+	color: #f1f1f0;
+	font-family: ui-monospace, monospace;
+	font-size: 0.6875rem;
+	line-height: 1.4;
+}
+
 /* `touch-action` — WE CLAIM THE VERTICAL AXIS AND NOTHING ELSE.
    The pane's drag-to-scroll (`terminal-surface.ts`) only works if its `touchmove` stays
    cancellable, and an engine that has already committed the gesture to a native pan hands
