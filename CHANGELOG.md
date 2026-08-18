@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 0.9.0
+
+- **A flick keeps travelling.** Matching the finger is the right answer for placing the view and
+  the wrong one for travelling — an hour of a coding agent's transcript is an hour of dragging —
+  so a release with speed on it now flings: velocity is measured over the last moves and decays
+  after the release, feeding the same notch machinery the drag uses. Flicks compound within 300ms,
+  a finger down stops it, and it is bounded three ways rather than trusted, because nothing ever
+  reports how far a notch actually moved the program.
+- **Notches leave at a hand's rate, and wait for the pane to answer.** A fling emitting one per
+  frame put about ninety reports a second on the wire; no mouse spins that fast, and a program is
+  free to fold such a burst into a single scroll — one coding agent's TUI does, which is why the
+  same gesture worked on the pane beside it and not on that one. Worse, sending ahead of a program
+  that reads input on its own render loop builds a backlog, which arrives later as scrolling
+  nobody asked for. So one notch is outstanding at a time: the next goes when the pane repaints —
+  the only acknowledgement a terminal offers — or after a ceiling, and the queue is bounded in
+  time rather than in count. The wait applies only where something can answer; moving the
+  terminal's own viewport produces no output, and waiting there would throttle a pane that is
+  working fine.
+- **A drag asks the multiplexer instead of typing at the program.** On a pane whose program is not
+  holding the mouse, the wheel's cursor-key fallback does not scroll anything — the multiplexer
+  forwards keys to whatever runs inside it, so an arrow meant as a scroll walks a coding agent's
+  prompt history. Such a drag now asks for the multiplexer's own scroll mode, and the program is
+  handed nothing. A full-screen program in a plain pane is unaffected: it is the program, and the
+  keys still reach it.
+- **A pane says what a gesture did, and whether it could.** `?gesture=1` draws one line over each
+  pane — which buffer, whether the program holds the mouse, where the gesture went, what is queued
+  behind it and how long the pane took to repaint. A phone has no console, and those three routes
+  are invisible from anywhere else. The transport gets a line of its own whether or not the flag
+  is on: a suspended tab drops what is sent while it reconnects, and until now the only notice of
+  that was written into a buffer the multiplexer immediately painted over.
+
 ## 0.8.1
 
 - **A drag is scaled to whoever answers the wheel.** Reported from an iPhone once the gesture
