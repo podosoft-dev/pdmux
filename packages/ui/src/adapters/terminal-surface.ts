@@ -29,6 +29,36 @@ export interface TerminalHistory {
 	scrollback: boolean;
 }
 
+/**
+ * What one gesture did, for the diagnostic line a phone can show.
+ *
+ * ⚠ IT REPORTS THE DECISION, NOT THE OUTCOME. Whether the program then scrolled is the one thing
+ * nothing here can see — that is the whole reason this exists: "it works sometimes" needed a way
+ * to tell apart the three routes a drag can take, from a device with no console.
+ */
+export interface GestureInfo {
+	/** Which buffer the terminal was in. */
+	buffer: 'normal' | 'alternate';
+	/** The program's mouse mode, verbatim from xterm. */
+	mouse: string;
+	/** Where the gesture went. */
+	route: 'wheel' | 'scrollback' | 'yielded';
+	/** Wheel notches dispatched, if any. */
+	notches: number;
+	/** Still waiting to go out behind this one — pacing, not loss. */
+	queued?: number;
+	/**
+	 * How long the pane took to paint after the previous notch, in ms.
+	 *
+	 * ⚠ THIS IS THE NUMBER THAT SAYS WHOSE PROBLEM IT IS. Tens of milliseconds is a program
+	 * keeping up; hundreds is one reading its input on a busy render loop, and no amount of
+	 * sending faster will help — it is the same latency this fleet already measured on keystrokes.
+	 */
+	answerMs?: number;
+	/** True while momentum is driving it rather than a finger. */
+	fling: boolean;
+}
+
 export interface TerminalSurface {
 	write(data: string): void;
 	/** Called when the pane resizes; returns the geometry to report upstream. */
@@ -60,7 +90,14 @@ export interface TerminalSurface {
 	 * answer is a command on a remote host; the consumer decides whether, and how often,
 	 * to ask. `-1` is back through the history.
 	 */
-	onScrollbackRequest(listener: (direction: -1 | 1) => void): () => void;
+	/**
+	 * ⚠ RETURNING `true` MEANS "I AM TAKING THIS GESTURE". The surface then sends the terminal
+	 * nothing at all, which is the difference between scrolling a multiplexer's history and
+	 * typing ↑ at the program inside it — see `createXtermSurface`.
+	 */
+	onScrollbackRequest(listener: (direction: -1 | 1) => boolean | void): () => void;
+	/** Watch what each gesture decided. For the on-screen diagnostic line; off by default. */
+	onGesture(listener: (info: GestureInfo) => void): () => void;
 	/** The buffer as text, newest last. */
 	readHistory(): TerminalHistory;
 }
@@ -629,8 +666,44 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	 * to be moving under-states how far the person wants to go. Every scroll view on every
 	 * platform has the same fudge factor, for the same reason.
 	 */
-	const FLING_DECAY_PER_MS = 0.999;
+	const FLING_DECAY_PER_MS = 0.997;
 	const FLING_BOOST = 1.4;
+	/**
+	 * ⚠ A HUNDRED REPORTS A SECOND IS NOT A WHEEL, AND ONE PROGRAM PROVED IT.
+	 *
+	 * Reported from a phone: on the pane running one coding agent the drag moved the view by a
+	 * single step per gesture while the diagnostic counter raced past a hundred and kept going —
+	 * and on the pane beside it, running a different agent, the same gesture was fine. Both were
+	 * being sent the same thing: a fling was emitting a notch per frame, about ninety reports a
+	 * second. A program that coalesces a burst of them into one scroll then answers a whole flick
+	 * with one line, however many arrive.
+	 *
+	 * A real mouse cannot spin that fast, so nothing downstream is built for it. Notches are
+	 * therefore PACED at roughly what a hand produces, and the queue is bounded: a fling that
+	 * outruns the pacer stops paying in rather than banking seconds of scrolling that arrive
+	 * after the finger has forgotten about them.
+	 */
+	const WHEEL_MIN_INTERVAL_MS = 25;
+	/**
+	 * ⚠ AND THE PACE FOLLOWS THE PROGRAM, BECAUSE A FIXED ONE STILL RUNS AHEAD OF A BUSY AGENT.
+	 *
+	 * Reported after the pacing landed: "several gestures do nothing, then it suddenly scrolls by
+	 * itself; sometimes it works at once." That is a BACKLOG — a coding agent's TUI reads its
+	 * input on its own render loop, and while it is busy the reports sit in its buffer and are all
+	 * acted on the moment it catches up. This workspace already measured the same effect on
+	 * keystrokes in long sessions (200-500ms each), and a scroll report is input like any other.
+	 *
+	 * ⚠ IT IS NOT THE MULTIPLEXER. tmux forwards a mouse report to the program that asked for it
+	 * and adds nothing of its own; the wait is the program's.
+	 *
+	 * So a notch is followed by WAITING FOR THE PANE TO REDRAW — the closest thing to an
+	 * acknowledgement a terminal offers — with a ceiling so a quiet program still scrolls. What
+	 * cannot be sent soon is dropped rather than banked: a gesture that arrives seconds late is
+	 * worse than one that was smaller, and it is exactly what was reported.
+	 */
+	const WHEEL_MAX_INTERVAL_MS = 400;
+	/** The queue is bounded in TIME, not in notches: never more than this much scrolling owed. */
+	const PENDING_MAX_MS = 900;
 	/** A ceiling on one fling, so an unknown program cannot be sent a thousand reports. */
 	const FLING_MAX_NOTCHES = 400;
 	/**
@@ -665,6 +738,26 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		return rows > 0 && height > 0 ? height / rows : 0;
 	};
 
+	/**
+	 * Listeners for the scrollback request and the gesture readout.
+	 *
+	 * Declared here rather than beside the wheel handler because `consume` — which both the drag
+	 * and the fling go through — is the one place that decides a gesture's route.
+	 */
+	const scrollbackWanted = new Set<(direction: -1 | 1) => boolean | void>();
+	const gestureWatchers = new Set<(info: GestureInfo) => void>();
+
+	/** Ask the consumer to reach the history. `true` = it took the gesture; send nothing. */
+	const requestScrollback = (direction: -1 | 1): boolean => {
+		let handled = false;
+		for (const listener of scrollbackWanted) if (listener(direction) === true) handled = true;
+		return handled;
+	};
+
+	const report = (info: GestureInfo): void => {
+		for (const watcher of gestureWatchers) watcher(info);
+	};
+
 	/** `performance.now()` where there is one; a fake clock in a test has both. */
 	const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -678,13 +771,107 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		else clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
 	};
 
+	/** Notches waiting to go out, and which way they are pointing. */
+	let pendingNotches = 0;
+	let pendingDirection: -1 | 1 = -1;
+	let pendingFling = false;
+	let drainHandle: ReturnType<typeof setTimeout> | null = null;
+
+	const stopDraining = (): void => {
+		pendingNotches = 0;
+		if (drainHandle === null) return;
+		clearTimeout(drainHandle);
+		drainHandle = null;
+	};
+
+	/**
+	 * Send one notch, then wait.
+	 *
+	 * ⚠ ONE AT A TIME IS THE POINT. Dispatching the whole queue at once is what the pacing exists
+	 * to stop; the interval is what makes each report a separate scroll to whatever is reading
+	 * them, rather than one burst a program is free to treat as a single event.
+	 */
+	/** When the last notch went out, and whether the pane has painted anything since. */
+	let sentAt = 0;
+	let awaitingRedraw = false;
+	/** How long the program took to answer the last one — the readout carries it. */
+	let answerMs = 0;
+
+	/** Called from `write`: any output is the pane saying it got as far as drawing. */
+	const noteRedraw = (): void => {
+		if (!awaitingRedraw) return;
+		awaitingRedraw = false;
+		answerMs = Math.round(now() - sentAt);
+	};
+
+	/** How long to wait before the next notch, given what the program has been doing. */
+	const interval = (): number => Math.min(WHEEL_MAX_INTERVAL_MS, Math.max(WHEEL_MIN_INTERVAL_MS, answerMs));
+
+	const drain = (): void => {
+		drainHandle = null;
+		if (pendingNotches <= 0) return;
+		const waited = now() - sentAt;
+		/**
+		 * ⚠ ONE OUTSTANDING NOTCH AT A TIME — BUT ONLY WHERE THERE IS SOMETHING TO WAIT FOR.
+		 *
+		 * Waiting for a redraw is right when the notch becomes a mouse report: the program is the
+		 * one scrolling, and if it has not painted it has not read us. It is WRONG for xterm's own
+		 * answers — moving its viewport produces no output at all, so waiting for output would
+		 * throttle a plain shell pane to nothing while its scrollback moves perfectly well.
+		 *
+		 * A backlog is what arrives later as "it scrolled by itself", and only the program's route
+		 * can build one.
+		 */
+		const answers = term.modes.mouseTrackingMode !== 'none';
+		if (answers && sentAt > 0 && awaitingRedraw && waited < WHEEL_MAX_INTERVAL_MS) {
+			drainHandle = setTimeout(drain, WHEEL_MIN_INTERVAL_MS);
+			return;
+		}
+		if (sentAt > 0 && waited < WHEEL_MIN_INTERVAL_MS) {
+			drainHandle = setTimeout(drain, WHEEL_MIN_INTERVAL_MS - waited);
+			return;
+		}
+		// It never answered: assume the worst until it does, so nothing is queued ahead of it.
+		if (answers && awaitingRedraw) answerMs = WHEEL_MAX_INTERVAL_MS;
+		if (!answers) answerMs = 0;
+		pendingNotches -= 1;
+		sentAt = now();
+		awaitingRedraw = true;
+		spinWheel(pendingDirection, 1);
+		report({
+			buffer: term.buffer.active.type === 'alternate' ? 'alternate' : 'normal',
+			mouse: term.modes.mouseTrackingMode,
+			route: 'wheel',
+			notches: 1,
+			queued: pendingNotches,
+			answerMs,
+			fling: pendingFling,
+		});
+		if (pendingNotches > 0) drainHandle = setTimeout(drain, WHEEL_MIN_INTERVAL_MS);
+	};
+
+	const enqueue = (direction: -1 | 1, count: number, fling: boolean): void => {
+		// A reversal is a change of mind, not something to queue behind: drop what was waiting.
+		if (direction !== pendingDirection) pendingNotches = 0;
+		pendingDirection = direction;
+		pendingFling = fling;
+		/**
+		 * ⚠ BOUNDED IN TIME. At the pace this program is actually taking, anything past ~a second
+		 * of owed scrolling would arrive after the gesture is forgotten — which is the complaint
+		 * this exists to answer. A slow program therefore gets a SHORT queue, not a long wait.
+		 */
+		const ceiling = Math.max(4, Math.round(PENDING_MAX_MS / interval()));
+		pendingNotches = Math.min(pendingNotches + count, ceiling);
+		if (drainHandle === null) drain();
+	};
+
 	/**
 	 * Turn a distance in pixels into wheel notches, carrying the remainder.
 	 *
 	 * Shared by the drag and the fling so both answer at the same scale, and so the cap means the
 	 * same thing in both: at most `MAX_ROWS_PER_MOVE` rows of travel per event or per frame.
 	 */
-	const consume = (distance: number): number => {
+	const consume = (distance: number, fling = false): number => {
 		const rows = notchRows();
 		const notch = rowHeight() * rows;
 		if (notch <= 0) return 0;
@@ -696,11 +883,40 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		const count = Math.min(Math.abs(notches), cap);
 		// A finger travelling DOWN pulls earlier output down into view, which is a wheel turned
 		// BACK — the same direction the ⇞ button asks for.
-		spinWheel(notches > 0 ? -1 : 1, count);
+		const direction: -1 | 1 = notches > 0 ? -1 : 1;
+		const buffer = term.buffer.active.type === 'alternate' ? 'alternate' : 'normal';
+		const mouse = term.modes.mouseTrackingMode;
+
+		/**
+		 * ⚠ A PROGRAM THAT DID NOT ASK FOR THE WHEEL MUST NOT BE HANDED A KEY.
+		 *
+		 * On the alternate buffer with no mouse reporting, xterm's fallback turns the wheel into
+		 * cursor keys "so apps hosted in the alt buffer such as vim or tmux can scroll". That is
+		 * right for `vim` — it IS the program — and wrong for a multiplexer, which forwards keys
+		 * to whatever is running inside it: the `ESC[A` meant as a scroll arrives at a coding
+		 * agent as ↑, moving through its prompt history rather than its transcript.
+		 *
+		 * Measured across one fleet on 2026-08-18, and it is the whole "sometimes it works"
+		 * report: `mouse_any_flag` 1 on one pane (the wheel reached the program, the gesture
+		 * worked) and 0 on another (the same gesture did nothing useful). Both ran the same agent.
+		 *
+		 * The consumer knows which pane this is and owns the network, so it is asked — and if it
+		 * answers that it took the gesture, nothing is sent. Once it has entered copy-mode it
+		 * answers `false`, because from there cursor keys are what scrolls, and they belong to
+		 * copy-mode rather than to the program.
+		 */
+		if (buffer === 'alternate' && mouse === 'none' && requestScrollback(direction)) {
+			report({ buffer, mouse, route: 'scrollback', notches: 0, queued: pendingNotches, fling });
+			return count;
+		}
+
+		enqueue(direction, count, fling);
 		return count;
 	};
 
 	const stopFling = (): void => {
+		// Whatever was queued belonged to the fling being stopped.
+		stopDraining();
 		if (flingHandle === null) return;
 		cancelFrame(flingHandle);
 		flingHandle = null;
@@ -730,7 +946,7 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 				flingHandle = nextFrame(step);
 				return;
 			}
-			spent += consume(flingVelocity * dt);
+			spent += consume(flingVelocity * dt, true);
 			flingVelocity *= Math.pow(FLING_DECAY_PER_MS, dt);
 			if (Math.abs(flingVelocity) < FLING_STOP_VELOCITY || spent >= FLING_MAX_NOTCHES) {
 				flingVelocity = 0;
@@ -940,8 +1156,6 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	 * consults it on BOTH wheel paths — the mouse-report one and the fallback one.
 	 * Returning `false` is what keeps the report off the wire.
 	 */
-	const scrollbackWanted = new Set<(direction: -1 | 1) => void>();
-
 	term.attachCustomWheelEventHandler((event: WheelEvent): boolean => {
 		if (!event.shiftKey || event.deltaY === 0) return true;
 		const direction: -1 | 1 = event.deltaY < 0 ? -1 : 1;
@@ -970,17 +1184,25 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		 * multiplexer's and only it can show it. Say so upward and swallow the event; the
 		 * consumer owns the network and decides what to ask for.
 		 */
-		for (const listener of scrollbackWanted) listener(direction);
+		requestScrollback(direction);
 		return false;
 	});
 
 	const sub = term.onData((data) => emit(data));
 
 	return {
-		write: (data) => term.write(data),
+		write: (data) => {
+			// Output is the only acknowledgement a terminal gives: the pacer above waits for it.
+			noteRedraw();
+			term.write(data);
+		},
 		onScrollbackRequest: (listener) => {
 			scrollbackWanted.add(listener);
 			return () => scrollbackWanted.delete(listener);
+		},
+		onGesture: (listener) => {
+			gestureWatchers.add(listener);
+			return () => gestureWatchers.delete(listener);
 		},
 		fit: () => {
 			fitAddon.fit();
@@ -1037,6 +1259,8 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 			// builds a new surface on the same element; a frame loop still running would be
 			// dispatching wheels at a terminal that is gone.
 			stopFling();
+			stopDraining();
+			gestureWatchers.clear();
 			sub.dispose();
 			selectionSub.dispose();
 			emitters.clear();

@@ -207,6 +207,7 @@ function drag(host: HTMLElement, from: { x: number; y: number }, moves: { x: num
 
 describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', () => {
 	afterEach(() => {
+		vi.useRealTimers();
 		vi.doUnmock('@xterm/xterm');
 		vi.doUnmock('@xterm/addon-fit');
 		document.body.innerHTML = '';
@@ -226,6 +227,7 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 	 * happily against no feature at all. Every case pairs it with the wheel it expects.
 	 */
 	it('turns the drag into the notches a mouse would have spun', async () => {
+		fakeFrames();
 		const { host, surface, term } = await surfaceWithFakeTerminal();
 		const wheeled = recordWheel(term);
 		// 20px to a row and three rows to a notch: 60px of travel is one notch, and 120px is
@@ -234,6 +236,8 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 			{ x: 50, y: 160 },
 			{ x: 50, y: 220 },
 		]);
+		// Paced: the first leaves at once and the rest follow, so the clock has to move.
+		vi.advanceTimersByTime(200);
 		expect(wheeled.length).toBe(2);
 		for (const event of wheeled) {
 			// A finger travelling DOWN pulls earlier output down into view, which is a wheel
@@ -278,10 +282,13 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 	 * wheel worked — so the operator had to walk to a computer to read what the agent had done.
 	 */
 	it('reaches a program that captured the mouse, which is what a phone could not do', async () => {
+		fakeFrames();
 		const { host, surface, term } = await surfaceWithFakeTerminal();
 		term.modes.mouseTrackingMode = 'vt200';
-		const wheeled = recordWheel(term);
+		const wheeled = recordWheel(term, surface);
 		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 160 }]);
+		// ⚠ PACED, so the rest arrive over the next moments rather than in this call stack.
+		vi.advanceTimersByTime(200);
 		/**
 		 * ⚠ THREE NOTCHES FOR 60px, NOT ONE — AND THAT IS THE SECOND HALF OF THE FIX.
 		 *
@@ -334,19 +341,68 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 		surface.dispose();
 	});
 
-	it('never asks the multiplexer for its history — that is Shift’s job, not a drag’s', async () => {
+	/**
+	 * ⚠ REPORTED FROM A PHONE: "sometimes it works, mostly it does not" — and the difference was
+	 * never the gesture. Measured across one fleet on 2026-08-18: one pane had the program holding
+	 * the mouse (`mouse_any_flag` 1) and the drag scrolled its transcript; another had it off, and
+	 * there xterm's fallback turns the wheel into CURSOR KEYS. On a multiplexer pane those keys do
+	 * not scroll anything — the multiplexer forwards them to the program inside, so a coding agent
+	 * receives ↑ and walks its prompt history instead.
+	 *
+	 * So the three routes below are the whole subject of this round, and which one a gesture takes
+	 * is decided per event from two facts (the buffer, the mouse mode) plus the consumer's answer.
+	 */
+	it('asks for the multiplexer’s history when the program is not holding the mouse', async () => {
 		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
 		const asked: number[] = [];
-		const off = surface.onScrollbackRequest((direction) => asked.push(direction));
+		// The consumer answers `true`: it is entering copy-mode, so it has taken the gesture.
+		const off = surface.onScrollbackRequest((direction) => {
+			asked.push(direction);
+			return true;
+		});
+		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 220 }]);
+		expect(asked, 'a drag on a multiplexer pane no longer reaches its history').toEqual([-1]);
+		// ⚠ AND NOTHING WAS SENT. This is the fix: the program is handed no key at all, where it
+		// used to receive the arrows meant as a scroll.
+		expect(wheeled, 'the program was handed a key as well as the request').toEqual([]);
+		expect(term.sent).toEqual([]);
+		off();
+		surface.dispose();
+	});
+
+	it('still turns the wheel when nobody takes the request — `vim` in a plain pane', async () => {
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		const wheeled = recordWheel(term);
+		/**
+		 * A consumer with no multiplexer for this pane answers falsy, and then the cursor-key
+		 * fallback is exactly right: the full-screen program IS the program, so the keys reach the
+		 * thing that scrolls. Losing that would break `vim` in a `shell` pane to fix a tmux one.
+		 */
+		const off = surface.onScrollbackRequest(() => false);
+		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 220 }]);
+		expect(wheeled.length).toBeGreaterThan(0);
+		off();
+		surface.dispose();
+	});
+
+	it('does not ask when the program is holding the mouse', async () => {
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		term.modes.mouseTrackingMode = 'vt200';
+		const wheeled = recordWheel(term, surface);
+		const asked: number[] = [];
+		const off = surface.onScrollbackRequest((direction) => {
+			asked.push(direction);
+			return true;
+		});
 		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 220 }]);
 		/**
-		 * The synthesized wheel carries no Shift, and the Shift branch is the only thing that
-		 * fires this. It matters more than it looks: the listener ends in an HTTP request that
-		 * runs `tmux copy-mode` on somebody's machine, so a drag that woke it would put a
-		 * command on a remote host on every touchmove.
+		 * The wheel reaches the program here, which is the case that already worked — putting the
+		 * multiplexer into copy-mode instead would take the gesture away from the program that
+		 * asked for it, and it runs a command on somebody's machine to do it.
 		 */
-		expect(asked).toEqual([]);
-		expect(term.sent).toEqual([]);
+		expect(asked, 'a mouse-capturing pane was put into copy-mode behind the program’s back').toEqual([]);
+		expect(wheeled.length).toBeGreaterThan(0);
 		off();
 		surface.dispose();
 	});
@@ -377,6 +433,62 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 		 */
 		const surfaceRule = block('.pdmux-pane-surface');
 		expect(surfaceRule).toContain('touch-action: pan-x pinch-zoom');
+	});
+
+
+	it('sends notches at a hand’s pace, not at the frame rate', async () => {
+		/**
+		 * ⚠ REPORTED FROM A PHONE, AND THE COUNTER IS WHAT GAVE IT AWAY: on the pane running one
+		 * coding agent the view moved a single step per gesture while the diagnostic line raced
+		 * past a hundred and kept climbing — and the pane beside it, running a different agent,
+		 * was fine on the same gesture. Both were being sent the same thing: a fling emitting a
+		 * notch per frame, about ninety reports a second. A program is free to fold a burst like
+		 * that into ONE scroll, and one of them does.
+		 *
+		 * No mouse can spin that fast, so the wire now carries a hand's rate instead. What this
+		 * case pins is the shape: one notch goes at once, and the rest are spaced — never the
+		 * whole gesture in a single call stack.
+		 */
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		term.modes.mouseTrackingMode = 'vt200';
+		const wheeled = recordWheel(term, surface);
+		// 300px in one move is fifteen notches at this scale — far more than an interval allows.
+		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 400 }]);
+		expect(wheeled.length, 'the whole gesture went out in one burst').toBe(1);
+
+		vi.advanceTimersByTime(20);
+		expect(wheeled.length, 'a second notch left before the interval was up').toBe(1);
+
+		// One interval (25ms) later, exactly one more — not the rest of the queue.
+		vi.advanceTimersByTime(10);
+		expect(wheeled.length, 'the queue stopped draining').toBe(2);
+
+		// …and it keeps draining until the queue is spent, then stops on its own.
+		vi.advanceTimersByTime(2000);
+		const settled = wheeled.length;
+		expect(settled).toBeGreaterThan(2);
+		vi.advanceTimersByTime(2000);
+		expect(wheeled.length, 'the pacer never stopped — the counter would climb forever').toBe(settled);
+		surface.dispose();
+	});
+
+	it('drops what was queued when the finger reverses', async () => {
+		// A reversal is a change of mind. Draining the old direction first would scroll AWAY from
+		// where the finger just went, which is the one thing a scroll must never do.
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		term.modes.mouseTrackingMode = 'vt200';
+		const wheeled = recordWheel(term, surface);
+		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 400 }]);
+		drag(host, { x: 50, y: 400 }, [{ x: 50, y: 100 }]);
+		vi.advanceTimersByTime(3000);
+		const back = wheeled.filter((event) => event.deltaY < 0).length;
+		const forward = wheeled.filter((event) => event.deltaY > 0).length;
+		expect(forward, 'the reversal never went out').toBeGreaterThan(0);
+		// The first direction got at most what left before the reversal, not its whole queue.
+		expect(back, 'the queue kept scrolling the way the finger no longer was').toBeLessThan(forward);
+		surface.dispose();
 	});
 
 	it('does not turn a tap into a scroll', async () => {
@@ -432,18 +544,22 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 		// scales: 600px is 30 rows here, and at three rows per notch that is four notches. Every
 		// notch is a frame on the socket once xterm encodes it, and a discontinuity — the
 		// keyboard opening, a rotation, a re-fit — could otherwise arrive as one enormous jump.
+		fakeFrames();
 		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 700 }]);
+		vi.advanceTimersByTime(500);
 		expect(wheeled.length).toBe(4);
 		surface.dispose();
 	});
 
 	it('caps a fling by travel, so the ceiling is the same on both scales', async () => {
+		fakeFrames();
 		const { host, surface, term } = await surfaceWithFakeTerminal();
 		term.modes.mouseTrackingMode = 'vt200';
-		const wheeled = recordWheel(term);
+		const wheeled = recordWheel(term, surface);
 		// Same 600px = 30 rows, but a notch is one row here: twelve, not thirty-six. Expressing
 		// the cap in notches would have made the mouse path three times as jumpy as the other.
 		drag(host, { x: 50, y: 100 }, [{ x: 50, y: 700 }]);
+		vi.advanceTimersByTime(1000);
 		expect(wheeled.length).toBe(12);
 		surface.dispose();
 	});
@@ -460,15 +576,18 @@ describe('[TC-PDTERM-130] a finger reaches the same history the wheel reaches', 
 		const same = { x: 50, y: 100 };
 		const to = [{ x: 50, y: 160 }];
 
+		fakeFrames();
 		const xtermAnswers = await surfaceWithFakeTerminal();
 		const slow = recordWheel(xtermAnswers.term);
 		drag(xtermAnswers.host, same, to);
+		vi.advanceTimersByTime(500);
 		xtermAnswers.surface.dispose();
 
 		const programAnswers = await surfaceWithFakeTerminal();
 		programAnswers.term.modes.mouseTrackingMode = 'vt200';
-		const fast = recordWheel(programAnswers.term);
+		const fast = recordWheel(programAnswers.term, programAnswers.surface);
 		drag(programAnswers.host, same, to);
+		vi.advanceTimersByTime(500);
 		programAnswers.surface.dispose();
 
 		expect(slow.length).toBe(1);
@@ -586,23 +705,25 @@ describe('[TC-PDTERM-130] a flick keeps travelling after the finger leaves', () 
 		/**
 		 * ⚠ THE FLOOR IS THE WHOLE POINT, AND IT IS WHY THIS NUMBER IS ASSERTED AT ALL. "Too slow"
 		 * was reported three times, and each answer that only changed a ratio was still a drag per
-		 * screenful. Measured here (20px rows, one row per notch — the scale a mouse-capturing
-		 * program gets): a gentle flick reaches ~36 notches, a normal one ~111, a hard one ~281.
-		 * A change that quietly halves the friction budget shows up as this case going red.
+		 * screenful.
 		 *
-		 * The ceiling is the fling's own cap: an unknown program must not be sent a thousand
-		 * reports for one gesture.
+		 * Measured with the pacer in place (20px rows, one row per notch — the scale a
+		 * mouse-capturing program gets): a gentle flick delivers ~13 notches, a normal one ~40, a
+		 * hard one ~90, spread over a second or two. The numbers are smaller than the unpaced ones
+		 * they replace (36 / 111 / 281) and the travel is LARGER, because those were arriving at
+		 * ninety a second and one program was folding a whole burst into a single scroll. What is
+		 * asserted is therefore delivery, not dispatch.
 		 */
 		fakeFrames();
 		const { host, surface, term } = await surfaceWithFakeTerminal();
 		term.modes.mouseTrackingMode = 'vt200';
-		const wheeled = recordWheel(term);
+		const wheeled = recordWheel(term, surface);
 		flick(host, { dy: 60 });
 		const drag = wheeled.length;
 		vi.advanceTimersByTime(8000);
 		const flung = wheeled.length - drag;
-		expect(flung, 'a hard flick barely travels — the friction budget shrank').toBeGreaterThan(150);
-		expect(flung, 'one gesture exceeded the fling cap').toBeLessThanOrEqual(400);
+		expect(flung, 'a hard flick barely travels — the friction budget shrank').toBeGreaterThan(40);
+		expect(flung, 'one gesture exceeded the queue ceiling').toBeLessThanOrEqual(120);
 		surface.dispose();
 	});
 
@@ -671,6 +792,46 @@ describe('[TC-PDTERM-130] a flick keeps travelling after the finger leaves', () 
 		surface.dispose();
 	});
 
+
+	it('does not bank scrolling for a program that is not keeping up', async () => {
+		/**
+		 * ⚠ REPORTED AFTER THE PACING LANDED: "several gestures do nothing, then it suddenly
+		 * scrolls by itself; sometimes it works at once." That is a BACKLOG. A coding agent's TUI
+		 * reads its input on its own render loop, so while it is busy the reports sit in its
+		 * buffer and are all acted on at once when it catches up — the same latency this fleet
+		 * already measured on keystrokes in long sessions.
+		 *
+		 * ⚠ AND IT IS NOT THE MULTIPLEXER: tmux hands a mouse report to the program that asked for
+		 * it and adds nothing. The wait belongs to the program, so the only thing this side can do
+		 * is refuse to queue ahead of it.
+		 *
+		 * Here the pane never paints — a program that has stopped reading — and the difference is
+		 * the whole fix: a few notches go out and then it waits, rather than spending the fling.
+		 */
+		fakeFrames();
+		const { host, surface, term } = await surfaceWithFakeTerminal();
+		term.modes.mouseTrackingMode = 'vt200';
+		// No `surface` passed: nothing acknowledges, so nothing is ever answered.
+		const wheeled = recordWheel(term);
+		flick(host, { dy: 60 });
+		vi.advanceTimersByTime(3000);
+		const silent = wheeled.length;
+
+		const lively = await surfaceWithFakeTerminal();
+		lively.term.modes.mouseTrackingMode = 'vt200';
+		const answered = recordWheel(lively.term, lively.surface);
+		flick(lively.host, { dy: 60 });
+		vi.advanceTimersByTime(3000);
+
+		expect(answered.length, 'a program that keeps up got no more than one that stopped').toBeGreaterThan(
+			silent * 2,
+		);
+		// And the silent one is not merely slower — it is bounded, so nothing arrives late.
+		expect(silent, 'a stalled program was still sent a fling’s worth').toBeLessThan(12);
+		surface.dispose();
+		lively.surface.dispose();
+	});
+
 	it('stops when the surface is disposed mid-fling', async () => {
 		fakeFrames();
 		const { host, surface, term } = await surfaceWithFakeTerminal();
@@ -688,12 +849,23 @@ describe('[TC-PDTERM-130] a flick keeps travelling after the finger leaves', () 
 
 // --- the two scroll buttons --------------------------------------------------
 
-/** Every wheel event the surface handed the terminal, in order. */
-function recordWheel(term: FakeTerminal): WheelEvent[] {
+/**
+ * Every wheel event the surface handed the terminal, in order.
+ *
+ * ⚠ IT ALSO ACKNOWLEDGES, WHEN GIVEN THE SURFACE. A notch that becomes a mouse report is paced
+ * against the pane REDRAWING — the only acknowledgement a terminal offers — so a mock that never
+ * paints looks exactly like a program that has stopped reading, and every case below would be
+ * measuring the slow path by accident. Passing the surface makes this a program that keeps up;
+ * withholding it is how the slow one is tested.
+ */
+function recordWheel(term: FakeTerminal, surface?: { write: (data: string) => void }): WheelEvent[] {
 	const seen: WheelEvent[] = [];
 	// On the OUTER element, which is where xterm puts both of its wheel listeners: an event
 	// that does not reach here is an event xterm would never have routed.
-	term.element.addEventListener('wheel', (event) => seen.push(event as WheelEvent));
+	term.element.addEventListener('wheel', (event) => {
+		seen.push(event as WheelEvent);
+		surface?.write('');
+	});
 	return seen;
 }
 
@@ -821,7 +993,9 @@ describe('[TC-PDUI-216] Shift takes the wheel back from the program, and only Sh
 		 */
 		const { surface, term } = await surfaceWithFakeTerminal();
 		const asked: number[] = [];
-		surface.onScrollbackRequest((direction) => asked.push(direction));
+		surface.onScrollbackRequest((direction) => {
+			asked.push(direction);
+		});
 
 		for (const mode of ['none', 'vt200', 'any']) {
 			term.modes.mouseTrackingMode = mode;
@@ -856,7 +1030,9 @@ describe('[TC-PDUI-216] Shift takes the wheel back from the program, and only Sh
 		// history is tmux's and only tmux can show it.
 		term.buffer.active.type = 'alternate';
 		const asked: number[] = [];
-		const stop = surface.onScrollbackRequest((direction) => asked.push(direction));
+		const stop = surface.onScrollbackRequest((direction) => {
+			asked.push(direction);
+		});
 
 		expect(term.wheelHandler?.(shifted({ deltaY: -3 }))).toBe(false);
 		expect(term.wheelHandler?.(shifted({ deltaY: 3 }))).toBe(false);
@@ -878,7 +1054,9 @@ describe('[TC-PDUI-216] Shift takes the wheel back from the program, and only Sh
 		// scroll mode on it would be a mode the user never asked for.
 		const { surface, term } = await surfaceWithFakeTerminal();
 		const asked: number[] = [];
-		surface.onScrollbackRequest((direction) => asked.push(direction));
+		surface.onScrollbackRequest((direction) => {
+			asked.push(direction);
+		});
 		expect(term.wheelHandler?.(shifted({ deltaY: 0 }))).toBe(true);
 		expect(asked).toEqual([]);
 		surface.dispose();
