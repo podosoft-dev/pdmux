@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 0.9.1
+
+- **A pane survives its agent restarting.** An agent going away used to end every pane on that
+  host — right about the PTY ids it held, wrong about the work, because the default target is a
+  multiplexer session that outlives the agent and the browser's own socket never dropped. The
+  pane simply froze until the page was reloaded. Panes now wait instead, refusing input while
+  they do, and are re-opened with the frame they were opened with the moment an agent attaches;
+  a session reattaches with its scrollback. A `shell` target cannot be resumed and gets a fresh
+  one rather than a dead pane. Two minutes without an agent and they end the way they always
+  did — a pane waiting forever is the worse failure.
+
 ## 0.9.0
 
 - **A flick keeps travelling.** Matching the finger is the right answer for placing the view and
