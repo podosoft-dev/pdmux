@@ -16,6 +16,8 @@ export type TerminalFrameHandler = (hostId: string, frame: TerminalServerFrame) 
 /** `replaced` distinguishes "the agent process is gone" from "it reconnected". Both
  *  invalidate live PTY ids, so both must reach the terminal relay. */
 export type HostDisconnectHandler = (hostId: string, reason: "closed" | "replaced") => void;
+/** Called when an agent attaches, including the reattach after a restart. */
+export type HostConnectHandler = (hostId: string) => void;
 
 // The close codes this server sends an agent moved to `@pdmux/protocol`: the agent
 // learns why it was dropped from the number alone, which makes them a fact shared
@@ -49,6 +51,7 @@ export class AgentRegistryService {
   private readonly connections = new Map<string, AgentConnection>();
   private readonly terminalHandlers = new Set<TerminalFrameHandler>();
   private readonly disconnectHandlers = new Set<HostDisconnectHandler>();
+  private readonly connectHandlers = new Set<HostConnectHandler>();
 
   /**
    * A host has at most one live agent. A second connection wins and the previous
@@ -70,6 +73,9 @@ export class AgentRegistryService {
       this.emitDisconnect(hostId, "replaced");
     }
     this.connections.set(hostId, { socket, tokenId });
+    // AFTER the map is updated and after any replacement disconnect: a subscriber that reopens
+    // something must find the new socket, not the one being evicted.
+    this.emitConnect(hostId);
   }
 
   /** Ignores a stale unregister so a slow close cannot evict the newer socket. */
@@ -140,6 +146,29 @@ export class AgentRegistryService {
   onHostDisconnect(handler: HostDisconnectHandler): () => void {
     this.disconnectHandlers.add(handler);
     return () => this.disconnectHandlers.delete(handler);
+  }
+
+  /**
+   * Fired when a host's agent attaches — including the reattach after a restart.
+   *
+   * ⚠ THE DISCONNECT SIDE WAS NOT ENOUGH, AND THE GAP WAS VISIBLE. A subscriber told that an
+   * agent went away could only tear down what depended on it; nothing ever said the agent was
+   * back, so a terminal pane stayed dead until the person reloaded the page — even though the
+   * multiplexer session on the host had been running the whole time.
+   */
+  onHostConnect(handler: HostConnectHandler): () => void {
+    this.connectHandlers.add(handler);
+    return () => this.connectHandlers.delete(handler);
+  }
+
+  private emitConnect(hostId: string): void {
+    for (const handler of this.connectHandlers) {
+      try {
+        handler(hostId);
+      } catch (error) {
+        this.logger.warn(`Connect subscriber failed host=${hostId}: ${String(error)}`);
+      }
+    }
   }
 
   private emitDisconnect(hostId: string, reason: "closed" | "replaced"): void {

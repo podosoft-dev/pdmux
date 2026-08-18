@@ -31,6 +31,16 @@ interface Pane {
   /** Bytes the RELAY dropped for back-pressure (never mixed into the agent's count). */
   droppedBytes: number;
   openedAt: number;
+  /**
+   * The frame that opened it, kept so the pane can be opened AGAIN on the same terms.
+   *
+   * ⚠ THIS IS WHAT LETS AN AGENT RESTART BE SURVIVABLE. The default target is a multiplexer
+   * session that outlives the agent, so after a reattach the same `open` produces the same
+   * session — the work was never gone, only the socket to it.
+   */
+  open: Extract<TerminalClientFrame, { type: "open" }>;
+  /** Set while the agent is away: the pane is alive on the host, unreachable from here. */
+  waiting: boolean;
 }
 
 interface Connection {
@@ -41,6 +51,8 @@ interface Connection {
   socket: BrowserSocket;
   bufferBytes: number;
   panes: Map<string, Pane>;
+  /** Counting down to giving up on an agent that has not come back. */
+  graceHandle: ReturnType<typeof setTimeout> | null;
 }
 
 /**
@@ -62,8 +74,23 @@ export class TerminalRelayService {
   private readonly logger = new Logger(TerminalRelayService.name);
   private readonly connections = new Map<string, Connection>();
   private unsubscribe: (() => void)[] = [];
+  /**
+   * How long a pane waits for its agent to come back before it is ended.
+   *
+   * ⚠ TWO MINUTES IS AN AGENT RESTART, NOT AN OUTAGE. An update swaps the binary and reattaches
+   * in seconds, and a machine rebooting takes rather longer than this — past that the honest
+   * answer is that the pane is gone, because holding one open forever is the "browser waiting on
+   * something that will never answer" this file's header calls the worst outcome. Injectable so a
+   * spec can watch both ends of it without waiting.
+   */
+  private graceMs = 120_000;
 
   constructor(private readonly registry: AgentRegistryService) {}
+
+  /** Testing seam: the grace period a pane gets when its agent goes away. */
+  setGracePeriod(ms: number): void {
+    this.graceMs = ms;
+  }
 
   /** Wire the agent-side streams. Called once by the gateway at startup. */
   attach(): void {
@@ -71,6 +98,7 @@ export class TerminalRelayService {
     this.unsubscribe.push(
       this.registry.onTerminalFrame((hostId, frame) => this.handleAgentFrame(hostId, frame)),
       this.registry.onHostDisconnect((hostId) => this.handleHostDisconnect(hostId)),
+      this.registry.onHostConnect((hostId) => this.handleHostConnect(hostId)),
     );
   }
 
@@ -98,6 +126,7 @@ export class TerminalRelayService {
       socket: params.socket,
       bufferBytes: params.bufferBytes,
       panes: new Map(),
+      graceHandle: null,
     });
     return id;
   }
@@ -138,6 +167,10 @@ export class TerminalRelayService {
       this.closePane(connection, pane, "client");
       return;
     }
+    // ⚠ NOTHING IS TYPED INTO A PANE WHOSE AGENT IS AWAY. The id it would be addressed to no
+    // longer exists on any host, and a `resize` for it would be answered by an error frame that
+    // ends the pane this hold exists to keep.
+    if (pane.waiting) return;
     this.forward(connection, { ...frame, termId: pane.agentTermId });
   }
 
@@ -170,20 +203,87 @@ export class TerminalRelayService {
       void this.audit(connection, pane, "terminal.close", "socket-closed");
     }
     connection.panes.clear();
+    this.clearGrace(connection);
     this.connections.delete(connectionId);
   }
 
-  /** Agent gone (or replaced): its PTY ids are meaningless now, so end the panes. */
+  /**
+   * Agent gone (or replaced): its PTY ids are meaningless, but the WORK IS NOT.
+   *
+   * ⚠ THIS USED TO END THE PANES, AND THAT WAS THE WRONG HALF OF THE TRUTH. The old ids really
+   * are dead, so `error` + `exit` was correct about the agent — and wrong about the session,
+   * which is the thing the person cares about: the default target is a multiplexer session that
+   * outlived the agent entirely. The browser's socket never dropped either, so nothing on that
+   * side ever re-opened anything, and the pane stayed frozen until somebody reloaded the page.
+   * Reported from a phone, and it survived three rounds of scroll fixes because it looks exactly
+   * like a gesture that does nothing.
+   *
+   * So the panes WAIT. Input is refused while they do (there is nothing to type into), the host
+   * reads as unreachable on screen because the fleet says so, and `handleHostConnect` re-opens
+   * them the moment an agent attaches. If none does within the grace period, the panes end the
+   * way they always did — a pane waiting forever is the failure this file's own header warns
+   * about.
+   */
   private handleHostDisconnect(hostId: string): void {
     for (const connection of this.connections.values()) {
       if (connection.hostId !== hostId) continue;
-      for (const pane of connection.panes.values()) {
-        this.send(connection, { type: "error", termId: pane.clientTermId, message: "agent disconnected" });
-        this.send(connection, { type: "exit", termId: pane.clientTermId, code: null });
-        void this.audit(connection, pane, "terminal.close", "agent-disconnected");
-      }
-      connection.panes.clear();
+      if (connection.panes.size === 0) continue;
+      for (const pane of connection.panes.values()) pane.waiting = true;
+      this.clearGrace(connection);
+      connection.graceHandle = setTimeout(() => this.giveUp(connection.id), this.graceMs);
+      this.logger.log(
+        `Agent gone, holding panes connection=${connection.id} host=${connection.hostLabel} panes=${connection.panes.size}`,
+      );
     }
+  }
+
+  /**
+   * An agent attached: re-open whatever was waiting, on the terms it was opened with.
+   *
+   * The namespaced id is derived from the browser connection, so the SAME `open` frame addresses
+   * the same pane again — a `session` target reattaches the multiplexer and the scrollback comes
+   * back with it. A `shell` target cannot be resumed (its process died with the agent), so it
+   * gets a fresh one rather than a dead pane; the label already warns that a shell is ephemeral.
+   */
+  private handleHostConnect(hostId: string): void {
+    for (const connection of this.connections.values()) {
+      if (connection.hostId !== hostId) continue;
+      const waiting = [...connection.panes.values()].filter((pane) => pane.waiting);
+      if (waiting.length === 0) continue;
+      this.clearGrace(connection);
+      for (const pane of waiting) {
+        if (!this.registry.sendToHost(connection.hostId, { type: "terminal", frame: pane.open })) {
+          // It went away again between the event and this line; the grace timer owns it.
+          connection.graceHandle = setTimeout(() => this.giveUp(connection.id), this.graceMs);
+          return;
+        }
+        pane.waiting = false;
+        void this.audit(connection, pane, "terminal.open", "agent-reattached");
+      }
+      this.logger.log(
+        `Agent back, reopened panes connection=${connection.id} host=${connection.hostLabel} panes=${waiting.length}`,
+      );
+    }
+  }
+
+  /** The agent never came back: end the panes the way a lost pane has always ended. */
+  private giveUp(connectionId: string): void {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return;
+    connection.graceHandle = null;
+    for (const pane of connection.panes.values()) {
+      if (!pane.waiting) continue;
+      this.send(connection, { type: "error", termId: pane.clientTermId, message: "agent disconnected" });
+      this.send(connection, { type: "exit", termId: pane.clientTermId, code: null });
+      void this.audit(connection, pane, "terminal.close", "agent-disconnected");
+      connection.panes.delete(pane.clientTermId);
+    }
+  }
+
+  private clearGrace(connection: Connection): void {
+    if (connection.graceHandle === null) return;
+    clearTimeout(connection.graceHandle);
+    connection.graceHandle = null;
   }
 
   private openPane(connection: Connection, frame: Extract<TerminalClientFrame, { type: "open" }>): void {
@@ -208,6 +308,8 @@ export class TerminalRelayService {
       session: frame.target.session ?? null,
       droppedBytes: 0,
       openedAt: Date.now(),
+      open: forwarded as Extract<TerminalClientFrame, { type: "open" }>,
+      waiting: false,
     };
     connection.panes.set(frame.termId, pane);
     // Remote command execution — recorded before any byte is typed.

@@ -184,7 +184,15 @@ describe("TerminalRelayService", () => {
     expect(audits.filter((entry) => entry.action === "terminal.close")).toHaveLength(2);
   });
 
-  it("[TC-PDTERM-054] an agent disconnect errors the browser's panes", () => {
+  it("[TC-PDTERM-054] an agent disconnect holds the panes instead of ending them", () => {
+    /**
+     * ⚠ THIS USED TO ASSERT `error` + `exit`, AND THAT WAS THE WRONG HALF OF THE TRUTH. The old
+     * PTY ids really are dead when an agent goes away — but the default target is a MULTIPLEXER
+     * SESSION on the host, which is not. The browser's own socket never dropped either, so
+     * nothing on that side re-opened anything and the pane stayed frozen until the person
+     * reloaded the page. Reported from a phone, where it looks exactly like a gesture that does
+     * nothing.
+     */
     const browser = new FakeBrowser();
     const id = connect(browser);
     relay.handleClientFrame(id, openFrame("a"));
@@ -192,26 +200,87 @@ describe("TerminalRelayService", () => {
 
     registry.unregister(HOST, agent);
 
-    expect(browser.frames).toEqual([
-      { type: "error", termId: "a", message: "agent disconnected" },
-      { type: "exit", termId: "a", code: null },
-    ]);
-    expect(relay.paneCount(id)).toBe(0);
-    // The socket stays open: the agent may come back and the user can re-attach.
+    // Nothing is said and nothing is ended: the session is still running on the host.
+    expect(browser.frames).toEqual([]);
+    expect(relay.paneCount(id)).toBe(1);
     expect(browser.closed).toBeNull();
   });
 
-  it("[TC-PDTERM-054] a replaced agent also invalidates open panes", () => {
+  it("[TC-PDTERM-054] refuses input while the agent is away", () => {
+    // The id it would be addressed to exists on no host, and a `resize` for it would come back as
+    // an error frame that ends the very pane this hold exists to keep.
+    const browser = new FakeBrowser();
+    const id = connect(browser);
+    relay.handleClientFrame(id, openFrame("a"));
+    registry.unregister(HOST, agent);
+
+    relay.handleClientFrame(id, { type: "input", termId: "a", data: "ls\r" });
+    expect(agent.terminalFrames().filter((frame) => frame.type === "input")).toHaveLength(0);
+    expect(browser.types()).toEqual([]);
+  });
+
+  it("[TC-PDTERM-054] re-opens the waiting panes when an agent attaches again", () => {
+    const browser = new FakeBrowser();
+    const id = connect(browser);
+    relay.handleClientFrame(id, openFrame("a"));
+    browser.frames.length = 0;
+    registry.unregister(HOST, agent);
+
+    const returned = new FakeAgent();
+    registry.register(HOST, returned, "token-1");
+
+    // The SAME open frame, so the namespaced id and the target are the ones the pane had: a
+    // session target reattaches the multiplexer and the work comes back with it.
+    const opens = returned.terminalFrames().filter((frame) => frame.type === "open");
+    expect(opens).toHaveLength(1);
+    expect(opens[0]?.termId).toBe(`${id}:a`);
+    expect(relay.paneCount(id)).toBe(1);
+    // And the browser is not told anything: from its side the pane simply resumes.
+    expect(browser.types()).toEqual([]);
+
+    // Typing works again.
+    relay.handleClientFrame(id, { type: "input", termId: "a", data: "ls\r" });
+    expect(returned.terminalFrames().filter((frame) => frame.type === "input")).toHaveLength(1);
+  });
+
+  it("[TC-PDTERM-054] a replaced agent re-opens them on the new socket", () => {
     const browser = new FakeBrowser();
     const id = connect(browser);
     relay.handleClientFrame(id, openFrame("a"));
     browser.frames.length = 0;
 
-    // The agent process restarted: its new socket knows nothing about the old PTY ids.
-    registry.register(HOST, new FakeAgent(), "token-1");
+    // The agent process restarted: its new socket knows nothing about the old PTY ids, which is
+    // exactly why the pane has to be opened again rather than ended.
+    const replacement = new FakeAgent();
+    registry.register(HOST, replacement, "token-1");
 
-    expect(browser.types()).toEqual(["error", "exit"]);
+    expect(replacement.terminalFrames().filter((frame) => frame.type === "open")).toHaveLength(1);
+    expect(relay.paneCount(id)).toBe(1);
+    expect(browser.types()).toEqual([]);
+  });
+
+  it("[TC-PDTERM-054] gives up when the agent does not come back", async () => {
+    /**
+     * ⚠ HOLDING FOREVER IS THE OTHER FAILURE, and this file's header names it: a browser waiting
+     * on a pane that will never answer is worse than a hard error. Two minutes in production is
+     * an agent restart; past that the pane is genuinely gone and says so.
+     */
+    const browser = new FakeBrowser();
+    const id = connect(browser);
+    relay.setGracePeriod(10);
+    relay.handleClientFrame(id, openFrame("a"));
+    browser.frames.length = 0;
+
+    registry.unregister(HOST, agent);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(browser.frames).toEqual([
+      { type: "error", termId: "a", message: "agent disconnected" },
+      { type: "exit", termId: "a", code: null },
+    ]);
     expect(relay.paneCount(id)).toBe(0);
+    // The socket stays open: another pane can be opened on it the moment a host is there.
+    expect(browser.closed).toBeNull();
   });
 
   it("[TC-PDTERM-055] bounds in-flight output and passes the agent's dropped count through untouched", () => {

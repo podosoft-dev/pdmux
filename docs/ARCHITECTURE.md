@@ -158,7 +158,12 @@ In pdmux the agent opens the PTY, the server relays a WebSocket, and the browser
 three problems disappear **structurally**.
 
 - The default target is a **persistent session** (a multiplexer). Work survives a dropped
-  connection and resumes on reattach.
+  connection and resumes on reattach — **including the agent's own restart**. When an agent goes
+  away the PTY ids it held are meaningless, but the session is not, so the relay holds those panes
+  (refusing input, which would be addressed to nothing) and re-opens them with the same `open`
+  frame when an agent attaches again. Only if none does within the grace period do they end.
+  Ending them immediately was the earlier behaviour and it left a pane frozen until the page was
+  reloaded, which from a phone is indistinguishable from a broken gesture.
 - A `shell` target is warned about in the UI as non-persistent (it dies with the connection).
 - Session names are limited by the contract to `A-Za-z0-9_-`, 1–32 characters — this value ends up
   as a command argument on the host.
