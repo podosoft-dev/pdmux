@@ -53,6 +53,12 @@ lint() { npm run lint --workspaces --if-present; }
 unit() { npm test --workspaces --if-present; }
 audit() { npm run audit:generic; }
 
+# ⚠ A GENERATED FILE THAT IS COMMITTED CAN GO STALE, AND ITS STALENESS IS SILENT. The
+# file-type icons are vendored SVGs turned into a string module; edit the directory
+# without re-running the generator and the app keeps serving the previous set, which
+# looks like nothing at all. The generator is deterministic for exactly this check.
+generated() { node tools/build-file-icons.mjs --check; }
+
 # The agent is a Go module rather than an npm workspace, so the workflow checks it in
 # a separate job. Same commands.
 go_suite() {
@@ -102,6 +108,7 @@ step "build packages" build_packages
 step "build apps" build_apps
 step "lint" lint
 step "unit tests" unit
+step "generated artifacts" generated
 step "generalization audit" audit
 step "agent version bump" agent_version
 [ "$QUICK" = 1 ] || step "agent go suite" go_suite

@@ -1,0 +1,27 @@
+The SVG files in this directory are icons from the vscode-icons project.
+
+    Source:  https://github.com/vscode-icons/vscode-icons
+    Tag:     v12.19.0
+    Icons:   Creative Commons Attribution-ShareAlike 4.0 International
+             (CC BY-SA 4.0) — https://creativecommons.org/licenses/by-sa/4.0/
+    Credit:  © vscode-icons contributors
+             https://github.com/vscode-icons/vscode-icons/graphs/contributors
+
+NO CHANGES WERE MADE. Every file here is byte-identical to the file of the same
+name at that tag; `SOURCE.md` records a sha256 for each one so that claim can be
+checked rather than believed. This matters legally, not only tidily: an edited
+icon would be Adapted Material under CC BY-SA and its ShareAlike term would
+reach whatever it is combined with. The rest of pdmux is Apache-2.0, so nothing
+in this directory may be recoloured, re-pathed, minified or merged into a sprite
+— see the note beside `.pdmux-files-icon` in `../../styles.css`.
+
+Upstream describes its licensing in three parts, and the third one applies to
+most of the files here: "The source code is licensed under the MIT license. The
+icons are licensed under the Creative Commons - ShareAlike (CC BY-SA) license.
+Branded icons are licensed under their copyright license."
+
+BRANDED ICONS. Several of these are the trademarks of the projects and companies
+whose file types they mark (for example Python, Rust, Docker, npm). They are
+used here for the one purpose a file manager's icon serves — identifying which
+kind of file a row is — and no endorsement or affiliation is claimed or implied.
+Each remains the property of its owner under its owner's terms.
