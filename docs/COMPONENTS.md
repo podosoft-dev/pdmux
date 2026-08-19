@@ -405,6 +405,53 @@ branch may be nowhere near a visible row.
 - Its width is `clamp(150px, 34%, 260px)` and it is **hidden below 640 px** (in a narrow column the
   graph comes first).
 
+### `FileExplorer` / `FileIcon`
+
+One directory of a host, as a table. Deliberately **not** a tree: `FileTree` folds a chain of
+single-child directories into one row and only knows a directory exists if a file inside it does —
+both right for a commit's changed files and wrong for browsing, where an empty directory is a real
+thing and the levels are what somebody came to walk.
+
+| Component | Key props | Callbacks |
+|---|---|---|
+| `FileExplorer` | `dir: FsDirView`, `path`, `loading`, `unavailable`, `idle`, `selected`, `file`, `image`, `sort: FsSort`, `columns: FsColumns`, `scheme`, `formatDate` | `onOpenDir(path)`, `onSelect(name, mode)`, `onClosePreview()`, `onSort(key)`, `onColumnResize(key, delta, commit, panelWidth)` |
+| `FileIcon` | `name`, `dir`, `open`, `root`, `scheme` | — |
+
+**The listing arrives sorted.** `onSort` reports the **key** that was clicked and nothing else; the
+consumer applies core's `nextFsSort()` and hands back a reordered `dir`. That is not ceremony — the
+consumer owns the selection, and a shift-click range is computed on **array index**, so a component
+that reordered rows for display would make a range select different files from the ones the person
+dragged between.
+
+**Column widths are pixels the consumer holds, and the clamp is core's.** `onColumnResize` reports a
+delta measured **from where the gesture started** (add it to the width the gesture started from — a
+base latch; adding it to the current width compounds every pointer move) together with the listing's
+measured width, which `setFsColumnWidth()` needs to keep the name column above its floor when the dock
+is narrow. Which columns fit is `visibleFsColumns()`, derived from the current widths rather than from
+a breakpoint: one viewport holds a 420 px dock and a full-width window at the same time.
+
+**The header lives inside the scroll box, stuck to its top.** Above it, the header would be as wide as
+the panel while the rows are as wide as the panel minus the scrollbar, and every column would sit a
+scrollbar to the right of its own values (TC-PDUI-224).
+
+**`0` means "the host did not say", not zero.** `modified` and `mode` arrive as `0` from a failed stat
+or from an agent older than the field, and the columns render `—`. A size of `0` is a real empty file.
+
+**`scheme` is a prop because the package cannot read the theme.** The app switches with `mode-watcher`,
+whose signal is a class on the document, and `prefers-color-scheme` disagrees with it the moment
+somebody picks a theme their OS does not use. Nine of the vendored icons have a light-background twin
+upstream and the scheme chooses between them — `file_type_yaml` is `#ffe885` alone, luminance 0.90,
+invisible on a light card.
+
+> ⚠ **The icons are vscode-icons under CC BY-SA 4.0 and must stay unmodified.** Recolouring one makes
+> it Adapted Material and ShareAlike would reach this repository, which is Apache-2.0. So the
+> `data-pdmux-file-kind` palette colours the **name** and never the icon, and the vendored SVGs are not
+> minified, re-pathed or merged. `THIRD-PARTY-NOTICES.md` carries the attribution;
+> `packages/ui/src/icons/vscode-icons/SOURCE.md` carries the tag and a digest per file. The one
+> transformation `tools/build-file-icons.mjs` applies is prefixing element ids with the icon's name —
+> a technical modification CC BY-SA §2(a)(4) permits, and a necessary one: seven upstream icons declare
+> gradients as `id="a"`, and inlined into one document a `.rb` and a `.zip` would steal each other's.
+
 ---
 
 ## 3. The terminal adapter (transport belongs to the app)

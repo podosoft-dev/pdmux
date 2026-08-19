@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## Unreleased
+
+- **The file explorer is a table now.** Every row wears the icon of its file type — folders,
+  and per-language marks for the forty-odd kinds the fleet actually holds — and the listing has a
+  column header that sorts by name, size, modified time or mode, with a draggable edge on each
+  number column. Sorting is `@pdmux/core`'s, so this panel and the admin tables cannot disagree
+  about what a second click does; directories stay first in every direction, because a descending
+  click that scattered folders reads as the sort being broken. The header lives inside the scroll
+  box so it cannot fall a scrollbar's width out of step with its own values, and no column can
+  squeeze the name below the width at which a listing stops being one — the failure a dock at its
+  260 px minimum used to invite.
+- **A listing says what the host did not tell it.** A modified time or a mode of `0` means a stat
+  failed, or the agent predates the field, and the column now shows that rather than a date in 1970.
+  Column widths and the chosen sort last for the visit and are deliberately not stored: that
+  document is shared across a person's devices, and a width chosen on a phone has no business
+  arriving on a desktop.
+- **A host reports each entry's permission bits.** `fsEntry.mode` carries the low nine bits the
+  kernel already decided; nothing enforces them. An agent older than the field simply omits it and
+  the column reads `—`, so no host has to be updated for the rest of this to work.
+- The icons are [vscode-icons](https://github.com/vscode-icons/vscode-icons) under CC BY-SA 4.0,
+  vendored unmodified. See `THIRD-PARTY-NOTICES.md`.
+
 ## 0.9.1
 
 - **A pane survives its agent restarting.** An agent going away used to end every pane on that
