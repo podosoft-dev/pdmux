@@ -447,6 +447,21 @@ export const fsEntrySchema = z.object({
 	size: z.number().int().nonnegative().default(0),
 	/** Unix seconds, for a column that says how fresh something is. */
 	modified: z.number().int().nonnegative().default(0),
+	/**
+	 * The permission bits the kernel reports, as an octal number (`0o644`).
+	 *
+	 * ⚠ `0` MEANS "THE AGENT DID NOT SAY", NOT `---------`. Every object here
+	 * strips unknown keys and defaults missing ones (`TC-PDPROTO-007`), which is
+	 * what lets a new server keep talking to an agent that predates this field:
+	 * that agent omits it and lands on this default. A column that rendered `0` as
+	 * a real mode would state a permission nobody measured, so the screen says it
+	 * does not know instead. `size` and `modified` already work this way.
+	 *
+	 * ⚠ IT IS REPORTED, NEVER ENFORCED. The kernel decides what the agent's
+	 * account may read; this is the answer it already gave, carried to a screen.
+	 * See the header of `agent/internal/fs/fs.go`.
+	 */
+	mode: z.number().int().nonnegative().max(0o7777).default(0),
 });
 export type FsEntry = z.infer<typeof fsEntrySchema>;
 

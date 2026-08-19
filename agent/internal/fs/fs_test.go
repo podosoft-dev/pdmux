@@ -189,6 +189,30 @@ func TestList(t *testing.T) {
 		}
 	})
 
+	t.Run("[TC-PDTERM-149] reports the mode the kernel already decided", func(t *testing.T) {
+		dir, root := home(t)
+		// ⚠ CHMOD EXPLICITLY. `mustWrite` ASKS for 0o644 and the process umask decides
+		// what it actually gets, so asserting against the request would make this test
+		// pass or fail depending on the shell that started it.
+		if err := os.Chmod(filepath.Join(dir, "notes.txt"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(filepath.Join(dir, "project"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+
+		listing := List(root, "", 0)
+		if listing.Error != nil {
+			t.Fatalf("unexpected error: %s", *listing.Error)
+		}
+		if listing.Entries[0].Mode != 0o750 {
+			t.Fatalf("directory mode = %#o, want 0750", listing.Entries[0].Mode)
+		}
+		if listing.Entries[1].Mode != 0o640 {
+			t.Fatalf("file mode = %#o, want 0640", listing.Entries[1].Mode)
+		}
+	})
+
 	t.Run("[TC-PDTERM-140] caps a huge directory and says how many it dropped", func(t *testing.T) {
 		dir := t.TempDir()
 		for i := 0; i < 40; i++ {

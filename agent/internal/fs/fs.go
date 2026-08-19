@@ -125,9 +125,23 @@ func List(root *os.Root, name string, cap int) protocol.FsDir {
 		// links that leave the tree, so a reader who was not told it was a link
 		// would read that refusal as a bug rather than as the shape of the file.
 		entry.Symlink = record.Type()&os.ModeSymlink != 0
+		// ⚠ REPORTING A MODE IS NOT RE-IMPLEMENTING ONE. The header above refuses to
+		// build a permission model because the kernel already has one and a second
+		// opinion could only be weaker. This carries the answer the kernel already
+		// gave to a column, and decides nothing with it.
+		//
+		// ⚠ AND A FAILED STAT LEAVES ALL THREE AT ZERO, which the contract defines
+		// as "not reported" — the screen says it does not know rather than drawing
+		// an empty file that nobody may read.
+		//
+		// Only the low nine bits travel. setuid/setgid/sticky live in Go's OWN bit
+		// layout rather than the operating system's, so carrying them would mean
+		// translating one convention into another for a column about who can read
+		// and write.
 		if info, statErr := record.Info(); statErr == nil {
 			entry.Size = int(info.Size())
 			entry.Modified = int(info.ModTime().Unix())
+			entry.Mode = int(info.Mode().Perm())
 		}
 		entries = append(entries, entry)
 	}

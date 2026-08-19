@@ -116,7 +116,16 @@ export interface FsEntryView {
 	/** Marked because such a link may refuse to open — see `FileExplorer`. */
 	symlink: boolean;
 	size: number;
+	/**
+	 * Unix seconds, or `0` when the host did not say.
+	 *
+	 * ⚠ `0` IS NOT 1970. A failed stat and an agent older than the field both land
+	 * here, and a column that formatted it as a date would state a fact nobody
+	 * measured. `mode` works the same way.
+	 */
 	modified: number;
+	/** Permission bits as an octal number (`0o644`), or `0` when unreported. */
+	mode: number;
 }
 
 /** How a click on a listing row asked for the selection to change. */

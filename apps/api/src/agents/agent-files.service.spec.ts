@@ -73,7 +73,7 @@ describe("[TC-PDTERM-141] a directory answer belongs to the request that asked f
       requestId: a!.requestId,
       path: "same",
       home: "/home/pdmux",
-      entries: [{ name: "old.txt", dir: false, symlink: false, size: 1, modified: 0 }],
+      entries: [{ name: "old.txt", dir: false, symlink: false, size: 1, modified: 0, mode: 0 }],
       dropped: 0,
       truncated: false,
       error: null,
@@ -82,7 +82,7 @@ describe("[TC-PDTERM-141] a directory answer belongs to the request that asked f
     await expect(first).resolves.toMatchObject({ entries: [{ name: "old.txt" }] });
 
     // The second is still waiting — the path matched and that changed nothing.
-    ctx.service.settle({ ...stale, requestId: b!.requestId, entries: [{ name: "new.txt", dir: false, symlink: false, size: 1, modified: 0 }] });
+    ctx.service.settle({ ...stale, requestId: b!.requestId, entries: [{ name: "new.txt", dir: false, symlink: false, size: 1, modified: 0, mode: 0 }] });
     await expect(second).resolves.toMatchObject({ entries: [{ name: "new.txt" }] });
   });
 

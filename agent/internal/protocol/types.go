@@ -506,6 +506,13 @@ type FsEntry struct {
 	Size    int    `json:"size"`
 	// Modified is unix seconds, for a column that says how fresh something is.
 	Modified int `json:"modified"`
+	// Mode is the permission bits the kernel reports, as an octal number (0o644).
+	//
+	// ⚠ 0 MEANS "NOT REPORTED", NOT `---------`. A stat that failed leaves this at
+	// its zero value, and so does an agent that predates the field — the contract
+	// says the screen must then say it does not know rather than draw a mode
+	// nobody measured.
+	Mode int `json:"mode"`
 }
 
 // FsDir is one directory of this host, as it is right now.

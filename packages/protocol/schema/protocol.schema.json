@@ -1278,6 +1278,12 @@
           "default": false,
           "type": "boolean"
         },
+        "mode": {
+          "default": 0,
+          "maximum": 4095,
+          "minimum": 0,
+          "type": "integer"
+        },
         "modified": {
           "default": 0,
           "minimum": 0,

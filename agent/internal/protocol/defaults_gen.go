@@ -434,6 +434,7 @@ func NewFsEntry() FsEntry {
 // applyDefaults writes the contract's defaults over a zero FsEntry.
 func (x *FsEntry) applyDefaults() {
 	x.Dir = false
+	x.Mode = 0
 	x.Modified = 0
 	x.Size = 0
 	x.Symlink = false

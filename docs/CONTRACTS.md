@@ -409,6 +409,19 @@ handle and resolves every name through it, so `..`, an absolute path and a symli
 are refused **by construction** (`ARCHITECTURE.md` §4-1). An absolute path in a request would leave
 the handle with nothing to be relative to.
 
+⚠ **AN ENTRY'S `size`, `modified` AND `mode` USE `0` FOR "NOT REPORTED".** A stat that failed leaves
+all three at zero, and so does an agent built before `mode` existed — every object here strips unknown
+keys and defaults missing ones (`TC-PDPROTO-007`), which is exactly what lets a new server keep talking
+to an old agent. So a column renders `—` rather than a date in 1970 or a `---------` nobody measured. A
+`size` of `0` is the one that is genuinely ambiguous and is read as a real empty file, because that is
+overwhelmingly what it is.
+
+`mode` is the low nine permission bits as an octal number (`0o644`). setuid/setgid/sticky are **not**
+carried: in Go they live in that language's own `FileMode` layout rather than the operating system's, so
+sending them would mean translating one convention into another for a column about who can read and
+write. And the agent **reports** the mode without ever enforcing it — the kernel already decided, and a
+second opinion about permissions could only ever be weaker (`ARCHITECTURE.md` §4-1).
+
 ⚠ **`home` travels one way only.** It is the absolute home the listing is relative to, sent so a
 path bar can print what `pwd` would print and so a pasted absolute path can be understood. Nothing
 accepts it back as an address. It is `''` from an agent built before the field existed, which reads
