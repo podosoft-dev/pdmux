@@ -23,3 +23,7 @@ export * from './listeners.js';
 export * from './commit-graph.js';
 export * from './terminal-keys.js';
 export * from './file-kind.js';
+export * from './file-icon.js';
+export * from './file-format.js';
+export * from './fs-sort.js';
+export * from './fs-columns.js';
