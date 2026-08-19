@@ -847,4 +847,104 @@ test.describe('pdmux ui geometry', () => {
 		expect(after.above).toBeGreaterThanOrEqual(-1);
 		expect(after.reachable).toBe(true);
 	});
+
+	/**
+	 * ⚠ THIS PANEL HAD NO BROWSER COVERAGE AT ALL until the column header was added.
+	 * The header is the one part of it that CANNOT be verified in jsdom: lining up with
+	 * the cells below is a question about pixels, and the failure mode is a table whose
+	 * columns are a scrollbar's width out of step with their own values.
+	 */
+	const filesGeometry = (page: import('@playwright/test').Page) =>
+		page.evaluate(() => {
+			const body = document.querySelector('[data-pdmux-files-body]') as HTMLElement;
+			const head = document.querySelector('[data-pdmux-files-head]') as HTMLElement;
+			const row = document.querySelector('.pdmux-files-row') as HTMLElement;
+			const edges = (node: Element | null) => {
+				if (!node) return null;
+				const rect = node.getBoundingClientRect();
+				return { left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width) };
+			};
+			const columns = ['size', 'modified', 'mode'] as const;
+			return {
+				headTop: Math.round(head.getBoundingClientRect().top),
+				bodyTop: Math.round(body.getBoundingClientRect().top),
+				scrolls: body.scrollHeight > body.clientHeight + 1,
+				rowHeight: Math.round(row.getBoundingClientRect().height),
+				name: {
+					head: edges(head.querySelector('.pdmux-files-cell-name')),
+					cell: edges(row.querySelector('.pdmux-files-name')),
+				},
+				columns: columns.map((key) => ({
+					key,
+					head: edges(head.querySelector(`[data-pdmux-cell='${key}']`)),
+					cell: edges(row.querySelector(`.pdmux-files-${key}`)),
+				})),
+			};
+		});
+
+	for (const width of [420, 260]) {
+		test(`[TC-PDUI-224] the file listing's header lines up with its cells at ${width}px`, async ({ page }) => {
+			await page.goto(`/?screen=files&width=${width}`);
+			await page.waitForSelector('[data-pdmux-files-head]');
+			const box = await filesGeometry(page);
+
+			// ⚠ THE NAME COLUMN IS NEVER 0px. This is the 420px → 0px incident as an
+			// assertion: a horizontal row of fixed-width siblings crushed the one column
+			// somebody was reading, and nothing measured it.
+			expect(box.name.cell?.width ?? 0).toBeGreaterThan(60);
+			expect(box.name.head?.width ?? 0).toBeGreaterThan(60);
+
+			// A column that is drawn must be drawn in the same place in both rows. A
+			// column that is not drawn must be absent from BOTH — a header for a value
+			// nobody shows is worse than no header.
+			for (const column of box.columns) {
+				if (!column.head) {
+					expect(column.cell, `${column.key} has a cell but no header`).toBeNull();
+					continue;
+				}
+				expect(column.cell, `${column.key} has a header but no cell`).not.toBeNull();
+				expect(Math.abs((column.head.left ?? 0) - (column.cell?.left ?? 0))).toBeLessThanOrEqual(1);
+				expect(Math.abs((column.head.right ?? 0) - (column.cell?.right ?? 0))).toBeLessThanOrEqual(1);
+			}
+
+			// The icon must not make the row taller — 12px/1.5 plus 3px of padding either
+			// side is 24px, and a 16px icon would push every row past it.
+			expect(box.rowHeight).toBeLessThanOrEqual(26);
+
+			// A listing longer than the panel scrolls, and the header stays put while it
+			// does — a header that scrolls away is a header that was not worth the row.
+			expect(box.scrolls).toBe(true);
+			await page.evaluate(() => {
+				(document.querySelector('[data-pdmux-files-body]') as HTMLElement).scrollTop = 200;
+			});
+			const scrolled = await filesGeometry(page);
+			expect(scrolled.headTop).toBe(scrolled.bodyTop);
+		});
+	}
+
+	test('[TC-PDUI-225] dragging a column edge moves the header and the cells together', async ({ page }) => {
+		await page.goto('/?screen=files&width=520');
+		await page.waitForSelector('[data-pdmux-files-head]');
+		const before = await filesGeometry(page);
+		const target = before.columns.find((column) => column.key === 'modified');
+		expect(target?.head, 'the harness must draw the column this drags').toBeTruthy();
+
+		const grip = page.locator("[data-pdmux-cell='modified'] [data-pdmux-handle]");
+		const box = await grip.boundingBox();
+		expect(box, 'the grip must be hit-testable, not a 0px overlay').toBeTruthy();
+		// Dragging LEFT widens a column whose edge is on its leading side. `steps` matters:
+		// the handle reports a delta per pointermove, and one jump would not exercise it.
+		await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(box!.x + box!.width / 2 - 40, box!.y + box!.height / 2, { steps: 8 });
+		await page.mouse.up();
+
+		const after = await filesGeometry(page);
+		const grown = after.columns.find((column) => column.key === 'modified');
+		expect((grown?.head?.width ?? 0) - (target?.head?.width ?? 0)).toBeGreaterThan(20);
+		// ⚠ BOTH, BY THE SAME AMOUNT. One number drives both rows; a drag that moved only
+		// the header would leave every value under the wrong label.
+		expect(Math.abs((grown?.head?.width ?? 0) - (grown?.cell?.width ?? 0))).toBeLessThanOrEqual(1);
+		expect(after.name.cell?.width ?? 0).toBeGreaterThan(60);
+	});
 });

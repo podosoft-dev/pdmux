@@ -18,8 +18,18 @@
 		toggleZoom,
 		uncommittedSummary,
 	} from '@pdmux/core';
+	import {
+		defaultFsColumns,
+		nextFsSort,
+		sortFsEntries,
+		type FsColumnKey,
+		type FsColumns,
+		type FsSort,
+		setFsColumnWidth,
+	} from '@pdmux/core';
 	import { EchoTerminalAdapter } from '../../src/adapters/terminal-adapter.js';
 	import CommitDetail from '../../src/components/CommitDetail.svelte';
+	import FileExplorer from '../../src/components/FileExplorer.svelte';
 	import GitGraph from '../../src/components/GitGraph.svelte';
 	import HostSidebar from '../../src/components/HostSidebar.svelte';
 	import SplitHandle from '../../src/components/SplitHandle.svelte';
@@ -187,9 +197,116 @@
 	 * twice. A harness that changes what the other specs measure is not a harness.
 	 */
 	const screen = typeof location === 'undefined' ? '' : new URLSearchParams(location.search).get('screen');
+
+	/**
+	 * The file explorer face.
+	 *
+	 * ⚠ IT IS MEASURED AT A CHOSEN WIDTH, BECAUSE THAT IS THE WHOLE RISK. The dock this
+	 * panel lives in runs from `DOCK_WIDTH_MIN` (260px) to 900px, and `ui-changes.md`
+	 * records what happens when a horizontal row is not measured at its narrow end: a
+	 * sibling panel took the commit list from 420px to 0px and every spec stayed green.
+	 * `?width=` is how the spec asks for both ends.
+	 */
+	const filesWidth = Number(
+		(typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('width')) ?? 420,
+	);
+	/**
+	 * ⚠ THE SCHEME IS A PROP IN THE REAL APP, SO IT IS A QUERY PARAM HERE. The package
+	 * cannot read the theme (`FileIcon` explains why), which means a dark page whose
+	 * harness forgot to say so shows the LIGHT icons — and a screenshot of it would be
+	 * evidence of nothing.
+	 */
+	const filesScheme =
+		(typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('scheme')) === 'dark'
+			? 'dark'
+			: 'light';
+	let filesSort = $state<FsSort>({ key: 'name', dir: 'asc' });
+	let filesColumns = $state<FsColumns>(defaultFsColumns());
+	let columnBase: number | null = null;
+	function dragColumn(key: FsColumnKey, delta: number, commit: boolean, panelWidth: number): void {
+		// The same base latch the app keeps, for the same reason: the delta is measured
+		// from where the gesture started, so it is added to the width it started from.
+		columnBase ??= filesColumns[key];
+		filesColumns = setFsColumnWidth(filesColumns, key, columnBase + delta, panelWidth);
+		if (commit) columnBase = null;
+	}
+
+	/**
+	 * ⚠ MORE ROWS THAN FIT, AND ONE NAME LONGER THAN ANY COLUMN WILL EVER BE. Whether a
+	 * listing scrolls cannot be asserted on content that fits, and whether the name
+	 * column truncates instead of pushing the numbers off the panel cannot be asserted
+	 * on names that are short.
+	 */
+	const filesSource = {
+		path: 'Project',
+		home: '/home/pdmux',
+		dropped: 0,
+		truncated: false,
+		error: null,
+		entries: [
+			{ name: 'node_modules', dir: true, symlink: false, size: 4096, modified: 1_784_000_000, mode: 0o755 },
+			{
+				name: 'a-single-unbroken-token-far-wider-than-this-column-will-ever-be.spec.ts',
+				dir: false,
+				symlink: false,
+				size: 128_000,
+				modified: 1_784_000_500,
+				mode: 0o644,
+			},
+			...Array.from({ length: 40 }, (_, i) => ({
+				name: `module-${i}.ts`,
+				dir: false,
+				symlink: false,
+				size: 1024 * (i + 1),
+				modified: 1_784_000_000 + i,
+				mode: i % 3 === 0 ? 0o755 : 0o644,
+			})),
+			// ⚠ THE ICONS UPSTREAM SHIPS A LIGHT TWIN FOR. `file_type_yaml` is `#ffe885`
+			// alone — luminance 0.90, invisible on a light card — and `config`, `toml`,
+			// `json`, `rust` and `font` are the same argument to a lesser degree. A harness
+			// full of TypeScript files would never show whether that swap works.
+			{ name: 'ci.yaml', dir: false, symlink: false, size: 2048, modified: 1_784_000_100, mode: 0o644 },
+			{ name: 'Cargo.toml', dir: false, symlink: false, size: 512, modified: 1_784_000_200, mode: 0o644 },
+			{ name: 'main.rs', dir: false, symlink: false, size: 8192, modified: 1_784_000_300, mode: 0o644 },
+			{ name: 'package.json', dir: false, symlink: false, size: 1536, modified: 1_784_000_400, mode: 0o644 },
+			{ name: 'Dockerfile', dir: false, symlink: false, size: 640, modified: 1_784_000_600, mode: 0o644 },
+			{ name: 'notes.md', dir: false, symlink: false, size: 4096, modified: 1_784_000_700, mode: 0o644 },
+			{ name: 'photo.png', dir: false, symlink: false, size: 2_400_000, modified: 1_784_000_800, mode: 0o644 },
+			{ name: 'quiet.bin', dir: false, symlink: false, size: 0, modified: 0, mode: 0 },
+		],
+	};
+
+	/**
+	 * ⚠ THE HARNESS SORTS, BECAUSE THE REAL CONSUMER DOES. `FileExplorer` draws the order
+	 * it is given — the store that owns the listing also owns the selection, whose range
+	 * is computed on array index. A harness that skipped this step showed a header
+	 * reporting `Size ▼` above rows still in name order, which is exactly the bug a
+	 * component-side sort would produce in the product.
+	 */
+	const filesDir = $derived({ ...filesSource, entries: sortFsEntries(filesSource.entries, filesSort) });
 </script>
 
-{#if screen === 'tree'}
+{#if screen === 'files'}
+	<!-- A dock column's flex chain, at the width the spec asked for. `.pdmux-files` is
+	     `flex: 1; min-height: 0`, so it needs a parent with a definite height or the
+	     listing has no scroll container and the whole measurement is meaningless. -->
+	<div
+		class="pdmux"
+		data-harness="files"
+		style="width:{filesWidth}px;height:420px;display:flex;flex-direction:column"
+	>
+		<FileExplorer
+			dir={filesDir}
+			path="Project"
+			sort={filesSort}
+			columns={filesColumns}
+			scheme={filesScheme}
+			formatDate={(seconds) => new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ')}
+			onSort={(key) => (filesSort = nextFsSort(filesSort, key))}
+			onColumnResize={dragColumn}
+		/>
+	</div>
+{:else if screen === 'tree'}
 <!--
 	The `File tree` face, mounted on its own so its geometry can be measured.
 
