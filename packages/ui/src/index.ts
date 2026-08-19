@@ -34,6 +34,7 @@ export { default as DiffView } from './components/DiffView.svelte';
 export { default as BlobView } from './components/BlobView.svelte';
 export { default as FileList } from './components/FileList.svelte';
 export { default as FileExplorer } from './components/FileExplorer.svelte';
+export { default as FileIcon } from './components/FileIcon.svelte';
 export { default as FileTree } from './components/FileTree.svelte';
 export { default as RepoTreeView } from './components/RepoTreeView.svelte';
 

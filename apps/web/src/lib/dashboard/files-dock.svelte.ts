@@ -11,7 +11,19 @@
  * are relative to that home, always. Sending an absolute path would make the agent's
  * `os.Root` handle meaningless, which is the one thing holding the fence up.
  */
-import { previewableAs } from "@pdmux/core";
+import {
+  DEFAULT_FS_SORT,
+  type FsColumnKey,
+  type FsColumns,
+  type FsSort,
+  type FsSortKey,
+  defaultFsColumns,
+  isDefaultFsSort,
+  nextFsSort,
+  previewableAs,
+  setFsColumnWidth,
+  sortFsEntries,
+} from "@pdmux/core";
 import type { FsDirView } from "@pdmux/ui";
 import type { FsFileView } from "./types";
 import { errorCode, filesApi } from "./api";
@@ -53,6 +65,19 @@ export class FilesDock {
    * file is usable while the rest arrive.
    */
   upload = $state<{ name: string; sent: number; total: number; queued: number; error: string | null } | null>(null);
+  /**
+   * Which column the listing is ordered by, and how wide the number columns are.
+   *
+   * ⚠ THIS VISIT ONLY, AND THAT IS THE DECISION RATHER THAN AN OMISSION. The other
+   * place it could live is `TerminalLayout`, which is stored per USER and shared
+   * across their devices — and `shell-state.svelte.ts` records what that costs in
+   * five places, most plainly "a phone's current tab would travel to a desktop that
+   * has no tabs". A column width is an adjustment to a panel whose own width differs
+   * between those devices, so it belongs to the tab that made it. Nothing is written
+   * to the server and nothing survives a reload.
+   */
+  sort = $state<FsSort>(DEFAULT_FS_SORT);
+  columns = $state<FsColumns>(defaultFsColumns());
 
   readonly #api: typeof filesApi;
   /** Guards against a slow answer landing after the user moved on. */
@@ -67,9 +92,47 @@ export class FilesDock {
     return this.selected.map((name) => this.join(name));
   }
 
+  /**
+   * The directory as the screen shows it — the host's answer, in the order the
+   * header asked for.
+   *
+   * ⚠ THE SORT IS APPLIED HERE AND NOT IN THE COMPONENT, and the reason is
+   * `select()` below: a shift-click range is computed on ARRAY INDEX, so a component
+   * that reordered rows for display would make a range select the files between two
+   * positions in the ORIGINAL order — different files from the ones the person
+   * dragged between, with nothing on screen to explain it.
+   *
+   * ⚠ AND THE HOST ALREADY SORTED, THEN TRUNCATED. `agent/internal/fs` returns
+   * directories first and then by name, and applies the entry cap afterwards, so this
+   * reorders the entries that ARRIVED rather than the directory. `FileExplorer` says
+   * so beside the dropped count when the sort is not the default one.
+   */
+  get shown(): FsDirView | null {
+    const dir = this.dir;
+    if (!dir) return null;
+    if (isDefaultFsSort(this.sort)) return dir;
+    return { ...dir, entries: sortFsEntries(dir.entries, this.sort) };
+  }
+
   get selectedEntries(): { name: string; dir: boolean; size: number }[] {
     const names = new Set(this.selected);
-    return (this.dir?.entries ?? []).filter((entry) => names.has(entry.name));
+    return (this.shown?.entries ?? []).filter((entry) => names.has(entry.name));
+  }
+
+  /** A click on a column header. The direction rule is `@pdmux/core`'s. */
+  sortBy(key: FsSortKey): void {
+    this.sort = nextFsSort(this.sort, key);
+  }
+
+  /**
+   * A dragged column edge, already added to the width the gesture started from.
+   *
+   * `panelWidth` comes from the component because the component is what measures it —
+   * the clamp needs it so a width chosen in a wide dock cannot squeeze the name column
+   * when the dock narrows.
+   */
+  resizeColumn(key: FsColumnKey, width: number, panelWidth: number): void {
+    this.columns = setFsColumnWidth(this.columns, key, width, panelWidth);
   }
 
   join(name: string): string {
@@ -134,7 +197,10 @@ export class FilesDock {
    * host, and a shift-drag down a directory would ask for every file it crossed.
    */
   select(name: string, mode: SelectMode): void {
-    const entries = (this.dir?.entries ?? []).map((entry) => entry.name);
+    // ⚠ THE ORDER ON SCREEN, NOT THE ORDER IT ARRIVED IN. A range is what lies
+    // between the two rows the person clicked, and after a header click those are not
+    // the same two positions in the host's answer.
+    const entries = (this.shown?.entries ?? []).map((entry) => entry.name);
     if (mode === "toggle") {
       this.selected = this.selected.includes(name)
         ? this.selected.filter((other) => other !== name)

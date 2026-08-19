@@ -3039,7 +3039,13 @@
 .pdmux-files-row {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	/* ⚠ THE GAP AND THE PADDING ARE ALSO NUMBERS IN `@pdmux/core`. `fs-columns.ts`
+	   decides which columns fit, which it cannot do without spending exactly what this
+	   rule spends — so the gap arrives from there as a custom property, and
+	   `FS_ROW_CHROME` (26) must equal this padding (6 + 6) plus the icon (14). A spec
+	   in `test/files.test.ts` reads this file and asserts that, because CSS cannot
+	   read a constant and two numbers for one distance always drift. */
+	gap: var(--pdmux-files-gap, 8px);
 	width: 100%;
 	padding: 3px 6px;
 	font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -3107,11 +3113,197 @@
 	white-space: nowrap;
 }
 
-.pdmux-files-size {
+/*
+ * The number columns. One width each, declared once on the panel and read by both
+ * the header cell and the body cell — `ui-changes.md` records what a duplicated
+ * width constant costs (a new sibling took the commit list from 420px to 0px).
+ *
+ * `tabular-nums` on all three: a column of sizes or dates whose digits change width
+ * shivers as the listing updates, and `mode` is a fixed nine characters that must
+ * line up vertically to be scannable at all.
+ */
+.pdmux-files-size,
+.pdmux-files-modified,
+.pdmux-files-mode {
 	flex: none;
 	color: var(--pdmux-muted);
 	font-size: 11px;
 	font-variant-numeric: tabular-nums;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pdmux-files-size {
+	width: var(--pdmux-files-w-size, 64px);
+	text-align: right;
+}
+
+.pdmux-files-modified {
+	width: var(--pdmux-files-w-modified, 116px);
+}
+
+.pdmux-files-mode {
+	width: var(--pdmux-files-w-mode, 82px);
+}
+
+/*
+ * ⚠ THE ICON IS NEVER COLOURED HERE, AND THAT IS A LICENCE CONDITION RATHER THAN A
+ * STYLE CHOICE. The artwork is vscode-icons under CC BY-SA 4.0 (see
+ * `icons/vscode-icons/LICENSE`): recolouring it would make it Adapted Material and
+ * ShareAlike would reach this repository, which is Apache-2.0. So the
+ * `data-pdmux-file-kind` palette above stops at the NAME, the icon carries its own
+ * colours, and light/dark is handled by swapping to upstream's own light twin —
+ * `FileIcon.svelte` explains that. Do not add `fill`, `color`, `filter` or
+ * `opacity` here.
+ *
+ * 14px, not the app's 16px `size-4`: the row is 12px/1.5 with 3px of padding, so a
+ * 16px icon makes every row taller and the listing shows fewer files.
+ *
+ * `pointer-events: none` because the vendored files each carry a `<title>`, which a
+ * browser shows as a tooltip on hover — a listing where every row says
+ * `file_type_go` on the way past.
+ */
+.pdmux-files-icon,
+.pdmux-files-head-icon {
+	flex: none;
+	width: 14px;
+	height: 14px;
+	display: block;
+}
+
+.pdmux-files-icon svg {
+	width: 14px;
+	height: 14px;
+	display: block;
+	pointer-events: none;
+}
+
+/*
+ * The column header.
+ *
+ * ⚠ INSIDE THE SCROLL BOX, STUCK TO ITS TOP. Above it, the header would be as wide
+ * as the panel while the rows are as wide as the panel minus the scrollbar — 15px in
+ * this Mac's Chrome, headed, dpr 2, measured 2026-08 — and every column would sit a
+ * scrollbar to the right of its own cells. Sticky also keeps the labels while the
+ * listing scrolls, which is the whole reason a header earns its row.
+ *
+ * ⚠ IT MUST SPEND EXACTLY WHAT `.pdmux-files-row` SPENDS. Same gap, same padding,
+ * same box for the icon — a header that agrees with its cells about nine numbers and
+ * disagrees about one is a header that looks broken.
+ */
+.pdmux-files-head {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: var(--pdmux-files-gap, 8px);
+	padding: 3px 6px;
+	font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	background: var(--pdmux-card);
+	border-bottom: 1px solid var(--pdmux-line);
+}
+
+/*
+ * A cell owns the width; the button inside fills it. The split exists so the resize
+ * grip can be positioned against the cell's edge WITHOUT being a child of the
+ * button — a pointerdown inside a control is a click on that control, so a grip in
+ * there would re-sort the listing on every drag.
+ */
+.pdmux-files-cell {
+	position: relative;
+	flex: none;
+}
+
+.pdmux-files-cell[data-pdmux-cell='size'] {
+	width: var(--pdmux-files-w-size, 64px);
+}
+
+.pdmux-files-cell[data-pdmux-cell='modified'] {
+	width: var(--pdmux-files-w-modified, 116px);
+}
+
+.pdmux-files-cell[data-pdmux-cell='mode'] {
+	width: var(--pdmux-files-w-mode, 82px);
+}
+
+/* The name takes what is left, and `min-width: 0` is what stops a long label from
+   growing past its share and squeezing the numbers — the failure the refs column and
+   the patch column both hit before it. */
+.pdmux-files-cell-name {
+	flex: 1;
+	min-width: 0;
+}
+
+/*
+ * ⚠ ABSOLUTE, SO IT COSTS NO LAYOUT WIDTH. A grip taking a flex slot would push every
+ * header cell out of line with the column below it. It straddles the cell's leading
+ * edge, which is the boundary a person is dragging.
+ */
+.pdmux-files-cell > .pdmux-handle {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-start: calc(var(--pdmux-files-gap, 8px) / -2 - 1px);
+	width: 3px;
+	background: none;
+}
+
+.pdmux-files-cell > .pdmux-handle:hover,
+.pdmux-files-cell > .pdmux-handle[data-dragging='true'] {
+	background: var(--pdmux-ring);
+}
+
+.pdmux-files-col {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	width: 100%;
+	padding: 0;
+	font: inherit;
+	/* Labels are the quiet part of a table; the values are the news. Same weight and
+	   colour as `.pdmux-meta`, matching shadcn's caption scale. */
+	font-size: 11px;
+	color: var(--pdmux-muted);
+	text-align: start;
+	background: none;
+	border: 0;
+	cursor: pointer;
+}
+
+.pdmux-files-col:hover {
+	color: var(--pdmux-fg);
+}
+
+/* The sorted column is the one fact this row carries, so it is the one that is not
+   muted. */
+.pdmux-files-col[data-pdmux-sort] {
+	color: var(--pdmux-fg);
+}
+
+.pdmux-files-cell[data-pdmux-cell] .pdmux-files-col {
+	justify-content: flex-end;
+}
+
+.pdmux-files-col-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/*
+ * ⚠ THE INACTIVE ARROW STAYS, DIMMED. Drawing one only on the sorted column leaves
+ * the others looking like plain labels, and nothing tells a person the header is a
+ * control at all.
+ */
+.pdmux-files-arrow {
+	flex: none;
+	width: 12px;
+	height: 12px;
+}
+
+.pdmux-files-arrow[data-pdmux-arrow='none'] {
+	opacity: 0.4;
 }
 
 .pdmux-files-tag {

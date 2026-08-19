@@ -207,7 +207,16 @@
       "dropped": "{count}개 항목이 더 있지만 표시되지 않았습니다",
       "unavailable": "이 호스트의 에이전트는 아직 파일을 탐색할 수 없습니다 — 업데이트하면 사용할 수 있습니다",
       "open": "파일 탐색",
-      "pickHost": "탐색할 호스트를 선택하세요"
+      "pickHost": "탐색할 호스트를 선택하세요",
+      "colName": "이름",
+      "colSize": "크기",
+      "colModified": "수정 시간",
+      "colMode": "권한",
+      "sortBy": "{column} 기준으로 정렬",
+      "sortedAscending": "{column} 오름차순 정렬됨",
+      "sortedDescending": "{column} 내림차순 정렬됨",
+      "resizeColumn": "열 너비 조절",
+      "sortedSubset": "목록에 있는 항목 안에서만 정렬했습니다"
     }
   },
   "dash": {

@@ -8,6 +8,8 @@
    * package may not fetch (`[TC-PDUI-030]`), so the network belongs here too.
    */
   import { FileExplorer, type SelectMode, type Translate } from "@pdmux/ui";
+  import type { FsColumnKey, FsSortKey } from "@pdmux/core";
+  import { mode as colourScheme } from "mode-watcher";
   import CheckIcon from "@lucide/svelte/icons/check";
   import DownloadIcon from "@lucide/svelte/icons/download";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
@@ -44,6 +46,21 @@
   const percent = $derived(
     uploading && uploading.total > 0 ? Math.min(100, Math.round((uploading.sent / uploading.total) * 100)) : 0,
   );
+
+  /**
+   * A column edge being dragged.
+   *
+   * ⚠ THE HANDLE REPORTS A DELTA FROM WHERE THE GESTURE STARTED, so the delta is added
+   * to the width the gesture STARTED from. Adding it to the current width compounds
+   * every pointer move into a runaway column — the same latch `+page.svelte` keeps for
+   * the dock and the sidebar, for the same measured reason.
+   */
+  let columnBase: number | null = null;
+  function dragColumn(key: FsColumnKey, delta: number, commit: boolean, panelWidth: number): void {
+    columnBase ??= files.columns[key];
+    files.resizeColumn(key, columnBase + delta, panelWidth);
+    if (commit) columnBase = null;
+  }
 
   let picker = $state<HTMLInputElement | null>(null);
   let dragging = $state(false);
@@ -90,6 +107,28 @@
   }
 
   const i18n = getI18n();
+
+  /**
+   * When a listing was last written.
+   *
+   * ⚠ A LOCALE FORMAT, WHICH IS WHY IT IS HERE AND NOT IN `@pdmux/ui`. That package
+   * takes `formatDate` as a prop for exactly this reason — `time.ts` records it: a
+   * package that formats a date owns a string its consumer cannot localise. Same
+   * arrangement `commit-dock` already has with the graph.
+   *
+   * Two digits everywhere and no seconds: the column is ~116px of 11px monospace, and
+   * `commit-dock` learned what happens when a timestamp does not fit — it wrapped
+   * inside a fixed-height row and covered the row beneath it.
+   */
+  const listingStamp = new Intl.DateTimeFormat(i18n.locale, {
+    year: "2-digit",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const listingDate = (epochSeconds: number): string => listingStamp.format(new Date(epochSeconds * 1000));
+
   const hostName = $derived(hosts.find((host) => host.id === files.hostId)?.label ?? i18n.t.dash.files.pickHost);
 
   /**
@@ -306,7 +345,7 @@
   {/if}
 
   <FileExplorer
-    dir={files.dir}
+    dir={files.shown}
     path={files.path}
     loading={files.loading}
     unavailable={files.unavailable}
@@ -315,10 +354,16 @@
     file={files.file}
     fileLoading={files.fileLoading}
     image={files.image}
+    sort={files.sort}
+    columns={files.columns}
+    scheme={colourScheme.current === "dark" ? "dark" : "light"}
+    formatDate={listingDate}
     {t}
     onOpenDir={(path: string) => onOpenDir(path)}
     onSelect={(name: string, mode: SelectMode) => files.select(name, mode)}
     onClosePreview={() => files.closePreview()}
+    onSort={(key: FsSortKey) => files.sortBy(key)}
+    onColumnResize={dragColumn}
   />
 
   {#if uploading}

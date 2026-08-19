@@ -207,7 +207,16 @@
       "dropped": "{count} more entries are not listed",
       "unavailable": "This host's agent cannot browse files yet — update it to use this view",
       "open": "Browse files",
-      "pickHost": "Choose a host to browse it"
+      "pickHost": "Choose a host to browse it",
+      "colName": "Name",
+      "colSize": "Size",
+      "colModified": "Modified",
+      "colMode": "Mode",
+      "sortBy": "Sort by {column}",
+      "sortedAscending": "{column}, sorted ascending",
+      "sortedDescending": "{column}, sorted descending",
+      "resizeColumn": "Resize column",
+      "sortedSubset": "Sorted within the entries listed, not the whole directory"
     }
   },
   "dash": {
