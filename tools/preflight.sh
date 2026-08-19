@@ -53,11 +53,31 @@ lint() { npm run lint --workspaces --if-present; }
 unit() { npm test --workspaces --if-present; }
 audit() { npm run audit:generic; }
 
-# ⚠ A GENERATED FILE THAT IS COMMITTED CAN GO STALE, AND ITS STALENESS IS SILENT. The
-# file-type icons are vendored SVGs turned into a string module; edit the directory
-# without re-running the generator and the app keeps serving the previous set, which
-# looks like nothing at all. The generator is deterministic for exactly this check.
-generated() { node tools/build-file-icons.mjs --check; }
+# ⚠ A GENERATED FILE THAT IS COMMITTED CAN GO STALE, AND ITS STALENESS IS SILENT.
+# Every generator below is deterministic for exactly this reason: the committed bytes
+# are compared, not regenerated.
+#
+# ⚠ `docs/AGENT_GO.md` SAID CI CAUGHT THE CONTRACT ONES. IT DID NOT — no workflow ever
+# called `schema:check` or `expect:check`, and the conformance corpus had been stale
+# since `fsPut`/`fsDelete`/`fsGet` were added, which is precisely the failure that
+# document describes: "the corpus quietly stops covering whatever you just added". It
+# surfaced only because an unrelated change ran `expect:build` and the diff was larger
+# than the change.
+#
+# ⚠ THE ORDER MATTERS AND IT IS NOT ARBITRARY. `expect:check` reads the package's
+# `dist/`, not `src/`, so it is only meaningful after `build packages` above.
+#
+# The Go half of the same pipeline is already covered: `schema_hash.go` pins the JSON
+# artifacts and a Go test compares it, so `agent go suite` fails if somebody edits the
+# zod and skips `go generate`.
+generated() {
+	npm run schema:check -w @pdmux/protocol || return 1
+	npm run expect:check -w @pdmux/protocol || return 1
+	# The file-type icons are vendored SVGs turned into a string module; edit the
+	# directory without re-running the generator and the app keeps serving the previous
+	# set, which looks like nothing at all.
+	node tools/build-file-icons.mjs --check
+}
 
 # The agent is a Go module rather than an npm workspace, so the workflow checks it in
 # a separate job. Same commands.
