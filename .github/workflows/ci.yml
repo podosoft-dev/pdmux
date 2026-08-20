@@ -51,6 +51,28 @@ jobs:
       - name: unit tests
         run: npm test --workspaces --if-present
 
+      # ⚠ A COMMITTED GENERATED FILE GOING STALE IS SILENT, AND THIS JOB IS WHERE IT
+      # STOPS. `AGENT_GO.md` used to say these two ran here; they did not, and the
+      # conformance corpus was stale from the moment `fsPut`/`fsDelete`/`fsGet` were
+      # added until an unrelated change happened to run `expect:build`. That is exactly
+      # the failure that document describes — "the corpus quietly stops covering
+      # whatever you just added".
+      #
+      # They compare bytes rather than regenerate, so they need the build above:
+      # `schema:check` reads the package's `src/`, `expect:check` reads its `dist/`.
+      # The icons are the same class of artifact — vendored SVGs turned into a string
+      # module, where a stale copy simply serves the previous set and nothing looks
+      # broken.
+      #
+      # The Go half of the contract pipeline is checked in the `agent` job instead,
+      # where a toolchain exists: `schema_hash.go` pins the JSON artifacts and a Go
+      # test compares it.
+      - name: generated artifacts
+        run: |
+          npm run schema:check -w @pdmux/protocol
+          npm run expect:check -w @pdmux/protocol
+          node tools/build-file-icons.mjs --check
+
       # Requirements traceability is NOT checked here, and that is deliberate rather
       # than an omission. Its two halves live in different repositories now: the
       # declaration is prose held alongside this repository and the implementation is

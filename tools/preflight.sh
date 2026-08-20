@@ -57,12 +57,13 @@ audit() { npm run audit:generic; }
 # Every generator below is deterministic for exactly this reason: the committed bytes
 # are compared, not regenerated.
 #
-# ⚠ `docs/AGENT_GO.md` SAID CI CAUGHT THE CONTRACT ONES. IT DID NOT — no workflow ever
-# called `schema:check` or `expect:check`, and the conformance corpus had been stale
-# since `fsPut`/`fsDelete`/`fsGet` were added, which is precisely the failure that
-# document describes: "the corpus quietly stops covering whatever you just added". It
-# surfaced only because an unrelated change ran `expect:build` and the diff was larger
-# than the change.
+# ⚠ `docs/AGENT_GO.md` SAID CI CAUGHT THE CONTRACT ONES AND, FOR A LONG TIME, IT DID
+# NOT — no workflow called `schema:check` or `expect:check`, and the conformance corpus
+# had been stale since `fsPut`/`fsDelete`/`fsGet` were added, which is precisely the
+# failure that document describes: "the corpus quietly stops covering whatever you just
+# added". It surfaced only because an unrelated change ran `expect:build` and the diff
+# came back larger than the change. The workflow's `verify` job runs them now too; this
+# is the copy that answers before the push rather than minutes after it.
 #
 # ⚠ THE ORDER MATTERS AND IT IS NOT ARBITRARY. `expect:check` reads the package's
 # `dist/`, not `src/`, so it is only meaningful after `build packages` above.

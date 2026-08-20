@@ -169,10 +169,11 @@ test.
 either check, so for as long as it stood the corpus could go stale exactly the way this
 section warns about — and it did: the frame-type list had not been rebuilt since
 `fsPut`/`fsDelete`/`fsGet` were added, and it surfaced only when an unrelated change ran
-`expect:build` and produced a diff bigger than the change. Both now run in
-`tools/preflight.sh`, which the `pre-push` hook calls. The Go half **is** in CI, because
-`schema_hash.go` is pinned and a Go test compares it. Adding the two to the workflow is
-still worth doing — a hook is per clone and `--no-verify` skips it.
+`expect:build` and produced a diff bigger than the change. Both now run in the
+workflow's `verify` job **and** in `tools/preflight.sh`, which the `pre-push` hook calls.
+Both, deliberately: a hook is per clone and `--no-verify` skips it, so the hook is the
+fast feedback and CI is the gate. The Go half was always in CI, because `schema_hash.go`
+is pinned and a Go test compares it — which is why only the TypeScript side could drift.
 
 Which means **the output has to be deterministic** — keys sorted, a trailing
 newline, and **nothing derived from the clock, a path or the environment**. One
