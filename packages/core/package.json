@@ -1,6 +1,6 @@
 {
   "name": "@pdmux/core",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "type": "module",
   "description": "Framework-free logic for pdmux dashboards: terminal grid state, metric sparklines, usage gauges and commit-graph lane layout.",
   "license": "Apache-2.0",

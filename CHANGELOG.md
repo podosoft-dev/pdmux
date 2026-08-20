@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 0.10.0
 
 - **The file explorer is a table now.** Every row wears the icon of its file type — folders,
   and per-language marks for the forty-odd kinds the fleet actually holds — and the listing has a
