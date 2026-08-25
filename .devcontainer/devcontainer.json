@@ -16,5 +16,5 @@
     }
   },
   "forwardPorts": [],
-  "remoteUser": "node"
+  "remoteUser": "bun"
 }

@@ -14,9 +14,8 @@ import type { MigrationInterface, QueryRunner } from "typeorm";
  * WHY AN AGGREGATE AND NOT AN AUDIT ROW PER ATTEMPT — two independent reasons, and
  * either one alone would be enough:
  *
- *  1. `@Audit` cannot reach this. The interceptor taps only the success callback,
- *     so it never fires on a refusal; and a WebSocket upgrade does not enter the
- *     Nest request pipeline in the first place.
+ *  1. The normal HTTP audit hook cannot reach this. It records completed requests,
+ *     while a refused WebSocket upgrade is rejected before the HTTP handler runs.
  *  2. One row per attempt is unbounded. The failure this table exists to surface is
  *     precisely the one that repeats forever — an orphaned agent reconnecting on a
  *     backoff — so a per-attempt log would grow without limit while saying the same

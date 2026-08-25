@@ -4,7 +4,7 @@ import {
   AGENT_CLOSE_REPLACED,
   AGENT_CLOSE_TOKEN_REVOKED,
 } from "@pdmux/protocol";
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { HostGitRoot } from "../hosts/host-git-root.entity";
@@ -64,8 +64,8 @@ function build(): {
   const tokenRows = new FakeRepository<AgentToken>({ lastUsedAt: null, revokedAt: null, createdAt: new Date() });
   const disconnect = new AgentDisconnectService(hosts, registry);
   // The seam under test: the agents side subscribes to the hosts service at
-  // startup, exactly as Nest does — `hosts` never learns this module exists.
-  disconnect.onModuleInit();
+  // startup, exactly as the runtime does — `hosts` never learns this module exists.
+  disconnect.connect();
   const tokens = new AgentTokensService(tokenRows.asRepository(), hosts, disconnect);
   const disconnects: string[] = [];
   registry.onHostDisconnect((hostId, reason) => disconnects.push(`${hostId}:${reason}`));

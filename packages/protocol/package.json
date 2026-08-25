@@ -19,13 +19,13 @@
     "conformance"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
-    "lint": "tsc -p tsconfig.json --noEmit",
-    "schema:build": "node scripts/build-schema.mjs",
-    "schema:check": "node scripts/build-schema.mjs --check",
-    "expect:build": "node scripts/build-expected.mjs",
-    "expect:check": "node scripts/build-expected.mjs --check"
+    "build": "bunx --bun tsc -p tsconfig.json",
+    "test": "bunx --bun vitest run",
+    "lint": "bunx --bun tsc -p tsconfig.json --noEmit",
+    "schema:build": "bun scripts/build-schema.mjs",
+    "schema:check": "bun scripts/build-schema.mjs --check",
+    "expect:build": "bun scripts/build-expected.mjs",
+    "expect:check": "bun scripts/build-expected.mjs --check"
   },
   "dependencies": {
     "zod": "^3.24.1"

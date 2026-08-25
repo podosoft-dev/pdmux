@@ -23,7 +23,7 @@ export const MAX_GIT_ROOTS_PER_HOST = 32;
  *
  * ⚠ AND IT IS CAPPED BEFORE IT IS PARSED, for the reason above the constant.
  *
- * It lives in its own module, free of Nest and of the agent layer, because two
+ * It lives in its own module, free of the HTTP framework and of the agent layer, because two
  * callers need it and they sit on opposite sides of a dependency edge: the config
  * builder, and the host view that tells the git dock whether this host is
  * configured to collect anything at all.

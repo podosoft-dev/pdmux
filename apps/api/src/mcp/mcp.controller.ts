@@ -1,9 +1,6 @@
-import { All, Controller, ForbiddenException, Req, Res, UnauthorizedException } from "@nestjs/common";
-import { ApiExcludeController } from "@nestjs/swagger";
-import { Public } from "@thallesp/nestjs-better-auth";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createPdmuxMcpServer } from "@pdmux/mcp";
-import type { Request, Response } from "express";
+import { AppException } from "@podosoft/podokit-contracts";
 
 import { AgentEnrollmentsService } from "../agents/agent-enrollments.service";
 import { AgentExecService } from "../agents/agent-exec.service";
@@ -20,6 +17,8 @@ import type { McpIdentity } from "./host-mcp-keys.service";
 import { McpAuthService } from "./mcp-auth.service";
 import { mcpEnabled } from "./mcp-enabled";
 import type { McpUserIdentity } from "./user-mcp-keys.service";
+
+export type McpEnabled = () => Promise<boolean>;
 
 /**
  * The endpoint a coding CLI on a host connects to.
@@ -44,9 +43,6 @@ import type { McpUserIdentity } from "./user-mcp-keys.service";
  * package's jest config. The package is ESM and these tests run in jest's CommonJS
  * runtime, which is what kept this file untested for as long as it was.
  */
-@ApiExcludeController()
-@Controller("mcp")
-@Public()
 export class McpController {
   constructor(
     private readonly auth: McpAuthService,
@@ -58,10 +54,10 @@ export class McpController {
     private readonly enrollments: AgentEnrollmentsService,
     private readonly exec: AgentExecService,
     private readonly updates: AgentUpdateService,
+    private readonly enabled: McpEnabled = mcpEnabled,
   ) {}
 
-  @All()
-  async handle(@Req() request: Request, @Res() response: Response): Promise<void> {
+  async handle(request: Request): Promise<Response> {
     this.assertOrigin(request);
 
     // ⚠ THE INSTALLATION'S KILL SWITCH SITS HERE, ABOVE THE CREDENTIAL, because it
@@ -74,33 +70,35 @@ export class McpController {
     // that is not a key problem; 403 says "your credential is insufficient", which is
     // also false and invites retrying with a better one. `feature-gate.ts` answers a
     // disabled feature with 404 for the same reason.
-    if (!(await mcpEnabled())) {
-      response.status(404).json({
+    if (!(await this.enabled())) {
+      return Response.json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "MCP is disabled on this pdmux server" },
         id: null,
-      });
-      return;
+      }, { status: 404 });
     }
 
     const presented = McpController.bearer(request);
     const caller = presented ? await this.auth.authenticate(presented) : null;
     if (!caller) {
-      // The header is what an MCP client reads to know it should send a key at all.
-      response.setHeader("www-authenticate", 'Bearer realm="pdmux-mcp"');
-      throw new UnauthorizedException("Invalid or missing pdmux MCP key");
+      return Response.json({
+        jsonrpc: "2.0",
+        error: { code: -32001, message: "Invalid or missing pdmux MCP key" },
+        id: null,
+      }, {
+        status: 401,
+        headers: { "www-authenticate": 'Bearer realm="pdmux-mcp"' },
+      });
     }
 
     if (request.method !== "POST") {
       // Stateless Streamable HTTP has no stream to resume and no session to
       // delete, so GET and DELETE have nothing to do. Saying so beats a silent 404.
-      response.setHeader("allow", "POST");
-      response.status(405).json({
+      return Response.json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "Stateless MCP accepts POST requests only" },
         id: null,
-      });
-      return;
+      }, { status: 405, headers: { allow: "POST" } });
     }
 
     // ⚠ THE PER-SCOPE SWITCH NEEDS THE CREDENTIAL, so it cannot move above it — the
@@ -111,12 +109,11 @@ export class McpController {
     if (caller.kind === "user") {
       const allowed = (await this.fleetSettings.resolve(caller.identity.organizationId)).mcpUserTokens;
       if (!allowed) {
-        response.status(403).json({
+        return Response.json({
           jsonrpc: "2.0",
           error: { code: -32000, message: "Fleet-wide MCP tokens are disabled for this fleet" },
           id: null,
-        });
-        return;
+        }, { status: 403 });
       }
     }
 
@@ -163,23 +160,17 @@ export class McpController {
         tier: identity.effectiveTier,
       });
     }
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    response.on("close", () => {
-      void transport.close();
-      void server.close();
-    });
+    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     await server.connect(transport);
-    await transport.handleRequest(request, response, request.body);
+    return transport.handleRequest(request);
   }
 
   /**
    * One audit entry per MUTATING tool call.
    *
-   * ⚠ `@Audit` CANNOT SERVE THIS ENDPOINT, which is why the entries are written by
-   * hand. It is a controller-handler decorator and everything here arrives at one
-   * `@All()`, so it could only ever record "mcp.call" with no idea which tool ran —
-   * and `AuditInterceptor` derives the actor from `getSession()`, which returns
-   * nothing for a bearer credential, so every entry would carry `actorId: null`.
+   * Generic HTTP audit hooks cannot identify the MCP tool because every call arrives
+   * at the same `/mcp` transport endpoint. The bearer credential also has no browser
+   * session, so tool-aware actor and target data is recorded here instead.
    *
    * ⚠ READS ARE NOT AUDITED, deliberately. A model polling `host_detail` every two
    * seconds while an install finishes would bury the mutations this table exists to
@@ -207,7 +198,7 @@ export class McpController {
       targetType: "host",
       targetId: identity.hostId,
       targetLabel: hostLabel,
-      ip: request.ip ?? null,
+      ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
       metadata: { via: "mcp", mode: "host", keyId: identity.keyId, scopes: identity.scopes, ...entry.metadata },
     });
   }
@@ -223,7 +214,7 @@ export class McpController {
       targetType: entry.target?.type ?? null,
       targetId: entry.target?.id ?? null,
       targetLabel: entry.target?.label ?? null,
-      ip: request.ip ?? null,
+      ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
       metadata: {
         via: "mcp",
         tokenId: identity.keyId,
@@ -242,22 +233,22 @@ export class McpController {
    * case here — it is the presence of a MISMATCHED one that is the attack.
    */
   private assertOrigin(request: Request): void {
-    const origin = request.header("origin");
+    const origin = request.headers.get("origin");
     if (!origin) return;
-    const expected = request.header("x-forwarded-host") ?? request.header("host");
+    const expected = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
     try {
       if (!expected || new URL(origin).host !== expected) {
-        throw new ForbiddenException("MCP origin is not allowed");
+        throw new AppException("MCP_ORIGIN_NOT_ALLOWED", "MCP origin is not allowed", 403);
       }
     } catch (error) {
-      if (error instanceof ForbiddenException) throw error;
+      if (error instanceof AppException) throw error;
       // An unparseable Origin is not a same-origin request.
-      throw new ForbiddenException("MCP origin is not allowed");
+      throw new AppException("MCP_ORIGIN_NOT_ALLOWED", "MCP origin is not allowed", 403);
     }
   }
 
   private static bearer(request: Request): string | null {
-    const header = request.header("authorization");
+    const header = request.headers.get("authorization");
     if (!header?.startsWith("Bearer ")) return null;
     const value = header.slice("Bearer ".length).trim();
     return value.length > 0 ? value : null;
@@ -271,8 +262,9 @@ export class McpController {
    * behind a reverse proxy, and the one-liner would fail on the target.
    */
   private static publicOrigin(request: Request): string {
-    const protocol = request.header("x-forwarded-proto") ?? request.protocol;
-    const host = request.header("x-forwarded-host") ?? request.header("host") ?? "";
+    const url = new URL(request.url);
+    const protocol = request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
+    const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? url.host;
     return `${protocol}://${host}`;
   }
 }

@@ -141,8 +141,8 @@ hosts at all. It runs from a checkout of this repository: add a host in the UI, 
 detail page, then run:
 
 ```bash
-node tools/demo-agent.mjs --server https://<your-pdmux> --token pdmux_… --profile build
-node tools/demo-agent.mjs --list-profiles     # build · db · laptop
+bun tools/demo-agent.mjs --server https://<your-pdmux> --token pdmux_… --profile build
+bun tools/demo-agent.mjs --list-profiles     # build · db · laptop
 ```
 
 The screenshot above was taken this way. It is a convenience, not a test double — the two
@@ -199,9 +199,9 @@ error codes are in [docs/MCP.md](docs/MCP.md).
 
 | | |
 |---|---|
-| `apps/api` | NestJS + TypeORM on PostgreSQL. Host registry, agent gateway, metric retention, git storage, personalisation |
+| `apps/api` | Elysia on Bun + TypeORM on PostgreSQL. Host registry, agent gateway, metric retention, git storage, personalisation |
 | `apps/web` | SvelteKit + Tailwind v4 + shadcn-svelte. The dashboard and the admin screens |
-| `agent` | The Go daemon that runs on each host. PTY, resources, sessions, service probes, read-only git. Not an npm workspace |
+| `agent` | The Go daemon that runs on each host. PTY, resources, sessions, service probes, read-only git. Not a Bun workspace |
 | `packages/protocol` | The agent↔server contract, as zod. The apps import it; the agent embeds a JSON Schema generated from it |
 | `packages/core` | Logic with no framework: terminal grid state, gauges, sparklines, commit lane placement |
 | `packages/ui` | The Svelte 5 components, publishable on their own |
@@ -212,18 +212,18 @@ behaviour comes out as callbacks, and strings are injected by the consumer.
 
 ## Development
 
-Working on pdmux does not use the images. The two apps run from `vite dev` and `nest start --watch`
-with the dependencies in containers, so an edit is on screen without a build:
+Working on pdmux does not use the production images. The two Bun apps run in watch mode with the
+dependencies in containers, so an edit is on screen without a production build:
 
 ```bash
-npm install
+bun install
 cp .env.example .env
 docker compose --env-file .env \
   -f infra/docker/docker-compose.yml -f infra/docker/minio.compose.yml -p pdmux \
   up -d postgres redis minio minio-init
-npx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts
-npm run migration:run -w pdmux-api
-npm run dev
+bunx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts
+bun run --cwd apps/api migration:run
+bun run dev
 ```
 
 Web on `5001`, API on `5002`, Postgres `5440`, Redis `6390`, MinIO `9010` (console `9011`). Change
@@ -231,12 +231,12 @@ them in `.env` if they collide. Why this is a development path and not a way to 
 [docs/OPERATIONS.md](docs/OPERATIONS.md) §1-1.
 
 ```bash
-npm run lint                # type-check both apps and the packages
-npm test                    # unit tests for every workspace
-cd agent && go test ./...   # the agent is a Go module, not part of npm test
-npm run test:e2e            # Playwright, against a running stack
-npm run build:agent         # linux/darwin × amd64/arm64 — needs a Go toolchain, and is
-                            # deliberately not part of `npm run build`
+bun run lint                # type-check both apps and the packages
+bun run test                # unit tests for every workspace
+cd agent && go test ./...   # the agent is a Go module, not part of the Bun workspaces
+bun run test:e2e            # Playwright, against a running stack
+bun run build:agent         # linux/darwin × amd64/arm64 — needs a Go toolchain, and is
+                            # deliberately not part of `bun run build`
 ```
 
 UI tests assert **geometry**, not just the DOM: whether a list really is a scroll container, whether a

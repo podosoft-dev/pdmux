@@ -11,7 +11,7 @@ import { sha256Hex } from "./agent-token.crypto";
  * those copies stays a fleet credential forever; a code is single-use and expires
  * in minutes, and the installer trades it for the real token over TLS.
  *
- * Kept free of Nest and TypeORM, like agent-token.crypto.ts, so the format rules
+ * Kept free of the HTTP framework and TypeORM, like agent-token.crypto.ts, so the format rules
  * can be unit-tested directly.
  */
 

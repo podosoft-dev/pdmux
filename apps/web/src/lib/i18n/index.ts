@@ -1,5 +1,5 @@
 import { page } from "$app/state";
-import { site } from "$lib/site.svelte";
+import { site } from "#lib/site.svelte.js";
 import { resolveLocale, type Locale, type Messages } from "./messages";
 
 export type I18nContext = { readonly t: Messages; readonly locale: Locale };

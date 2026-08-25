@@ -1,9 +1,9 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { ModeWatcher } from "mode-watcher";
-  import { site, type SiteSettings } from "$lib/site.svelte";
-  import { applyTheme, themeConfigFromSettings } from "$lib/site/apply-theme";
-  import SessionIdleTimeout from "$lib/components/session-idle-timeout.svelte";
+  import { site, type SiteSettings } from "#lib/site.svelte.js";
+  import { applyTheme, themeConfigFromSettings } from "#lib/site/apply-theme.js";
+  import SessionIdleTimeout from "#lib/components/session-idle-timeout.svelte";
   // Optional modules add global runtime components here without taking
   // ownership of the application's root layout.
   // podokit:begin:site-runtime-imports

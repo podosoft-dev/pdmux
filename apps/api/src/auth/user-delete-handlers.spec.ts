@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, jest } from "@jest/globals";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import {
   registerUserDeletedHandler,
   runUserDeletedHandlers,
@@ -10,15 +10,15 @@ describe("user deletion handlers", () => {
 
   afterEach(() => {
     for (const remove of unregister.splice(0)) remove();
-    jest.restoreAllMocks();
+    mock.restore();
   });
 
   function register(handler: UserDeletedHandler): void {
     unregister.push(registerUserDeletedHandler(handler));
   }
 
-  it("runs registered module cleanup with the deleted user", async () => {
-    const handler: UserDeletedHandler = jest.fn(async () => undefined);
+  test("runs registered module cleanup with the deleted user", async () => {
+    const handler: UserDeletedHandler = mock(async () => undefined);
     register(handler);
     const user = { id: "user-1", image: "/api/profile-images/avatar.png" };
 
@@ -27,8 +27,8 @@ describe("user deletion handlers", () => {
     expect(handler).toHaveBeenCalledWith(user);
   });
 
-  it("does not fail account deletion when one cleanup rejects", async () => {
-    jest.spyOn(console, "error").mockImplementation(() => undefined);
+  test("does not fail account deletion when one cleanup rejects", async () => {
+    spyOn(console, "error").mockImplementation(() => undefined);
     register(async () => {
       throw new Error("storage unavailable");
     });

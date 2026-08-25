@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
  * Browser geometry checks — OPT-IN.
  *
  * They need a browser binary, so they are gated behind `PDMUX_BROWSER_TEST=1`
- * (`npm run test:geometry -w @pdmux/ui` sets it). Without the flag no dev server is
+ * (`bun run --cwd packages/ui test:geometry` sets it). Without the flag no dev server is
  * started and every spec skips, so a plain `playwright test` in CI cannot fail on a
  * missing download.
  */
@@ -12,7 +12,7 @@ const enabled = Boolean(process.env.PDMUX_BROWSER_TEST);
 /**
  * Escape hatch for a machine that already has a browser: `PDMUX_BROWSER_CHANNEL=chrome`
  * runs against the installed Google Chrome instead of downloading Playwright's own
- * build (`npx playwright install chromium`).
+ * build (`bunx playwright install chromium`).
  */
 const channel = process.env.PDMUX_BROWSER_CHANNEL;
 
@@ -31,7 +31,7 @@ export default defineConfig({
 	...(enabled
 		? {
 				webServer: {
-					// Paths are resolved from the package root, which is where npm runs the
+					// Paths are resolved from the package root, which is where Bun runs the
 					// script from.
 					//
 					// ⚠ `--host 127.0.0.1` IS NOT OPTIONAL, AND ITS ABSENCE FAILED AS A
@@ -41,7 +41,7 @@ export default defineConfig({
 					// with "Timed out waiting 60000ms from config.webServer", which reads as
 					// a slow machine. Naming the address makes the server bind where this
 					// config already says to look, on either stack.
-					command: 'npx vite --config test/geometry/vite.config.ts --host 127.0.0.1',
+					command: 'bunx vite --config test/geometry/vite.config.ts --host 127.0.0.1',
 					url: 'http://127.0.0.1:5199',
 					reuseExistingServer: true,
 					timeout: 60_000,

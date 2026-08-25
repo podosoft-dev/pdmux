@@ -9,7 +9,7 @@ document.
 Initialize it with an explicit kubeconfig context:
 
 ```bash
-npx @podosoft/podokit deploy init --profile production --context production --host app.example.com
+bunx @podosoft/podokit deploy init --profile production --context production --host app.example.com
 ```
 
 Review these fields before planning:
@@ -47,7 +47,7 @@ and it is pinned by a fingerprint of the endpoint plus the daemon ID, so repoint
 it at a different host invalidates the profile instead of deploying somewhere else.
 
 ```bash
-npx @podosoft/podokit deploy init \
+bunx @podosoft/podokit deploy init \
   --profile production \
   --driver docker-compose \
   --context production \

@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
+import adapter from "@sveltejs/adapter-bun";
 import { fileURLToPath } from "node:url";
 import { sveltekit } from "@sveltejs/kit/vite";
+import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { type Plugin, defineConfig, loadEnv } from "vite";
 
@@ -19,6 +21,7 @@ const repoVersion = (
 // HTTPS tunnel hostnames. Vite derives HMR's protocol, host, and port from the
 // browser origin so the same configuration works for both entry points.
 const inDocker = process.env.VITE_DOCKER === "1";
+const publicOrigin = process.env.PODOKIT_BUILD_ORIGIN;
 
 // A WebSocket upgrade is the one thing that cannot go through a SvelteKit server
 // route: `+server.ts` handlers answer HTTP requests and never see the upgrade. Vite
@@ -26,11 +29,9 @@ const inDocker = process.env.VITE_DOCKER === "1";
 // is what makes the session cookie authenticate the terminal socket — and what lets an
 // agent reach the API's gateway through the public origin it was pointed at.
 //
-// In production `server.js` does the same job itself (src/lib/server/terminal-upgrade.js)
-// — this proxy is the DEV EQUIVALENT of that entry, not the only implementation.
-// Relying on it alone is what once let a built deployment ship with dead terminals.
-// Keep the two lists in step: a path added here and not there works in `npm run dev`
-// and is dead once built, which is exactly the failure that entry exists to prevent.
+// In production the packaged edge gateway routes the same exact paths directly to
+// the API. This proxy is the development equivalent. Keep both path lists in step:
+// a path added here and not to Caddy/k3s works in development and is dead once built.
 const backendOrigin = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:5002";
 const upgradeProxy = {
   "/terminal/ws": { target: backendOrigin.replace(/^http/, "ws"), ws: true },
@@ -122,7 +123,7 @@ const revalidateInDev: Plugin = {
  *
  * `loadEnv` is Vite's own reader for exactly this. The shell still wins when it defines
  * the variable, so a one-off override works; otherwise the checked-in `.env` is enough
- * and a bare `npm run dev` is correct from any shell.
+ * and a bare `bun run dev` is correct from any shell.
  */
 const fileEnv = loadEnv(process.env.NODE_ENV ?? "development", fileURLToPath(new URL("../..", import.meta.url)), "");
 const devAllowedHosts = (process.env.DEV_ALLOWED_HOSTS ?? fileEnv.DEV_ALLOWED_HOSTS ?? "")
@@ -157,7 +158,15 @@ export default defineConfig({
    * both stuck on a pre-fix generation.
    */
   cacheDir: "node_modules/.vite-2",
-  plugins: [revalidateInDev, tailwindcss(), sveltekit()],
+  plugins: [
+    revalidateInDev,
+    tailwindcss(),
+    sveltekit({
+      adapter: adapter(),
+      preprocess: vitePreprocess(),
+      ...(publicOrigin ? { paths: { origin: publicOrigin } } : {}),
+    }),
+  ],
   // Read through `$lib/version.ts`, which is the only module that names it.
   define: { __PDMUX_VERSION__: JSON.stringify(repoVersion ?? "") },
   /**

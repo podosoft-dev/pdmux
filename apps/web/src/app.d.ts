@@ -1,5 +1,5 @@
-import type { Locale } from "$lib/i18n/messages";
-import type { SiteSettings } from "$lib/site.svelte";
+import type { Locale } from "#lib/i18n/messages.js";
+import type { SiteSettings } from "#lib/site.svelte.js";
 
 export type SessionUser = {
   id: string;
@@ -16,11 +16,7 @@ export type SessionUser = {
 };
 
 declare global {
-  /**
-   * Replaced at build time by Vite's `define` with the repo's SemVer. Read it through
-   * `$lib/version.ts` rather than naming it directly — a bare identifier that only
-   * exists after bundling is a confusing thing to meet in a component.
-   */
+  /** Inlined from the root package version by Vite. */
   const __PDMUX_VERSION__: string;
 
   namespace App {

@@ -9,7 +9,7 @@ incident response.
 
 | Piece | Minimum | Recommended |
 |---|---|---|
-| API + web | two containers | behind a gateway (Traefik/Nginx), serving `/api` and `/` (web) on the **same origin** |
+| API + web | two containers | behind a gateway (Caddy/Traefik/Nginx), serving everything on the **same origin** |
 | PostgreSQL | 1 | a managed instance with automatic backups |
 | Redis | 1 | shared by sessions, rate limits and job queues |
 | Object storage | MinIO | any S3-compatible service (stores commit patch bodies) |
@@ -18,21 +18,16 @@ incident response.
 web and API on different domains makes cookies, CORS and the WebSocket upgrade all special cases,
 and takes you back to the cross-origin traps an earlier tool ran into.
 
-**Start the web container with `npm start -w pdmux-web` (= `node server.js`)** — starting it with
-`node build` (adapter-node's default entry point) leaves HTTP fine but **kills terminals only**:
-the upgrade goes into SvelteKit, becomes a 303, and panes stay permanently "reconnecting". This
-entry point is the adapter-node server (same port, graceful shutdown and `IDLE_TIMEOUT` contract)
-plus relaying of the `/terminal/ws` upgrade, targeting `BACKEND_INTERNAL_URL`.
-
-**The gateway in front needs no special rule for terminals** — just pass `Upgrade`/`Connection`
-headers through (satisfied by Traefik's defaults and Nginx with `proxy_http_version 1.1`). The path
-the app forwards is **restricted to exactly one** (`TERMINAL_WS_PATH`) and every other upgrade is
-closed, so a permissive gateway does not open the API's internal surface.
+Run the web image with its default `bun ./build` command. HTTP and server-side `/api/*` proxying are
+handled by the official SvelteKit Bun adapter. The edge gateway must route the two exact WebSocket
+paths, `/terminal/ws` and `/agent/ws`, directly to the API; all other paths go to web. The supplied
+Caddyfile and k3s Ingress already encode this order. Preserve `Upgrade`, `Connection`, cookies and
+`X-Forwarded-*` headers when using another gateway.
 
 ### 1-1. ⚠ `vite dev` is not a serving path
 
 The table above is **the whole serving shape** — what reaches users is **a container holding the
-built app**. The vite dev server that `npm run dev` starts is **a development tool**, not something
+built app**. The Vite dev server that `bun run dev` starts is **a development tool**, not something
 to serve to people.
 
 This is not taste; the properties differ:
@@ -350,7 +345,7 @@ automatically** and cards fill within minutes (if storage was empty, details reb
 | `terminal limit reached (16)` in a pane | the agent's **concurrent PTY cap** (a guard protecting the host, `MAX_TERMINALS`). One screen tried to open more than 16, so reduce the pane count in the layout — this was the classic symptom back when the first screen auto-attached to all of a host's sessions (measured: `s15`–`s17` refused, 43 times in a day). If you genuinely need more, raise it with an agent option |
 | `curl … /install.sh \| sh` ends silently | an auth gateway (§2-2) returned HTML, or that deployment has no published release. Run `curl -fsSL …/install.sh` **without the pipe and read the body** — even with nothing to install, a script comes back with 200 stating why (`curl -f` prints nothing on 4xx/5xx) |
 | `SSL routines::wrong version number` during install | the scheme of the origin baked into the script differs from reality (§2-2). Check the proxy's `X-Forwarded-Proto`/`X-Forwarded-Host`, or state it with `--server` |
-| every Agent column reads `unknown` | **no build is published for that platform.** Check that `npm run build:agent`'s output made it into the web image, and — in a split-image deployment — that the API sees the same tree via `AGENT_RELEASE_DIR` |
+| every Agent column reads `unknown` | **no build is published for that platform.** Check that `bun run build:agent`'s output made it into the web image, and — in a split-image deployment — that the API sees the same tree via `AGENT_RELEASE_DIR` |
 | the update button gives `NO_RESTART_SOURCE` | that host has no supervisor (§2-3) — a `--no-service` install, or an agent started by hand |
 | a `force` downgrade to an older agent answers 404 | **an image holds one agent version**, the one its commit declared, so the older directory was never in it ([`VERSIONING.md`](VERSIONING.md) §7-1). All four platforms of that one version *are* present — this is the version axis, not the platform axis. To go back, roll the deployment back to the release whose image carried it |
 | an update ends `rolled back` | the new build did not complete a handshake within the grace period. The old binary was restored and is running, so **the host is fine**. The cause is in that build |
@@ -375,7 +370,7 @@ automatically** and cards fill within minutes (if storage was empty, details reb
   batch, and a batch **will not even start** without a canary already running that build, stopping at
   three concurrent or two failures. Each agent verifies the candidate before swapping and **rolls itself
   back** if it cannot connect within the grace period after.
-  Release artifacts are produced by `npm run build:agent` and served by the web image. **If the API and
+  Release artifacts are produced by `bun run build:agent` and served by the web image. **If the API and
   web are deployed as separate images**, the API side must be given the same tree via
   `AGENT_RELEASE_DIR` — otherwise the server sees "no published build" and every host reads `unknown`.
   The two version lines and the CI checks: [`VERSIONING.md`](VERSIONING.md).

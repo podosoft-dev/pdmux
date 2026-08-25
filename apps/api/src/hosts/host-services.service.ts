@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { Repository } from "typeorm";
 import { AppException } from "../common/app-exception";
 import {
@@ -22,13 +21,12 @@ export type HostServiceChangeListener = (
   organizationId: string,
 ) => Promise<void> | void;
 
-@Injectable()
 export class HostServicesService {
-  private readonly logger = new Logger(HostServicesService.name);
+  private readonly logger = new ProductLogger(HostServicesService.name);
   private changeListener: HostServiceChangeListener = () => {};
 
   constructor(
-    @InjectRepository(HostService) private readonly services: Repository<HostService>,
+    private readonly services: Repository<HostService>,
     private readonly hosts: HostsService,
   ) {}
 

@@ -18,22 +18,22 @@
    * a placeholder — the same rule `host-agent-access.svelte` states for its own.
    */
   import { onMount } from "svelte";
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import * as Card from "$lib/components/ui/card";
-  import * as Select from "$lib/components/ui/select";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import * as Table from "$lib/components/ui/table";
-  import DataTable, { type SortState } from "$lib/components/data-table.svelte";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import * as Select from "#lib/components/ui/select/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import DataTable, { type SortState } from "#lib/components/data-table.svelte";
   import { writeClipboard } from "@pdmux/ui";
   import { toast } from "svelte-sonner";
-  import { mcpTokensApi } from "$lib/dashboard/api";
-  import { causeMessage } from "$lib/dashboard/wording";
-  import type { McpTokenPolicy, McpTokenView, MintedMcpToken } from "$lib/dashboard/types";
-  import { fmt, getI18n } from "$lib/i18n";
-  import ShellBreadcrumb from "$lib/dashboard/components/shell-breadcrumb.svelte";
+  import { mcpTokensApi } from "#lib/dashboard/api.js";
+  import { causeMessage } from "#lib/dashboard/wording.js";
+  import type { McpTokenPolicy, McpTokenView, MintedMcpToken } from "#lib/dashboard/types.js";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
+  import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
 
   const i18n = getI18n();
   const ENV_VAR = "PDMUX_MCP_TOKEN";

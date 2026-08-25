@@ -1,9 +1,10 @@
-import { error, type Handle } from "@sveltejs/kit";
-import { serverApiClient } from "$lib/server/api";
-import { resolveLocale } from "$lib/i18n/messages";
-import { applySearchIndexingHeaders } from "$lib/server/search-indexing";
-import { isPublicPath } from "$lib/server/guards";
-import type { SiteSettings } from "$lib/site.svelte";
+import { error } from "@sveltejs/kit";
+import type { Handle } from "@sveltejs/kit/hooks";
+import { serverApiClient } from "#lib/server/api.js";
+import { resolveLocale } from "#lib/i18n/messages.js";
+import { applySearchIndexingHeaders } from "#lib/server/search-indexing.js";
+import { isPublicPath } from "#lib/server/guards.js";
+import type { SiteSettings } from "#lib/site.svelte.js";
 import { ApiError } from "@podosoft/podokit-api-client";
 
 function isTemporaryServiceFailure(cause: unknown): boolean {
@@ -15,9 +16,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   // Static assets and API proxy requests do not render application layouts.
   // Avoid multiplying settings/session API calls for every asset and proxied
   // request; page and data routes still receive the complete runtime context.
-  // `/mcp` joins `/api/*` here: it is a JSON-RPC endpoint for a machine, so
-  // resolving layouts and fetching a session for it would be pure cost.
-  if (event.route.id === null || event.url.pathname.startsWith("/api/") || event.url.pathname === "/mcp") {
+  if (event.route.id === null || event.url.pathname.startsWith("/api/")) {
     const response = await resolve(event);
     return applySearchIndexingHeaders(response, event.url.pathname);
   }

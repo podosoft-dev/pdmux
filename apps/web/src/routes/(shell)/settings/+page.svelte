@@ -28,15 +28,15 @@
   import { invalidateAll } from "$app/navigation";
   import { toast } from "svelte-sonner";
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
-  import * as Alert from "$lib/components/ui/alert";
-  import * as Card from "$lib/components/ui/card";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { fmt, getI18n } from "$lib/i18n";
-  import ConfirmDialog from "$lib/dashboard/components/confirm-dialog.svelte";
-  import ShellBreadcrumb from "$lib/dashboard/components/shell-breadcrumb.svelte";
-  import { errorCode, fleetApi } from "$lib/dashboard/api";
+  import * as Alert from "#lib/components/ui/alert/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
+  import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
+  import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
+  import { errorCode, fleetApi } from "#lib/dashboard/api.js";
   import {
     FLEET_FIELD_GROUPS,
     FLEET_NUMBER_BOUNDS,
@@ -51,9 +51,9 @@
     hostsPastWindow,
     reviewDraft,
     savedNumber,
-  } from "$lib/dashboard/fleet-settings";
-  import { useShellState } from "$lib/dashboard/shell-state.svelte";
-  import type { FleetSettingsView } from "$lib/dashboard/types";
+  } from "#lib/dashboard/fleet-settings.js";
+  import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
+  import type { FleetSettingsView } from "#lib/dashboard/types.js";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();

@@ -1,17 +1,9 @@
-import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { AppSetting } from "../settings/app-setting.entity";
-import { StorageService } from "../storage/storage.service";
-
-/** Public, admin-editable site settings (name, description, favicon, …). Stored
- *  as `site.*` string keys in the shared `app_setting` table; the favicon binary
- *  lives in object storage (MinIO/S3) and is served from a stable endpoint. */
+import type { SQL } from "bun";
+import type { StorageService } from "../storage/storage.service";
 
 const PREFIX = "site.";
-const FAVICON_KEY = "site/favicon"; // object-storage key
+const FAVICON_KEY = "site/favicon";
 
-/** Keys exposed publicly (read by every page for title/branding). */
 export const PUBLIC_SITE_KEYS = [
   "name",
   "description",
@@ -29,45 +21,56 @@ export const PUBLIC_SITE_KEYS = [
   "allowSignup",
 ] as const;
 
+interface SiteSettingRow {
+  key: string;
+  value: string;
+}
+
 export interface SiteFavicon {
   body: Buffer;
   contentType: string;
 }
 
-@Injectable()
 export class SiteSettingsService {
   constructor(
-    @InjectRepository(AppSetting) private readonly repo: Repository<AppSetting>,
+    private readonly sql: SQL,
     private readonly storage: StorageService,
   ) {}
 
-  /** All `site.*` values as a plain map (keys without the prefix). */
   async getAll(): Promise<Record<string, string>> {
-    const rows = await this.repo.find();
-    const out: Record<string, string> = {};
-    for (const row of rows) {
-      if (row.key.startsWith(PREFIX)) out[row.key.slice(PREFIX.length)] = row.value;
-    }
-    return out;
+    const rows = await this.sql<SiteSettingRow[]>`
+      SELECT "key", "value" FROM "app_setting" WHERE "key" LIKE 'site.%'
+    `;
+    const result: Record<string, string> = {};
+    for (const row of rows) result[row.key.slice(PREFIX.length)] = row.value;
+    return result;
   }
 
   async get(key: string): Promise<string | null> {
-    const row = await this.repo.findOne({ where: { key: PREFIX + key } });
-    return row?.value ?? null;
+    const rows = await this.sql<SiteSettingRow[]>`
+      SELECT "key", "value" FROM "app_setting" WHERE "key" = ${PREFIX + key}
+    `;
+    return rows[0]?.value ?? null;
   }
 
-  /** Upsert several site settings at once. Returns the full updated map. */
   async setMany(update: Record<string, string>): Promise<Record<string, string>> {
     for (const [key, value] of Object.entries(update)) {
-      await this.repo.upsert({ key: PREFIX + key, value }, ["key"]);
+      await this.sql`
+        INSERT INTO "app_setting" ("key", "value", "updatedAt")
+        VALUES (${PREFIX + key}, ${value}, CURRENT_TIMESTAMP)
+        ON CONFLICT ("key") DO UPDATE
+        SET "value" = EXCLUDED."value", "updatedAt" = CURRENT_TIMESTAMP
+      `;
     }
     return this.getAll();
   }
 
-  /** Store an uploaded favicon in object storage and record its metadata. */
-  async setFavicon(body: Buffer, contentType: string): Promise<void> {
+  async setFavicon(body: Uint8Array, contentType: string): Promise<void> {
     await this.storage.put(FAVICON_KEY, body, contentType);
-    await this.setMany({ faviconContentType: contentType, faviconUpdatedAt: `${Date.now()}` });
+    await this.setMany({
+      faviconContentType: contentType,
+      faviconUpdatedAt: String(Date.now()),
+    });
   }
 
   async getFavicon(): Promise<SiteFavicon | null> {
@@ -80,8 +83,7 @@ export class SiteSettingsService {
     }
   }
 
-  /** Cache-busting version token so the browser refetches the favicon after a change. */
-  async faviconVersion(): Promise<string | null> {
+  faviconVersion(): Promise<string | null> {
     return this.get("faviconUpdatedAt");
   }
 }

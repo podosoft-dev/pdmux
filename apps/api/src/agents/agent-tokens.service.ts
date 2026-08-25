@@ -1,5 +1,3 @@
-import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import type { AgentRefusalReason } from "@pdmux/protocol";
 import { AppException } from "../common/app-exception";
@@ -72,10 +70,9 @@ function toView(row: AgentToken): AgentTokenView {
   };
 }
 
-@Injectable()
 export class AgentTokensService {
   constructor(
-    @InjectRepository(AgentToken) private readonly tokens: Repository<AgentToken>,
+    private readonly tokens: Repository<AgentToken>,
     private readonly hosts: HostsService,
     private readonly disconnect: AgentDisconnectService,
   ) {}

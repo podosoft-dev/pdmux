@@ -5,7 +5,7 @@ import { expiryFrom, sha256Hex, tokenHashEquals } from "../agents/agent-token.cr
 /**
  * Minting and recognising the credential an AI CLI presents to the MCP endpoint.
  *
- * Free of Nest and TypeORM so the security-critical rules can be unit-tested
+ * Free of the HTTP framework and TypeORM so the security-critical rules can be unit-tested
  * directly, exactly as `agent-token.crypto.ts` is — and it reuses that file's
  * `sha256Hex`/`tokenHashEquals` rather than growing a second opinion about how a
  * secret is stored and compared.

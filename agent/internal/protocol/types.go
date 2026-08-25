@@ -1,7 +1,7 @@
 // Package protocol is the Go side of the agent <-> server contract.
 //
 // THE SOURCE OF TRUTH IS TYPESCRIPT: packages/protocol/src/index.ts. Three
-// programs have to agree on these shapes (the NestJS API, the SvelteKit web app
+// programs have to agree on these shapes (the Bun API, the SvelteKit web app
 // and this agent), so the shapes are declared once, in zod, and this package is
 // a port — not a second opinion. Where the two could disagree, the disagreement
 // is caught by data rather than by review:

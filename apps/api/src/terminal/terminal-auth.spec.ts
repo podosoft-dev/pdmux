@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "bun:test";
 import { AppException } from "../common/app-exception";
 import type { ScopedSession } from "../fleet/session-scope";
 import type { Host } from "../hosts/host.entity";

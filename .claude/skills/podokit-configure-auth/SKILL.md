@@ -22,7 +22,7 @@ Use the generated `auth:configure` command so credentials enter the encrypted `a
 3. Run Better Auth and TypeORM migrations before configuring a new app:
 
    ```bash
-   npm run migrate:all -w <app>-api
+   bun run --cwd apps/api migrate:all
    ```
 
 4. Create or verify the initial administrator with `admin:bootstrap` before enabling mandatory email verification or other runtime authentication settings.
@@ -53,8 +53,8 @@ credentials for `auth:configure`:
 
 ```bash
 export ADMIN_EMAILS="admin@example.com"
-npm run admin:bootstrap -w <app>-api -- --dry-run
-npm run admin:bootstrap -w <app>-api
+bun run --cwd apps/api admin:bootstrap -- --dry-run
+bun run --cwd apps/api admin:bootstrap
 ```
 
 Unset sensitive variables when finished:
@@ -68,13 +68,13 @@ unset AUTH_SETUP_ADMIN_PASSWORD OAUTH_CLIENT_SECRET SMTP_PASS
 Preview a redacted plan first:
 
 ```bash
-npm run auth:configure -w <app>-api -- --provider google --require-signup-approval --dry-run
+bun run --cwd apps/api auth:configure -- --provider google --require-signup-approval --dry-run
 ```
 
 Apply OAuth credentials and the approval policy:
 
 ```bash
-npm run auth:configure -w <app>-api -- --provider google --require-signup-approval
+bun run --cwd apps/api auth:configure -- --provider google --require-signup-approval
 ```
 
 Configure SMTP separately or in the same run. Passwordless IP-based relays may omit `SMTP_USER` and `SMTP_PASS`.
@@ -84,7 +84,7 @@ export SMTP_HOST="smtp-relay.example.com"
 export SMTP_PORT="587"
 export SMTP_SECURE="false"
 export MAIL_FROM="Example <noreply@example.com>"
-npm run auth:configure -w <app>-api -- --smtp
+bun run --cwd apps/api auth:configure -- --smtp
 ```
 
 ## Verify
@@ -92,7 +92,7 @@ npm run auth:configure -w <app>-api -- --smtp
 1. Check the public capability snapshot:
 
    ```bash
-   npm run auth:configure -w <app>-api -- --provider google --check-only
+   bun run --cwd apps/api auth:configure -- --provider google --check-only
    ```
 
 2. Open `/login` and confirm the provider button appears.

@@ -40,7 +40,7 @@ await recordAudit({
 });
 ```
 
-Or inject `AuditService` in a Nest provider and call `audit.record({ ... })`.
+Or resolve `AuditService` from the application service registry and call `audit.record({ ... })`.
 Both never throw — a failed audit write never breaks the request.
 
 ## Fields (`AuditEntry`)

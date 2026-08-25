@@ -1,10 +1,10 @@
 <script lang="ts">
   // Shown to non-admin visitors while maintenance mode is on (see +layout.server.ts).
   // Admins are never redirected here and can sign in to turn it off.
-  import { Button } from "$lib/components/ui/button";
-  import LanguageSwitch from "$lib/components/language-switch.svelte";
-  import ThemeToggle from "$lib/components/theme-toggle.svelte";
-  import { getI18n } from "$lib/i18n";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import LanguageSwitch from "#lib/components/language-switch.svelte";
+  import ThemeToggle from "#lib/components/theme-toggle.svelte";
+  import { getI18n } from "#lib/i18n/index.js";
 
   const i18n = getI18n();
 </script>

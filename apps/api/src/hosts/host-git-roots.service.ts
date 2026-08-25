@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { Repository } from "typeorm";
 import { AppException } from "../common/app-exception";
 import { CreateHostGitRootDto, UpdateHostGitRootDto } from "./dto/host-git-root.dto";
@@ -18,13 +17,12 @@ export type HostGitRootChangeListener = (
 ) => Promise<void> | void;
 
 
-@Injectable()
 export class HostGitRootsService {
-  private readonly logger = new Logger(HostGitRootsService.name);
+  private readonly logger = new ProductLogger(HostGitRootsService.name);
   private changeListener: HostGitRootChangeListener = () => {};
 
   constructor(
-    @InjectRepository(HostGitRoot) private readonly roots: Repository<HostGitRoot>,
+    private readonly roots: Repository<HostGitRoot>,
     private readonly hosts: HostsService,
   ) {}
 

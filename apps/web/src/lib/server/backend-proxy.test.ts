@@ -76,4 +76,29 @@ describe("backend proxy client address handling", () => {
     expect(response.status).toBe(204);
     expect(upstreamHeaders?.get("user-agent")).toBe(agent);
   });
+
+  it("relays rate-limit response headers to browser clients", async () => {
+    vi.stubGlobal("fetch", async () => new Response(
+      JSON.stringify({ success: false }),
+      {
+        status: 429,
+        headers: {
+          "content-type": "application/json",
+          "retry-after": "17",
+          "ratelimit-limit": "300",
+          "ratelimit-remaining": "0",
+        },
+      },
+    ));
+
+    const response = await proxyRequest(
+      new Request("http://app.localhost/api/cache/key"),
+      "http://api:5002/cache/key",
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("17");
+    expect(response.headers.get("ratelimit-limit")).toBe("300");
+    expect(response.headers.get("ratelimit-remaining")).toBe("0");
+  });
 });

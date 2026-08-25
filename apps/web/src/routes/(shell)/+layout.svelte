@@ -24,36 +24,37 @@
     freshMetrics,
     setSidebarWidth,
   } from "@pdmux/core";
-  import LanguageSwitch from "$lib/components/language-switch.svelte";
-  import ThemeToggle from "$lib/components/theme-toggle.svelte";
+  import LanguageSwitch from "#lib/components/language-switch.svelte";
+  import ImpersonationBanner from "#lib/components/impersonation-banner.svelte";
+  import ThemeToggle from "#lib/components/theme-toggle.svelte";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import ServerIcon from "@lucide/svelte/icons/server";
   import SlidersIcon from "@lucide/svelte/icons/sliders-horizontal";
   import KeyRoundIcon from "@lucide/svelte/icons/key-round";
   import { toast } from "svelte-sonner";
-  import { Button } from "$lib/components/ui/button";
-  import { Toaster } from "$lib/components/ui/sonner";
-  import { fmt, formatDateTime, getI18n } from "$lib/i18n";
-  import HostFormDialog from "$lib/dashboard/components/host-form-dialog.svelte";
-  import ShellUserMenu from "$lib/dashboard/components/shell-user-menu.svelte";
-  import { dismissOnOutside } from "$lib/dashboard/popover-dismiss.svelte";
-  import { selectView, syncViewFromHistory } from "$lib/dashboard/mobile-view.svelte";
-  import { trackVisualViewport } from "$lib/dashboard/visual-viewport.svelte";
-  import { type ShellView, provideShellState } from "$lib/dashboard/shell-state.svelte";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Toaster } from "#lib/components/ui/sonner/index.js";
+  import { fmt, formatDateTime, getI18n } from "#lib/i18n/index.js";
+  import HostFormDialog from "#lib/dashboard/components/host-form-dialog.svelte";
+  import ShellUserMenu from "#lib/dashboard/components/shell-user-menu.svelte";
+  import { dismissOnOutside } from "#lib/dashboard/popover-dismiss.svelte.ts";
+  import { selectView, syncViewFromHistory } from "#lib/dashboard/mobile-view.svelte.ts";
+  import { trackVisualViewport } from "#lib/dashboard/visual-viewport.svelte.ts";
+  import { type ShellView, provideShellState } from "#lib/dashboard/shell-state.svelte.ts";
   import {
     agentRowsFor,
     hostResources,
     hostSummary,
     metricsFeed,
     serviceOptionsFor,
-  } from "$lib/dashboard/map";
-  import { cardUpdate, paneSlots } from "$lib/dashboard/agent-update";
-  import { agentUpdateApi } from "$lib/dashboard/api";
-  import { agentUpdateMessage } from "$lib/dashboard/wording";
-  import AgentUpdateConfirm from "$lib/dashboard/components/agent-update-confirm.svelte";
+  } from "#lib/dashboard/map.js";
+  import { cardUpdate, paneSlots } from "#lib/dashboard/agent-update.js";
+  import { agentUpdateApi } from "#lib/dashboard/api.js";
+  import { agentUpdateMessage } from "#lib/dashboard/wording.js";
+  import AgentUpdateConfirm from "#lib/dashboard/components/agent-update-confirm.svelte";
   import type { HostUpdateMark } from "@pdmux/ui";
-  import { uiTranslate } from "$lib/dashboard/ui-i18n";
-  import type { HostView } from "$lib/dashboard/types";
+  import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
+  import type { HostView } from "#lib/dashboard/types.js";
   import type { LayoutData } from "./$types";
 
   let { data, children }: { data: LayoutData; children: import("svelte").Snippet } = $props();
@@ -293,18 +294,23 @@
   onDestroy(() => shell.stop());
 </script>
 
-<!-- `main`, not a div: this shell IS the page's content, and the landmark is what lets
-     a screen reader (and the shared "back to home" check) find it. -->
-<main
-  class="pdmux pdmux-shell"
+<div
+  class="flex h-dvh min-h-0 flex-col"
+  style={keyboard.open ? `height:${keyboard.height}px` : undefined}
+>
+  {#if data.impersonating}
+    <ImpersonationBanner email={data.user.email} />
+  {/if}
+  <!-- `main`, not a div: this shell IS the page's content, and the landmark is what lets
+       a screen reader (and the shared "back to home" check) find it. -->
+  <main
+  class="pdmux pdmux-shell min-h-0 flex-1"
   data-testid="dashboard-shell"
   data-sidebar={layout.sidebarOpen ? "open" : "hidden"}
   data-dock={dockOpen ? "open" : "closed"}
   data-view={view}
   data-keyboard={keyboard.open ? "open" : "closed"}
-  style="--pdmux-left:{layout.sidebarWidth}px;--pdmux-right:{layout.dockWidth}px;{keyboard.open
-    ? `--pdmux-vh:${keyboard.height}px`
-    : ''}"
+  style="height:auto;--pdmux-left:{layout.sidebarWidth}px;--pdmux-right:{layout.dockWidth}px"
 >
   <HostSidebar
     {cards}
@@ -432,7 +438,8 @@
   <!-- Last in DOM order and pinned to row 2 by CSS, so what a route renders cannot
        displace it. Hidden entirely at desktop widths. -->
   <ShellViewTabs {tabs} active={onDashboard ? shell.view : null} {t} onSelect={chooseView} />
-</main>
+  </main>
+</div>
 
 <!-- The card's own way out of the fleet. Declared here and handed to the popover as a
      value, so a member is passed nothing at all rather than an empty section.

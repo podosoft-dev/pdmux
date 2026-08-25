@@ -1,5 +1,3 @@
-import { Injectable } from "@nestjs/common";
-import { InjectDataSource } from "@nestjs/typeorm";
 import { DataSource } from "typeorm";
 
 import { mcpCeilingFor, type ScopedSession } from "../fleet/session-scope";
@@ -41,7 +39,6 @@ function banHasLifted(banExpires: Date | string | null): boolean {
   return Number.isFinite(at) && at <= Date.now();
 }
 
-@Injectable()
 export class McpAuthorityService {
   /**
    * Two queries per MCP request would be a real cost on the highest-frequency
@@ -56,7 +53,7 @@ export class McpAuthorityService {
 
   private readonly cache = new Map<string, { at: number; ceiling: McpTier | null }>();
 
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(private readonly dataSource: DataSource) {}
 
   /**
    * `null` means "this person has no standing in this scope at all" — the caller

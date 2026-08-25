@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "@jest/globals";
+import { afterEach, describe, expect, it } from "bun:test";
 import { ApiKeyVerifier } from "./api-key-verifier";
 
 const originalApiKeys = process.env.API_KEYS;

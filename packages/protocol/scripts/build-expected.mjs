@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Generate `conformance/expected/*.json` from `conformance/cases/*.json` by running
  * the real zod schemas.
@@ -8,7 +8,7 @@
  * one does. An expectation typed by hand only proves that the author and the author's
  * schema agree — the moment a `.default()` changes, a hand-written file changes with
  * it in the same commit and the corpus quietly stops testing anything. Generating it
- * means the diff on `npm run expect:build` IS the behaviour change, visible in review.
+ * means the diff on `bun run --cwd packages/protocol expect:build` IS the behaviour change, visible in review.
  *
  * The cases themselves stay hand-written, for the opposite reason: an input generated
  * from the schema can only exercise what the schema already thinks about.
@@ -20,8 +20,8 @@
  *   - no orphan expected file survives its cases file.
  *
  * Usage:
- *   node scripts/build-expected.mjs            # write conformance/expected/*.json
- *   node scripts/build-expected.mjs --check    # regenerate in memory, diff, write nothing
+ *   bun scripts/build-expected.mjs            # write conformance/expected/*.json
+ *   bun scripts/build-expected.mjs --check    # regenerate in memory, diff, write nothing
  *
  * `--check` is what CI runs: it exits 1 when the committed expectations no longer
  * match what the schemas produce, and touches no file.
@@ -47,7 +47,7 @@ try {
 		protocolVersion: protocol.PROTOCOL_VERSION,
 	};
 } catch (cause) {
-	console.error(`Cannot load ${DIST} — run \`npm run build -w @pdmux/protocol\` first.`);
+	console.error(`Cannot load ${DIST} — run \`bun run --cwd packages/protocol build\` first.`);
 	console.error(String(cause));
 	process.exit(1);
 }
@@ -190,7 +190,7 @@ if (check) {
 	if (stale.length > 0) {
 		console.error('Committed expectations are stale:\n');
 		for (const line of stale) console.error(`  - ${line}`);
-		console.error('\nRun `npm run expect:build -w @pdmux/protocol` and review the diff: it IS the behaviour change.');
+		console.error('\nRun `bun run --cwd packages/protocol expect:build` and review the diff: it IS the behaviour change.');
 		process.exit(1);
 	}
 	console.log(`expect:check — ${generated.size} file(s), ${seenIds.size} case(s) match the committed expectations.`);

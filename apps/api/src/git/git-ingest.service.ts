@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { In, IsNull, MoreThan, Not, Repository, type FindOptionsWhere } from "typeorm";
 import type { RepoSnapshot } from "@pdmux/protocol";
 import { GitBlobBufferService } from "./git-blob-buffer.service";
@@ -92,14 +91,13 @@ function chunked<T>(items: T[], size: number): T[][] {
  * with the `main` chip still on the abandoned one, because a row nobody mentions
  * again is also a row whose decoration is never refreshed again. See `pruneCommits`.
  */
-@Injectable()
 export class GitIngestService {
-  private readonly logger = new Logger(GitIngestService.name);
+  private readonly logger = new ProductLogger(GitIngestService.name);
 
   constructor(
-    @InjectRepository(Repo) private readonly repos: Repository<Repo>,
-    @InjectRepository(RepoRef) private readonly refs: Repository<RepoRef>,
-    @InjectRepository(RepoCommit) private readonly commits: Repository<RepoCommit>,
+    private readonly repos: Repository<Repo>,
+    private readonly refs: Repository<RepoRef>,
+    private readonly commits: Repository<RepoCommit>,
     private readonly details: GitDetailService,
     private readonly blobs: GitBlobBufferService,
   ) {}
@@ -462,7 +460,7 @@ export class GitIngestService {
       // new commit on top shifts every older row down by one. Everything else in a
       // commit row is immutable by definition.
       const patch: Partial<RepoCommit> = {};
-      if (row.refs.join(" ") !== commit.refs.join(" ")) patch.refs = commit.refs;
+      if (row.refs.join("\u0000") !== commit.refs.join("\u0000")) patch.refs = commit.refs;
       if (row.seq !== index) patch.seq = index;
       if (Object.keys(patch).length > 0) await this.commits.update({ id: row.id }, patch);
     }

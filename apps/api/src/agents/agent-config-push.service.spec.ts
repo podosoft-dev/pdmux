@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "bun:test";
 import type { AgentConfig } from "@pdmux/protocol";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
@@ -64,8 +64,8 @@ function build(): {
   const config = new AgentConfigService(settings, services, gitRoots);
   const registry = new AgentRegistryService();
   // The seam under test: the pusher registers itself on the two services from the
-  // agents side, exactly as Nest does at startup.
-  new AgentConfigPushService(settings, services, gitRoots, hosts, config, registry).onModuleInit();
+  // agents side, exactly as the runtime does at startup.
+  new AgentConfigPushService(settings, services, gitRoots, hosts, config, registry).connect();
   return { settings, hosts, services, gitRoots, config, registry };
 }
 

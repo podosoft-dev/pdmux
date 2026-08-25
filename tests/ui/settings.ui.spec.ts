@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ready } from "../helpers/hydration";
-import { setAuthServerConfig, waitForCapabilities } from "../helpers/auth-config";
 
 // admin storageState (project default)
 
@@ -75,29 +74,43 @@ test("admin can toggle a feature flag and it applies live @smoke", async ({ page
   const toggle = page.getByRole("switch", { name: "Magic link" });
   test.skip((await toggle.count()) === 0, "magic link toggle not present");
   // Serial workers (workers:1) make toggle-then-restore safe for other specs.
-  // The starting state is asserted with a reload retry: an earlier spec's auth
-  // config write rebuilds the auth instance, and this page can render from the
-  // pre-rebuild capabilities for a moment.
-  // What this spec is about is that a toggle applies live — not that the flag
-  // happens to be on when it starts. Other specs in the suite turn magic link off
-  // and on again, so establish the starting state through the API instead of
-  // asserting whatever the run left behind, then wait for the server to agree.
-  await page.request.put("/api/account/settings", { data: { magicLink: true } });
-  await waitForCapabilities(page.request, (caps) => caps.magicLink === true, "magicLink = true");
-  await expect(async () => {
-    // Re-navigate through the hydration helper rather than reloading raw: a click
-    // on the tab before the island hydrates is swallowed, and then the panel that
-    // owns this switch never renders at all.
-    await ready(page, "/admin/settings");
-    await page.getByRole("tab", { name: "Authentication" }).click();
-    await expect(toggle).toBeChecked({ timeout: 3000 });
-  }).toPass({ timeout: 20_000 });
+  await expect(toggle).toBeChecked();
   await toggle.click();
   await expect(page.getByText("Setting updated")).toBeVisible();
   await expect(toggle).not.toBeChecked(); // capabilities refreshed live
   // restore so the shared magic-link/2FA specs keep their expected state
   await toggle.click();
   await expect(toggle).toBeChecked();
+});
+
+test("admin can disable the MCP endpoint and restore it live", async ({ page }) => {
+  await ready(page, "/admin/settings");
+  await page.getByRole("tab", { name: "Authentication" }).click();
+  const toggle = page.getByRole("switch", { name: "MCP (Model Context Protocol)" });
+  await expect(toggle).toBeVisible();
+  const original = await toggle.isChecked();
+
+  async function setEnabled(enabled: boolean): Promise<void> {
+    if ((await toggle.isChecked()) === enabled) return;
+    const saved = page.waitForResponse(
+      (response) => response.url().endsWith("/api/account/settings")
+        && response.request().method() === "PUT",
+    );
+    await toggle.click();
+    expect((await saved).ok()).toBeTruthy();
+    if (enabled) await expect(toggle).toBeChecked();
+    else await expect(toggle).not.toBeChecked();
+  }
+
+  try {
+    await setEnabled(true);
+    expect((await page.request.post("/mcp")).status()).toBe(401);
+
+    await setEnabled(false);
+    expect((await page.request.post("/mcp")).status()).toBe(404);
+  } finally {
+    await setEnabled(original);
+  }
 });
 
 test("settings: the require-two-factor toggle is available", async ({ page }) => {
@@ -134,10 +147,10 @@ test("inactive browser sessions are signed out automatically @smoke", async ({ b
     });
     expect(signIn.ok()).toBeTruthy();
 
-    await setAuthServerConfig(context.request, { sessionIdleTimeoutMinutes: 5 }, {
-      key: "sessionIdleTimeoutMinutes",
-      value: 5,
+    const configured = await context.request.put("/api/account/auth-config", {
+      data: { server: { sessionIdleTimeoutMinutes: 5 } },
     });
+    expect(configured.ok()).toBeTruthy();
     await page.route("**/api/auth/sign-out", async (route) => {
       signOutRequests += 1;
       await route.fulfill({ status: 200, contentType: "application/json", body: '{"success":true}' });

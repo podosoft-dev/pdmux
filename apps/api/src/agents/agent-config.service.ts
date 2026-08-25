@@ -1,4 +1,3 @@
-import { Injectable } from "@nestjs/common";
 import { agentConfigSchema, type AgentConfig, type AgentServiceConfig } from "@pdmux/protocol";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import type { FleetSettings } from "../fleet/fleet-settings";
@@ -16,7 +15,6 @@ import type { HostService } from "../hosts/host-service.entity";
  * over the wire on every connect, so changing them is a settings edit here rather
  * than an SSH session there.
  */
-@Injectable()
 export class AgentConfigService {
   constructor(
     private readonly settings: FleetSettingsService,

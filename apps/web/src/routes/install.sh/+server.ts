@@ -21,12 +21,12 @@
  */
 
 import type { RequestHandler } from "@sveltejs/kit";
-import { loadAgentRelease } from "$lib/server/install-script/manifest";
+import { loadAgentRelease } from "#lib/server/install-script/manifest.js";
 import {
   isValidInstallScriptOrigin,
   renderInstallScript,
   renderUnavailableScript,
-} from "$lib/server/install-script/render";
+} from "#lib/server/install-script/render.js";
 
 /** The body depends on request headers, so it can never be baked at build time. */
 export const prerender = false;
@@ -62,8 +62,8 @@ function firstHeaderValue(request: Request, name: string): string | null {
 /**
  * The origin this installer should download from.
  *
- * ⚠ NOT `event.url.origin`. With adapter-node that value comes from the `ORIGIN`
- * environment variable, and a deployment that forgot to set it would serve
+ * ⚠ NOT `event.url.origin`. The adapter sees the internal listener unless external
+ * origin metadata is configured, and a deployment that relied on it could serve
  * `http://localhost:3000` — a script that is syntactically perfect and installs
  * nothing, on every host, silently. The request's own headers are the only thing
  * that is true on a deployment nobody configured.
@@ -90,8 +90,8 @@ function isDirectlyReachedHost(hostname: string): boolean {
 /**
  * The origin this installer should download from.
  *
- * ⚠ NOT `event.url.origin`. With adapter-node that value comes from the `ORIGIN`
- * environment variable, and a deployment that forgot to set it would serve
+ * ⚠ NOT `event.url.origin`. The adapter sees the internal listener unless external
+ * origin metadata is configured, and a deployment that relied on it could serve
  * `http://localhost:3000` — a script that is syntactically perfect and installs
  * nothing, on every host, silently. The request's own headers are the only thing
  * that is true on a deployment nobody configured.
@@ -99,8 +99,8 @@ function isDirectlyReachedHost(hostname: string): boolean {
  * ⚠ AND THE SCHEME IS NOT ASSUMED TO BE `https`. Behind a proxy
  * `x-forwarded-proto` is authoritative. Reached DIRECTLY over plain http — a
  * self-hosted install, a private address, a laptop on the same network — there is no
- * such header, and `event.url.protocol` cannot help either: adapter-node derives it
- * from configuration, not from the socket, and reports `https:` on a plain-http
+ * such header, and `event.url.protocol` cannot identify the public scheme when an
+ * internal listener and the public endpoint use different protocols. A plain-http
  * listener. Measured, not imagined: `curl … | sh` against a plain-http pdmux died on
  * `SSL routines::wrong version number` while downloading the binary — *after* the
  * script itself had been fetched over http without complaint, which reads as "the

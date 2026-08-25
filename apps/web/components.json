@@ -6,9 +6,9 @@
     "baseColor": "zinc"
   },
   "aliases": {
-    "components": "$lib/components",
-    "ui": "$lib/components/ui",
-    "utils": "$lib/utils"
+    "components": "#lib/components",
+    "ui": "#lib/components/ui",
+    "utils": "#lib/utils.js"
   },
   "typescript": true,
   "registry": "https://shadcn-svelte.com/registry"

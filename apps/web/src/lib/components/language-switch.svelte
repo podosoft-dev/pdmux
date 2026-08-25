@@ -1,10 +1,10 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import { Button } from "$lib/components/ui/button";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
   import GlobeIcon from "@lucide/svelte/icons/globe";
-  import { getI18n } from "$lib/i18n";
-  import { LOCALES, localeNames, type Locale } from "$lib/i18n/messages";
+  import { getI18n } from "#lib/i18n/index.js";
+  import { LOCALES, localeNames, type Locale } from "#lib/i18n/messages.js";
 
   const i18n = getI18n();
 

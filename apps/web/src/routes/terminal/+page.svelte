@@ -10,12 +10,12 @@
   import "@pdmux/ui/styles.css";
   import "@xterm/xterm/css/xterm.css";
   import { onDestroy, untrack } from "svelte";
-  import { browser } from "$app/environment";
+  import { browser } from "$app/env";
   import { TerminalGrid } from "@pdmux/ui";
   import { type SlotKind, type TerminalLayout, defaultLayout, focusSlot } from "@pdmux/core";
-  import { getI18n } from "$lib/i18n";
-  import { TerminalRelay, defaultRelayUrl, type RelayStatus } from "$lib/dashboard/terminal-relay";
-  import { uiTranslate } from "$lib/dashboard/ui-i18n";
+  import { getI18n } from "#lib/i18n/index.js";
+  import { TerminalRelay, defaultRelayUrl, type RelayStatus } from "#lib/dashboard/terminal-relay.js";
+  import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
 
   let {
     data,

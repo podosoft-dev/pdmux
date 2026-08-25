@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "bun:test";
 import { plainToInstance } from "class-transformer";
 import { validateSync } from "class-validator";
 import { CreateHostDto } from "./create-host.dto";

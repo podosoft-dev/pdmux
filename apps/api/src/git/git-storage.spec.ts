@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "bun:test";
 import { commitDetailKey, isValidSha, workingDiffKey } from "./git-storage";
 
 const HOST = "11111111-1111-4111-8111-111111111111";

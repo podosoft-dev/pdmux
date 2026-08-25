@@ -12,9 +12,9 @@
    */
   import type { GridMode, TerminalLayout } from "@pdmux/core";
   import { GRID_SIZE } from "@pdmux/core";
-  import { Button } from "$lib/components/ui/button";
+  import { Button } from "#lib/components/ui/button/index.js";
   import FolderTreeIcon from "@lucide/svelte/icons/folder-tree";
-  import { fmt, getI18n } from "$lib/i18n";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
   import type { RelayStatus } from "../terminal-relay";
 
   let {

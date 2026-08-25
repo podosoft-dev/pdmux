@@ -1,16 +1,16 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { currentPath, withAuthRedirect } from "$lib/auth-redirect";
-  import { Button } from "$lib/components/ui/button";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
+  import { currentPath, withAuthRedirect } from "#lib/auth-redirect.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
   import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
   import LogOutIcon from "@lucide/svelte/icons/log-out";
   import UserIcon from "@lucide/svelte/icons/user";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
-  import { api } from "$lib/api";
-  import { getI18n } from "$lib/i18n";
-  import { cn } from "$lib/utils";
+  import { api } from "#lib/api.js";
+  import { getI18n } from "#lib/i18n/index.js";
+  import { cn } from "#lib/utils.js";
   import type { SessionUser } from "../../app.d.ts";
   import UserAvatar from "./user-avatar.svelte";
 

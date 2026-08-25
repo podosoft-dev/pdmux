@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import { randomBytes } from "node:crypto";
 import {
   safeParse,
@@ -69,9 +69,8 @@ interface Connection {
  * a `terminal error` frame first. A browser waiting on a pane that will never
  * answer is the worst outcome here, worse than a hard error.
  */
-@Injectable()
 export class TerminalRelayService {
-  private readonly logger = new Logger(TerminalRelayService.name);
+  private readonly logger = new ProductLogger(TerminalRelayService.name);
   private readonly connections = new Map<string, Connection>();
   private unsubscribe: (() => void)[] = [];
   /**

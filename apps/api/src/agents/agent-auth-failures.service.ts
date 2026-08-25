@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { IsNull, Repository } from "typeorm";
 
 import type { AgentRefusalReason } from "@pdmux/protocol";
@@ -25,12 +24,11 @@ export interface AgentAuthFailureView {
   lastSeenAt: string;
 }
 
-@Injectable()
 export class AgentAuthFailuresService {
-  private readonly logger = new Logger(AgentAuthFailuresService.name);
+  private readonly logger = new ProductLogger(AgentAuthFailuresService.name);
 
   constructor(
-    @InjectRepository(AgentAuthFailure) private readonly failures: Repository<AgentAuthFailure>,
+    private readonly failures: Repository<AgentAuthFailure>,
     private readonly hosts: HostsService,
   ) {}
 

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import type { AgentDownstream } from "@pdmux/protocol";
 import { GitService } from "../git/git.service";
 import { AgentRegistryService } from "./agent-registry.service";
@@ -12,9 +12,8 @@ import { AgentRegistryService } from "./agent-registry.service";
  * has — finite and self-healing, but it delays the commits nobody has yet by
  * several passes on every restart.
  */
-@Injectable()
 export class AgentAckService {
-  private readonly logger = new Logger(AgentAckService.name);
+  private readonly logger = new ProductLogger(AgentAckService.name);
 
   constructor(
     private readonly git: GitService,

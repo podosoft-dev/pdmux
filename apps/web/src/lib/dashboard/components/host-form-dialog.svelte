@@ -18,17 +18,17 @@
    * `(shell)`, which is what makes `useShellState()` available here.
    */
   import { untrack } from "svelte";
-  import { Button } from "$lib/components/ui/button";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
   import { toast } from "svelte-sonner";
-  import { getI18n } from "$lib/i18n";
-  import { hostsApi } from "$lib/dashboard/api";
-  import HostInstallDialog from "$lib/dashboard/components/host-install-dialog.svelte";
-  import { useShellState } from "$lib/dashboard/shell-state.svelte";
-  import { causeMessage, codeMessage } from "$lib/dashboard/wording";
-  import type { CreatedHostEnrollment, HostView } from "$lib/dashboard/types";
+  import { getI18n } from "#lib/i18n/index.js";
+  import { hostsApi } from "#lib/dashboard/api.js";
+  import HostInstallDialog from "#lib/dashboard/components/host-install-dialog.svelte";
+  import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
+  import { causeMessage, codeMessage } from "#lib/dashboard/wording.js";
+  import type { CreatedHostEnrollment, HostView } from "#lib/dashboard/types.js";
 
   let {
     open = $bindable(false),

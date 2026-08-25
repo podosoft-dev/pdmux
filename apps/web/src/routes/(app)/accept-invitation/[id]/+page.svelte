@@ -1,10 +1,10 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { Button } from "$lib/components/ui/button";
-  import * as Card from "$lib/components/ui/card";
-  import { api } from "$lib/api";
-  import { getI18n } from "$lib/i18n";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import { api } from "#lib/api.js";
+  import { getI18n } from "#lib/i18n/index.js";
 
   const i18n = getI18n();
   let status = $state<"pending" | "ok" | "error">("pending");

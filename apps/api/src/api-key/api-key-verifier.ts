@@ -1,11 +1,9 @@
-import { Injectable } from "@nestjs/common";
 import { createHash, timingSafeEqual } from "node:crypto";
 
 function digest(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
 }
 
-@Injectable()
 export class ApiKeyVerifier {
   private readonly keyDigests = (process.env.API_KEYS ?? "")
     .split(",")

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "@jest/globals";
-import { redisConnectionOptions } from "./redis.connection";
+import { describe, expect, it } from "bun:test";
+import { redisConnectionOptions, redisConnectionUrl } from "./redis.connection";
 
 describe("redisConnectionOptions", () => {
   it("prefers an authenticated URL over individual settings", () => {
@@ -49,5 +49,23 @@ describe("redisConnectionOptions", () => {
     } catch (error) {
       expect(String(error)).not.toContain(secretUrl);
     }
+  });
+});
+
+describe("redisConnectionUrl", () => {
+  it("preserves an explicitly configured URL after validation", () => {
+    expect(redisConnectionUrl({ REDIS_URL: "rediss://user:p%40ss@example.com:6381/4" }))
+      .toBe("rediss://user:p%40ss@example.com:6381/4");
+  });
+
+  it("builds a Bun Redis URL from host-style environment variables", () => {
+    expect(redisConnectionUrl({
+      REDIS_HOST: "cache.example.com",
+      REDIS_PORT: "6381",
+      REDIS_DB: "4",
+      REDIS_USERNAME: "podokit",
+      REDIS_PASSWORD: "p@ss",
+      REDIS_TLS: "true",
+    })).toBe("rediss://podokit:p%40ss@cache.example.com:6381/4");
   });
 });

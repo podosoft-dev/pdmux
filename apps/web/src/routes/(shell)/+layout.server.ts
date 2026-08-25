@@ -1,9 +1,9 @@
 import { redirect } from "@sveltejs/kit";
 import type { LayoutServerLoad } from "./$types";
-import { requireBackendAvailable } from "$lib/server/guards";
-import { looksLikePhone } from "$lib/server/phone-hint";
-import { FLEET_SETTING_FALLBACK } from "$lib/dashboard/fleet-settings";
-import type { FleetScopeView, FleetSettingsView, HostView, PrefsView } from "$lib/dashboard/types";
+import { requireBackendAvailable } from "#lib/server/guards.js";
+import { looksLikePhone } from "#lib/server/phone-hint.js";
+import { FLEET_SETTING_FALLBACK } from "#lib/dashboard/fleet-settings.js";
+import type { FleetScopeView, FleetSettingsView, HostView, PrefsView } from "#lib/dashboard/types.js";
 
 /**
  * What the product's shell needs, loaded once for every page inside it.
@@ -84,6 +84,7 @@ export const load: LayoutServerLoad = async ({ locals, url, fetch, request }) =>
    */
   return {
     user: locals.user,
+    impersonating: Boolean(locals.session?.impersonatedBy),
     hosts: hosts.value,
     hostsOk: hosts.ok,
     /** First-paint hint only — see `looksLikePhone`. The media query owns this after hydration. */

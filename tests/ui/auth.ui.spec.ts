@@ -9,7 +9,7 @@ const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 
 test("login page renders @smoke", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByLabel("Email")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /Email(?: or username)?/ })).toBeVisible();
   await expect(page.getByLabel("Password")).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Sign up" })).toBeVisible();
@@ -18,7 +18,7 @@ test("login page renders @smoke", async ({ page }) => {
 
 test("invalid credentials show an error", async ({ page }) => {
   await ready(page, "/login");
-  await page.getByLabel("Email").fill("nobody@example.com");
+  await page.getByRole("textbox", { name: /Email(?: or username)?/ }).fill("nobody@example.com");
   await page.getByLabel("Password").fill("wrong-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("alert")).toBeVisible();

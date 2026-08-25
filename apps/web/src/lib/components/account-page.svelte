@@ -1,18 +1,18 @@
 <script lang="ts">
   import { goto, invalidateAll } from "$app/navigation";
   import QRCode from "qrcode";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Badge } from "$lib/components/ui/badge";
-  import * as Card from "$lib/components/ui/card";
-  import * as Table from "$lib/components/ui/table";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "$lib/components/data-table.svelte";
-  import { deviceLabel } from "$lib/device-label";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "#lib/components/data-table.svelte";
+  import { deviceLabel } from "#lib/device-label.js";
   import { toast } from "svelte-sonner";
-  import { api } from "$lib/api";
-  import { getI18n, fmt, formatDateTime } from "$lib/i18n";
+  import { api } from "#lib/api.js";
+  import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
   import { untrack } from "svelte";
   import type { SessionUser } from "../../app.d.ts";
   import UserAvatar from "./user-avatar.svelte";
@@ -265,7 +265,10 @@
     const { data: res, error } = await api.auth.twoFactor.enable({ password: twoFaPassword });
     twoFaBusy = false;
     if (error) return void toast.error(error.message ?? i18n.t.account.changeFailed);
-    setup = { totpURI: res?.totpURI ?? "", backupCodes: (res?.backupCodes ?? []) as string[] };
+    if (res?.method !== "totp") {
+      return void toast.error(i18n.t.account.changeFailed);
+    }
+    setup = { totpURI: res.totpURI, backupCodes: res.backupCodes };
   }
   async function verify2fa(): Promise<void> {
     twoFaBusy = true;
@@ -362,7 +365,7 @@
   async function disconnect(provider: string): Promise<void> {
     const account = accounts.find((a) => a.providerId === provider);
     if (!account) return;
-    const { error } = await api.auth.unlinkAccount({ providerId: provider, accountId: account.accountId });
+    const { error } = await api.auth.unlinkAccount({ accountId: account.id });
     if (error) toast.error(error.message ?? i18n.t.account.saveFailed);
     else {
       toast.success(i18n.t.account.disconnected);

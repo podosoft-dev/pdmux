@@ -7,12 +7,15 @@ import { backendBaseUrl, resolveClientIp } from "./backend-proxy";
 export function serverApiClient(event: RequestEvent): ApiClient {
   const cookie = event.request.headers.get("cookie") ?? "";
   const clientIp = resolveClientIp(event.getClientAddress);
-  const fetchWithCookies: typeof fetch = (input, init) => {
-    const headers = new Headers(init?.headers);
-    if (cookie) headers.set("cookie", cookie);
-    if (clientIp) headers.set("x-forwarded-for", clientIp);
-    return event.fetch(input, { ...init, headers });
-  };
+  const fetchWithCookies: typeof fetch = Object.assign(
+    (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const headers = new Headers(init?.headers);
+      if (cookie) headers.set("cookie", cookie);
+      if (clientIp) headers.set("x-forwarded-for", clientIp);
+      return event.fetch(input, { ...init, headers });
+    },
+    { preconnect: fetch.preconnect },
+  );
   return createApiClient({
     baseUrl: backendBaseUrl(),
     apiBasePath: "",

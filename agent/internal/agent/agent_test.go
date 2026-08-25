@@ -200,6 +200,14 @@ type harness struct {
 // start runs an agent against a live server and waits for its hello.
 func start(t *testing.T, mutate func(*Options)) *harness {
 	t.Helper()
+	// Session targets resolve the multiplexer before the injected fake PTY is
+	// opened. Supply a harmless executable so this harness behaves identically on
+	// developer machines and minimal CI images without depending on system tmux.
+	muxDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(muxDir, "tmux"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", muxDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	store := &memoryStore{initial: git.Repos{}}
 	pty := newFakePty()

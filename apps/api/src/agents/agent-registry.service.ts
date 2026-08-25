@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import { AGENT_CLOSE_REPLACED, type AgentDownstream, type TerminalServerFrame } from "@pdmux/protocol";
 
 /**
@@ -45,9 +45,8 @@ interface AgentConnection {
  * one API replica needs a pub/sub hop (Redis) in front of `sendToHost` — the
  * single method every caller already goes through, so that change stays local.
  */
-@Injectable()
 export class AgentRegistryService {
-  private readonly logger = new Logger(AgentRegistryService.name);
+  private readonly logger = new ProductLogger(AgentRegistryService.name);
   private readonly connections = new Map<string, AgentConnection>();
   private readonly terminalHandlers = new Set<TerminalFrameHandler>();
   private readonly disconnectHandlers = new Set<HostDisconnectHandler>();

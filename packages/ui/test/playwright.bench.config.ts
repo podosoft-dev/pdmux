@@ -28,7 +28,7 @@ export default defineConfig({
 	...(enabled
 		? {
 				webServer: {
-					command: 'npx vite --config test/bench/vite.config.ts',
+					command: 'bunx vite --config test/bench/vite.config.ts',
 					url: 'http://127.0.0.1:5198',
 					reuseExistingServer: true,
 					timeout: 60_000,

@@ -3,10 +3,10 @@
   "version": "0.10.0",
   "private": true,
   "scripts": {
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --project=ui",
-    "test:e2e:api": "playwright test --project=api",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e": "bunx playwright test",
+    "test:e2e:ui": "bunx playwright test --project=ui",
+    "test:e2e:api": "bunx playwright test --project=api",
+    "test:e2e:report": "bunx playwright show-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

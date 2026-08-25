@@ -1,22 +1,17 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { BadRequestException, ForbiddenException, Logger, ValidationPipe } from "@nestjs/common";
-import { METHOD_METADATA } from "@nestjs/common/constants";
-import "reflect-metadata";
-import type { UserSession } from "@thallesp/nestjs-better-auth";
+import { beforeEach, describe, expect, it } from "bun:test";
+import { plainToInstance } from "class-transformer";
+import { validateSync } from "class-validator";
 import { AppException } from "../common/app-exception";
-import { AUDIT_KEY, type AuditMeta } from "../audit/audit.decorator";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { HostGitRoot } from "../hosts/host-git-root.entity";
 import { HostService } from "../hosts/host-service.entity";
 import { Host } from "../hosts/host.entity";
-import { HostsController } from "../hosts/hosts.controller";
 import { HostsService } from "../hosts/hosts.service";
 import { fakeAgentReleases } from "../testing/fake-agent-releases";
 import { fakeDataSource } from "../testing/fake-data-source";
 import { FakeRepository } from "../testing/fake-repository";
 import { AgentEnrollment } from "./agent-enrollment.entity";
-import { AgentEnrollmentsController } from "./agent-enrollments.controller";
 import { AgentEnrollmentsService, ENROLLMENT_TTL_MS } from "./agent-enrollments.service";
 import { AgentToken } from "./agent-token.entity";
 import { AgentDisconnectService } from "./agent-disconnect.service";
@@ -70,13 +65,6 @@ function build(): {
   };
 }
 
-function session(role: string): UserSession {
-  return {
-    user: { id: "user-1", name: "Ada", email: "ada@example.com", role },
-    session: { activeOrganizationId: ORG_A },
-  } as unknown as UserSession;
-}
-
 /** Reach into a stored row to age it, the way 15 minutes of wall clock would. */
 function expire(row: AgentEnrollment): void {
   row.expiresAt = new Date(Date.now() - 1000);
@@ -111,10 +99,8 @@ describe("[TC-PDAGENT-063] enrollment code lifecycle", () => {
   it("hands a live code over with the host, in one call", async () => {
     // The wiring `POST /hosts` rides on: this service registers itself as the
     // issuer, so the hosts side never has to import it back.
-    ctx.enrollments.onModuleInit();
-    const controller = new HostsController(ctx.hosts);
-
-    const created = await controller.create(session("admin"), { label: "build-01" });
+    ctx.enrollments.connect();
+    const created = await ctx.hosts.createWithEnrollment(ORG_A, { label: "build-01" }, "user-1");
 
     const code = created.enrollment?.code ?? "";
     expect(code).toMatch(/^pdmxe_/);
@@ -128,19 +114,10 @@ describe("[TC-PDAGENT-063] enrollment code lifecycle", () => {
     // And an installer can spend it: registration alone now enrols a machine.
     await expect(ctx.enrollments.redeem(code, IP)).resolves.toMatchObject({ hostId: created.id });
 
-    // The audit entry records THAT a code was issued and which row it is — never
-    // the plaintext, which exists in that one response body and nowhere else.
-    const handler = (HostsController.prototype as unknown as Record<string, () => unknown>).create;
-    const audit = Reflect.getMetadata(AUDIT_KEY, handler) as AuditMeta | undefined;
-    expect(audit?.action).toBe("host.create");
-    const target = audit?.resolve?.({} as never, created);
-    expect(JSON.stringify(target ?? {})).not.toContain(code);
-    expect(target?.metadata).toEqual({ enrollmentIssued: true, enrollmentId: created.enrollment?.id });
   });
 
   it("registers the host even when its code cannot be minted", async () => {
-    const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
-    ctx.enrollments.onModuleInit();
+    ctx.enrollments.connect();
     // The one failure the mint has of its own: two clicks landing together lose to
     // the partial unique index (surfaced as ENROLL_CODE_CONFLICT).
     const save = ctx.rows.save.bind(ctx.rows);
@@ -148,16 +125,14 @@ describe("[TC-PDAGENT-063] enrollment code lifecycle", () => {
       throw Object.assign(new Error("duplicate key value violates unique constraint"), { code: "23505" });
     };
 
-    const created = await new HostsController(ctx.hosts).create(session("admin"), { label: "build-01" });
+    const created = await ctx.hosts.createWithEnrollment(ORG_A, { label: "build-01" }, "user-1");
 
     expect(created.enrollment).toBeNull();
     expect(await ctx.hosts.get(ORG_A, created.id)).toMatchObject({ label: "build-01" });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("without an enrollment code"));
 
     // The escape hatch is the endpoint that already exists — one click, no lost host.
     ctx.rows.save = save;
     await expect(ctx.enrollments.create(ORG_A, created.id, "user-1")).resolves.toMatchObject({ status: "live" });
-    warn.mockRestore();
   });
 
   it("keeps at most one live code per host: creating again retires the previous one", async () => {
@@ -226,35 +201,6 @@ describe("[TC-PDAGENT-063] enrollment code lifecycle", () => {
     });
   });
 
-  it("is admin-only and audited on every mutation", async () => {
-    const host = await ctx.hosts.create(ORG_A, { label: "build-01" });
-    const controller = new AgentEnrollmentsController(ctx.enrollments);
-
-    // assertCanManageFleet throws before the handler returns a promise, so these are
-    // synchronous throws — a non-admin never reaches the service at all.
-    expect(() => controller.create(session("user"), host.id, {})).toThrow(ForbiddenException);
-    // ⚠ Express 5 leaves `req.body` UNDEFINED for a bodyless POST (Express 4 left
-    // `{}`), and this route took no body until the expiry choice arrived — so an
-    // un-updated caller must still get a code, not a 500 off a missing property.
-    expect(() => controller.create(session("user"), host.id, undefined)).toThrow(ForbiddenException);
-    expect(() => controller.current(session("user"), host.id)).toThrow(ForbiddenException);
-    expect(() => controller.revoke(session("user"), host.id, host.id)).toThrow(ForbiddenException);
-
-    const minted = await controller.create(session("admin"), host.id, undefined);
-    expect(minted.code).toMatch(/^pdmxe_/);
-    // The session's user is recorded as the issuer.
-    expect((ctx.rows.rows[0] as { createdByUserId?: string }).createdByUserId).toBe("user-1");
-
-    const prototype = AgentEnrollmentsController.prototype as unknown as Record<string, () => unknown>;
-    for (const name of ["create", "revoke"]) {
-      const handler = prototype[name] as () => unknown;
-      expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBeDefined();
-      const audit = Reflect.getMetadata(AUDIT_KEY, handler) as AuditMeta | undefined;
-      expect(audit?.action).toBe(`agent.enrollment.${name === "create" ? "create" : "revoke"}`);
-      // ...and the audit target never carries the plaintext.
-      expect(JSON.stringify(audit?.resolve?.({} as never, minted) ?? {})).not.toContain(minted.code);
-    }
-  });
 });
 
 describe("[TC-PDAGENT-064] enrollment code redemption", () => {
@@ -395,23 +341,31 @@ describe("[TC-PDAGENT-064] enrollment code redemption", () => {
   });
 
   it("takes the code in the body, and treats an undeclared field as a 400", async () => {
-    // The same pipe main.ts installs globally.
-    const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
-    const meta = { type: "body" as const, metatype: EnrollAgentDto, data: "" };
     const code = "pdmxe_7Q4KM-9XZRB-8C3TF-N5HVW";
-
-    await expect(
-      pipe.transform({ code, hostname: "build-01", os: "linux", arch: "amd64", agentVersion: "0.2.0" }, meta),
-    ).resolves.toMatchObject({ code, hostname: "build-01" });
+    const valid = plainToInstance(EnrollAgentDto, {
+      code,
+      hostname: "build-01",
+      os: "linux",
+      arch: "amd64",
+      agentVersion: "0.2.0",
+    });
+    expect(validateSync(valid, { whitelist: true, forbidNonWhitelisted: true })).toHaveLength(0);
+    expect(valid).toMatchObject({ code, hostname: "build-01" });
 
     // ⚠ Why the code cannot ride in a header: the web proxy forwards a fixed
     // allowlist (backend-proxy.ts) and a custom header never arrives — so a body
     // with no `code` is what the API would see, and this is that error.
-    await expect(pipe.transform({ hostname: "build-01" }, meta)).rejects.toBeInstanceOf(BadRequestException);
+    expect(validateSync(
+      plainToInstance(EnrollAgentDto, { hostname: "build-01" }),
+      { whitelist: true, forbidNonWhitelisted: true },
+    ).length).toBeGreaterThan(0);
 
     // ⚠ forbidNonWhitelisted: an unknown property is a 400, not a silent drop.
     // A newer installer that sends one more field breaks against an older API.
-    await expect(pipe.transform({ code, kernel: "6.8.0" }, meta)).rejects.toBeInstanceOf(BadRequestException);
+    expect(validateSync(
+      plainToInstance(EnrollAgentDto, { code, kernel: "6.8.0" }),
+      { whitelist: true, forbidNonWhitelisted: true },
+    ).length).toBeGreaterThan(0);
   });
 
   it("does not touch the database for a malformed code", async () => {

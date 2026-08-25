@@ -1,5 +1,5 @@
 import type { PageServerLoad } from "./$types";
-import { requireAdmin } from "$lib/server/guards";
+import { requireAdmin } from "#lib/server/guards.js";
 
 // Non-secret view of the DB-backed auth config (OAuth providers, SMTP, server
 // toggles). Secrets are never sent — only a `hasSecret` flag per credential.
@@ -38,19 +38,12 @@ export const load: PageServerLoad = async ({ locals, fetch }) => {
   } catch {
     /* default off */
   }
-  // Whether this server answers /mcp at all — same shape as require2fa, and for the
-  // same reason: it is policy rather than a typed Capability, and that type lives in
-  // a published package this repo cannot extend.
-  //
-  // ⚠ THIS IS THE DISPLAY PATH ONLY. Enforcement reads the same row through a
-  // short-TTL pool query in `mcp/mcp-enabled.ts`, because SettingsService caches per
-  // process and a switch honoured by one replica is not a switch.
   let mcpEnabled = true;
   try {
     const res = await fetch("/api/account/mcp-enabled");
     if (res.ok) mcpEnabled = ((await res.json()) as { mcpEnabled?: boolean }).mcpEnabled !== false;
   } catch {
-    /* default on — a failed read must not read as "MCP is off" */
+    /* default on so an unavailable display request does not imply a policy change */
   }
   return { authConfig, require2fa, mcpEnabled };
 };

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { plainToInstance } from "class-transformer";
 import { validateSync } from "class-validator";
 import { AppException } from "../common/app-exception";

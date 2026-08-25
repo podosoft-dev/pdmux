@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "bun:test";
 import { stableTopoOrder } from "./commit-order";
 
 /** `c("a", "b")` = commit a whose first parent is b. */

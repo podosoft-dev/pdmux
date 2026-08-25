@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PROTOCOL_VERSION, agentVersionState } from "@pdmux/protocol";
@@ -163,7 +163,7 @@ describe("[TC-PDHOST-011] the published release a host is measured against", () 
  * somebody notices in production.
  */
 describe("[TC-PDHOST-022] the image the api actually ships carries the releases", () => {
-  const dockerfile = readFileSync(join(process.cwd(), "Dockerfile"), "utf8");
+  const dockerfile = readFileSync(join(__dirname, "..", "..", "Dockerfile"), "utf8");
 
   it("builds the manifests in the image rather than trusting a checkout", () => {
     // Built here, NOT copied from the repository: the committed tree carries
@@ -172,7 +172,7 @@ describe("[TC-PDHOST-022] the image the api actually ships carries the releases"
     // answers 404 for makes the agent accept an update and then report
     // DOWNLOAD_FAILED — worse than offering nothing.
     expect(dockerfile).toMatch(/FROM\s+\S+\s+AS agent/);
-    expect(dockerfile).toContain("node tools/build-agent-binaries.mjs");
+    expect(dockerfile).toContain("bun tools/build-agent-binaries.mjs");
     expect(dockerfile).not.toMatch(/COPY\s+apps\/web\/static\/agent/);
   });
 

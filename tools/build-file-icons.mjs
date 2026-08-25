@@ -1,11 +1,11 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Turns the vendored vscode-icons SVGs into the string module `@pdmux/ui` imports.
  *
  * HOW TO RUN IT
  *
- *   node tools/build-file-icons.mjs            # write packages/ui/src/icons/file-icons.gen.ts
- *   node tools/build-file-icons.mjs --check    # fail if the committed file is stale
+ *   bun tools/build-file-icons.mjs            # write packages/ui/src/icons/file-icons.gen.ts
+ *   bun tools/build-file-icons.mjs --check    # fail if the committed file is stale
  *
  * ⚠ WHY A GENERATED MODULE AND NOT `import icon from './x.svg?raw'`. That suffix is
  * a Vite feature. `@pdmux/ui` is published and installed into other people's
@@ -108,13 +108,13 @@ if (process.argv.includes("--check")) {
   try {
     committed = readFileSync(OUT, "utf8");
   } catch {
-    console.error(`${OUT} is missing. Run \`node tools/build-file-icons.mjs\`.`);
+    console.error(`${OUT} is missing. Run \`bun tools/build-file-icons.mjs\`.`);
     process.exit(1);
   }
   if (committed !== output) {
     console.error(
       `${OUT} does not match the SVGs in icons/vscode-icons/.\n` +
-        `Run \`node tools/build-file-icons.mjs\` and commit the result.`,
+        `Run \`bun tools/build-file-icons.mjs\` and commit the result.`,
     );
     process.exit(1);
   }

@@ -1,14 +1,14 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import QRCode from "qrcode";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Checkbox } from "$lib/components/ui/checkbox";
-  import * as Card from "$lib/components/ui/card";
-  import * as Alert from "$lib/components/ui/alert";
-  import { api } from "$lib/api";
-  import { getI18n } from "$lib/i18n";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import { Checkbox } from "#lib/components/ui/checkbox/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import * as Alert from "#lib/components/ui/alert/index.js";
+  import { api } from "#lib/api.js";
+  import { getI18n } from "#lib/i18n/index.js";
 
   const i18n = getI18n();
   let password = $state("");
@@ -39,7 +39,11 @@
       error = e.code === "INVALID_PASSWORD" ? i18n.t.setup2fa.wrongPassword : i18n.t.setup2fa.enableFailed;
       return;
     }
-    setup = { totpURI: data?.totpURI ?? "", backupCodes: (data?.backupCodes ?? []) as string[] };
+    if (data?.method !== "totp") {
+      error = i18n.t.setup2fa.enableFailed;
+      return;
+    }
+    setup = { totpURI: data.totpURI, backupCodes: data.backupCodes };
   }
 
   async function activate(): Promise<void> {
@@ -51,7 +55,7 @@
       error = i18n.t.auth.twoFactorInvalidCode;
       return;
     }
-    await goto("/admin", { invalidateAll: true });
+    await goto("/account", { invalidateAll: true });
   }
 
   function downloadCodes(): void {

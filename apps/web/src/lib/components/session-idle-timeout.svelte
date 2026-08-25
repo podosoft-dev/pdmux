@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
-  import { api } from "$lib/api";
+  import { api } from "#lib/api.js";
 
   let { timeoutMinutes }: { timeoutMinutes: number | null } = $props();
 

@@ -1,8 +1,8 @@
 import type { LayoutServerLoad } from "./$types";
 import { redirect } from "@sveltejs/kit";
-import { safeAuthRedirect } from "$lib/auth-redirect";
-import { loadMessages } from "$lib/i18n/messages";
-import { isPublicPath, requireBackendAvailable } from "$lib/server/guards";
+import { safeAuthRedirect } from "#lib/auth-redirect.js";
+import { loadMessages } from "#lib/i18n/messages.js";
+import { isPublicPath, requireBackendAvailable } from "#lib/server/guards.js";
 import type { Capabilities } from "@podosoft/podokit-api-client";
 
 // "/" is a public landing page. Auth pages return signed-in users to their safe

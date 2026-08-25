@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { Repository } from "typeorm";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { Host } from "../hosts/host.entity";
@@ -20,12 +19,11 @@ export interface RetentionRun {
  * over organizations (tens), not hosts (hundreds), and each delete is one
  * indexed range statement.
  */
-@Injectable()
 export class MetricsRetentionService {
-  private readonly logger = new Logger(MetricsRetentionService.name);
+  private readonly logger = new ProductLogger(MetricsRetentionService.name);
 
   constructor(
-    @InjectRepository(Host) private readonly hosts: Repository<Host>,
+    private readonly hosts: Repository<Host>,
     private readonly settings: FleetSettingsService,
     private readonly metrics: MetricsService,
   ) {}

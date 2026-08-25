@@ -136,8 +136,8 @@ curl -fsSL https://<pdmux 주소>/install.sh | sh -s -- --code pdmxe_XXXXX-XXXXX
 발급한 뒤 실행합니다.
 
 ```bash
-node tools/demo-agent.mjs --server https://<pdmux 주소> --token pdmux_… --profile build
-node tools/demo-agent.mjs --list-profiles     # build · db · laptop
+bun tools/demo-agent.mjs --server https://<pdmux 주소> --token pdmux_… --profile build
+bun tools/demo-agent.mjs --list-profiles     # build · db · laptop
 ```
 
 위 스크린샷도 이렇게 찍었습니다. 편의를 위한 도구이지 테스트 더블은 아닙니다. 두 구현을 같은 계약에
@@ -190,9 +190,9 @@ Claude  {"mcpServers":{"pdmux":{"type":"http","url":"<origin>/mcp",
 
 | | |
 |---|---|
-| `apps/api` | NestJS + TypeORM(PostgreSQL). 호스트 레지스트리, 에이전트 게이트웨이, 지표 보존, git 저장, 개인화 |
+| `apps/api` | Bun 기반 Elysia + TypeORM(PostgreSQL). 호스트 레지스트리, 에이전트 게이트웨이, 지표 보존, git 저장, 개인화 |
 | `apps/web` | SvelteKit + Tailwind v4 + shadcn-svelte. 대시보드와 관리자 화면 |
-| `agent` | 호스트에서 도는 Go 데몬. PTY·리소스·세션·서비스 프로브·읽기 전용 git. npm 워크스페이스가 아닙니다 |
+| `agent` | 호스트에서 도는 Go 데몬. PTY·리소스·세션·서비스 프로브·읽기 전용 git. Bun 워크스페이스가 아닙니다 |
 | `packages/protocol` | 에이전트↔서버 계약(zod). 앱은 이 파일을 직접 쓰고, 에이전트는 여기서 생성한 JSON Schema를 embed합니다 |
 | `packages/core` | 프레임워크 없는 로직. 터미널 그리드 상태, 게이지, 스파크라인, 커밋 레인 배치 |
 | `packages/ui` | Svelte 5 컴포넌트. 따로 배포할 수 있습니다 |
@@ -202,18 +202,18 @@ Claude  {"mcpServers":{"pdmux":{"type":"http","url":"<origin>/mcp",
 
 ## 개발
 
-pdmux를 고칠 때는 이미지를 쓰지 않습니다. 두 앱은 `vite dev`와 `nest start --watch`로 돌고 의존 서비스만
-컨테이너에 두므로, 고친 것이 빌드 없이 화면에 반영됩니다.
+pdmux를 고칠 때는 운영 이미지를 쓰지 않습니다. 두 Bun 앱은 watch 모드로 돌고 의존 서비스만
+컨테이너에 두므로, 고친 것이 운영 빌드 없이 화면에 반영됩니다.
 
 ```bash
-npm install
+bun install
 cp .env.example .env
 docker compose --env-file .env \
   -f infra/docker/docker-compose.yml -f infra/docker/minio.compose.yml -p pdmux \
   up -d postgres redis minio minio-init
-npx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts
-npm run migration:run -w pdmux-api
-npm run dev
+bunx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts
+bun run --cwd apps/api migration:run
+bun run dev
 ```
 
 web `5001`, api `5002`, Postgres `5440`, Redis `6390`, MinIO `9010`(콘솔 `9011`)입니다. 포트가 겹치면
@@ -221,12 +221,12 @@ web `5001`, api `5002`, Postgres `5440`, Redis `6390`, MinIO `9010`(콘솔 `9011
 [docs/OPERATIONS.md](docs/OPERATIONS.md) §1-1에 적어 두었습니다.
 
 ```bash
-npm run lint                # 두 앱과 패키지 타입 체크
-npm test                    # 워크스페이스 단위 테스트
-cd agent && go test ./...   # 에이전트는 Go 모듈이라 npm test에 들어가지 않습니다
-npm run test:e2e            # Playwright. 스택이 떠 있어야 합니다
-npm run build:agent         # linux·darwin × amd64·arm64. Go 툴체인이 필요해서
-                            # `npm run build`에는 일부러 넣지 않았습니다
+bun run lint                # 두 앱과 패키지 타입 체크
+bun run test                # 워크스페이스 단위 테스트
+cd agent && go test ./...   # 에이전트는 Go 모듈이라 Bun 워크스페이스에 들어가지 않습니다
+bun run test:e2e            # Playwright. 스택이 떠 있어야 합니다
+bun run build:agent         # linux·darwin × amd64·arm64. Go 툴체인이 필요해서
+                            # `bun run build`에는 일부러 넣지 않았습니다
 ```
 
 UI 테스트는 DOM만 보지 않고 **기하**를 잽니다. 목록이 실제로 스크롤 컨테이너인지, 클릭한 패널이 뷰포트

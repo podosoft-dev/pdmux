@@ -38,20 +38,20 @@ step() {
 # order and the same reason as the workflow.
 build_packages() {
 	for pkg in @pdmux/protocol @pdmux/core @pdmux/ui @pdmux/mcp; do
-		npm run build -w "$pkg" >/dev/null || return 1
+		bun run --filter "$pkg" build >/dev/null || return 1
 	done
 }
 
 build_apps() {
-	npm run build -w pdmux-api >/dev/null || return 1
-	npm run build -w pdmux-web >/dev/null || return 1
+	bun run --filter pdmux-api build >/dev/null || return 1
+	bun run --filter pdmux-web build >/dev/null || return 1
 }
 
 # ⚠ `--workspaces`, NOT A LIST. Naming the workspaces is how one gets left out, which
 # is the failure this file exists for.
-lint() { npm run lint --workspaces --if-present; }
-unit() { npm test --workspaces --if-present; }
-audit() { npm run audit:generic; }
+lint() { bun run --workspaces --if-present lint; }
+unit() { bun run --workspaces --if-present test; }
+audit() { bun run audit:generic; }
 
 # ⚠ A GENERATED FILE THAT IS COMMITTED CAN GO STALE, AND ITS STALENESS IS SILENT.
 # Every generator below is deterministic for exactly this reason: the committed bytes
@@ -72,15 +72,15 @@ audit() { npm run audit:generic; }
 # artifacts and a Go test compares it, so `agent go suite` fails if somebody edits the
 # zod and skips `go generate`.
 generated() {
-	npm run schema:check -w @pdmux/protocol || return 1
-	npm run expect:check -w @pdmux/protocol || return 1
+	bun run --cwd packages/protocol schema:check || return 1
+	bun run --cwd packages/protocol expect:check || return 1
 	# The file-type icons are vendored SVGs turned into a string module; edit the
 	# directory without re-running the generator and the app keeps serving the previous
 	# set, which looks like nothing at all.
-	node tools/build-file-icons.mjs --check
+	bun tools/build-file-icons.mjs --check
 }
 
-# The agent is a Go module rather than an npm workspace, so the workflow checks it in
+# The agent is a Go module rather than a Bun workspace, so the workflow checks it in
 # a separate job. Same commands.
 go_suite() {
 	command -v go >/dev/null || { echo "  (no Go toolchain here — CI still checks this)"; return 0; }
@@ -99,7 +99,7 @@ agent_version() {
 	}
 	local changed
 	changed=$(git diff --name-only "$base" HEAD -- agent packages/protocol |
-		grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|/package(-lock)?\.json$)' || true)
+		grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|/package\.json$|^bun\.lock$)' || true)
 	[ -z "$changed" ] && { echo "  no agent or contract source changed"; return 0; }
 
 	echo "  changed:"; echo "$changed" | sed 's/^/    /'
@@ -142,7 +142,7 @@ if [ ${#failures[@]} -eq 0 ]; then
 	cat <<-'NOTE'
 
 	  Not covered here, and still able to fail:
-	    · the agent BINARIES job (`npm run build:agent`, checksum and version match)
+	    · the agent BINARIES job (`bun run build:agent`, checksum and version match)
 	      — minutes of cross-compilation, so run it when `agent/**` changed
 	    · traceability (`./check.sh` in the workspace) — the matrices live there, and
 	      CI cannot see them

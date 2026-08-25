@@ -6,28 +6,30 @@ Follow it so your changes match the project's conventions.
 
 ## Project overview
 
-A full-stack TypeScript monorepo (npm workspaces):
+A Bun 1.4 full-stack TypeScript monorepo (Bun workspaces):
 
-- `apps/api` — **NestJS** backend (`pdmux-api`), TypeORM + PostgreSQL, Swagger at `/api-docs`.
-- `apps/web` — **SvelteKit** frontend (`pdmux-web`), Tailwind v4 + shadcn-svelte + typesafe-i18n.
+- `apps/api` — **Elysia on Bun** backend (`pdmux-api`), TypeORM + PostgreSQL, OpenAPI at `/api-docs`.
+- `apps/web` — **SvelteKit on Bun** frontend (`pdmux-web`), Tailwind v4 + shadcn-svelte + typesafe-i18n.
 - `infra/` — Docker Compose (PostgreSQL/Redis) and example k3s manifests.
 - `.podokit/` — PodoKit's generation lockfile (see "PodoKit tooling" below). Do not edit by hand.
 
 ## Setup & commands
 
 ```bash
-npm install
+bun install
 cp .env.example .env
 docker compose -f infra/docker/docker-compose.yml up -d   # PostgreSQL (+ Redis)
-npm run dev        # api on http://localhost:5002, web on http://localhost:5001
+bun run dev        # api on http://localhost:5002, web on http://localhost:5001
 ```
 
 - **Ports: web = 5001, api = 5002.** The web app reaches the API only through its
   SvelteKit server proxy (`/api/*`), never with a direct browser `fetch`.
-- Build: `npm run build`  ·  Type-check/lint: `npm run lint`  ·  Unit tests: `npm test`
-- Per workspace: `npm run build -w pdmux-api` / `-w pdmux-web`.
-- DB migrations (TypeORM): `npm run migration:run -w pdmux-api`.
-- e2e (Playwright, ships in `tests/`): `npm run test:e2e`.
+- Build: `bun run build` · Type-check/lint: `bun run lint` · Unit tests: `bun run test`
+- Per workspace: `bun run --cwd apps/api build` / `bun run --cwd apps/web build`.
+- Better Auth and application migrations: `bun run --cwd apps/api migrate:all`.
+- e2e (Playwright, ships in `tests/`): `bun run test:e2e`.
+- Playwright officially runs on Node, so `bunx playwright` respects its Node
+  shebang. Node LTS is a test-tool dependency only; product runtimes and builds use Bun.
 
 **Always** verify a change by building the affected workspace (and `svelte-check`
 for web) before considering it done. UI changes need a Playwright test; API
@@ -42,10 +44,10 @@ default). Picking the related specs is part of the work — say which ones and w
 
 ```bash
 # unit, one package
-npm test -w @pdmux/core            # or @pdmux/ui, pdmux-api, pdmux-web
+bun run --cwd packages/core test   # or packages/ui, apps/api, apps/web
 # e2e, one spec file or one TC
-cd tests && npx playwright test --project=ui --workers=1 ui/pdmux-dashboard.ui.spec.ts
-cd tests && npx playwright test --project=ui-mobile --workers=1 -g 'TC-PDTERM-124'
+cd tests && bunx playwright test --project=ui --workers=1 ui/pdmux-dashboard.ui.spec.ts
+cd tests && bunx playwright test --project=ui-mobile --workers=1 -g 'TC-PDTERM-124'
 ```
 
 Which specs cover which change is decided by where the change lands: a component's own
@@ -57,7 +59,7 @@ ties it back to the requirement it was written for.
 
 ### TypeScript (both apps)
 - `strict` mode. **No `any`** — use `unknown` + narrowing. **No `@ts-ignore`/`@ts-expect-error`** and no `eslint-disable`.
-- Explicit function return types. DTOs use `class-validator` decorators.
+- Explicit function return types. Validate HTTP inputs with Elysia `t` schemas.
 - Keep `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`, `noUncheckedIndexedAccess`.
 
 ### Svelte 5 (web)
@@ -79,16 +81,21 @@ ties it back to the requirement it was written for.
 This project is managed by the `podo` CLI. Files have an ownership tier recorded
 in `.podokit/files.lock` — respect it:
 
-- **owned** (your code: `apps/web/src/routes/**`, your components/services, `apps/api/src/app.extensions.ts`, and this `AGENTS.md`) — edit freely. To add or override Nest providers/modules, use `app.extensions.ts` (spread into `AppModule` after the module-wired providers, so a same-token override wins) rather than editing `app.module.ts`.
-- **assembled** (e.g. `apps/api/src/app.module.ts`, `auth.ts`) — contain `// podokit:begin:… / …:end` fenced regions that the toolkit recomputes. Edit outside the fences only; **never hand-edit inside the fences**.
+- **owned** (your code: `apps/web/src/routes/**`, your components/services, `apps/api/src/app.extensions.ts`, and this `AGENTS.md`) — edit freely. Add application-owned services or module descriptors through `app.extensions.ts` instead of changing toolkit registrations.
+- **assembled** (e.g. `apps/api/src/app.ts`, `auth.ts`) — contain `// podokit:begin:… / …:end` fenced regions that the toolkit recomputes. Edit outside the fences only; **never hand-edit inside the fences**.
 - **managed** (bootstrap/config like `main.ts`) — the toolkit may update these; avoid gratuitous edits.
 
 Useful commands:
 
+- `podo dev watch|up|ps|logs|exec|down` — run container development through the
+  shared loopback gateway. `.podokit/dev.json` owns the local hostname and exact
+  API WebSocket path allowlist.
 - `podo add <module>` — add a feature (auth, admin-dashboard, redis, bullmq, …). It wires itself into the app; run `podo add` with no argument to list modules.
 - `podo remove <module>` — un-apply a module (inverse of add; refuses if another module needs it, keeps files you edited).
 - `podo status` / `podo diff` — see your local edits vs. what PodoKit generated.
 - `podo update` — pull in template/module improvements (3-way merges your edits; never touches owned files).
+- `podo deploy` — plan, apply, verify, or roll back an immutable release on Kubernetes or one Docker host. Use `.agents/skills/podokit-deploy`.
+- `podo deploy sync` — copy local build output into a running Compose deployment and restart it. This is not a release. Use `.agents/skills/podokit-deploy-fast`.
 
 **⚠ `/account` moved into the product shell.** It lives at `apps/web/src/routes/(shell)/account/` (page + loader,
 the loader ejected with `podo eject` and moved) so the host sidebar stays put, exactly like `/hosts`. `podo update`
@@ -108,14 +115,15 @@ Conventional Commits (`feat|fix|docs|refactor|test|chore`), imperative mood,
 - SMTP comes from the admin Settings page (when auth is installed) or `SMTP_*` env; with neither, messages are logged to the console (dev links are grabbable from logs).
 - To use a provider SDK instead of SMTP, call `setMailTransport(...)` from `apps/api/src/app.extensions.ts`.
 
-### auth (better-auth)
-- The API is **secure by default**: every route needs a session except `/health` and `/api/auth/*`. Opt a route out with `@Public()`; read the user with `@Session()`.
-- Configure OAuth providers, SMTP, sign-up approval, automatic logout, and the other server toggles on the admin **Settings** page (DB-backed, applied live — not via env). Only `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` are required env vars.
-- Use `npm run auth:configure -w <app>-api -- ...` and `.claude/skills/podokit-configure-auth` to apply OAuth/SMTP credentials without committing secrets. The sign-up approval gate is provider-independent; do not add provider-specific approval checks.
-- Development setup: create auth tables with `npx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts`, then run TypeORM migrations. Production images can run both from compiled output with `npm run migrate:all`.
+### auth (Better Auth + Elysia)
+- The API is secure by default: every application route needs a session except health, OpenAPI, `/api/auth/*`, and routes explicitly registered in `ACCESS_POLICY`.
+- Register a public route during module configuration with `services.resolve(ACCESS_POLICY).register("GET", "/path", "public")`; use `AUTH` and `AuthService.requireSession()` or `requireAdmin()` when a handler needs the current user.
+- Configure OAuth providers, SMTP, sign-up approval, automatic logout, and server toggles on the admin Settings page. Only `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` are required environment variables.
+- Use `bun run --cwd apps/api auth:configure -- ...` and `.claude/skills/podokit-configure-auth` to apply OAuth/SMTP credentials without committing secrets. The sign-up approval gate is provider-independent; do not add provider-specific approval checks.
+- Run `bun run --cwd apps/api migrate:all` in development and production so Better Auth and application migrations use the versions installed by the app.
 
 ### admin-dashboard
-- Admin console lives at `/admin/*` (users, sessions, organizations, audit, settings, account). Set `ADMIN_EMAILS`, then create or verify the initial account with `npm run admin:bootstrap -w <app>-api`; never commit or persist `ADMIN_BOOTSTRAP_PASSWORD`. When sign-up approval is enabled, self-registered users stay pending until an administrator approves them on `/admin/users`; administrator-created users bypass the queue.
+- Admin console lives at `/admin/*` (users, sessions, organizations, audit, settings, account). Set `ADMIN_EMAILS`, then create or verify the initial account with `bun run --cwd apps/api admin:bootstrap`; never commit or persist `ADMIN_BOOTSTRAP_PASSWORD`. When sign-up approval is enabled, self-registered users stay pending until an administrator approves them on `/admin/users`; administrator-created users bypass the queue.
 - Custom protected server layouts must call `requireBackendAvailable(locals)` from `$lib/server/guards` before redirecting anonymous users. This preserves sessions and returns 503 when authentication or maintenance policy cannot be checked.
 - **Every list/table MUST use the shared `$lib/components/data-table.svelte` (`DataTable`)** — it gives sortable headers + a footer pagination. Add search/filters with `$lib/components/table-toolbar.svelte`. Never assemble `Table.Root`/`Table.Header`/`Table.Body` by hand.
 

@@ -50,14 +50,8 @@ services:
   # origin it bakes into itself (docs/OPERATIONS.md §2-2).
   caddy:
     image: caddy:2.10-alpine
-    command:
-      - caddy
-      - reverse-proxy
-      - --from
-      - ${PDMUX_DOMAIN:?set PDMUX_DOMAIN in .env}
-      - --to
-      - web:3000
     depends_on:
+      api: { condition: service_started }
       web: { condition: service_started }
     ports:
       - "${PDMUX_HTTP_PORT:-80}:80"
@@ -65,6 +59,7 @@ services:
     # ⚠ KEEP THIS VOLUME. It holds the issued certificates and the local CA. Losing it
     # means re-issuing on every restart, and Let's Encrypt rate-limits that.
     volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     restart: unless-stopped
@@ -127,7 +122,7 @@ services:
   # migration is additive, so running it against the previous release is safe.
   migrate:
     image: ghcr.io/podosoft-dev/pdmux-api:${PDMUX_VERSION:?set PDMUX_VERSION in .env}
-    command: ["npm", "run", "migrate:all"]
+    command: ["bun", "run", "migrate:all"]
     depends_on:
       postgres: { condition: service_healthy }
     environment: &api-env
@@ -163,9 +158,8 @@ services:
     environment: *api-env
     restart: unless-stopped
 
-  # ⚠ `npm start`, NOT `node build`. adapter-node's own entry point hands the
-  # /terminal/ws upgrade to SvelteKit, which answers 303 — HTTP keeps working and
-  # every terminal pane sits on "reconnecting" for ever. This entry adds the relay.
+  # Caddy routes the two WebSocket paths directly to the API. All HTTP traffic
+  # reaches the official Bun adapter unchanged.
   web:
     image: ghcr.io/podosoft-dev/pdmux-web:${PDMUX_VERSION}
     depends_on:
@@ -173,17 +167,18 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      # adapter-node checks the request's origin against this rather than trusting a
-      # forwarded header, so it has to be the address a browser actually types.
-      ORIGIN: https://${PDMUX_DOMAIN}
       BACKEND_INTERNAL_URL: http://api:5002
       BODY_SIZE_LIMIT: 3M
+      ADDRESS_HEADER: x-forwarded-for
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+      XFF_DEPTH: "1"
     restart: unless-stopped
 
   # Retention and cleanup. Same image and environment as the API, different command.
   worker:
     image: ghcr.io/podosoft-dev/pdmux-api:${PDMUX_VERSION}
-    command: ["npm", "run", "start:worker"]
+    command: ["bun", "run", "start:worker"]
     depends_on:
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }

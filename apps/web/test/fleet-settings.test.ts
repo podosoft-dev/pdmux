@@ -29,8 +29,8 @@ import type { FleetSettingsView } from "$lib/dashboard/types";
 /**
  * The API module this app mirrors.
  *
- * READ, NOT IMPORTED. `apps/api` is a NestJS workspace whose modules pull in decorators
- * and TypeORM, so importing one into a browser-side test would drag the server into the
+ * READ, NOT IMPORTED. `apps/api` is a server workspace whose modules pull in database
+ * and runtime dependencies, so importing one into a browser-side test would drag the server into the
  * app's dependency graph — the same reason `types.ts` restates the wire shapes by hand.
  * Reading the file as text costs nothing and is enough to compare two tables of numbers.
  */
@@ -210,7 +210,7 @@ describe("[TC-PDWEB-022] the screen's bounds and its field list still match the 
   });
 
   it("mirrors NUMBER_BOUNDS exactly", () => {
-    // The mirror exists because this app cannot import a NestJS module; this is what
+    // The mirror exists because this app cannot import a server module; this is what
     // stops it from becoming a second opinion.
     expect(FLEET_NUMBER_BOUNDS).toEqual(apiBounds(source));
   });

@@ -97,7 +97,7 @@ export class FakeRepository<T extends object> {
   constructor(private readonly defaults: Partial<Row> = {}) {}
 
   create(input: Partial<T> | Partial<T>[]): T {
-    // Nest services call create() with one object in this codebase.
+    // Product services call create() with one object in this codebase.
     return { ...this.defaults, ...(input as Row) } as unknown as T;
   }
 

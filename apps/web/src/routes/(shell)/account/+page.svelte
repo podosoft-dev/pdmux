@@ -12,9 +12,9 @@
    * The screen itself is PodoKit's `account-page.svelte` (managed): it is reused whole,
    * never edited or forked, so every auth feature it grows arrives here for free.
    */
-  import AccountPage from "$lib/components/account-page.svelte";
-  import ShellBreadcrumb from "$lib/dashboard/components/shell-breadcrumb.svelte";
-  import { getI18n } from "$lib/i18n";
+  import AccountPage from "#lib/components/account-page.svelte";
+  import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
+  import { getI18n } from "#lib/i18n/index.js";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();

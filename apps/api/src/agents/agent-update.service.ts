@@ -1,5 +1,5 @@
+import { ProductLogger } from "../logging/product-logger";
 import { randomUUID } from "node:crypto";
-import { Injectable, Logger } from "@nestjs/common";
 import { agentUpdateSchema, safeParse } from "@pdmux/protocol";
 import { AppException } from "../common/app-exception";
 import { HostsService } from "../hosts/hosts.service";
@@ -84,9 +84,8 @@ export const MAX_FAILURES = 2;
  * move after a bad release is to publish a fixed build and stop offering the bad
  * one.
  */
-@Injectable()
 export class AgentUpdateService {
-  private readonly logger = new Logger(AgentUpdateService.name);
+  private readonly logger = new ProductLogger(AgentUpdateService.name);
 
   constructor(
     private readonly hosts: HostsService,

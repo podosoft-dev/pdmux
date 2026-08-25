@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SERVER_VERSION } from "./version";
@@ -7,7 +7,7 @@ import { SERVER_VERSION } from "./version";
  * The repo version is only a single source of truth while the workspaces agree with
  * it. `SERVER_VERSION` reads this app's own package.json, so a workspace left behind
  * at 0.0.0 would make the API report a different number from the one in the UI and
- * the changelog — the drift these assertions exist to catch, at `npm test` rather
+ * the changelog — the drift these assertions exist to catch, during `bun test` rather
  * than in a bug report about a dashboard footer.
  *
  * ⚠ UNTAGGED ON PURPOSE. TC ids are allocated centrally, no declared id covers
@@ -18,6 +18,10 @@ const REPO_ROOT = join(__dirname, "../../..");
 function versionOf(workspace: string): string {
   const raw = readFileSync(join(REPO_ROOT, workspace, "package.json"), "utf8");
   return (JSON.parse(raw) as { version?: string }).version ?? "";
+}
+
+function manifestOf(workspace: string): string {
+  return readFileSync(join(REPO_ROOT, workspace, "package.json"), "utf8");
 }
 
 describe("repo version", () => {
@@ -32,6 +36,12 @@ describe("repo version", () => {
     expect(SERVER_VERSION).toBe(root);
     // The contract caps the field; a longer string would cost the agent its welcome.
     expect(SERVER_VERSION.length).toBeLessThanOrEqual(32);
+  });
+
+  it("contains no machine-local package dependency", () => {
+    for (const workspace of [".", "apps/api", "apps/web", "tests"]) {
+      expect(manifestOf(workspace)).not.toContain("file:/home/");
+    }
   });
 
   // The host agent is absent on purpose: it is a Go module with its own release

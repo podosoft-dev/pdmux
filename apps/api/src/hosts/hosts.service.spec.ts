@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { Logger } from "@nestjs/common";
+import { beforeEach, describe, expect, it, spyOn } from "bun:test";
 import type { Heartbeat } from "@pdmux/protocol";
 import { AppException } from "../common/app-exception";
+import { ProductLogger } from "../logging/product-logger";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import type { PublishedRelease } from "../agents/agent-release.service";
@@ -93,7 +93,7 @@ describe("HostsService", () => {
   });
 
   it("[TC-PDAGENT-063] keeps the host when minting its code fails", async () => {
-    const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    const warn = spyOn(ProductLogger.prototype, "warn").mockImplementation(() => undefined);
     ctx.service.setEnrollmentIssuer(() => Promise.reject(new Error("mint unavailable")));
 
     const created = await ctx.service.createWithEnrollment(ORG_A, { label: "build-01" }, "user-1");

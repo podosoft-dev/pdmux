@@ -1,28 +1,24 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
-  import { Badge } from "$lib/components/ui/badge";
-  import { Switch } from "$lib/components/ui/switch";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Button } from "$lib/components/ui/button";
-  import * as Card from "$lib/components/ui/card";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import * as Select from "$lib/components/ui/select";
-  import * as Tabs from "$lib/components/ui/tabs";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { Switch } from "#lib/components/ui/switch/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import * as Select from "#lib/components/ui/select/index.js";
+  import * as Tabs from "#lib/components/ui/tabs/index.js";
   import GeneralSettings from "./general-settings.svelte";
-  import AppearanceCard from "$lib/components/settings/appearance-card.svelte";
-  import { moduleSettingsSections } from "$lib/admin/registry.svelte";
+  import AppearanceCard from "#lib/components/settings/appearance-card.svelte";
+  import { moduleSettingsSections } from "#lib/admin/registry.svelte.js";
   import { toast } from "svelte-sonner";
-  import { api } from "$lib/api";
-  import { fmt, getI18n } from "$lib/i18n";
+  import { api } from "#lib/api.js";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
   import type { Capabilities } from "@podosoft/podokit-api-client";
   import type { AuthConfigView, SocialProviderView } from "./+page.server";
 
-  let {
-    data,
-  }: {
-    data: { capabilities: Capabilities; authConfig: AuthConfigView | null; require2fa: boolean; mcpEnabled: boolean };
-  } = $props();
+  let { data }: { data: { capabilities: Capabilities; authConfig: AuthConfigView | null; require2fa: boolean; mcpEnabled: boolean } } = $props();
   const i18n = getI18n();
   const caps = $derived(data.capabilities);
   const ac = $derived(data.authConfig);
@@ -30,8 +26,6 @@
   type EditableFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "oidcProvider";
   // require2fa is a policy flag stored alongside the feature flags but not part of
   // the typed Capabilities, so it is toggled but never read from `caps`.
-  // Policy flags that are not part of the published `Capabilities` type, so they
-  // are toggled through the same endpoint but read from `data` rather than `caps`.
   type ToggleFlag = EditableFlag | "require2fa" | "mcpEnabled";
   type ServerKey = "requireEmailVerification" | "requireSignupApproval" | "hibp" | "allowDelete" | "auditLog";
 
@@ -233,8 +227,6 @@
       name: i18n.t.settings.mcpEnabled,
       desc: i18n.t.settings.mcpEnabledDesc,
       status: { on: data.mcpEnabled, label: data.mcpEnabled ? i18n.t.settings.enabled : i18n.t.settings.disabled },
-      // Not in the typed `Capabilities`, so it is read from `data` rather than `caps`
-      // — the same shape require2fa uses above.
       toggle: { checked: data.mcpEnabled, disabled: saving, onChange: (v) => toggleFlag("mcpEnabled", v) },
     },
     {

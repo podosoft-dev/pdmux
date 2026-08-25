@@ -10,11 +10,11 @@
   import { onDestroy, untrack } from "svelte";
   import { CommitDetail, GitGraph, GitRefPanel, SplitHandle, type Translate } from "@pdmux/ui";
   import { UNCOMMITTED, feedAge, remoteComparison } from "@pdmux/core";
-  import * as Select from "$lib/components/ui/select";
-  import * as Tabs from "$lib/components/ui/tabs";
-  import { Button } from "$lib/components/ui/button";
+  import * as Select from "#lib/components/ui/select/index.js";
+  import * as Tabs from "#lib/components/ui/tabs/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
   import { SHELL_STACK_MAX_WIDTH } from "@pdmux/core";
-  import { IsMobile } from "$lib/hooks/is-mobile.svelte";
+  import { IsMobile } from "#lib/hooks/is-mobile.svelte.ts";
   import { toast } from "svelte-sonner";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import ArrowDownUpIcon from "@lucide/svelte/icons/arrow-down-up";
@@ -23,7 +23,7 @@
   import GitCommitVerticalIcon from "@lucide/svelte/icons/git-commit-vertical";
   import FileDiffIcon from "@lucide/svelte/icons/file-diff";
   import FolderTreeIcon from "@lucide/svelte/icons/folder-tree";
-  import { fmt, getI18n } from "$lib/i18n";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
   import { gitApi } from "../api";
   import { causeMessage } from "../wording";
   import type { GitDock } from "../git-dock.svelte";

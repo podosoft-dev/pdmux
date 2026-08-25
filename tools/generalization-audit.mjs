@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * generalization-audit — fail the build if anything from the private tool this
  * product was generalised from leaked into the source.
@@ -26,9 +26,9 @@
  * credential.
  *
  * Usage:
- *   node tools/generalization-audit.mjs           # human report, exit 1 on a hit
- *   node tools/generalization-audit.mjs --json
- *   node tools/generalization-audit.mjs --digest <term>   # value to paste below
+ *   bun tools/generalization-audit.mjs           # human report, exit 1 on a hit
+ *   bun tools/generalization-audit.mjs --json
+ *   bun tools/generalization-audit.mjs --digest <term>   # value to paste below
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -111,8 +111,8 @@ const ALLOW = [
 	{ file: 'docs/ARCHITECTURE.md', words: ['70d784102340baee', '6180b699adf1ec6b', '07e25fc255c61660'] },
 	{ file: 'docs/OPERATIONS.md', words: ['6180b699adf1ec6b', '07e25fc255c61660'] },
 	// Transitive dependency names the lockfile records. We do not depend on the
-	// service; npm writes the package name, and the versioned tarball URL repeats it.
-	{ file: 'package-lock.json', words: ['6180b699adf1ec6b', 'c253221a80dc86ec'] },
+	// service; Bun writes the transitive package name into the lockfile.
+	{ file: 'bun.lock', words: ['6180b699adf1ec6b', 'c253221a80dc86ec'] },
 	// PodoKit ships this OAuth guide; it names tunnels as one way to get an https
 	// callback in development. It is a suggestion in a vendored doc, not a
 	// requirement of pdmux.

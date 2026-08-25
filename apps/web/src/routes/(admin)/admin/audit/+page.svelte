@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { Badge } from "$lib/components/ui/badge";
-  import * as Table from "$lib/components/ui/table";
-  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "$lib/components/data-table.svelte";
-  import TableToolbar, { type ToolbarFilter, type ToolbarSearchField } from "$lib/components/table-toolbar.svelte";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "#lib/components/data-table.svelte";
+  import TableToolbar, { type ToolbarFilter, type ToolbarSearchField } from "#lib/components/table-toolbar.svelte";
   import { toast } from "svelte-sonner";
-  import { getI18n, fmt, formatDateTime } from "$lib/i18n";
+  import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
 
   const i18n = getI18n();
   type Entry = {

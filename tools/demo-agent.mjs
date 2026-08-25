@@ -1,9 +1,9 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * demo-agent — a fleet that does not exist, so the dashboard can be seen without one.
  *
  * WHY THIS EXISTS: every screen in this product is a picture of somebody's machines.
- * To look at it — for a screenshot, a design change, a first run after `npm run dev` —
+ * To look at it — for a screenshot, a design change, a first run after `bun run dev` —
  * you otherwise need real hosts, with real load, real multiplexer sessions and real
  * repositories. That is a lot of setup to look at a layout, and on a laptop the answer
  * is usually one host reporting 4% CPU and nothing else.
@@ -24,8 +24,8 @@
  * at the product.
  *
  * Usage:
- *   node tools/demo-agent.mjs --server http://pdmux.localhost --token pdmux_… --profile build
- *   node tools/demo-agent.mjs --list-profiles
+ *   bun tools/demo-agent.mjs --server http://pdmux.localhost --token pdmux_… --profile build
+ *   bun tools/demo-agent.mjs --list-profiles
  */
 import { WebSocket } from 'ws';
 
@@ -54,7 +54,7 @@ const PROFILES = {
 		] }],
 		repos: ['checkout-service', 'billing-api'],
 		transcript: [
-			'npm test -w @billing/api',
+			'bun test --cwd services/billing',
 			'\r\n  \u2713 refuses a charge with no idempotency key (4 ms)',
 			'\r\n  \u2713 the retry reuses the key rather than minting one (2 ms)',
 			'\r\n  \u2713 a duplicate settles to the same charge id (6 ms)',

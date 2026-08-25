@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { ready } from "../helpers/hydration";
-import { setAuthServerConfig, waitForCapabilities } from "../helpers/auth-config";
 
 // admin storageState (project default)
 
@@ -10,14 +9,10 @@ test("settings: add and remove a social login provider", async ({ page }) => {
   const openConfigure = async (): Promise<void> => {
     await page.waitForLoadState("networkidle");
     await page.getByRole("tab", { name: "Authentication" }).click();
-    // The Authentication tab now has more than one "Configure" button (sign-in
-    // methods and the phone/SMS provider), so scope to the section that owns
-    // social providers instead of matching the label across the whole page.
-    await page
-      .locator("section")
-      .filter({ hasText: "Sign-in methods" })
-      .getByRole("button", { name: "Configure" })
-      .click();
+    const socialCard = page
+      .getByText("Social login", { exact: true })
+      .locator('xpath=ancestor::div[@data-slot="card"]');
+    await socialCard.getByRole("button", { name: "Configure" }).click();
   };
 
   await ready(page, "/admin/settings");
@@ -76,21 +71,14 @@ test("settings: open and save the SMTP dialog", async ({ page }) => {
 });
 
 test("settings: configure automatic logout", async ({ page }) => {
-  // Start from a known state. The page-level retry below is what waits — it
-  // asserts on what a person would see, rather than on an internal capabilities
-  // cache whose refresh is not part of this spec's subject.
-  await setAuthServerConfig(page.request, { sessionIdleTimeoutMinutes: null });
+  await page.request.put("/api/account/auth-config", {
+    data: { server: { sessionIdleTimeoutMinutes: null } },
+  });
   await ready(page, "/admin/settings");
   await page.getByRole("tab", { name: "Authentication" }).click();
 
   const toggle = page.getByRole("switch", { name: "Automatic logout" });
-  // The subject here is configuring the timeout, not what the previous spec left
-  // behind: re-navigate until the page reflects the state written above.
-  await expect(async () => {
-    await ready(page, "/admin/settings");
-    await page.getByRole("tab", { name: "Authentication" }).click();
-    await expect(toggle).not.toBeChecked({ timeout: 3000 });
-  }).toPass({ timeout: 20_000 });
+  await expect(toggle).not.toBeChecked();
   await toggle.click();
   await expect(toggle).toBeChecked();
 
@@ -105,13 +93,8 @@ test("settings: configure automatic logout", async ({ page }) => {
 
   const saved = await (await page.request.get("/api/account/auth-config")).json();
   expect(saved.server.sessionIdleTimeoutMinutes).toBe(45);
-  // The dialog reports success as soon as the row is stored; capabilities follow
-  // once the auth instance has rebuilt.
-  await waitForCapabilities(
-    page.request,
-    (capabilities) => capabilities.sessionIdleTimeoutMinutes === 45,
-    "sessionIdleTimeoutMinutes = 45",
-  );
+  const caps = await (await page.request.get("/api/account/capabilities")).json();
+  expect(caps.sessionIdleTimeoutMinutes).toBe(45);
 
   await toggle.click();
   await expect(toggle).not.toBeChecked();

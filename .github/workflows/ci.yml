@@ -20,36 +20,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
+          bun-version: 1.4.0
 
-      - run: npm ci
+      - run: bun ci
 
       # The packages are built first because the apps consume their compiled
       # output — a type error here should fail as itself, not as a confusing
       # module-resolution error three jobs later.
       - name: build packages
         run: |
-          npm run build -w @pdmux/protocol
-          npm run build -w @pdmux/core
-          npm run build -w @pdmux/ui
-          npm run build -w @pdmux/mcp
+          bun run --filter @pdmux/protocol build
+          bun run --filter @pdmux/core build
+          bun run --filter @pdmux/ui build
+          bun run --filter @pdmux/mcp build
 
-      # The host agent is NOT here: it is a Go module (agent/), not an npm
+      # The host agent is NOT here: it is a Go module (agent/), not a Bun
       # workspace, and this job has no Go toolchain. It is built and checked by
       # the `agent-binaries` job below.
       - name: build apps
         run: |
-          npm run build -w pdmux-api
-          npm run build -w pdmux-web
+          bun run --filter pdmux-api build
+          bun run --filter pdmux-web build
 
       - name: lint
-        run: npm run lint --workspaces --if-present
+        run: bun run --workspaces --if-present lint
 
       - name: unit tests
-        run: npm test --workspaces --if-present
+        run: bun run --workspaces --if-present test
 
       # ⚠ A COMMITTED GENERATED FILE GOING STALE IS SILENT, AND THIS JOB IS WHERE IT
       # STOPS. `AGENT_GO.md` used to say these two ran here; they did not, and the
@@ -69,9 +68,9 @@ jobs:
       # test compares it.
       - name: generated artifacts
         run: |
-          npm run schema:check -w @pdmux/protocol
-          npm run expect:check -w @pdmux/protocol
-          node tools/build-file-icons.mjs --check
+          bun run --cwd packages/protocol schema:check
+          bun run --cwd packages/protocol expect:check
+          bun tools/build-file-icons.mjs --check
 
       # Requirements traceability is NOT checked here, and that is deliberate rather
       # than an omission. Its two halves live in different repositories now: the
@@ -85,7 +84,7 @@ jobs:
       # This product was generalised from a private tool. A single leftover
       # hostname would be an information disclosure, so the check is a gate.
       - name: generalization audit
-        run: npm run audit:generic
+        run: bun run audit:generic
 
   # The agent ships as a binary a host downloads and runs, so its version is not a
   # label — it is what a host compares itself against to decide whether it is out of
@@ -136,14 +135,14 @@ jobs:
           # byte-identical to the last one — every host downloading the same bytes
           # again, which is the same dishonesty pointing the other way.
           #
-          # ⚠ `package.json` AND `package-lock.json` JOIN THAT LIST. The agent embeds
+          # ⚠ `package.json` AND `bun.lock` JOIN THAT LIST. The agent embeds
           # `schema/protocol.schema.json`, never a manifest, so a version bump in
           # `packages/protocol/package.json` cannot reach the binary — and every
           # release commit bumps exactly that. Without this the gate fires on the
           # release itself and the only way past is to publish one more identical
           # build, which is the outcome the paragraph above calls dishonest.
           changed=$(git diff --name-only "$BASE" HEAD -- agent packages/protocol \
-            | grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|/package(-lock)?\.json$)' \
+            | grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|/package\.json$|^bun\.lock$)' \
             || true)
 
           if [ -z "$changed" ]; then
@@ -177,9 +176,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
+          bun-version: 1.4.0
 
       # `go-version-file` keeps the toolchain pinned by agent/go.mod, which is also
       # what apps/web/Dockerfile's agent stage pins — a different Go patch produces a
@@ -189,11 +188,11 @@ jobs:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
 
-      # Not part of `npm run build`: the other jobs have no Go toolchain. This is the
+      # Not part of `bun run build`: the other jobs have no Go toolchain. This is the
       # one place the four release artifacts are actually produced in CI, so it is
       # also the only place their honesty can be checked.
       - name: build release artifacts
-        run: npm run build:agent
+        run: bun run build:agent
 
       # THE FAILURE THIS PREVENTS: a manifest advertising 1.5.0 beside a binary that
       # reports 1.4.0. Every host then updates, still reports 1.4.0, is still "behind",
@@ -218,7 +217,7 @@ jobs:
           fi
           dir="apps/web/static/agent/${version}"
           if [ ! -f "$dir/manifest.json" ]; then
-            echo "::error::npm run build:agent did not write ${dir}/manifest.json"
+            echo "::error::bun run build:agent did not write ${dir}/manifest.json"
             exit 1
           fi
           echo "dir=$dir" >> "$GITHUB_OUTPUT"

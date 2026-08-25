@@ -1,7 +1,5 @@
-import { Processor, WorkerHost } from "@nestjs/bullmq";
-import { Logger } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import { StaleHostsService, type StaleHostSweep } from "./stale-hosts.service";
-import { STALE_HOSTS_QUEUE } from "./stale-hosts.queue";
 
 /**
  * Runs in the worker process (main-worker.ts), so a scope's worth of cascading
@@ -12,12 +10,10 @@ import { STALE_HOSTS_QUEUE } from "./stale-hosts.queue";
  * nothing" and "the sweep never ran" are the two states an operator needs to tell
  * apart when a host they expected to be gone is still listed.
  */
-@Processor(STALE_HOSTS_QUEUE)
-export class StaleHostsProcessor extends WorkerHost {
-  private readonly logger = new Logger(StaleHostsProcessor.name);
+export class StaleHostsProcessor {
+  private readonly logger = new ProductLogger(StaleHostsProcessor.name);
 
   constructor(private readonly stale: StaleHostsService) {
-    super();
   }
 
   async process(): Promise<StaleHostSweep> {

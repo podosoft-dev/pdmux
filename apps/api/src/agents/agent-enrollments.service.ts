@@ -1,5 +1,3 @@
-import { Injectable, type OnModuleInit } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
 import { IsNull, MoreThan, Repository } from "typeorm";
 import { AppException } from "../common/app-exception";
 import { HostsService, type IssuedEnrollment } from "../hosts/hosts.service";
@@ -105,10 +103,9 @@ function isUniqueViolation(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: string }).code === "23505";
 }
 
-@Injectable()
-export class AgentEnrollmentsService implements OnModuleInit {
+export class AgentEnrollmentsService {
   constructor(
-    @InjectRepository(AgentEnrollment) private readonly enrollments: Repository<AgentEnrollment>,
+    private readonly enrollments: Repository<AgentEnrollment>,
     private readonly hosts: HostsService,
     private readonly tokens: AgentTokensService,
   ) {}
@@ -121,7 +118,7 @@ export class AgentEnrollmentsService implements OnModuleInit {
    * gateway's `setConnectedProbe`. The host side treats a throw from this as "no
    * code", so nothing about creating a host rides on the mint succeeding.
    */
-  onModuleInit(): void {
+  connect(): void {
     this.hosts.setEnrollmentIssuer(async (organizationId, hostId, createdByUserId): Promise<IssuedEnrollment> => {
       const minted = await this.create(organizationId, hostId, createdByUserId);
       // Narrowed on purpose: the caller gets the secret, its id and its deadline,

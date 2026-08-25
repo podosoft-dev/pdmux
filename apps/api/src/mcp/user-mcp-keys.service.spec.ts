@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, spyOn } from "bun:test";
 import "reflect-metadata";
 import type { DataSource } from "typeorm";
 
@@ -219,7 +219,7 @@ describe("[TC-PDMCP-053] authority is re-derived on every authentication", () =>
    */
   it("serves a cached ceiling inside the window and a fresh one after it", async () => {
     const world = fakeAuthDataSource(adminWorld);
-    const reads = jest.spyOn(world, "query");
+    const reads = spyOn(world, "query");
     const authority = new McpAuthorityService(world);
 
     expect(await authority.ceilingFor(USER, ORG)).toBe("admin");
@@ -234,13 +234,13 @@ describe("[TC-PDMCP-053] authority is re-derived on every authentication", () =>
 
     // Past the window it asks again — so a demotion lands, late but on its own.
     const later = Date.now() + 4_000;
-    jest.spyOn(Date, "now").mockReturnValue(later);
+    spyOn(Date, "now").mockReturnValue(later);
     try {
       const before = reads.mock.calls.length;
       await authority.ceilingFor(USER, ORG);
       expect(reads.mock.calls.length).toBeGreaterThan(before);
     } finally {
-      jest.spyOn(Date, "now").mockRestore();
+      spyOn(Date, "now").mockRestore();
     }
   });
 
@@ -261,7 +261,7 @@ describe("[TC-PDMCP-053] a token reaches only its own scope and its own owner", 
   it("still authenticates when recording the use fails", async () => {
     const ctx = context(adminWorld);
     const minted = await ctx.tokens.mint(ORG, USER, mintInput);
-    jest.spyOn(ctx.rows, "update").mockRejectedValue(new Error("write timeout"));
+    spyOn(ctx.rows, "update").mockRejectedValue(new Error("write timeout"));
 
     await expect(ctx.tokens.authenticate(minted.token)).resolves.not.toBeNull();
     // And the rejection was handled: an unhandled one fails the run on the next tick.

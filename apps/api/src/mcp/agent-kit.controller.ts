@@ -2,11 +2,6 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Controller, Get, Header, Res } from "@nestjs/common";
-import { ApiExcludeController } from "@nestjs/swagger";
-import { Public } from "@thallesp/nestjs-better-auth";
-import type { Response } from "express";
-
 import { buildZip, type ZipEntry } from "./zip";
 
 /**
@@ -84,9 +79,9 @@ async function collect(): Promise<ZipEntry[]> {
  * asked it to touch. It writes only inside the skills directories, and refuses to
  * clobber an existing skill without `--force`.
  */
-const INSTALLER = `#!/usr/bin/env node
+const INSTALLER = `#!/usr/bin/env bun
 // Install the pdmux skills into this project.
-//   node install.mjs [--claude] [--codex] [--force]
+//   bun install.mjs [--claude] [--codex] [--force]
 // With no target flag it installs into whichever of .claude/ and .agents/ exists,
 // and into .claude/ if neither does.
 import { cp, mkdir, access } from "node:fs/promises";
@@ -131,8 +126,8 @@ const README = `# pdmux agent kit
 
 Skills that teach a coding CLI how to use a pdmux host through its hosted MCP.
 
-    node install.mjs            # into .claude/skills and/or .agents/skills
-    node install.mjs --force    # replace skills that are already there
+    bun install.mjs            # into .claude/skills and/or .agents/skills
+    bun install.mjs --force    # replace skills that are already there
 
 It writes only inside those directories. Your root AGENTS.md and CLAUDE.md are
 never modified.
@@ -141,9 +136,6 @@ Connect the MCP endpoint separately — the host's Agent connection settings sho
 the exact line for your CLI.
 `;
 
-@ApiExcludeController()
-@Controller("agent-kit")
-@Public()
 export class AgentKitController {
   private async kit(): Promise<Kit | null> {
     if (cached) return cached;
@@ -158,28 +150,33 @@ export class AgentKitController {
     return cached;
   }
 
-  @Get("manifest")
-  async manifest(@Res() response: Response): Promise<void> {
+  async manifest(): Promise<Response> {
     const kit = await this.kit();
     if (!kit) {
-      response.status(503).json({ error: { code: "AGENT_KIT_UNAVAILABLE", message: "No skills are packaged" } });
-      return;
+      return Response.json(
+        { error: { code: "AGENT_KIT_UNAVAILABLE", message: "No skills are packaged" } },
+        { status: 503 },
+      );
     }
-    response.json({ version: AGENT_KIT_VERSION, downloadUrl: "/api/agent-kit", sha256: kit.sha256 });
+    return Response.json({ version: AGENT_KIT_VERSION, downloadUrl: "/api/agent-kit", sha256: kit.sha256 });
   }
 
-  @Get()
-  @Header("content-type", "application/zip")
-  async download(@Res() response: Response): Promise<void> {
+  async download(): Promise<Response> {
     const kit = await this.kit();
     if (!kit) {
-      response.status(503).json({ error: { code: "AGENT_KIT_UNAVAILABLE", message: "No skills are packaged" } });
-      return;
+      return Response.json(
+        { error: { code: "AGENT_KIT_UNAVAILABLE", message: "No skills are packaged" } },
+        { status: 503 },
+      );
     }
     // Echoed in a header as well as the manifest, so a `curl -O` can be checked
     // without a second request.
-    response.setHeader("x-agent-kit-sha256", kit.sha256);
-    response.setHeader("content-disposition", `attachment; filename="pdmux-agent-kit-v${AGENT_KIT_VERSION}.zip"`);
-    response.send(kit.bytes);
+    return new Response(new Uint8Array(kit.bytes), {
+      headers: {
+        "content-type": "application/zip",
+        "x-agent-kit-sha256": kit.sha256,
+        "content-disposition": `attachment; filename="pdmux-agent-kit-v${AGENT_KIT_VERSION}.zip"`,
+      },
+    });
   }
 }

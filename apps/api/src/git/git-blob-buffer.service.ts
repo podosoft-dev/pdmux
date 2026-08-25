@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import type { GitBlob } from "@pdmux/protocol";
 
 /**
@@ -20,9 +20,8 @@ import type { GitBlob } from "@pdmux/protocol";
  * A miss is not an error — the client simply asks again, which costs one
  * `git show` on the host. That is the trade this service exists to make.
  */
-@Injectable()
 export class GitBlobBufferService {
-  private readonly logger = new Logger(GitBlobBufferService.name);
+  private readonly logger = new ProductLogger(GitBlobBufferService.name);
   /** Insertion-ordered, which is what makes the oldest entry the first key. */
   private readonly entries = new Map<string, { blob: GitBlob; expiresAt: number; bytes: number }>();
   private bytes = 0;

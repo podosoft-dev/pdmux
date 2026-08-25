@@ -1,7 +1,7 @@
 <script lang="ts">
-  import * as Card from "$lib/components/ui/card";
-  import { api } from "$lib/api";
-  import { getI18n, fmt } from "$lib/i18n";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import { api } from "#lib/api.js";
+  import { getI18n, fmt } from "#lib/i18n/index.js";
   import type { SessionUser } from "../../../app.d.ts";
 
   type Capabilities = { emailVerification: boolean };

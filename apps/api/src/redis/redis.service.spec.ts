@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "bun:test";
 import { ReadinessService } from "../health/readiness.service";
 import { RedisService } from "./redis.service";
 
@@ -14,13 +14,13 @@ describe("RedisService integration", () => {
     const key = `podokit:test:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 
     try {
-      await service.onModuleInit();
+      await service.connect();
       await service.set(key, "value", 10);
       await expect(service.get(key)).resolves.toBe("value");
       await expect(readiness.run()).resolves.toEqual({ redis: "up" });
       await service.del(key);
     } finally {
-      await service.onModuleDestroy();
+      service.close();
       if (previousUrl === undefined) delete process.env.REDIS_URL;
       else process.env.REDIS_URL = previousUrl;
     }

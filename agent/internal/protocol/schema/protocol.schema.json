@@ -1,5 +1,5 @@
 {
-  "$comment": "GENERATED FILE — do not hand-edit. Derived from packages/protocol/src/index.ts; regenerate with `npm run schema:build -w @pdmux/protocol`.",
+  "$comment": "GENERATED FILE — do not hand-edit. Derived from packages/protocol/src/index.ts; regenerate with `bun run --cwd packages/protocol schema:build`.",
   "$defs": {
     "agentCapability": {
       "enum": [
@@ -2705,7 +2705,7 @@
   },
   "$schema": "http://json-schema.org/draft-07/schema#",
   "_generated": {
-    "command": "npm run schema:build -w @pdmux/protocol",
+    "command": "bun run --cwd packages/protocol schema:build",
     "doNotEdit": true,
     "generator": "packages/protocol/scripts/build-schema.mjs",
     "protocolVersion": 1,

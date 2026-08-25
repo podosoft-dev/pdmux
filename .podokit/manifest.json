@@ -1,32 +1,55 @@
 {
-  "schemaVersion": 2,
-  "podokitVersion": "0.16.4",
-  "template": "fullstack-nest-svelte",
-  "packageManager": "npm",
+  "schemaVersion": 3,
+  "podokitVersion": "1.0.1",
+  "template": "fullstack",
+  "toolchain": {
+    "runtime": "bun",
+    "runtimeVersion": "1.4.0",
+    "packageManager": "bun"
+  },
   "answers": {
     "projectName": "pdmux",
-    "packageManager": "npm"
+    "runtime": "bun",
+    "runtimeVersion": "1.4.0",
+    "runtimeCommand": "bun",
+    "runtimeBinPrefix": "bunx --bun ",
+    "packageManager": "bun",
+    "packageExecutor": "bunx --bun",
+    "packageExecutorCommand": "bunx",
+    "packageExecutorArgs": "\"--bun\", ",
+    "ciSetup": "- uses: oven-sh/setup-bun@v2\n        with:\n          bun-version: 1.4.0",
+    "ciInstallCommand": "bun ci",
+    "ciLintCommand": "bun run lint",
+    "ciTestCommand": "bun run test",
+    "profileRuntime": "bun",
+    "rootRun": "bun run",
+    "apiRun": "bun run --cwd apps/api",
+    "apiWorkspaceArg": "",
+    "webRun": "bun run --cwd apps/web"
   },
   "modules": [
     {
       "name": "mailer",
       "order": 0,
-      "addedWith": "0.13.0"
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
     },
     {
       "name": "auth",
       "order": 1,
-      "addedWith": "0.13.0"
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
     },
     {
       "name": "object-storage-s3",
       "order": 2,
-      "addedWith": "0.13.0"
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
     },
     {
       "name": "admin-dashboard",
       "order": 3,
-      "addedWith": "0.13.0",
+      "addedWith": "1.0.0",
       "appliedMigrations": [
         "admin-route-group"
       ]
@@ -34,37 +57,44 @@
     {
       "name": "audit-log",
       "order": 4,
-      "addedWith": "0.13.0"
-    },
-    {
-      "name": "api-key-auth",
-      "order": 5,
-      "addedWith": "0.13.0"
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
     },
     {
       "name": "redis",
+      "order": 5,
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
+    },
+    {
+      "name": "api-key-auth",
       "order": 6,
-      "addedWith": "0.13.0"
-    },
-    {
-      "name": "sse",
-      "order": 7,
-      "addedWith": "0.13.0"
-    },
-    {
-      "name": "bullmq",
-      "order": 8,
-      "addedWith": "0.13.0"
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
     },
     {
       "name": "rate-limit",
+      "order": 7,
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
+    },
+    {
+      "name": "sse",
+      "order": 8,
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
+    },
+    {
+      "name": "bullmq",
       "order": 9,
-      "addedWith": "0.13.0"
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
     },
     {
       "name": "logging",
       "order": 10,
-      "addedWith": "0.13.0"
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
     }
   ],
   "ownedGlobs": [
@@ -87,16 +117,12 @@
     ".env.docker",
     "infra/traefik/**",
     ".podokit/dev.json",
-    "tests/playwright.projects.cjs",
-    "apps/web/vite.config.ts",
-    "apps/web/src/routes/account/+page.server.ts",
-    "apps/web/Dockerfile",
-    "apps/web/src/lib/server/ws-upgrade.js",
-    "apps/web/src/lib/server/ws-upgrade.test.js"
+    "tests/playwright.projects.cjs"
   ],
   "managedOverrides": [
-    ".claude/skills/podokit-configure-auth/**",
+    "apps/web/src/lib/components/ui/input/input.svelte",
     "apps/web/src/routes/(app)/+layout.server.ts",
+    "apps/web/src/routes/(admin)/+layout.server.ts",
     "apps/web/src/routes/(admin)/admin/account/+page.server.ts",
     "apps/web/src/routes/(admin)/admin/audit/+page.server.ts",
     "apps/web/src/routes/(admin)/admin/organizations/+page.server.ts",
@@ -107,7 +133,6 @@
     "apps/web/src/routes/(auth)/signup/+page.server.ts",
     "apps/web/src/routes/account/+page.server.ts",
     "apps/web/src/routes/setup-2fa/+page.server.ts",
-    "apps/web/src/lib/components/ui/input/input.svelte",
-    "apps/web/src/routes/(admin)/+layout.server.ts"
+    ".claude/skills/podokit-configure-auth/**"
   ]
 }

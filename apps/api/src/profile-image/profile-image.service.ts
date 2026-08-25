@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import type { Logger } from "pino";
 import {
   AppException,
   PROFILE_IMAGE_NOT_FOUND,
@@ -7,7 +7,7 @@ import {
 } from "@podosoft/podokit-contracts";
 import { getAuth } from "../auth/auth-provider";
 import { registerUserDeletedHandler } from "../auth/user-delete-handlers";
-import { StorageService } from "../storage/storage.service";
+import type { StorageService } from "../storage/storage.service";
 import { validateProfileImage, type ProfileImageUpload } from "./profile-image.validation";
 
 const FILE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp)$/;
@@ -25,21 +25,32 @@ export interface StoredProfileImage {
   contentType: string;
 }
 
-@Injectable()
-export class ProfileImageService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(ProfileImageService.name);
+export type UpdateAuthUser = (
+  image: string | null,
+  headers: Headers,
+) => Promise<unknown>;
+
+const updateAuthUser: UpdateAuthUser = (image, headers) =>
+  getAuth().api.updateUser({ body: { image }, headers });
+
+export class ProfileImageService {
   private unregisterUserDeleted?: () => void;
 
-  constructor(private readonly storage: StorageService) {}
+  constructor(
+    private readonly storage: StorageService,
+    private readonly logger: Logger,
+    private readonly updateUser: UpdateAuthUser = updateAuthUser,
+  ) {}
 
-  onModuleInit(): void {
-    this.unregisterUserDeleted = registerUserDeletedHandler(async (user) => {
+  connect(): void {
+    this.unregisterUserDeleted ??= registerUserDeletedHandler(async (user) => {
       await this.deleteManagedImage(user.image ?? null);
     });
   }
 
-  onModuleDestroy(): void {
+  close(): void {
     this.unregisterUserDeleted?.();
+    this.unregisterUserDeleted = undefined;
   }
 
   async upload(
@@ -54,7 +65,7 @@ export class ProfileImageService implements OnModuleInit, OnModuleDestroy {
 
     await this.storage.put(key, file.buffer, metadata.contentType);
     try {
-      await getAuth().api.updateUser({ body: { image }, headers });
+      await this.updateUser(image, headers);
     } catch (error: unknown) {
       await this.deleteKeyBestEffort(key);
       throw error;
@@ -64,19 +75,20 @@ export class ProfileImageService implements OnModuleInit, OnModuleDestroy {
   }
 
   async remove(currentImage: string | null, headers: Headers): Promise<ProfileImageResponse> {
-    await getAuth().api.updateUser({ body: { image: null }, headers });
+    await this.updateUser(null, headers);
     await this.deleteManagedImage(currentImage);
     return { image: null };
   }
 
   async get(fileName: string): Promise<StoredProfileImage> {
     const key = this.keyFromFileName(fileName);
-    if (!key) {
-      throw new AppException(PROFILE_IMAGE_NOT_FOUND, "Profile image not found.", 404);
-    }
+    if (!key) throw new AppException(PROFILE_IMAGE_NOT_FOUND, "Profile image not found.", 404);
     try {
       const extension = fileName.slice(fileName.lastIndexOf(".") + 1);
-      return { body: await this.storage.get(key), contentType: CONTENT_TYPES[extension] ?? "application/octet-stream" };
+      return {
+        body: await this.storage.get(key),
+        contentType: CONTENT_TYPES[extension] ?? "application/octet-stream",
+      };
     } catch {
       throw new AppException(PROFILE_IMAGE_NOT_FOUND, "Profile image not found.", 404);
     }
@@ -87,8 +99,9 @@ export class ProfileImageService implements OnModuleInit, OnModuleDestroy {
   }
 
   private keyFromPublicUrl(image: string | null): string | null {
-    if (!image?.startsWith(PUBLIC_PREFIX)) return null;
-    return this.keyFromFileName(image.slice(PUBLIC_PREFIX.length));
+    return image?.startsWith(PUBLIC_PREFIX)
+      ? this.keyFromFileName(image.slice(PUBLIC_PREFIX.length))
+      : null;
   }
 
   private async deleteManagedImage(image: string | null): Promise<void> {
@@ -100,11 +113,10 @@ export class ProfileImageService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.storage.delete(key);
     } catch (error: unknown) {
-      this.logger.warn({
-        message: "Delete profile image object failed",
-        key,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      this.logger.warn(
+        { key, error: error instanceof Error ? error.message : String(error) },
+        "Delete profile image object failed",
+      );
     }
   }
 }

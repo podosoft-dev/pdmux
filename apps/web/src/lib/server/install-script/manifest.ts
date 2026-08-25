@@ -13,8 +13,8 @@
  * static asset it is not one. SvelteKit's server fetch only short-circuits an asset
  * when `state.read` is set (prerendering) or when the file is a `$app/server` server
  * asset; a plain file in `static/` is neither, so it falls through to a real
- * `fetch(request)` against `event.url.origin`. Measured on the built server
- * (adapter-node, `ORIGIN` unset, plain-HTTP listener) that produced:
+ * `fetch(request)` against `event.url.origin`. Measured on a built server whose
+ * public HTTPS origin differed from its plain-HTTP listener, that produced:
  *
  *   TypeError: fetch failed
  *     cause: Error: …SSL routines:tls_validate_record_header:wrong version number
@@ -69,14 +69,14 @@ export type AgentReleaseSource = {
  *
  * Relative to `process.cwd()`, which is the web workspace directory in every way
  * this app runs: `vite dev`, `vite preview`, `vitest` (all through
- * `npm … -w pdmux-web`), and `node server.js` under the image's
+ * `bun run --cwd apps/web …`), and `bun ./build` under the image's
  * `WORKDIR /app/apps/web`.
  */
 const AGENT_ROOTS = ["build/client/agent", "static/agent"] as const;
 
 const NO_RELEASE =
   "This deployment publishes no pdmux-agent build, so there is nothing to install. " +
-  "The release binaries come from `npm run build:agent` and are baked into the web image.";
+  "The release binaries come from `bun run build:agent` and are baked into the web image.";
 
 export const fileSystemReleaseSource: AgentReleaseSource = {
   list(): readonly PublishedVersion[] {

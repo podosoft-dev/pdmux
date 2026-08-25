@@ -23,10 +23,10 @@
    * lives — running, or ended badly and not yet overtaken — so this screen and the host
    * detail page cannot answer it differently.
    */
-  import { Badge } from "$lib/components/ui/badge";
-  import { getI18n } from "$lib/i18n";
-  import { updateInFlight, updateNotice, updateProgressPct } from "$lib/dashboard/agent-update";
-  import type { HostView } from "$lib/dashboard/types";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { getI18n } from "#lib/i18n/index.js";
+  import { updateInFlight, updateNotice, updateProgressPct } from "#lib/dashboard/agent-update.js";
+  import type { HostView } from "#lib/dashboard/types.js";
 
   let { host }: { host: HostView } = $props();
 

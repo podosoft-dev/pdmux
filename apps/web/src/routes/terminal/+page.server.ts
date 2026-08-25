@@ -1,7 +1,7 @@
 import { redirect } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
-import { requireBackendAvailable } from "$lib/server/guards";
-import type { HostView } from "$lib/dashboard/types";
+import { requireBackendAvailable } from "#lib/server/guards.js";
+import type { HostView } from "#lib/dashboard/types.js";
 
 /**
  * A pane in its own window.

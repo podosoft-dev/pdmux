@@ -4,5 +4,6 @@ import { expect, test } from "@playwright/test";
 test("app is reachable @smoke", async ({ page }) => {
   const res = await page.goto("/");
   expect(res?.status()).toBeLessThan(400);
-  await expect(page.locator("body")).toBeVisible();
+  await expect(page.locator("main")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 });

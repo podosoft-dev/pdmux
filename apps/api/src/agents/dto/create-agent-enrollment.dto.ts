@@ -1,4 +1,3 @@
-import { ApiPropertyOptional } from "@nestjs/swagger";
 import { IsIn, IsInt, IsOptional } from "class-validator";
 
 import { AGENT_TOKEN_EXPIRY_DAYS, type AgentTokenExpiryDays } from "../agent-token.crypto";
@@ -15,10 +14,6 @@ import { AGENT_TOKEN_EXPIRY_DAYS, type AgentTokenExpiryDays } from "../agent-tok
  * Omitted means never, matching `POST /hosts/:id/tokens`.
  */
 export class CreateAgentEnrollmentDto {
-  @ApiPropertyOptional({
-    enum: AGENT_TOKEN_EXPIRY_DAYS,
-    description: "Days until the token this code buys stops working",
-  })
   @IsOptional()
   @IsInt()
   @IsIn([...AGENT_TOKEN_EXPIRY_DAYS])

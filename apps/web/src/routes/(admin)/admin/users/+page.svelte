@@ -1,23 +1,23 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Badge } from "$lib/components/ui/badge";
-  import { Checkbox } from "$lib/components/ui/checkbox";
-  import * as Table from "$lib/components/ui/table";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import * as Select from "$lib/components/ui/select";
-  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "$lib/components/data-table.svelte";
-  import TableToolbar, { type ToolbarFilter, type ToolbarSearchField } from "$lib/components/table-toolbar.svelte";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { Checkbox } from "#lib/components/ui/checkbox/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
+  import * as Select from "#lib/components/ui/select/index.js";
+  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "#lib/components/data-table.svelte";
+  import TableToolbar, { type ToolbarFilter, type ToolbarSearchField } from "#lib/components/table-toolbar.svelte";
   import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { toast } from "svelte-sonner";
-  import { api } from "$lib/api";
-  import { getI18n, fmt, formatDateTime } from "$lib/i18n";
-  import { cn } from "$lib/utils";
-  import { deviceLabel } from "$lib/device-label";
+  import { api } from "#lib/api.js";
+  import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
+  import { cn } from "#lib/utils.js";
+  import { deviceLabel } from "#lib/device-label.js";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -121,11 +121,12 @@
     page = 1;
   }
 
-  // Impersonate — become the user, then a banner offers "stop impersonating".
+  // Impersonate — become the user, then continue on the signed-in account page
+  // where the banner offers a route back to the administrator session.
   async function impersonate(u: Row): Promise<void> {
     const { error } = await api.auth.admin.impersonateUser({ userId: u.id });
     if (error) return void toast.error(error.message ?? i18n.t.users.actionFailed);
-    await goto("/admin", { invalidateAll: true });
+    await goto("/account", { invalidateAll: true });
   }
 
   async function approve(u: Row): Promise<void> {

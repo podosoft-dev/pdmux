@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, test } from "bun:test";
 import {
   AppException,
   PROFILE_IMAGE_DIMENSIONS_INVALID,
@@ -35,7 +35,7 @@ describe("validateProfileImage", () => {
     [WEBP, "image/webp", "webp", 2, 3],
   ];
 
-  it.each(supported)("accepts a valid supported image", (base64, mimetype, extension, width, height) => {
+  test.each(supported)("accepts a valid supported image", (base64, mimetype, extension, width, height) => {
     expect(validateProfileImage(upload(base64, mimetype))).toMatchObject({
       contentType: mimetype,
       extension,
@@ -44,21 +44,21 @@ describe("validateProfileImage", () => {
     });
   });
 
-  it("rejects a MIME type that does not match the bytes", () => {
+  test("rejects a MIME type that does not match the bytes", () => {
     expectAppException(
       () => validateProfileImage(upload(PNG, "image/jpeg")),
       PROFILE_IMAGE_TYPE_INVALID,
     );
   });
 
-  it("rejects unsupported or malformed bytes", () => {
+  test("rejects unsupported or malformed bytes", () => {
     expectAppException(
       () => validateProfileImage(upload(Buffer.from("not an image").toString("base64"), "image/png")),
       PROFILE_IMAGE_TYPE_INVALID,
     );
   });
 
-  it("rejects a file larger than the shared byte limit", () => {
+  test("rejects a file larger than the shared byte limit", () => {
     expectAppException(
       () => validateProfileImage(upload(PNG, "image/png", PROFILE_IMAGE_POLICY.maxBytes + 1)),
       PROFILE_IMAGE_TOO_LARGE,
@@ -66,11 +66,11 @@ describe("validateProfileImage", () => {
     );
   });
 
-  it("accepts arbitrary aspect ratios within the limit", () => {
+  test("accepts arbitrary aspect ratios within the limit", () => {
     expect(validateProfileImage(upload(PNG, "image/png"))).toMatchObject({ width: 2, height: 3 });
   });
 
-  it("rejects a dimension above 2048 pixels", () => {
+  test("rejects a dimension above 2048 pixels", () => {
     expectAppException(
       () => validateProfileImage(upload(TOO_WIDE_PNG, "image/png")),
       PROFILE_IMAGE_DIMENSIONS_INVALID,

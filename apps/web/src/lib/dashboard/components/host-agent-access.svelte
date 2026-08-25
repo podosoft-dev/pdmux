@@ -18,20 +18,20 @@
    * preference, and it is the difference between "here are two options" and "here
    * is your command".
    */
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import * as Select from "$lib/components/ui/select";
-  import * as Tabs from "$lib/components/ui/tabs";
-  import * as Table from "$lib/components/ui/table";
-  import DataTable, { type DataTableColumn, type SortState } from "$lib/components/data-table.svelte";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import * as Select from "#lib/components/ui/select/index.js";
+  import * as Tabs from "#lib/components/ui/tabs/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import DataTable, { type DataTableColumn, type SortState } from "#lib/components/data-table.svelte";
   import { writeClipboard } from "@pdmux/ui";
-  import { fmt, getI18n } from "$lib/i18n";
-  import { mcpKeysApi } from "$lib/dashboard/api";
-  import { causeMessage } from "$lib/dashboard/wording";
-  import type { HostView, McpKeyView, MintedMcpKey } from "$lib/dashboard/types";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
+  import { mcpKeysApi } from "#lib/dashboard/api.js";
+  import { causeMessage } from "#lib/dashboard/wording.js";
+  import type { HostView, McpKeyView, MintedMcpKey } from "#lib/dashboard/types.js";
 
   let {
     host,

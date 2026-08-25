@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { DataSource, In, Repository } from "typeorm";
 import type { AgentHello, Heartbeat, UpdateStatus } from "@pdmux/protocol";
 import { AgentReleaseService } from "../agents/agent-release.service";
@@ -81,25 +80,24 @@ export interface CreatedHost extends Host {
   enrollment: IssuedEnrollment | null;
 }
 
-@Injectable()
 export class HostsService {
-  private readonly logger = new Logger(HostsService.name);
+  private readonly logger = new ProductLogger(HostsService.name);
   private connectedProbe: ConnectedProbe = () => false;
   private enrollmentIssuer: EnrollmentIssuer | null = null;
   private enabledChangeListener: HostEnabledChangeListener = () => {};
   private removedListener: HostRemovedListener = () => {};
 
   constructor(
-    @InjectRepository(Host) private readonly hosts: Repository<Host>,
-    @InjectRepository(HostService) private readonly services: Repository<HostService>,
+    private readonly hosts: Repository<Host>,
+    private readonly services: Repository<HostService>,
     // ⚠ THE REPOSITORY, NOT `HostGitRootsService` — that service depends on this
     // one (it resolves a host before touching its rows), so injecting it here
     // would close a provider cycle. The rule that turns rows into paths is a pure
     // function in `git-roots.ts` for the same reason.
-    @InjectRepository(HostGitRoot) private readonly gitRoots: Repository<HostGitRoot>,
+    private readonly gitRoots: Repository<HostGitRoot>,
     private readonly settings: FleetSettingsService,
     private readonly releases: AgentReleaseService,
-    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly dataSource: DataSource,
   ) {}
 
   /** Called once by the agent gateway at startup (avoids a circular provider). */

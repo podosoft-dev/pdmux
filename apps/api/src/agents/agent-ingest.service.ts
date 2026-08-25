@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import { agentUpstreamSchema, safeParse, type AgentUpstream } from "@pdmux/protocol";
 import { EventsService } from "../events/events.service";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
@@ -21,9 +21,8 @@ export type IngestOutcome =
  * NOTHING HERE THROWS ON BAD INPUT. Every frame arrives from another machine, and
  * a malformed one must cost that frame — not the connection, and not the pass.
  */
-@Injectable()
 export class AgentIngestService {
-  private readonly logger = new Logger(AgentIngestService.name);
+  private readonly logger = new ProductLogger(AgentIngestService.name);
 
   constructor(
     private readonly hosts: HostsService,

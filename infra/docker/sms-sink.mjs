@@ -1,7 +1,8 @@
 // Dev/test SMS sink — the "Mailpit for SMS". The app posts outgoing SMS here
 // (via SMS_WEBHOOK_URL) instead of a real provider, and tests read them back
 // over REST. Development only; never runs in production (see the `dev` profile
-// in docker-compose.yml). Uses only Node built-ins, run on a stock node image.
+// in docker-compose.yml). It uses Bun-compatible standard library APIs and runs
+// on the same pinned Bun Alpine runtime as the applications.
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.PORT ?? 8095);

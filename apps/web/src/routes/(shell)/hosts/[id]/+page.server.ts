@@ -1,6 +1,6 @@
 import { error, redirect } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
-import { requireBackendAvailable } from "$lib/server/guards";
+import { requireBackendAvailable } from "#lib/server/guards.js";
 import type {
   AgentTokenView,
   FleetScopeView,
@@ -9,7 +9,7 @@ import type {
   HostServiceView,
   HostView,
   RepoRow,
-} from "$lib/dashboard/types";
+} from "#lib/dashboard/types.js";
 
 /**
  * One host: what it exposes (services), where its agent looks for checkouts

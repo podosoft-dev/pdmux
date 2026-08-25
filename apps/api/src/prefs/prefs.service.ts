@@ -1,5 +1,3 @@
-import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
 import { Not, Repository } from "typeorm";
 import { AppException } from "../common/app-exception";
 import { HostsService } from "../hosts/hosts.service";
@@ -30,11 +28,10 @@ function toLayoutView(row: UserLayout): LayoutView {
   };
 }
 
-@Injectable()
 export class PrefsService {
   constructor(
-    @InjectRepository(UserLayout) private readonly layouts: Repository<UserLayout>,
-    @InjectRepository(UserHostPref) private readonly hostPrefs: Repository<UserHostPref>,
+    private readonly layouts: Repository<UserLayout>,
+    private readonly hostPrefs: Repository<UserHostPref>,
     private readonly hosts: HostsService,
   ) {}
 

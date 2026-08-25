@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AccountPage from "$lib/components/account-page.svelte";
+  import AccountPage from "#lib/components/account-page.svelte";
   import type { Capabilities } from "@podosoft/podokit-api-client";
   import type { SessionUser } from "../../../../app.d.ts";
 

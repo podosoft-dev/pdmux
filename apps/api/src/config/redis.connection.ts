@@ -67,3 +67,19 @@ export function redisConnectionOptions(
       };
   return { ...base, ...overrides };
 }
+
+/** Resolve the same Redis configuration as BullMQ into a URL for Bun.RedisClient. */
+export function redisConnectionUrl(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.REDIS_URL) {
+    fromUrl(env.REDIS_URL);
+    return env.REDIS_URL;
+  }
+  const options = redisConnectionOptions(env);
+  const url = new URL(`${options.tls ? "rediss" : "redis"}://localhost`);
+  url.hostname = options.host;
+  url.port = String(options.port);
+  url.pathname = `/${options.db}`;
+  if (options.username) url.username = options.username;
+  if (options.password) url.password = options.password;
+  return url.toString();
+}

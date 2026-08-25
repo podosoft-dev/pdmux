@@ -1,7 +1,5 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { AuthConfigRow } from "./auth-config.entity";
+import type { SQL } from "bun";
+import { AppException } from "@podosoft/podokit-contracts";
 import {
   DEFAULT_SESSION_LIFETIME_SECONDS,
   encryptSecret,
@@ -14,18 +12,26 @@ import {
 } from "@podosoft/podokit-auth";
 import { refreshAuthNow } from "../auth/auth-provider";
 
-/** One configured social provider as shown to the admin (no secret — just a
- *  `hasSecret` flag). */
-export type SocialProviderView = { id: string; enabled: boolean; clientId: string; redirectURI: string; hasSecret: boolean };
+export type SocialProviderView = {
+  id: string;
+  enabled: boolean;
+  clientId: string;
+  redirectURI: string;
+  hasSecret: boolean;
+};
 
-/** Admin-facing view — non-secret fields plus a `hasSecret` flag. Never exposes
- *  the stored client secret / SMTP password. Social providers are dynamic: the
- *  map holds one entry per configured provider (google, github, apple, …). */
 export type AuthConfigView = {
   social: Record<string, SocialProviderView>;
-  /** Catalog of addable providers (id + display label) for the "add provider" picker. */
   catalog: ReadonlyArray<{ id: string; label: string }>;
-  smtp: { enabled: boolean; host: string; port: number; secure: boolean; user: string; from: string; hasSecret: boolean };
+  smtp: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string;
+    from: string;
+    hasSecret: boolean;
+  };
   server: {
     requireEmailVerification: boolean;
     requireSignupApproval: boolean;
@@ -36,11 +42,25 @@ export type AuthConfigView = {
   };
 };
 
-type ProviderUpdate = { enabled?: boolean; clientId?: string; clientSecret?: string; redirectURI?: string; delete?: boolean };
+export type ProviderUpdate = {
+  enabled?: boolean;
+  clientId?: string;
+  clientSecret?: string;
+  redirectURI?: string;
+  delete?: boolean;
+};
+
 export type AuthConfigUpdate = {
-  /** Per-provider upsert (keyed by provider id); `{ delete: true }` removes it. */
   social?: Record<string, ProviderUpdate>;
-  smtp?: { enabled?: boolean; host?: string; port?: number; secure?: boolean; user?: string; pass?: string; from?: string };
+  smtp?: {
+    enabled?: boolean;
+    host?: string;
+    port?: number;
+    secure?: boolean;
+    user?: string;
+    pass?: string;
+    from?: string;
+  };
   server?: {
     requireEmailVerification?: boolean;
     requireSignupApproval?: boolean;
@@ -51,129 +71,223 @@ export type AuthConfigUpdate = {
   };
 };
 
-@Injectable()
+interface AuthConfigRow {
+  key: string;
+  enabled: boolean;
+  config: unknown;
+  secret: string | null;
+}
+
+function object(value: unknown): Record<string, unknown> {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === "string") {
+    try {
+      return object(JSON.parse(value) as unknown);
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function stringField(source: Record<string, unknown>, key: string): string {
+  const value = source[key];
+  return typeof value === "string" ? value : "";
+}
+
+function booleanField(source: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  return typeof source[key] === "boolean" ? source[key] : fallback;
+}
+
 export class AuthConfigService {
-  constructor(@InjectRepository(AuthConfigRow) private readonly repo: Repository<AuthConfigRow>) {}
+  constructor(private readonly sql: SQL) {}
+
+  private async rows(): Promise<AuthConfigRow[]> {
+    return this.sql<AuthConfigRow[]>`
+      SELECT "key", "enabled", "config", "secret" FROM "auth_config"
+    `;
+  }
+
+  private async row(key: string): Promise<AuthConfigRow | null> {
+    const rows = await this.sql<AuthConfigRow[]>`
+      SELECT "key", "enabled", "config", "secret"
+      FROM "auth_config" WHERE "key" = ${key}
+    `;
+    return rows[0] ?? null;
+  }
+
+  private async upsert(row: AuthConfigRow): Promise<void> {
+    const config = object(row.config);
+    await this.sql`
+      INSERT INTO "auth_config" ("key", "enabled", "config", "secret", "updatedAt")
+      VALUES (${row.key}, ${row.enabled}, ${config}, ${row.secret}, CURRENT_TIMESTAMP)
+      ON CONFLICT ("key") DO UPDATE SET
+        "enabled" = EXCLUDED."enabled",
+        "config" = EXCLUDED."config",
+        "secret" = EXCLUDED."secret",
+        "updatedAt" = CURRENT_TIMESTAMP
+    `;
+  }
 
   async describe(): Promise<AuthConfigView> {
-    const rows = await this.repo.find();
-    const byKey = new Map(rows.map((r) => [r.key, r]));
-    const env = envAuthConfig();
-
+    const rows = await this.rows();
+    const byKey = new Map(rows.map((row) => [row.key, row]));
+    const environment = envAuthConfig();
     const social: Record<string, SocialProviderView> = {};
+
     for (const row of rows) {
       if (!row.key.startsWith("social.")) continue;
       const id = row.key.slice("social.".length);
       if (!SUPPORTED_PROVIDER_IDS.has(id)) continue;
-      const c = (row.config ?? {}) as { clientId?: string; redirectURI?: string };
-      social[id] = { id, enabled: row.enabled, clientId: c.clientId ?? "", redirectURI: c.redirectURI ?? "", hasSecret: !!row.secret };
+      const config = object(row.config);
+      social[id] = {
+        id,
+        enabled: row.enabled,
+        clientId: stringField(config, "clientId"),
+        redirectURI: stringField(config, "redirectURI"),
+        hasSecret: row.secret !== null && row.secret.length > 0,
+      };
     }
-    // Surface env-configured providers (google/github) that have no DB row yet, so
-    // the admin sees them as already-active rather than missing.
-    for (const [id, p] of Object.entries(env.social)) {
-      if (!social[id]) social[id] = { id, enabled: p.enabled, clientId: p.clientId, redirectURI: p.redirectURI ?? "", hasSecret: !!p.clientSecret };
+    for (const [id, provider] of Object.entries(environment.social)) {
+      if (social[id]) continue;
+      social[id] = {
+        id,
+        enabled: provider.enabled,
+        clientId: provider.clientId,
+        redirectURI: provider.redirectURI ?? "",
+        hasSecret: provider.clientSecret.length > 0,
+      };
     }
 
-    const smtpRow = byKey.get("smtp");
-    const smtpC = (smtpRow?.config ?? {}) as { host?: string; port?: number; secure?: boolean; user?: string; from?: string };
-    const serverRow = byKey.get("server");
-    const serverC = (serverRow?.config ?? {}) as {
-      requireEmailVerification?: boolean;
-      requireSignupApproval?: boolean;
-      allowDelete?: boolean;
-      hibp?: boolean;
-      auditLog?: boolean;
-      sessionIdleTimeoutMinutes?: number | null;
-    };
+    const smtp = byKey.get("smtp");
+    const smtpConfig = object(smtp?.config);
+    const serverConfig = object(byKey.get("server")?.config);
     return {
       social,
       catalog: SUPPORTED_SOCIAL_PROVIDERS,
       smtp: {
-        enabled: smtpRow?.enabled ?? false,
-        host: smtpC.host ?? "",
-        port: smtpC.port ?? 587,
-        secure: smtpC.secure ?? false,
-        user: smtpC.user ?? "",
-        from: smtpC.from ?? "",
-        hasSecret: !!smtpRow?.secret,
+        enabled: smtp?.enabled ?? false,
+        host: stringField(smtpConfig, "host"),
+        port: typeof smtpConfig.port === "number" ? smtpConfig.port : 587,
+        secure: booleanField(smtpConfig, "secure", false),
+        user: stringField(smtpConfig, "user"),
+        from: stringField(smtpConfig, "from"),
+        hasSecret: smtp?.secret !== null && smtp?.secret !== undefined && smtp.secret.length > 0,
       },
       server: {
-        requireEmailVerification: serverC.requireEmailVerification ?? env.requireEmailVerification,
-        requireSignupApproval: serverC.requireSignupApproval ?? env.requireSignupApproval,
-        allowDelete: serverC.allowDelete ?? env.allowDelete,
-        hibp: serverC.hibp ?? env.hibp,
-        auditLog: serverC.auditLog ?? env.auditLog,
+        requireEmailVerification: booleanField(
+          serverConfig,
+          "requireEmailVerification",
+          environment.requireEmailVerification,
+        ),
+        requireSignupApproval: booleanField(
+          serverConfig,
+          "requireSignupApproval",
+          environment.requireSignupApproval,
+        ),
+        allowDelete: booleanField(serverConfig, "allowDelete", environment.allowDelete),
+        hibp: booleanField(serverConfig, "hibp", environment.hibp),
+        auditLog: booleanField(serverConfig, "auditLog", environment.auditLog),
         sessionIdleTimeoutMinutes: resolveSessionIdleTimeoutMinutes(
-          serverC.sessionIdleTimeoutMinutes,
-          env.sessionIdleTimeoutMinutes,
+          serverConfig.sessionIdleTimeoutMinutes,
+          environment.sessionIdleTimeoutMinutes,
         ),
       },
     };
   }
 
-  async update(dto: AuthConfigUpdate): Promise<AuthConfigView> {
-    for (const [id, u] of Object.entries(dto.social ?? {})) {
-      if (!SUPPORTED_PROVIDER_IDS.has(id)) throw new BadRequestException(`Unsupported social provider: ${id}`);
-      if (u.delete) await this.repo.delete({ key: socialKey(id) });
-      else await this.upsertProvider(socialKey(id), u);
+  async update(update: AuthConfigUpdate): Promise<AuthConfigView> {
+    for (const [id, provider] of Object.entries(update.social ?? {})) {
+      if (!SUPPORTED_PROVIDER_IDS.has(id)) {
+        throw new AppException("AUTH_PROVIDER_UNSUPPORTED", `Unsupported social provider: ${id}`, 400);
+      }
+      const key = socialKey(id);
+      if (provider.delete) await this.sql`DELETE FROM "auth_config" WHERE "key" = ${key}`;
+      else await this.upsertProvider(key, provider);
     }
-    if (dto.smtp) await this.upsertSmtp(dto.smtp);
-    if (dto.server) await this.upsertServer(dto.server);
+    if (update.smtp) await this.upsertSmtp(update.smtp);
+    if (update.server) await this.upsertServer(update.server);
     await refreshAuthNow();
-    if (dto.server?.sessionIdleTimeoutMinutes !== undefined) {
-      await this.resetSessionExpirations(dto.server.sessionIdleTimeoutMinutes);
+    if (update.server?.sessionIdleTimeoutMinutes !== undefined) {
+      await this.resetSessionExpirations(update.server.sessionIdleTimeoutMinutes);
     }
     return this.describe();
   }
 
-  private async upsertProvider(key: string, u: ProviderUpdate): Promise<void> {
-    const row = (await this.repo.findOneBy({ key })) ?? this.repo.create({ key, enabled: false, config: {}, secret: null });
-    const config = { ...(row.config as { clientId?: string; redirectURI?: string }) };
-    if (u.clientId !== undefined) config.clientId = u.clientId;
-    if (u.redirectURI !== undefined) config.redirectURI = u.redirectURI;
-    if (u.enabled !== undefined) row.enabled = u.enabled;
-    // Replace the secret only when a non-empty value is supplied; otherwise keep it.
-    if (u.clientSecret) row.secret = encryptSecret(u.clientSecret);
-    row.config = config;
-    await this.repo.save(row);
+  private async upsertProvider(key: string, update: ProviderUpdate): Promise<void> {
+    const current = await this.row(key) ?? { key, enabled: false, config: {}, secret: null };
+    const config = object(current.config);
+    if (update.clientId !== undefined) config.clientId = update.clientId;
+    if (update.redirectURI !== undefined) config.redirectURI = update.redirectURI;
+    await this.upsert({
+      ...current,
+      enabled: update.enabled ?? current.enabled,
+      config,
+      secret: update.clientSecret ? encryptSecret(update.clientSecret) : current.secret,
+    });
   }
 
-  private async upsertSmtp(u: NonNullable<AuthConfigUpdate["smtp"]>): Promise<void> {
-    const row = (await this.repo.findOneBy({ key: "smtp" })) ?? this.repo.create({ key: "smtp", enabled: false, config: {}, secret: null });
-    const config = { ...(row.config as Record<string, unknown>) };
-    for (const f of ["host", "port", "secure", "user", "from"] as const) if (u[f] !== undefined) config[f] = u[f];
-    if (u.enabled !== undefined) row.enabled = u.enabled;
-    if (u.pass) row.secret = encryptSecret(u.pass);
-    row.config = config;
-    await this.repo.save(row);
+  private async upsertSmtp(update: NonNullable<AuthConfigUpdate["smtp"]>): Promise<void> {
+    const current = await this.row("smtp") ?? {
+      key: "smtp",
+      enabled: false,
+      config: {},
+      secret: null,
+    };
+    const config = object(current.config);
+    for (const field of ["host", "port", "secure", "user", "from"] as const) {
+      if (update[field] !== undefined) config[field] = update[field];
+    }
+    await this.upsert({
+      ...current,
+      enabled: update.enabled ?? current.enabled,
+      config,
+      secret: update.pass ? encryptSecret(update.pass) : current.secret,
+    });
   }
 
-  private async upsertServer(u: NonNullable<AuthConfigUpdate["server"]>): Promise<void> {
-    if (u.sessionIdleTimeoutMinutes !== undefined && !isSessionIdleTimeoutMinutes(u.sessionIdleTimeoutMinutes)) {
-      throw new BadRequestException("Session idle timeout must be null or an integer from 5 to 10080 minutes");
+  private async upsertServer(update: NonNullable<AuthConfigUpdate["server"]>): Promise<void> {
+    if (
+      update.sessionIdleTimeoutMinutes !== undefined
+      && !isSessionIdleTimeoutMinutes(update.sessionIdleTimeoutMinutes)
+    ) {
+      throw new AppException(
+        "SESSION_IDLE_TIMEOUT_INVALID",
+        "Session idle timeout must be null or an integer from 5 to 10080 minutes",
+        400,
+      );
     }
-    const row = (await this.repo.findOneBy({ key: "server" })) ?? this.repo.create({ key: "server", enabled: true, config: {}, secret: null });
-    const config = { ...(row.config as Record<string, unknown>) };
-    for (const f of ["requireEmailVerification", "requireSignupApproval", "allowDelete", "hibp", "auditLog"] as const) {
-      if (u[f] !== undefined) config[f] = u[f];
+    const current = await this.row("server") ?? {
+      key: "server",
+      enabled: true,
+      config: {},
+      secret: null,
+    };
+    const config = object(current.config);
+    for (const field of [
+      "requireEmailVerification",
+      "requireSignupApproval",
+      "allowDelete",
+      "hibp",
+      "auditLog",
+    ] as const) {
+      if (update[field] !== undefined) config[field] = update[field];
     }
-    if (u.sessionIdleTimeoutMinutes !== undefined) {
-      config.sessionIdleTimeoutMinutes = u.sessionIdleTimeoutMinutes;
+    if (update.sessionIdleTimeoutMinutes !== undefined) {
+      config.sessionIdleTimeoutMinutes = update.sessionIdleTimeoutMinutes;
     }
-    row.config = config;
-    await this.repo.save(row);
+    await this.upsert({ ...current, config });
   }
 
   private async resetSessionExpirations(minutes: number | null): Promise<void> {
-    const lifetimeSeconds = minutes === null
-      ? DEFAULT_SESSION_LIFETIME_SECONDS
-      : minutes * 60;
-    await this.repo.manager.query(
-      `UPDATE "session"
-       SET "expiresAt" = CURRENT_TIMESTAMP + ($1 * INTERVAL '1 second'),
-           "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "expiresAt" > CURRENT_TIMESTAMP`,
-      [lifetimeSeconds],
-    );
+    const lifetimeSeconds = minutes === null ? DEFAULT_SESSION_LIFETIME_SECONDS : minutes * 60;
+    await this.sql`
+      UPDATE "session"
+      SET "expiresAt" = CURRENT_TIMESTAMP + (${lifetimeSeconds} * INTERVAL '1 second'),
+          "updatedAt" = CURRENT_TIMESTAMP
+      WHERE "expiresAt" > CURRENT_TIMESTAMP
+    `;
   }
 }

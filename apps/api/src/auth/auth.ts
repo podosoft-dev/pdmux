@@ -1,6 +1,6 @@
 import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from "better-auth";
 import { APIError } from "better-auth/api";
-import { twoFactor, haveIBeenPwned, magicLink, emailOTP, username, multiSession, phoneNumber, organization, jwt, bearer } from "better-auth/plugins";
+import { twoFactor, haveIBeenPwned, magicLink, emailOTP, username, multiSession, phoneNumber, organization, jwt, bearer, openAPI } from "better-auth/plugins";
 import { actionEmail, sendMail } from "../mail/mailer";
 import { sendSms } from "../sms/sms";
 import { assertUserCreationAllowed, createFeatureGate, createSignupOpenCheck } from "./feature-gate";
@@ -121,6 +121,9 @@ export function buildAuth(config: AuthConfig) {
     // Register clients at /api/auth/oauth2/create-client; discovery at
     // /api/auth/.well-known/openid-configuration. See docs/modules.md.
     oauthProvider({ loginPage: "/login", consentPage: "/oauth2/consent" }),
+    // Makes the dynamic Better Auth route contract available for the generated
+    // OpenAPI parity check in addition to the Elysia application schema.
+    openAPI(),
   ];
   // Reject passwords found in known breaches (Have I Been Pwned, k-anonymity range
   // API). Admin-toggleable (auth_config), applied live on the next request.

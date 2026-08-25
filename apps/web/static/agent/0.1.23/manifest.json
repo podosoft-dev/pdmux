@@ -1,0 +1,34 @@
+{
+  "version": "0.1.23",
+  "builtAt": "2026-08-25T04:27:36.870Z",
+  "artifacts": [
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "path": "/agent/0.1.23/pdmux-agent-linux-amd64",
+      "sha256": "e9bbecff25ddd73c54d5d60bc67d8f2a26d3d257b791faf5219d1f370162ee37",
+      "bytes": 8442018
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "path": "/agent/0.1.23/pdmux-agent-linux-arm64",
+      "sha256": "6a384341f138837dde6177103faea2882a1acaee13a8573737d89e6a436abd5e",
+      "bytes": 7864482
+    },
+    {
+      "os": "darwin",
+      "arch": "amd64",
+      "path": "/agent/0.1.23/pdmux-agent-darwin-amd64",
+      "sha256": "02e2a1ad10deb1c221295c3e53ba324857b45a1602c985e16bee5aae9fd7b45a",
+      "bytes": 8603760
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64",
+      "path": "/agent/0.1.23/pdmux-agent-darwin-arm64",
+      "sha256": "5f60cd0e4030e153242623a6ff88b49760a6e709b5499614eec4994de35adcb8",
+      "bytes": 7989506
+    }
+  ]
+}

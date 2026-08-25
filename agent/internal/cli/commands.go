@@ -75,6 +75,8 @@ type Deps struct {
 	Stderr io.Writer
 	// Env is the process environment; nil reads the real one.
 	Env map[string]string
+	// ReadConfigFile reads config candidates; nil reads the real filesystem.
+	ReadConfigFile config.ReadFileFunc
 	// Home is the home directory used for config candidates and --user paths.
 	Home string
 	// Username is the account running this process.
@@ -164,8 +166,9 @@ func resolve(args Args, deps Deps) config.Resolved {
 			Hostname: args.Hostname,
 			LogLevel: args.LogLevel,
 		},
-		Env:     deps.Env,
-		HomeDir: deps.Home,
+		Env:      deps.Env,
+		HomeDir:  deps.Home,
+		ReadFile: deps.ReadConfigFile,
 	})
 }
 
