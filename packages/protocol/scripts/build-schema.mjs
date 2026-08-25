@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Turn the zod contract into the JSON artefacts the Go agent embeds.
  *
@@ -43,7 +43,7 @@ const SCHEMA_DIR = join(PACKAGE_ROOT, 'schema');
 const SCHEMA_FILE = join(SCHEMA_DIR, 'protocol.schema.json');
 const CONSTANTS_FILE = join(SCHEMA_DIR, 'constants.json');
 
-const REGENERATE_COMMAND = 'npm run schema:build -w @pdmux/protocol';
+const REGENERATE_COMMAND = 'bun run --cwd packages/protocol schema:build';
 const GENERATED_NOTICE =
 	`GENERATED FILE — do not hand-edit. Derived from packages/protocol/src/index.ts; ` +
 	`regenerate with \`${REGENERATE_COMMAND}\`.`;

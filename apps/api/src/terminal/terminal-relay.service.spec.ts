@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { AgentDownstream, TerminalClientFrame, TerminalServerFrame } from "@pdmux/protocol";
 import { AgentRegistryService, type AgentSocket } from "../agents/agent-registry.service";
 import { setAuditRecorder, type AuditEntry } from "../audit/audit-events";

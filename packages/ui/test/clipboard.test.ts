@@ -46,10 +46,10 @@ describe('[TC-PDUI-193] letting go of a selection copies it', () => {
 	 */
 	it('[TC-PDUI-193] copies what was selected', () => {
 		const copy = vi.fn();
-		let selection = 'npm run dev';
+		let selection = 'bun run dev';
 		const settled = selectionCopier({ getSelection: () => selection }, copy);
 		settled();
-		expect(copy).toHaveBeenCalledWith('npm run dev');
+		expect(copy).toHaveBeenCalledWith('bun run dev');
 
 		selection = 'a second drag';
 		settled();

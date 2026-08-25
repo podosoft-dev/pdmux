@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Checkbox } from "$lib/components/ui/checkbox";
-  import * as Table from "$lib/components/ui/table";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import * as Select from "$lib/components/ui/select";
-  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "$lib/components/data-table.svelte";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import { Checkbox } from "#lib/components/ui/checkbox/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import * as Select from "#lib/components/ui/select/index.js";
+  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "#lib/components/data-table.svelte";
   import { toast } from "svelte-sonner";
-  import { api } from "$lib/api";
-  import { getI18n, fmt, formatDateTime } from "$lib/i18n";
+  import { api } from "#lib/api.js";
+  import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
 
   const i18n = getI18n();
 

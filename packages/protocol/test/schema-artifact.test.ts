@@ -14,7 +14,7 @@
  *     changes, and nothing in the schema forces it to move.
  *
  * Each is asserted below against the committed bytes, so the test fails in the
- * same place, and for the same reason, as `npm run schema:check -w @pdmux/protocol`.
+ * same place, and for the same reason, as `bun run --cwd packages/protocol schema:check`.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -335,10 +335,10 @@ describe('[TC-PDPROTO-013] what the Go side reads out of the artefact', () => {
 	it('[TC-PDPROTO-013] marks itself generated without constraining the roots', () => {
 		for (const document of [committedSchema, committedConstants]) {
 			expect(document.$comment).toContain('do not hand-edit');
-			expect(document.$comment).toContain('npm run schema:build -w @pdmux/protocol');
+			expect(document.$comment).toContain('bun run --cwd packages/protocol schema:build');
 			const marker = document._generated as JsonObject;
 			expect(marker.doNotEdit).toBe(true);
-			expect(marker.command).toBe('npm run schema:build -w @pdmux/protocol');
+			expect(marker.command).toBe('bun run --cwd packages/protocol schema:build');
 			expect(marker.source).toBe('packages/protocol/src/index.ts');
 		}
 		expect((committedSchema._generated as JsonObject).protocolVersion).toBe(PROTOCOL_VERSION);

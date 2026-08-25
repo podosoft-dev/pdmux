@@ -1,76 +1,85 @@
-import { Injectable, Module } from "@nestjs/common";
-import { APP_GUARD, Reflector } from "@nestjs/core";
-import {
-  InjectThrottlerOptions,
-  InjectThrottlerStorage,
-  ThrottlerGuard,
-  ThrottlerModule,
-  type ThrottlerLimitDetail,
-  type ThrottlerModuleOptions,
-  type ThrottlerRequest,
-  type ThrottlerStorage,
-} from "@nestjs/throttler";
-import { ThrottlerStorageRedisService } from "@nest-lab/throttler-storage-redis";
-import type { Request } from "express";
-import { ApiKeyVerifier } from "../api-key/api-key-verifier";
+import type { RedisClient } from "bun";
 import { AppException } from "../common/app-exception";
-import { RedisModule } from "../redis/redis.module";
-import { RedisService } from "../redis/redis.service";
-import { rateLimitConfig } from "./rate-limit.config";
+import { API_KEY_VERIFIER } from "../api-key/api-key.module";
+import {
+  REQUEST_GUARDS,
+  type PodokitModule,
+  type RequestGuardContext,
+  type ServiceKey,
+} from "../core/services";
+import { REDIS } from "../redis/redis.module";
+import { rateLimitConfig, type RateLimitConfig } from "./rate-limit.config";
 import { RateLimitIdentity } from "./rate-limit.identity";
 
-const config = rateLimitConfig();
-const unthrottledHealthPaths = new Set(["/health", "/health/ready"]);
+export interface RateLimitIncrement {
+  count: number;
+  retryAfterSeconds: number;
+}
 
-@Injectable()
-export class ProxyAwareThrottlerGuard extends ThrottlerGuard {
-  constructor(
-    @InjectThrottlerOptions() options: ThrottlerModuleOptions,
-    @InjectThrottlerStorage() storage: ThrottlerStorage,
-    reflector: Reflector,
-    private readonly identity: RateLimitIdentity,
-  ) {
-    super(options, storage, reflector);
+export interface RateLimitStorage {
+  increment(key: string, ttlSeconds: number): Promise<RateLimitIncrement>;
+}
+
+const INCREMENT_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+local ttl = redis.call('TTL', KEYS[1])
+return { count, ttl }
+`;
+
+function resultNumber(value: unknown): number | undefined {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
   }
+  return undefined;
+}
 
-  protected override async handleRequest(
-    requestProps: ThrottlerRequest,
-  ): Promise<boolean> {
-    const { req, res } = this.getRequestResponse(requestProps.context);
-    const method = typeof req.method === "string" ? req.method : "";
-    const path = typeof req.path === "string" ? req.path : "";
-    if (method === "GET" && unthrottledHealthPaths.has(path)) return true;
+export class RedisRateLimitStorage implements RateLimitStorage {
+  constructor(private readonly client: RedisClient) {}
 
-    let effective = requestProps;
-    if (path === "/api/auth" || path.startsWith("/api/auth/")) {
-      effective = {
-        ...requestProps,
-        limit: config.authLimit,
-        ttl: config.authTtlSeconds * 1000,
-        blockDuration: config.authTtlSeconds * 1000,
-      };
-    } else if (method === "GET" && path === "/site/settings") {
-      effective = { ...requestProps, limit: config.runtimeLimit };
-    } else if (path === "/mcp") {
-      // A coding CLI makes several calls per turn, so the generic browser budget is
-      // the wrong shape. The tracker for this path is the (address, token) pair —
-      // see `mcpBearer` in rate-limit.identity.ts — so this limit is per caller
-      // rather than per install.
-      effective = {
-        ...requestProps,
-        limit: config.mcpLimit,
-        ttl: config.mcpTtlSeconds * 1000,
-        blockDuration: config.mcpTtlSeconds * 1000,
-      };
+  async increment(key: string, ttlSeconds: number): Promise<RateLimitIncrement> {
+    const result = await this.client.send("EVAL", [
+      INCREMENT_SCRIPT,
+      "1",
+      key,
+      String(ttlSeconds),
+    ]);
+    if (!Array.isArray(result)) throw new Error("Redis returned an invalid rate-limit result");
+    const count = resultNumber(result[0]);
+    const retryAfterSeconds = resultNumber(result[1]);
+    if (count === undefined || retryAfterSeconds === undefined) {
+      throw new Error("Redis returned an invalid rate-limit counter");
     }
+    return { count, retryAfterSeconds: Math.max(1, retryAfterSeconds) };
+  }
+}
+
+type LimitProfile = { name: string; ttlSeconds: number; limit: number };
+
+export class RateLimiter {
+  constructor(
+    private readonly config: RateLimitConfig,
+    private readonly identity: RateLimitIdentity,
+    private readonly storage: RateLimitStorage,
+  ) {}
+
+  async enforce(context: RequestGuardContext): Promise<void> {
+    const { request } = context;
+    const path = new URL(request.url).pathname;
+    if (
+      request.method === "GET" &&
+      ["/health", "/health/ready", "/api-docs", "/api-docs-json", "/api-docs-elysia-json"].includes(path)
+    ) return;
 
     try {
-      return await this.withStorageTimeout(super.handleRequest(effective));
+      const profile = this.profile(request.method, path);
+      const tracker = await this.identity.resolve(request, context.remoteAddress, this.config);
+      await this.enforceCustom(profile.name, tracker, profile.ttlSeconds, profile.limit, context.setHeader);
     } catch (error) {
       if (error instanceof AppException) throw error;
-      if (typeof res.header === "function") {
-        res.header("Retry-After", config.unavailableRetryAfterSeconds);
-      }
+      context.setHeader("Retry-After", String(this.config.unavailableRetryAfterSeconds));
       throw new AppException(
         "RATE_LIMIT_UNAVAILABLE",
         "Request limiting is temporarily unavailable.",
@@ -79,57 +88,73 @@ export class ProxyAwareThrottlerGuard extends ThrottlerGuard {
     }
   }
 
-  protected override getTracker(request: Record<string, unknown>): Promise<string> {
-    return this.identity.resolve(request as unknown as Request, config);
-  }
-
-  protected override async throwThrottlingException(
-    _context: Parameters<ThrottlerGuard["canActivate"]>[0],
-    _detail: ThrottlerLimitDetail,
+  async enforceCustom(
+    name: string,
+    tracker: string,
+    ttlSeconds: number,
+    limit: number,
+    setHeader: (name: string, value: string) => void,
   ): Promise<void> {
-    throw new AppException(
-      "RATE_LIMIT_EXCEEDED",
-      "Too many requests.",
-      429,
-    );
+    try {
+      const result = await this.withTimeout(
+        this.storage.increment(`${this.config.keyPrefix}:${name}:${tracker}`, ttlSeconds),
+      );
+      setHeader("RateLimit-Limit", String(limit));
+      setHeader("RateLimit-Remaining", String(Math.max(0, limit - result.count)));
+      if (result.count > limit) {
+        setHeader("Retry-After", String(result.retryAfterSeconds));
+        throw new AppException("RATE_LIMIT_EXCEEDED", "Too many requests.", 429);
+      }
+    } catch (error) {
+      if (error instanceof AppException) throw error;
+      setHeader("Retry-After", String(this.config.unavailableRetryAfterSeconds));
+      throw new AppException(
+        "RATE_LIMIT_UNAVAILABLE",
+        "Request limiting is temporarily unavailable.",
+        503,
+      );
+    }
   }
 
-  private async withStorageTimeout(operation: Promise<boolean>): Promise<boolean> {
-    let timeout: NodeJS.Timeout | undefined;
+  private profile(method: string, path: string): LimitProfile {
+    if (path === "/api/auth" || path.startsWith("/api/auth/")) {
+      return { name: "auth", ttlSeconds: this.config.authTtlSeconds, limit: this.config.authLimit };
+    }
+    if (method === "GET" && path === "/site/settings") {
+      return { name: "runtime", ttlSeconds: this.config.ttlSeconds, limit: this.config.runtimeLimit };
+    }
+    return { name: "general", ttlSeconds: this.config.ttlSeconds, limit: this.config.limit };
+  }
+
+  private async withTimeout(operation: Promise<RateLimitIncrement>): Promise<RateLimitIncrement> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
         operation,
         new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(
+          timer = setTimeout(
             () => reject(new Error("Rate limit storage timeout")),
-            config.storageTimeoutMs,
+            this.config.storageTimeoutMs,
           );
         }),
       ]);
     } finally {
-      if (timeout) clearTimeout(timeout);
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
 }
 
-@Module({
-  imports: [
-    RedisModule,
-    ThrottlerModule.forRootAsync({
-      imports: [RedisModule],
-      inject: [RedisService],
-      useFactory: (redis: RedisService) => ({
-        throttlers: [{ ttl: config.ttlSeconds * 1000, limit: config.limit }],
-        storage: new ThrottlerStorageRedisService(redis.client),
-      }),
-    }),
-  ],
-  providers: [
-    ApiKeyVerifier,
-    RateLimitIdentity,
-    ProxyAwareThrottlerGuard,
-    { provide: APP_GUARD, useExisting: ProxyAwareThrottlerGuard },
-  ],
-  exports: [RateLimitIdentity],
-})
-export class RateLimitModule {}
+export const RATE_LIMITER = Symbol("rate-limiter") as ServiceKey<RateLimiter>;
+
+export const rateLimitModule: PodokitModule = {
+  name: "rate-limit",
+  configure: (_env, services): void => {
+    const limiter = new RateLimiter(
+      rateLimitConfig(),
+      new RateLimitIdentity(services.resolve(API_KEY_VERIFIER), services),
+      new RedisRateLimitStorage(services.resolve(REDIS).client),
+    );
+    services.register(RATE_LIMITER, limiter);
+    services.resolve(REQUEST_GUARDS).register((context) => limiter.enforce(context));
+  },
+};

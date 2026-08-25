@@ -1,228 +1,140 @@
-import {
-  Controller,
-  Get,
-  type INestApplication,
-  Injectable,
-  Module,
-  Post,
-} from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
-import { Test } from "@nestjs/testing";
-import {
-  ThrottlerModule,
-  type ThrottlerStorage,
-} from "@nestjs/throttler";
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  jest,
-} from "@jest/globals";
-import Redis from "ioredis";
-import request from "supertest";
-import { AllExceptionsFilter } from "../common/all-exceptions.filter";
-import { RedisService } from "../redis/redis.service";
+import { describe, expect, mock, test } from "bun:test";
+import type { RequestGuardContext } from "../core/services";
+import type { RateLimitIdentity } from "./rate-limit.identity";
+import { RateLimiter, type RateLimitStorage } from "./rate-limit.module";
 
-jest.mock("../auth/auth-provider", () => ({
-  authRuntime: { api: { getSession: jest.fn() } },
-}));
-jest.mock("better-auth/node", () => ({
-  fromNodeHeaders: (headers: unknown) => headers,
-}));
-
-import {
-  ProxyAwareThrottlerGuard,
-  RateLimitModule,
-} from "./rate-limit.module";
-import {
-  RateLimitIdentity,
-  RateLimitIdentityExtension,
-  type RateLimitRequest,
-} from "./rate-limit.identity";
-
-type StorageMode = "allow" | "blocked" | "error";
-type IncrementCall = {
-  ttl: number;
-  limit: number;
-  blockDuration: number;
+const config = {
+  keyPrefix: "podokit:test:rate-limit",
+  ttlSeconds: 60,
+  limit: 300,
+  authTtlSeconds: 60,
+  authLimit: 20,
+  runtimeLimit: 1000,
+  trustedProxyHops: 0,
+  proxyHeader: "x-forwarded-for",
+  storageTimeoutMs: 100,
+  unavailableRetryAfterSeconds: 1,
 };
 
-class ContractStorage implements ThrottlerStorage {
-  mode: StorageMode = "allow";
-  readonly calls: IncrementCall[] = [];
-
-  async increment(
-    _key: string,
-    ttl: number,
-    limit: number,
-    blockDuration: number,
-    _throttlerName: string,
-  ): Promise<{
-    totalHits: number;
-    timeToExpire: number;
-    isBlocked: boolean;
-    timeToBlockExpire: number;
-  }> {
-    this.calls.push({ ttl, limit, blockDuration });
-    if (this.mode === "error") throw new Error("Redis unavailable");
-    return {
-      totalHits: this.mode === "blocked" ? limit + 1 : 1,
-      timeToExpire: 7,
-      isBlocked: this.mode === "blocked",
-      timeToBlockExpire: 7,
-    };
-  }
-}
-
-const storage = new ContractStorage();
-
-@Controller()
-class ContractController {
-  @Get("ordinary")
-  ordinary(): { ok: true } {
-    return { ok: true };
-  }
-
-  @Post("api/auth/sign-in")
-  signIn(): { ok: true } {
-    return { ok: true };
-  }
-
-  @Get("site/settings")
-  runtime(): { ok: true } {
-    return { ok: true };
-  }
-
-  @Get("health")
-  health(): { ok: true } {
-    return { ok: true };
-  }
-
-  @Get("health/ready")
-  ready(): { ok: true } {
-    return { ok: true };
-  }
-}
-
-@Module({
-  imports: [
-    ThrottlerModule.forRoot({
-      throttlers: [{ ttl: 60_000, limit: 300 }],
-      storage,
-    }),
-  ],
-  controllers: [ContractController],
-  providers: [
-    {
-      provide: RateLimitIdentity,
-      useValue: { resolve: async () => "user:test-tracker" },
+function context(path: string, method = "GET"): {
+  value: RequestGuardContext;
+  headers: Record<string, string>;
+} {
+  const headers: Record<string, string> = {};
+  return {
+    headers,
+    value: {
+      request: new Request(`http://localhost${path}`, { method }),
+      remoteAddress: "127.0.0.1",
+      setHeader: (name, value) => { headers[name.toLowerCase()] = value; },
     },
-    { provide: APP_GUARD, useClass: ProxyAwareThrottlerGuard },
-  ],
-})
-class ContractModule {}
+  };
+}
 
-describe("ProxyAwareThrottlerGuard contract", () => {
-  let app: INestApplication;
+describe("RateLimiter", () => {
+  test("applies general, authentication, and runtime profiles", async () => {
+    const increment = mock(async (_key: string, _ttlSeconds: number) => ({
+      count: 1,
+      retryAfterSeconds: 60,
+    }));
+    const limiter = new RateLimiter(
+      config,
+      { resolve: async () => "user:test" } as unknown as RateLimitIdentity,
+      { increment } as RateLimitStorage,
+    );
+    await limiter.enforce(context("/ordinary").value);
+    await limiter.enforce(context("/api/auth/sign-in", "POST").value);
+    await limiter.enforce(context("/site/settings").value);
 
-  beforeAll(async () => {
-    const module = await Test.createTestingModule({
-      imports: [ContractModule],
-    }).compile();
-    app = module.createNestApplication();
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
-  });
-
-  beforeEach(() => {
-    storage.mode = "allow";
-    storage.calls.length = 0;
-  });
-
-  afterAll(async () => {
-    await app.close();
-  });
-
-  it("applies separate general, authentication, and runtime limits", async () => {
-    await request(app.getHttpServer()).get("/ordinary").expect(200);
-    await request(app.getHttpServer()).post("/api/auth/sign-in").expect(201);
-    await request(app.getHttpServer()).get("/site/settings").expect(200);
-
-    expect(storage.calls).toEqual([
-      { ttl: 60_000, limit: 300, blockDuration: 60_000 },
-      { ttl: 60_000, limit: 20, blockDuration: 60_000 },
-      { ttl: 60_000, limit: 1000, blockDuration: 60_000 },
+    expect(increment.mock.calls.map((call) => call.slice(1))).toEqual([
+      [60],
+      [60],
+      [60],
+    ]);
+    expect(increment.mock.calls.map((call) => call[0])).toEqual([
+      "podokit:test:rate-limit:general:user:test",
+      "podokit:test:rate-limit:auth:user:test",
+      "podokit:test:rate-limit:runtime:user:test",
     ]);
   });
 
-  it("keeps liveness and readiness outside request limiting", async () => {
-    await request(app.getHttpServer()).get("/health").expect(200);
-    await request(app.getHttpServer()).get("/health/ready").expect(200);
-    expect(storage.calls).toHaveLength(0);
+  test("bypasses health probes and API documentation", async () => {
+    const increment = mock(async (_key: string, _ttlSeconds: number) => ({
+      count: 1,
+      retryAfterSeconds: 60,
+    }));
+    const limiter = new RateLimiter(
+      config,
+      { resolve: async () => "ip:test" } as unknown as RateLimitIdentity,
+      { increment },
+    );
+    await limiter.enforce(context("/health").value);
+    await limiter.enforce(context("/health/ready").value);
+    await limiter.enforce(context("/api-docs").value);
+    await limiter.enforce(context("/api-docs-json").value);
+    await limiter.enforce(context("/api-docs-elysia-json").value);
+    expect(increment).not.toHaveBeenCalled();
   });
 
-  it("returns stable error envelopes for blocked and unavailable storage", async () => {
-    storage.mode = "blocked";
-    const blocked = await request(app.getHttpServer()).get("/ordinary").expect(429);
-    expect(blocked.headers["retry-after"]).toBe("7");
-    expect(blocked.body).toMatchObject({
-      success: false,
-      error: { code: "RATE_LIMIT_EXCEEDED", statusCode: 429 },
+  test("returns stable blocked and storage errors with retry headers", async () => {
+    const identity = { resolve: async () => "ip:test" } as unknown as RateLimitIdentity;
+    const blockedContext = context("/ordinary");
+    const blocked = new RateLimiter(config, identity, {
+      increment: async () => ({ count: 301, retryAfterSeconds: 7 }),
     });
+    await expect(blocked.enforce(blockedContext.value)).rejects.toMatchObject({
+      code: "RATE_LIMIT_EXCEEDED",
+      statusCode: 429,
+    });
+    expect(blockedContext.headers["retry-after"]).toBe("7");
 
-    storage.mode = "error";
-    const unavailable = await request(app.getHttpServer()).get("/ordinary").expect(503);
-    expect(unavailable.headers["retry-after"]).toBe("1");
-    expect(unavailable.body).toMatchObject({
-      success: false,
-      error: { code: "RATE_LIMIT_UNAVAILABLE", statusCode: 503 },
+    const failedContext = context("/ordinary");
+    const failed = new RateLimiter(config, identity, {
+      increment: async () => { throw new Error("Redis unavailable"); },
     });
+    await expect(failed.enforce(failedContext.value)).rejects.toMatchObject({
+      code: "RATE_LIMIT_UNAVAILABLE",
+      statusCode: 503,
+    });
+    expect(failedContext.headers["retry-after"]).toBe("1");
+
+    const identityContext = context("/ordinary");
+    const failedIdentity = new RateLimiter(
+      config,
+      { resolve: async () => { throw new Error("Identity unavailable"); } } as unknown as RateLimitIdentity,
+      { increment: async () => ({ count: 1, retryAfterSeconds: 60 }) },
+    );
+    await expect(failedIdentity.enforce(identityContext.value)).rejects.toMatchObject({
+      code: "RATE_LIMIT_UNAVAILABLE",
+      statusCode: 503,
+    });
+    expect(identityContext.headers["retry-after"]).toBe("1");
   });
 
-  it("uses an application identity extension without a second rate-limit module", async () => {
-    @Injectable()
-    class ApplicationIdentityExtension extends RateLimitIdentityExtension {
-      override async validatedApiKeyId(
-        _request: RateLimitRequest,
-        rawApiKey: string,
-      ): Promise<string | undefined> {
-        return rawApiKey === "application-valid" ? "application-id" : undefined;
-      }
-    }
-    const redis = Object.create(Redis.prototype) as Redis;
-    const module = await Test.createTestingModule({
-      imports: [RateLimitModule],
-      providers: [
-        {
-          provide: RateLimitIdentityExtension,
-          useClass: ApplicationIdentityExtension,
-        },
-      ],
-    })
-      .overrideProvider(RedisService)
-      .useValue({ client: redis })
-      .compile();
-    try {
-      const identity = module.get(RateLimitIdentity);
-      const headers = { "x-api-key": "application-valid" };
-      const tracker = await identity.resolve(
-        {
-          headers,
-          header: (name: string) =>
-            headers[name.toLowerCase() as keyof typeof headers],
-          socket: { remoteAddress: "10.0.0.9" },
-          ip: "10.0.0.9",
-          session: null,
-        } as unknown as RateLimitRequest,
-        { proxyHeader: "x-forwarded-for", trustedProxyHops: 0 },
-      );
-      expect(tracker).toMatch(/^api-key:[a-f0-9]{64}$/);
-      expect(tracker).not.toContain("application-id");
-    } finally {
-      await module.close();
-    }
+  test("enforces module-specific profiles with the shared atomic storage", async () => {
+    const increment = mock(async (_key: string, _ttlSeconds: number) => ({
+      count: 2,
+      retryAfterSeconds: 3600,
+    }));
+    const limiter = new RateLimiter(
+      config,
+      { resolve: async () => "user:test" } as unknown as RateLimitIdentity,
+      { increment },
+    );
+    const headers: Record<string, string> = {};
+
+    await limiter.enforceCustom(
+      "blog-create",
+      "author-hash",
+      3600,
+      3,
+      (name, value) => { headers[name.toLowerCase()] = value; },
+    );
+
+    expect(increment).toHaveBeenCalledWith(
+      "podokit:test:rate-limit:blog-create:author-hash",
+      3600,
+    );
+    expect(headers["ratelimit-remaining"]).toBe("1");
   });
 });

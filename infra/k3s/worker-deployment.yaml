@@ -17,7 +17,7 @@ spec:
       containers:
         - name: worker
           image: ghcr.io/example/podokit-api:v0.0.0
-          command: ["node", "dist/main-worker"]
+          command: ["bun", "dist/main-worker.js"]
           envFrom:
             - configMapRef: { name: app-config }
             - secretRef: { name: app-secrets }

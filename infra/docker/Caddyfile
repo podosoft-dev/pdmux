@@ -1,0 +1,12 @@
+{$PDMUX_DOMAIN} {
+  encode zstd gzip
+
+  @websockets path /terminal/ws /agent/ws
+  handle @websockets {
+    reverse_proxy api:5002
+  }
+
+  handle {
+    reverse_proxy web:3000
+  }
+}

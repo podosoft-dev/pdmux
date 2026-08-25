@@ -27,7 +27,8 @@ export class InitAppSettings1720400000000 implements MigrationInterface {
         ('apiKey', 'true'),
         ('passkey', 'true'),
         ('organization', 'true'),
-        ('oidcProvider', 'false')
+        ('oidcProvider', 'false'),
+        ('require2fa', 'false')
       ON CONFLICT ("key") DO NOTHING
     `);
   }

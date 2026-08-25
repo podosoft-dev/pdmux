@@ -26,17 +26,17 @@
    * already knows. The one interval this component owns is a 1s clock for the
    * countdown, which talks to nobody.
    */
-  import { Button } from "$lib/components/ui/button";
-  import * as Collapsible from "$lib/components/ui/collapsible";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import * as Tabs from "$lib/components/ui/tabs";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as Collapsible from "#lib/components/ui/collapsible/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import * as Tabs from "#lib/components/ui/tabs/index.js";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import { untrack } from "svelte";
   import { writeClipboard } from "@pdmux/ui";
-  import { fmt, getI18n } from "$lib/i18n";
-  import { enrollmentsApi } from "$lib/dashboard/api";
-  import { causeMessage } from "$lib/dashboard/wording";
-  import type { CreatedHostEnrollment, HostView } from "$lib/dashboard/types";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
+  import { enrollmentsApi } from "#lib/dashboard/api.js";
+  import { causeMessage } from "#lib/dashboard/wording.js";
+  import type { CreatedHostEnrollment, HostView } from "#lib/dashboard/types.js";
 
   let {
     open = $bindable(false),

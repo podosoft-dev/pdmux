@@ -12,11 +12,6 @@ const NON_INDEXABLE_PATH_PREFIXES = [
   "/oauth2",
   "/accept-invitation",
   "/maintenance",
-  // A shell script and a tree of 8 MB binaries. Public so an unattended machine can
-  // fetch them, but there is nothing here for a search index — and an install
-  // one-liner surfacing in results is how people run the wrong server's installer.
-  "/install.sh",
-  "/agent",
 ] as const;
 
 function matchesPathPrefix(pathname: string, prefix: string): boolean {

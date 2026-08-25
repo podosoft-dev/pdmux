@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "bun:test";
 import type { AgentDownstream } from "@pdmux/protocol";
 import type { GitService } from "../git/git.service";
 import type { Repo } from "../git/repo.entity";

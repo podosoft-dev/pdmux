@@ -1,8 +1,6 @@
-import { Body, Controller, Param, ParseUUIDPipe, Post } from "@nestjs/common";
-import { ApiTags } from "@nestjs/swagger";
-import { Session, type UserSession } from "@thallesp/nestjs-better-auth";
 import type { ExecResult } from "@pdmux/protocol";
 import { AgentExecService } from "../agents/agent-exec.service";
+import type { AuthSession } from "../auth/auth.service";
 import { AppException } from "../common/app-exception";
 import { resolveScopeId } from "../fleet/session-scope";
 import { MuxCopyModeDto, MuxHistoryDto } from "./dto/terminal-mux.dto";
@@ -36,8 +34,6 @@ import { MuxCopyModeDto, MuxHistoryDto } from "./dto/terminal-mux.dto";
  * the measured programs do not answer to). Both are the same class of mistake — a
  * scroll gesture that edits a running command line.
  */
-@ApiTags("terminal")
-@Controller("terminal")
 export class TerminalMuxController {
   /**
    * How much history to walk back through, and in what bites.
@@ -61,11 +57,10 @@ export class TerminalMuxController {
 
   constructor(private readonly exec: AgentExecService) {}
 
-  @Post(":hostId/copy-mode")
   async copyMode(
-    @Session() session: UserSession,
-    @Param("hostId", ParseUUIDPipe) hostId: string,
-    @Body() dto: MuxCopyModeDto,
+    session: AuthSession,
+    hostId: string,
+    dto: MuxCopyModeDto,
   ): Promise<{ ok: true }> {
     // `-e` leaves copy-mode by itself once the pane is scrolled back to the bottom, so
     // the ordinary way out is the gesture the user was already making. `cancel` is for
@@ -78,11 +73,10 @@ export class TerminalMuxController {
     return { ok: true };
   }
 
-  @Post(":hostId/history")
   async history(
-    @Session() session: UserSession,
-    @Param("hostId", ParseUUIDPipe) hostId: string,
-    @Body() dto: MuxHistoryDto,
+    session: AuthSession,
+    hostId: string,
+    dto: MuxHistoryDto,
   ): Promise<{ lines: string[]; reachedOldest: boolean; screenOnly: boolean }> {
     const { WINDOW_LINES, MAX_LINES, MAX_WINDOWS } = TerminalMuxController;
     /** Newest-first while gathering; reversed once, at the end. */
@@ -171,7 +165,7 @@ export class TerminalMuxController {
    * and the caller degrades to the budget it already has.
    */
   private async paneFacts(
-    session: UserSession,
+    session: AuthSession,
     hostId: string,
     target: string,
   ): Promise<{ historySize: number; alternate: boolean }> {
@@ -208,7 +202,7 @@ export class TerminalMuxController {
     return [...args, "-t", session];
   }
 
-  private async run(session: UserSession, hostId: string, args: string[]): Promise<ExecResult> {
+  private async run(session: AuthSession, hostId: string, args: string[]): Promise<ExecResult> {
     const result = await this.exec.run(resolveScopeId(session), hostId, {
       command: "tmux",
       args,

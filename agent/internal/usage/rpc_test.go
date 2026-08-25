@@ -166,7 +166,7 @@ func TestRPCCLIProvider(t *testing.T) {
 		// is the probe: at EOF it returns instantly, and on a pipe that is still open
 		// it blocks for its timeout. `read -t` cannot say which happened -- macOS
 		// /bin/sh answers 1 either way -- so the ELAPSED TIME is the signal.
-		script := "#!/bin/sh\n" +
+		script := "#!/bin/bash\n" +
 			"read -t 2 _\n" +
 			"read -t 2 _\n" +
 			"before=$(date +%s)\n" +

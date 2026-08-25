@@ -1,5 +1,5 @@
-import { describe, expect, it } from "@jest/globals";
-import { ForbiddenException } from "@nestjs/common";
+import { describe, expect, it } from "bun:test";
+import { AppException } from "@podosoft/podokit-contracts";
 import { assertCanManageFleet, isAdmin, isPersonalScope, resolveScopeId, type ScopedSession } from "./session-scope";
 
 const USER_ID = "user-1";
@@ -31,13 +31,13 @@ describe("[TC-PDADMIN-020] who may change the fleet", () => {
 
   /** An organization's fleet is shared, so changing it stays an administrator's job. */
   it("refuses a member in an organization", () => {
-    expect(() => assertCanManageFleet(session({ org: "org-a" }))).toThrow(ForbiddenException);
+    expect(() => assertCanManageFleet(session({ org: "org-a" }))).toThrow(AppException);
   });
 
   /** Roles arrive from better-auth as a comma-separated string. */
   it("reads admin out of a multi-role string", () => {
     expect(() => assertCanManageFleet(session({ role: "moderator,admin", org: "org-a" }))).not.toThrow();
-    expect(() => assertCanManageFleet(session({ role: "moderator,user", org: "org-a" }))).toThrow(ForbiddenException);
+    expect(() => assertCanManageFleet(session({ role: "moderator,user", org: "org-a" }))).toThrow(AppException);
   });
 
   /**
@@ -47,8 +47,8 @@ describe("[TC-PDADMIN-020] who may change the fleet", () => {
    */
   it("refuses a session without a user", () => {
     const anonymous: ScopedSession = { user: null, session: null };
-    expect(() => resolveScopeId(anonymous)).toThrow(ForbiddenException);
-    expect(() => assertCanManageFleet(anonymous)).toThrow(ForbiddenException);
+    expect(() => resolveScopeId(anonymous)).toThrow(AppException);
+    expect(() => assertCanManageFleet(anonymous)).toThrow(AppException);
   });
 });
 

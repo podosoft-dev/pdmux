@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { AgentDownstream, FsDir } from "@pdmux/protocol";
 
 import { AgentFilesService } from "./agent-files.service";
@@ -18,13 +18,13 @@ const flush = async (): Promise<void> => {
 function build(options: { capabilities?: string[]; enabled?: boolean; online?: boolean } = {}) {
   const sent: AgentDownstream[] = [];
   const registry = {
-    sendToHost: jest.fn((_hostId: string, frame: AgentDownstream) => {
+    sendToHost: mock((_hostId: string, frame: AgentDownstream) => {
       sent.push(frame);
       return options.online ?? true;
     }),
   } as unknown as AgentRegistryService;
   const hosts = {
-    get: jest.fn(async () => ({
+    get: mock(async () => ({
       id: HOST,
       enabled: options.enabled ?? true,
       capabilities: options.capabilities ?? ["files"],

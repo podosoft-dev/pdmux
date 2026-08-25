@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * reset-e2e-data — put the development database back to the state the e2e suite
  * expects to start from.
@@ -16,7 +16,7 @@
  * purpose: the API has no bulk-delete, and it should not grow one for a test.
  *
  * Usage (repo root, with .env loaded):
- *   node tools/reset-e2e-data.mjs [--dry-run]
+ *   bun tools/reset-e2e-data.mjs [--dry-run]
  */
 import { spawnSync } from 'node:child_process';
 

@@ -2,8 +2,8 @@
   // Public site footer: renders the admin-configured footer text and links
   // (support email, terms, privacy). Each element only shows when its value is
   // set in Settings, so an unconfigured site has no empty footer.
-  import { site } from "$lib/site.svelte";
-  import { getI18n } from "$lib/i18n";
+  import { site } from "#lib/site.svelte.js";
+  import { getI18n } from "#lib/i18n/index.js";
 
   const i18n = getI18n();
   const s = $derived(site.value);

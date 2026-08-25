@@ -16,10 +16,7 @@ test.describe("unauthenticated", () => {
       expect(response.headers()["x-robots-tag"]).toBe("noindex, nofollow");
     }
 
-    // `/` is the dashboard, so an anonymous visitor is redirected to the login page
-    // (which is itself noindex). The assertion is about the response for `/`, so the
-    // redirect must not be followed — otherwise it reads the login page's header.
-    const landing = await request.get("/", { maxRedirects: 0 });
+    const landing = await request.get("/");
     expect(landing.headers()["x-robots-tag"]).toBeUndefined();
   });
 });

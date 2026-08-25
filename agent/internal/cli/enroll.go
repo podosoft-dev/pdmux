@@ -426,7 +426,7 @@ func orDefault(value, fallback string) string {
 
 // isEnrollSuccess accepts any 2xx.
 //
-// ⚠ NOT `== 200`. The exchange is a POST that creates a token, and Nest answers a
+// ⚠ NOT `== 200`. The exchange is a POST that creates a token, and the API answers a
 // creating POST with **201 Created** — which an equality check reads as a refusal,
 // so the installer stops one step from done with "the server refused the enrollment
 // code (HTTP 201)" while the server has already spent the single-use code. Found by

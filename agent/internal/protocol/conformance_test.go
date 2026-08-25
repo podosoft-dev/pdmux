@@ -73,7 +73,7 @@ func TestConformanceCorpus(t *testing.T) {
 				case "accept":
 					want, ok := expectations.Accepted[testCase.ID]
 					if !ok {
-						t.Fatalf("no expectation for %q — regenerate expected/ (`npm run expect:build -w @pdmux/protocol`)", testCase.ID)
+						t.Fatalf("no expectation for %q — regenerate expected/ (`bun run --cwd packages/protocol expect:build`)", testCase.ID)
 					}
 					checkAccepted(t, testCase, want)
 				case "reject":

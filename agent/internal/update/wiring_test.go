@@ -94,6 +94,14 @@ type wiredHarness struct {
 
 func startWired(t *testing.T, options ...func(*wiredSetup)) *wiredHarness {
 	t.Helper()
+	// Opening a session target resolves tmux before the fake PTY below is used.
+	// Put a test-owned executable first so the wiring suite is hermetic on both
+	// full developer hosts and minimal CI images.
+	muxDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(muxDir, "tmux"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", muxDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	setup := wiredSetup{
 		stateDir:  t.TempDir(),

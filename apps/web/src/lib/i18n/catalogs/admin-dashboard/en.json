@@ -121,8 +121,7 @@
     "account": "Account",
     "settings": "Settings",
     "home": "Back to home",
-    "signOut": "Sign out",
-    "agentAuth": "Agent refusals"
+    "signOut": "Sign out"
   },
   "passkeys": {
     "title": "Passkeys",
@@ -377,7 +376,7 @@
     "noProviders": "No providers added yet.",
     "socialCardDesc": "Sign in with Google, GitHub, Apple and other OAuth providers.",
     "mcpEnabled": "MCP (Model Context Protocol)",
-    "mcpEnabledDesc": "Lets a coding CLI reach pdmux over /mcp with a token. Turning this off makes /mcp answer 404 for every caller — host keys and fleet tokens alike. Tokens are not revoked; they start working again when it is on."
+    "mcpEnabledDesc": "Lets a coding CLI reach pdmux over /mcp with a token. Turning this off makes /mcp answer 404 for every caller. Existing tokens work again when it is re-enabled."
   },
   "dashboard": {
     "title": "Dashboard",

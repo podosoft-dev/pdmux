@@ -1,7 +1,7 @@
 /**
  * What a fleet-wide MCP token is allowed to do.
  *
- * Free of Nest and TypeORM on purpose — the same reason `flag-defaults.ts`,
+ * Free of the HTTP framework and TypeORM on purpose — the same reason `flag-defaults.ts`,
  * `agent-token.crypto.ts` and `fleet-settings.ts` are: these are the rules that
  * decide who can change what, and they should be assertable without standing up a
  * module.

@@ -6,16 +6,17 @@
     "outDir": "dist",
     "rootDir": "src",
     "declaration": false,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "types": [
+      "bun",
       "node"
     ]
   },

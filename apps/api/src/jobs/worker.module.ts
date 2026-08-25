@@ -1,32 +1,64 @@
-import { Module } from "@nestjs/common";
-import { BullModule } from "@nestjs/bullmq";
-import { DemoProcessor } from "./demo.processor";
+import { Worker, type Processor } from "bullmq";
+import { DataSource } from "typeorm";
+import { AuditService } from "../audit/audit.service";
+import { validateEnv } from "../config/env.validation";
+import { Database } from "../database/database";
+import { dataSourceOptions } from "../database/data-source";
+import { FleetSetting } from "../fleet/fleet-setting.entity";
+import { FleetSettingsService } from "../fleet/fleet-settings.service";
+import { Host } from "../hosts/host.entity";
+import { StaleHostsProcessor } from "../hosts/stale-hosts.processor";
+import { StaleHostsService } from "../hosts/stale-hosts.service";
+import { STALE_HOSTS_QUEUE } from "../hosts/stale-hosts.queue";
+import { HostMetricSample } from "../metrics/host-metric-sample.entity";
+import { MetricsRetentionProcessor } from "../metrics/metrics-retention.processor";
+import { MetricsRetentionService } from "../metrics/metrics-retention.service";
+import { METRICS_QUEUE } from "../metrics/metrics.queue";
+import { MetricsService } from "../metrics/metrics.service";
+import { processDemoJob } from "./demo.processor";
 import { DEMO_QUEUE, redisConnection } from "./queue";
-import { HostsWorkerModule } from "../hosts/hosts-worker.module";
-import { MetricsWorkerModule } from "../metrics/metrics-worker.module";
 // podokit:begin:worker-imports
 // podokit:end:worker-imports
 
-// Consumer side: runs BullMQ processors. Bootstrapped by main-worker.ts as a
-// separate process so workers scale independently of the API.
-@Module({
-  imports: [
-    BullModule.forRoot({ connection: redisConnection() }),
-    BullModule.registerQueue({ name: DEMO_QUEUE }),
-    // pdmux: metric retention runs here so a large delete never shares a thread
-    // with an API request that is relaying terminal bytes.
-    MetricsWorkerModule,
-    // pdmux: the stale-host sweep, for the same reason — deleting a host cascades
-    // into its samples. ⚠ It relies on the connection `MetricsWorkerModule` opens
-    // (TypeOrmCoreModule is @Global()), so it must stay listed after it.
-    HostsWorkerModule,
-    // podokit:begin:worker-queues
-    // podokit:end:worker-queues
-  ],
-  providers: [
-    DemoProcessor,
-    // podokit:begin:worker-providers
-    // podokit:end:worker-providers
-  ],
-})
-export class WorkerModule {}
+interface WorkerDefinition {
+  queue: string;
+  processor: Processor;
+}
+
+export interface WorkerRuntime {
+  workers: Worker[];
+  close: () => Promise<void>;
+}
+
+export async function startWorkers(): Promise<WorkerRuntime> {
+  const dataSource = new DataSource(dataSourceOptions);
+  await dataSource.initialize();
+  const settings = new FleetSettingsService(dataSource.getRepository(FleetSetting));
+  const metrics = new MetricsService(dataSource.getRepository(HostMetricSample));
+  const stale = new StaleHostsProcessor(
+    new StaleHostsService(dataSource.getRepository(Host), settings),
+  );
+  const retention = new MetricsRetentionProcessor(
+    new MetricsRetentionService(dataSource.getRepository(Host), settings, metrics),
+  );
+  const database = new Database(validateEnv(process.env));
+  const audit = new AuditService(database.sql);
+  audit.connect();
+
+  const definitions: WorkerDefinition[] = [
+    { queue: DEMO_QUEUE, processor: processDemoJob },
+    { queue: STALE_HOSTS_QUEUE, processor: () => stale.process() },
+    { queue: METRICS_QUEUE, processor: () => retention.process() },
+  ];
+  const workers = definitions.map(({ queue, processor }) =>
+    new Worker(queue, processor, { connection: redisConnection() })
+  );
+  return {
+    workers,
+    close: async (): Promise<void> => {
+      await Promise.all(workers.map((worker) => worker.close()));
+      audit.close();
+      await Promise.all([dataSource.destroy(), database.close()]);
+    },
+  };
+}

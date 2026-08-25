@@ -1,6 +1,27 @@
 import "dotenv/config";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DataSource, type DataSourceOptions } from "typeorm";
+import { AgentAuthFailure } from "../agents/agent-auth-failure.entity";
+import { AgentEnrollment } from "../agents/agent-enrollment.entity";
+import { AgentToken } from "../agents/agent-token.entity";
+import { FleetSetting } from "../fleet/fleet-setting.entity";
+import { RepoCommit } from "../git/repo-commit.entity";
+import { RepoRef } from "../git/repo-ref.entity";
+import { Repo } from "../git/repo.entity";
+import { HostGitRoot } from "../hosts/host-git-root.entity";
+import { HostService } from "../hosts/host-service.entity";
+import { Host } from "../hosts/host.entity";
+import { HostMcpKey } from "../mcp/host-mcp-key.entity";
+import { UserMcpKey } from "../mcp/user-mcp-key.entity";
+import { HostMetricSample } from "../metrics/host-metric-sample.entity";
+import { UserHostPref } from "../prefs/user-host-pref.entity";
+import { UserLayout } from "../prefs/user-layout.entity";
+
+const compiledMigrations = join(process.cwd(), "dist", "migrations");
+const migrations = existsSync(compiledMigrations)
+  ? [join(compiledMigrations, "[0-9]*.js")]
+  : [join(process.cwd(), "src", "migrations", "[0-9]*.ts")];
 
 export const dataSourceOptions: DataSourceOptions = {
   type: "postgres",
@@ -9,9 +30,24 @@ export const dataSourceOptions: DataSourceOptions = {
   username: process.env.POSTGRES_USER ?? "podokit",
   password: process.env.POSTGRES_PASSWORD ?? "podokit",
   database: process.env.POSTGRES_DB ?? "podokit",
-  // Entities are auto-discovered by file name (*.entity.ts / .js).
-  entities: [join(__dirname, "..", "**", "*.entity{.ts,.js}")],
-  migrations: [join(__dirname, "..", "migrations", "*{.ts,.js}")],
+  entities: [
+    AgentAuthFailure,
+    AgentEnrollment,
+    AgentToken,
+    FleetSetting,
+    Host,
+    HostGitRoot,
+    HostMcpKey,
+    HostMetricSample,
+    HostService,
+    Repo,
+    RepoCommit,
+    RepoRef,
+    UserHostPref,
+    UserLayout,
+    UserMcpKey,
+  ],
+  migrations,
   synchronize: false,
 };
 

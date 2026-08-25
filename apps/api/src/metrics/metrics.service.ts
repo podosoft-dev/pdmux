@@ -1,5 +1,3 @@
-import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
 import { Between, In, LessThan, Repository } from "typeorm";
 import type { Heartbeat } from "@pdmux/protocol";
 import { HostMetricSample } from "./host-metric-sample.entity";
@@ -22,7 +20,6 @@ function toNumber(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-@Injectable()
 export class MetricsService {
   /**
    * Newest stored sample time per host.
@@ -34,7 +31,7 @@ export class MetricsService {
   private readonly lastSampleAt = new Map<string, Date>();
 
   constructor(
-    @InjectRepository(HostMetricSample) private readonly samples: Repository<HostMetricSample>,
+    private readonly samples: Repository<HostMetricSample>,
   ) {}
 
   /** Returns the row when one was stored, null when the beat fell inside a step. */

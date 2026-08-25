@@ -48,9 +48,9 @@ export const VERIFY_WINDOW_MS = 10 * 60_000;
 /**
  * How many verify dials one host may make in a window.
  *
- * WHY IT NEEDS ITS OWN LIMITER: the global HTTP throttler is an `APP_GUARD`, and
- * a WebSocket upgrade never enters the Nest request pipeline — it is handled off
- * the raw `upgrade` event. Nothing else on this path counts anything.
+ * WHY IT NEEDS ITS OWN LIMITER: the global HTTP rate limiter does not cover a
+ * WebSocket upgrade, which is handled by the native upgrade callback. Nothing else
+ * on this path counts anything.
  *
  * WHY A LIMIT IS WARRANTED HERE AND NOT ON A NORMAL DIAL: a normal connection is
  * self-limiting, because the agent holds it open and its own reconnect backs

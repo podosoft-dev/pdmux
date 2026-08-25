@@ -3,7 +3,9 @@ import { createHash, randomBytes } from "node:crypto";
 
 // admin storageState (project default) — the admin is the resource owner.
 const b64url = (b: Buffer): string => b.toString("base64url");
-const REDIRECT = "http://localhost:9999/callback";
+// This front-channel test stops at consent, so use the HTTPS callback required
+// for a web client without depending on a live relying-party callback server.
+const REDIRECT = "https://example.com/callback";
 
 // Verifies the provider is correctly configured end to end on the front channel:
 // signed discovery + JWKS, dynamic client registration, and an authorize request
@@ -30,12 +32,13 @@ test("OIDC provider: discovery, JWKS, client registration, authorize handoff", a
     // the provider is enabled the auth instance may still be rebuilding.
     let reg: { client_id?: string; client_secret?: string } = {};
     await expect(async () => {
-      reg = await (
-        await page.request.post("/api/auth/oauth2/create-client", {
-          data: { client_name: "E2E RP", redirect_uris: [REDIRECT] },
-          headers,
-        })
-      ).json();
+      const response = await page.request.post("/api/auth/oauth2/create-client", {
+        data: { client_name: "E2E RP", redirect_uris: [REDIRECT] },
+        headers,
+      });
+      const body = await response.text();
+      expect(response.ok(), body).toBeTruthy();
+      reg = JSON.parse(body) as typeof reg;
       expect(reg.client_id).toBeTruthy();
     }).toPass({ timeout: 8000 });
     expect(reg.client_secret).toBeTruthy();
@@ -48,12 +51,14 @@ test("OIDC provider: discovery, JWKS, client registration, authorize handoff", a
       `/api/auth/oauth2/authorize?client_id=${reg.client_id}&redirect_uri=${encodeURIComponent(REDIRECT)}` +
       `&response_type=code&scope=${encodeURIComponent("openid profile email")}&state=st` +
       `&code_challenge=${challenge}&code_challenge_method=S256`;
-    const authz = await (await page.request.get(authorizeUrl, { headers })).json();
-    expect(String(authz.url)).toContain("/oauth2/consent");
-    expect(String(authz.url)).toContain("client_id=");
+    const authz = await page.request.get(authorizeUrl, { headers, maxRedirects: 0 });
+    expect(authz.status()).toBe(302);
+    const consentUrl = authz.headers().location ?? "";
+    expect(consentUrl).toContain("/oauth2/consent");
+    expect(consentUrl).toContain("client_id=");
 
     // The consent page renders (reached in a real browser navigation).
-    await page.goto(authz.url);
+    await page.goto(consentUrl);
     await expect(page.getByRole("button", { name: "Allow" })).toBeVisible();
   } finally {
     await page.request.put("/api/account/settings", { data: { oidcProvider: false }, headers });

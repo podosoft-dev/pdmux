@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "bun:test";
 import { agentConfigSchema } from "@pdmux/protocol";
 import { FLEET_SETTING_DEFAULTS, resolveFleetSettings } from "../fleet/fleet-settings";
 import type { HostGitRoot } from "../hosts/host-git-root.entity";

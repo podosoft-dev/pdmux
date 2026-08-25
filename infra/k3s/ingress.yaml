@@ -26,6 +26,14 @@ spec:
     - host: example.com
       http:
         paths:
+          - path: /terminal/ws
+            pathType: Exact
+            backend:
+              service: { name: api, port: { number: 3000 } }
+          - path: /agent/ws
+            pathType: Exact
+            backend:
+              service: { name: api, port: { number: 3000 } }
           - path: /
             pathType: Prefix
             backend:

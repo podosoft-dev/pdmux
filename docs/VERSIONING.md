@@ -11,8 +11,8 @@ that keep those promises.
 
 | Line | Source of truth | Today | When it moves |
 |---|---|---|---|
-| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.1.0` | every product release |
-| **The agent** | `AgentVersion` in `agent/internal/cli/version.go` | `0.1.1` | only when `agent/**` or `packages/protocol/**` changes |
+| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.10.0` | every product release |
+| **The agent** | `AgentVersion` in `agent/internal/cli/version.go` | `0.1.23` | only when `agent/**` or `packages/protocol/**` changes |
 
 **Why they are not one number**: the agent is not something we deploy — it is something a
 **host downloads**. A host compares its own version against what the server publishes and
@@ -107,7 +107,7 @@ just disappeared. The strictness lives on the reading side instead (`parseSemver
 
 ### 5-1. `agent-version` — if it changed, was it bumped?
 
-Runs on pull requests only (a push to main already passed it on the PR). If the base…HEAD
+Runs on pull requests and pushes to `main`. If the base…HEAD
 diff touched `agent/**` or `packages/protocol/**` and `AgentVersion` did not move, it
 **fails**.
 
@@ -119,7 +119,7 @@ the same dishonesty pointing the other way.
 
 ### 5-2. `agent-binaries` — does it really report the version it promised?
 
-Builds all four with `npm run build:agent`, then:
+Builds all four with `bun run build:agent`, then:
 
 1. Fails if the built **linux/amd64 binary's `--version`** differs from `version` in
    `manifest.json`.
@@ -166,7 +166,7 @@ The only field in `manifest.json` that differs between two runs is `builtAt`, an
 value is **outside what is hashed** — metadata for a person reading the directory, never
 compared against anything.
 
-⚠ `npm run build:agent` is **not part of `npm run build`.** The root build runs on every CI
+⚠ `bun run build:agent` is **not part of `bun run build`.** The root build runs on every CI
 machine and those machines have no Go toolchain — wiring them together turns a change that
 never touched the agent red. It is invoked by the release job, by the Docker builder
 stage, or by a person **on purpose**.
@@ -180,7 +180,7 @@ stage, or by a person **on purpose**.
 2. For a product release, update `version` in the root `package.json` and `CHANGELOG.md`.
    The two have **no reason to move together** — if only the web changed, leave the agent
    alone.
-3. `npm run build:agent` — four binaries plus `SHA256SUMS` and `manifest.json` under
+3. `bun run build:agent` — four binaries plus `SHA256SUMS` and `manifest.json` under
    `apps/web/static/agent/<version>/`.
 4. Deploy. The moment the web image serves that directory, `/install.sh` bakes the new
    version's checksums into what it hands out and the card's `outdated` badge lights up.
@@ -200,7 +200,7 @@ The paragraph above describes a **checkout**, where every released version accum
 under `apps/web/static/agent/`. A deployed image does not work that way, and the
 difference decides what a running server can be asked for.
 
-`.dockerignore` excludes `apps/web/static/agent` on purpose — a local `npm run build:agent`
+`.dockerignore` excludes `apps/web/static/agent` on purpose — a local `bun run build:agent`
 leaves ~30 MB there and shipping the developer's copy would only bloat the build context.
 Each image instead builds its own in an `agent` stage. So an image contains the **one
 version that commit declares** in `agent/internal/cli/version.go`, and nothing else:

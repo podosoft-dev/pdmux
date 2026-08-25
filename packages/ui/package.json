@@ -18,11 +18,11 @@
     "dist"
   ],
   "scripts": {
-    "build": "svelte-package -i src -o dist",
-    "test": "vitest run",
-    "test:geometry": "PDMUX_BROWSER_TEST=1 playwright test -c test/playwright.config.ts",
-    "lint": "svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js",
-    "bench:terminal": "PDMUX_BROWSER_TEST=1 playwright test -c test/playwright.bench.config.ts"
+    "build": "bunx --bun svelte-package -i src -o dist",
+    "test": "bunx --bun vitest run",
+    "test:geometry": "PDMUX_BROWSER_TEST=1 bunx playwright test -c test/playwright.config.ts",
+    "lint": "bunx --bun svelte-check --tsconfig ./tsconfig.json --config ./svelte.config.js",
+    "bench:terminal": "PDMUX_BROWSER_TEST=1 bunx playwright test -c test/playwright.bench.config.ts"
   },
   "peerDependencies": {
     "svelte": "^5.1.0"

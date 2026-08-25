@@ -54,16 +54,16 @@
     toggleZoom,
   } from "@pdmux/core";
   import { toast } from "svelte-sonner";
-  import { errorCode, terminalApi } from "$lib/dashboard/api";
-  import { fmt, getI18n } from "$lib/i18n";
-  import CommitDock from "$lib/dashboard/components/commit-dock.svelte";
-  import FilesDockPanel from "$lib/dashboard/components/files-dock.svelte";
-  import ConfirmDialog from "$lib/dashboard/components/confirm-dialog.svelte";
-  import TerminalToolbar from "$lib/dashboard/components/terminal-toolbar.svelte";
-  import { gridHosts, pickerHosts } from "$lib/dashboard/map";
-  import { dismissOnOutside } from "$lib/dashboard/popover-dismiss.svelte";
-  import { useShellState } from "$lib/dashboard/shell-state.svelte";
-  import { uiTranslate } from "$lib/dashboard/ui-i18n";
+  import { errorCode, terminalApi } from "#lib/dashboard/api.js";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
+  import CommitDock from "#lib/dashboard/components/commit-dock.svelte";
+  import FilesDockPanel from "#lib/dashboard/components/files-dock.svelte";
+  import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
+  import TerminalToolbar from "#lib/dashboard/components/terminal-toolbar.svelte";
+  import { gridHosts, pickerHosts } from "#lib/dashboard/map.js";
+  import { dismissOnOutside } from "#lib/dashboard/popover-dismiss.svelte.ts";
+  import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
+  import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();

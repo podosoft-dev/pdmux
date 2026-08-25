@@ -23,9 +23,10 @@ func TestWhich(t *testing.T) {
 	t.Run("[TC-PDTERM-028] finds a binary a service manager's PATH cannot see", func(t *testing.T) {
 		home := t.TempDir()
 		want := place(t, filepath.Join(home, ".local", "bin"), "tmux")
-		// The PATH a launchd or systemd unit actually gets: system directories and
-		// nothing the person installed for themselves.
-		t.Setenv("PATH", "/usr/bin:/bin")
+		// Keep the test independent of whether the host image happens to install
+		// tmux in a system directory. This PATH represents a service manager path
+		// that cannot see the user's executable, which is the behavior under test.
+		t.Setenv("PATH", t.TempDir())
 		t.Setenv("HOME", home)
 
 		got, found := Which("tmux")

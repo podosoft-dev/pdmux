@@ -15,7 +15,7 @@ came out of failures while actually operating an earlier tool.
 browser (SvelteKit + xterm.js)
    │  HTTPS / WebSocket — same origin, session cookie
    ▼
-pdmux-api (NestJS)          Postgres  organisations, users, hosts, services, layouts, metrics, commit metadata
+pdmux-api (Bun + Elysia)    Postgres  organisations, users, hosts, services, layouts, metrics, commit metadata
    ▲                        Redis     sessions, pub/sub, rate limits, job queues (retention, cleanup)
    │                        S3/MinIO  commit patch bodies
    │  WebSocket (the agent dials **outbound**, x-api-key)
@@ -168,23 +168,16 @@ three problems disappear **structurally**.
 - Session names are limited by the contract to `A-Za-z0-9_-`, 1–32 characters — this value ends up
   as a command argument on the host.
 
-**The web app proxies the upgrade itself.** `/terminal/ws` is the one path on the browser→API route
-that a SvelteKit server route cannot handle — a `+server.ts` handler answers HTTP requests and never
-sees the `upgrade` event. Vite's proxy hid this fact for a long time in development, and in a built
-deployment the adapter server handed the upgrade to SvelteKit, which answered **303**, leaving every
-pane permanently "reconnecting" (measured). Demanding a separate reverse-proxy rule from operators
-to keep a core feature alive is not a deployment story, so the production entry point
-(`apps/web/server.js` = `npm start -w pdmux-web`) attaches an `upgrade` listener to the adapter-node
-server and **relays directly**. A proxy in front only has to pass `Upgrade`/`Connection` headers
-through (which most do by default).
+**The edge gateway forwards upgrades directly to the API.** SvelteKit `+server.ts` handlers answer
+HTTP requests but do not receive the server's upgrade callback, and the official Bun adapter does
+not expose an application-specific WebSocket hook. Development uses Vite's exact-path proxy;
+production uses the checked-in Caddy rule or k3s Ingress. Both route only `/terminal/ws` and
+`/agent/ws` to the Bun/Elysia API, while every other path goes to the SvelteKit Bun server.
 
-⚠ **Exactly one path is forwarded** (`TERMINAL_WS_PATH`). An upgrade on any other path is not
-proxied — **the socket is closed**. A relay that forwards any path is a tunnel from a public origin
-into the API's entire internal surface with no session. Session cookies and handshake headers are
-passed through unchanged (the API authorises with that cookie at upgrade time), and
-`x-forwarded-for` is **appended** to the chain (we are only one hop). If upstream refuses the
-handshake, its response (401/403/503) is returned to the browser as-is — a diagnosable failure beats
-a socket that silently disappeared.
+⚠ **Only those two exact paths are forwarded.** A prefix or catch-all upgrade rule would expose the
+API's internal surface as a tunnel. The gateway preserves the session cookie, agent key and
+forwarded address headers; Elysia authorises each upgrade before accepting it. Failed handshakes
+remain HTTP 401/403/503 responses, which are diagnosable by the caller.
 
 ---
 
@@ -400,7 +393,7 @@ or a narrow desktop window finger-sized buttons.
 | `packages/core` | vitest | pure functions — no browser needed |
 | `packages/ui` | vitest (+jsdom) / Playwright | render and callbacks / **geometry** (§7) |
 | `apps/api` | jest | entities, permissions, ingestion, retention |
-| `agent` | `go test` | parsing, backoff, read-only invariants, PTY round trips (a Go module, not an npm workspace) |
+| `agent` | `go test` | parsing, backoff, read-only invariants, PTY round trips (a Go module, not a Bun workspace) |
 | e2e | Playwright | login → register host → agent connects → terminal → graph → layout saved |
 
 Every test title carries a `[TC-AREA-NNN]` tag, and a traceability checker verifies that the

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import type { CommitDetail, GitTree, WorkingDiff } from "@pdmux/protocol";
 import { StorageService } from "../storage/storage.service";
 import { commitDetailKey, fileTreeKey, workingDiffKey } from "./git-storage";
@@ -10,9 +10,8 @@ import { commitDetailKey, fileTreeKey, workingDiffKey } from "./git-storage";
  * state of this system (a cold start fills the window over several passes), and
  * the UI needs to say "still collecting" rather than show a failure.
  */
-@Injectable()
 export class GitDetailService {
-  private readonly logger = new Logger(GitDetailService.name);
+  private readonly logger = new ProductLogger(GitDetailService.name);
 
   constructor(private readonly storage: StorageService) {}
 

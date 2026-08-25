@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { compareVersionStrings, parseSemver } from "@pdmux/protocol";
@@ -40,7 +40,7 @@ import { compareVersionStrings, parseSemver } from "@pdmux/protocol";
  * comparison renders as `unknown` (never a false "outdated"), and an update
  * request answers 409 with a sentence instead of 500.
  *
- * The repo-relative fallback below exists so the monorepo — `npm run dev`, the
+ * The repo-relative fallback below exists so the monorepo — `bun run dev`, the
  * compose stack, a single-container image — needs no configuration.
  */
 
@@ -79,8 +79,8 @@ const RELEASE_DIR_ENV = "AGENT_RELEASE_DIR";
 
 /**
  * Fallbacks for a checkout, relative to `process.cwd()` — which is the api
- * workspace directory in every way this app runs (`npm … -w pdmux-api`, `jest`,
- * and the image's `WORKDIR /app/apps/api`). Both roots are searched and the
+ * workspace directory in every way this app runs (`bun run --cwd apps/api`,
+ * tests, and the image's `WORKDIR /app/apps/api`). Both roots are searched and the
  * newest version across them wins, exactly as the web does it: `vite dev` serves
  * `static/`, a built server serves `build/client/`, and a developer's checkout
  * has both.
@@ -219,12 +219,11 @@ export type ArtifactLookup =
   | { artifact: AgentReleaseArtifact; version: string; reason: null }
   | { artifact: null; version: null; reason: string };
 
-@Injectable()
 export class AgentReleaseService {
-  private readonly logger = new Logger(AgentReleaseService.name);
+  private readonly logger = new ProductLogger(AgentReleaseService.name);
   private cache: { releases: PublishedRelease[]; at: number } | null = null;
 
-  constructor(@Inject(AGENT_RELEASE_SOURCE) private readonly source: AgentReleaseSource) {}
+  constructor(private readonly source: AgentReleaseSource) {}
 
   /** Every readable release, newest first. */
   releases(now: number = Date.now()): PublishedRelease[] {

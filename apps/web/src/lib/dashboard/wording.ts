@@ -12,7 +12,7 @@
  * than showing the code: an unrecognised failure is not more actionable in English
  * with a `SNAKE_CASE` token in it.
  */
-import type { Messages } from "$lib/i18n/messages";
+import type { Messages } from "#lib/i18n/messages.js";
 import { errorCode } from "./api";
 
 /** For a code already in hand — a recorded one, e.g. the feed's last failure. */

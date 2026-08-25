@@ -23,7 +23,7 @@ import {
 import type { AgentReleaseLookup, AgentReleaseSource } from "../src/lib/server/install-script/manifest";
 
 // The route reads the published release from the filesystem, which is a gitignored
-// build artifact (`npm run build:agent`) and therefore absent on a clean checkout.
+// build artifact (`bun run build:agent`) and therefore absent on a clean checkout.
 // Stubbing the lookup is what makes the route's own behaviour — origin resolution,
 // headers, degraded mode — assertable in both worlds. The real lookup is exercised
 // at the bottom of this file through its injected source, with no mocking at all.
@@ -83,7 +83,7 @@ function toFile(text: string): string {
   return path;
 }
 
-/** `shellcheck` on PATH, or wherever $SHELLCHECK points (npx caches it outside PATH). */
+/** `shellcheck` on PATH, or wherever $SHELLCHECK points (a package runner may cache it outside PATH). */
 const SHELLCHECK = process.env["SHELLCHECK"] ?? "shellcheck";
 const hasShellcheck = spawnSync(SHELLCHECK, ["--version"], { encoding: "utf8" }).status === 0;
 
@@ -244,9 +244,9 @@ describe("[TC-PDWEB-005] rendered install script", () => {
   });
 
   it("[TC-PDWEB-005] renders a degraded script that is itself POSIX-clean and exits 1", () => {
-    const text = renderUnavailableScript("Nothing to install; run npm run build:agent (see docs).");
+    const text = renderUnavailableScript("Nothing to install; run bun run build:agent (see docs).");
     expect(text.split("\n")[0]).toBe("#!/bin/sh");
-    expect(text).toContain("Nothing to install; run npm run build:agent (see docs).");
+    expect(text).toContain("Nothing to install; run bun run build:agent (see docs).");
     expect(text.trimEnd().endsWith("exit 1")).toBe(true);
     const result = spawnSync("sh", ["-n", toFile(text)], { encoding: "utf8" });
     expect(result.status).toBe(0);
@@ -275,7 +275,7 @@ function routeEvent(headers: Record<string, string>): RouteEvent {
     request: new Request("http://internal-listener:3000/install.sh", { headers }),
     url: new URL("http://internal-listener:3000/install.sh"),
     // ⚠ Deliberately unusable. Reading a static asset through `event.fetch` is a real
-    // network request under adapter-node (see manifest.ts), so the route must never
+    // network request in a built adapter server (see manifest.ts), so the route must never
     // reach for it — a rejection here is a failing test, not a caught error.
     fetch: () => Promise.reject(new Error("the route must not fetch anything")),
   } as unknown as RouteEvent;
@@ -306,8 +306,8 @@ describe("[TC-PDWEB-004] GET /install.sh", () => {
   });
 
   it("[TC-PDWEB-004] takes the origin from the proxy headers, not from the listener's own URL", async () => {
-    // adapter-node derives url.origin from the ORIGIN env var; a deployment that
-    // forgot to set it would bake http://localhost:3000 into every installer and
+    // The listener URL is internal; a deployment that used it would bake
+    // http://internal-listener:3000 into every installer and
     // fail on every host, silently and identically.
     const body = await (await call({ "x-forwarded-proto": "https", "x-forwarded-host": "pdmux.example.com" })).text();
 

@@ -9,5 +9,7 @@ data:
   CORS_ORIGIN: "https://example.com"
   BACKEND_INTERNAL_URL: "http://api:3000"
   BODY_SIZE_LIMIT: "3M"
+  PROTOCOL_HEADER: "x-forwarded-proto"
+  HOST_HEADER: "x-forwarded-host"
   ADDRESS_HEADER: "x-forwarded-for"
   XFF_DEPTH: "1"

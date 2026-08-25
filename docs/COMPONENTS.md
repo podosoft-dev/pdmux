@@ -7,7 +7,7 @@ components here draw its results.
 ## 0. Installing and the basic wiring
 
 ```bash
-npm i @pdmux/ui @pdmux/core svelte
+bun add @pdmux/ui @pdmux/core svelte
 ```
 
 ```svelte
@@ -485,8 +485,8 @@ banner disappears.
 ## 4. Verification
 
 ```bash
-npm test -w @pdmux/core     # pure logic
-npm test -w @pdmux/ui       # components (jsdom)
-npm run test:geometry -w @pdmux/ui                      # browser geometry (opt-in)
-PDMUX_BROWSER_CHANNEL=chrome npm run test:geometry -w @pdmux/ui   # use an installed Chrome (no download)
+bun run --cwd packages/core test     # pure logic
+bun run --cwd packages/ui test       # components (jsdom)
+bun run --cwd packages/ui test:geometry                      # browser geometry (opt-in)
+PDMUX_BROWSER_CHANNEL=chrome bun run --cwd packages/ui test:geometry   # use an installed Chrome (no download)
 ```

@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import { Button } from "$lib/components/ui/button";
-  import { Switch } from "$lib/components/ui/switch";
-  import * as Select from "$lib/components/ui/select";
-  import * as Card from "$lib/components/ui/card";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Switch } from "#lib/components/ui/switch/index.js";
+  import * as Select from "#lib/components/ui/select/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
   import { toast } from "svelte-sonner";
-  import { api } from "$lib/api";
-  import { getI18n } from "$lib/i18n";
-  import { defaultLocale, LOCALES, localeNames, resolveLocale } from "$lib/i18n/messages";
-  import { site, type SiteSettings } from "$lib/site.svelte";
+  import { api } from "#lib/api.js";
+  import { getI18n } from "#lib/i18n/index.js";
+  import { defaultLocale, LOCALES, localeNames, resolveLocale } from "#lib/i18n/messages.js";
+  import { site, type SiteSettings } from "#lib/site.svelte.js";
 
   const i18n = getI18n();
   const t = $derived(i18n.t.general);
@@ -67,16 +67,6 @@
 
   const ICON_TYPES = ".svg,.png,.ico";
   let uploading = $state(false);
-  /**
-   * The field's own value, cleared after every attempt so picking the SAME file twice
-   * still fires `change` (the browser suppresses it when the selection is unchanged).
-   *
-   * ⚠ It is a binding, not `input.value = ""`. `Input` binds `value` internally, so an
-   * imperative write leaves Svelte's copy holding the old `C:\fakepath\…` — and the next
-   * render (this component re-renders on `site.patch`, two lines below) would write that
-   * string back to a file input, which throws `InvalidStateError`.
-   */
-  let faviconValue = $state("");
   const faviconSrc = $derived(
     s.hasFavicon ? `/api/site/favicon?v=${s.faviconVersion ?? ""}` : "/favicon.svg",
   );
@@ -86,7 +76,7 @@
     if (!file) return;
     if (file.size > 1024 * 1024) {
       toast.error(t.iconTooBig);
-      faviconValue = "";
+      input.value = "";
       return;
     }
     uploading = true;
@@ -102,7 +92,7 @@
       toast.error(t.iconError);
     } finally {
       uploading = false;
-      faviconValue = "";
+      input.value = "";
     }
   }
 </script>
@@ -126,16 +116,12 @@
         <div class="flex items-center gap-3">
           <img src={faviconSrc} alt="favicon" class="bg-muted size-12 rounded-md border p-1" />
           <div class="flex flex-col gap-1.5">
-            <!-- The shadcn `Input` handles `type="file"` itself, so the field gets the
-                 same border, focus ring and disabled treatment as every other control
-                 on this page instead of a hand-written `file:` chip. -->
-            <Input
+            <input
               type="file"
-              bind:value={faviconValue}
               accept={ICON_TYPES}
               disabled={uploading}
               onchange={uploadFavicon}
-              class="file:mr-3"
+              class="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm"
             />
             <p class="text-muted-foreground text-xs">{t.faviconHint}</p>
           </div>

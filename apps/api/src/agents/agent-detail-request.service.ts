@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import type { AgentDownstream } from "@pdmux/protocol";
 import type { AgentGitRequest } from "../git/git.service";
 import { GitService } from "../git/git.service";
@@ -40,9 +40,8 @@ import { AgentRegistryService } from "./agent-registry.service";
  * is never coming. Letting the TTL do it costs a stored patch nothing: the next
  * read is a hit and never reaches this service.
  */
-@Injectable()
-export class AgentDetailRequestService implements OnModuleInit {
-  private readonly logger = new Logger(AgentDetailRequestService.name);
+export class AgentDetailRequestService {
+  private readonly logger = new ProductLogger(AgentDetailRequestService.name);
   /** key -> epoch ms after which the request is considered lost. */
   private readonly outstanding = new Map<string, number>();
 
@@ -56,7 +55,7 @@ export class AgentDetailRequestService implements OnModuleInit {
    * exists. Same seam as `AgentConfigPushService`: `AgentsModule` already imports
    * `GitModule`, so the dependency only runs one way and no `forwardRef` is needed.
    */
-  onModuleInit(): void {
+  connect(): void {
     this.git.setDetailRequestListener((hostId, repoPath, request) =>
       this.request(hostId, repoPath, request),
     );

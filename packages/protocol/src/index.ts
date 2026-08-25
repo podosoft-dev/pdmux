@@ -2,7 +2,7 @@
  * @pdmux/protocol — the contract between an agent and the server.
  *
  * WHY IT IS ITS OWN PACKAGE: three programs have to agree on these shapes (the
- * NestJS API, the SvelteKit web app and the agent). Anything they disagree about
+ * Bun API, the SvelteKit web app and the agent). Anything they disagree about
  * becomes a runtime surprise on someone else's machine, so the shapes live in one
  * place, are validated with zod at every boundary, and carry a version.
  *

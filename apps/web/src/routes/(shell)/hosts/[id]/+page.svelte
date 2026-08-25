@@ -9,18 +9,18 @@
    * It renders in the shell's right-hand area, so the way back is the breadcrumb (and
    * the sidebar's nav), not a row of buttons that would repeat what the chrome says.
    */
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import * as Card from "$lib/components/ui/card";
-  import * as Collapsible from "$lib/components/ui/collapsible";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import * as Select from "$lib/components/ui/select";
-  import * as Table from "$lib/components/ui/table";
-  import DataTable, { type DataTableColumn, type SortState } from "$lib/components/data-table.svelte";
-  import HostAgentAccess from "$lib/dashboard/components/host-agent-access.svelte";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import * as Collapsible from "#lib/components/ui/collapsible/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
+  import * as Select from "#lib/components/ui/select/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import DataTable, { type DataTableColumn, type SortState } from "#lib/components/data-table.svelte";
+  import HostAgentAccess from "#lib/dashboard/components/host-agent-access.svelte";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
@@ -30,19 +30,19 @@
   import { toast } from "svelte-sonner";
   import { writeClipboard } from "@pdmux/ui";
   import { discoveredPorts, filterPorts, suggestServiceLabel, type DiscoveredPort } from "@pdmux/core";
-  import { fmt, formatDateTime, getI18n } from "$lib/i18n";
-  import { agentUpdateApi, errorCode, gitApi, hostsApi, servicesApi, tokensApi } from "$lib/dashboard/api";
-  import { offersUpdate, paneSlots, updateInFlight } from "$lib/dashboard/agent-update";
-  import AgentUpdateDialog from "$lib/dashboard/components/agent-update-dialog.svelte";
-  import AgentVersionCell from "$lib/dashboard/components/agent-version-cell.svelte";
-  import ConfirmDialog from "$lib/dashboard/components/confirm-dialog.svelte";
-  import HostFormDialog from "$lib/dashboard/components/host-form-dialog.svelte";
-  import HostGitRootsCard from "$lib/dashboard/components/host-git-roots-card.svelte";
-  import HostInstallDialog from "$lib/dashboard/components/host-install-dialog.svelte";
-  import ShellBreadcrumb from "$lib/dashboard/components/shell-breadcrumb.svelte";
-  import { hostAddress, hostState, serviceUrl } from "$lib/dashboard/map";
-  import { causeMessage, agentUpdateMessage } from "$lib/dashboard/wording";
-  import { useShellState } from "$lib/dashboard/shell-state.svelte";
+  import { fmt, formatDateTime, getI18n } from "#lib/i18n/index.js";
+  import { agentUpdateApi, errorCode, gitApi, hostsApi, servicesApi, tokensApi } from "#lib/dashboard/api.js";
+  import { offersUpdate, paneSlots, updateInFlight } from "#lib/dashboard/agent-update.js";
+  import AgentUpdateDialog from "#lib/dashboard/components/agent-update-dialog.svelte";
+  import AgentVersionCell from "#lib/dashboard/components/agent-version-cell.svelte";
+  import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
+  import HostFormDialog from "#lib/dashboard/components/host-form-dialog.svelte";
+  import HostGitRootsCard from "#lib/dashboard/components/host-git-roots-card.svelte";
+  import HostInstallDialog from "#lib/dashboard/components/host-install-dialog.svelte";
+  import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
+  import { hostAddress, hostState, serviceUrl } from "#lib/dashboard/map.js";
+  import { causeMessage, agentUpdateMessage } from "#lib/dashboard/wording.js";
+  import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
   import type {
     AgentTokenView,
     HostGitRootView,
@@ -50,7 +50,7 @@
     MintedAgentToken,
     ProbeKind,
     RepoRow,
-  } from "$lib/dashboard/types";
+  } from "#lib/dashboard/types.js";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();

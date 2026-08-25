@@ -3,9 +3,9 @@
   import SunIcon from "@lucide/svelte/icons/sun";
   import MoonIcon from "@lucide/svelte/icons/moon";
   import MonitorIcon from "@lucide/svelte/icons/monitor";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import { Button } from "$lib/components/ui/button";
-  import { getI18n } from "$lib/i18n";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { getI18n } from "#lib/i18n/index.js";
 
   const i18n = getI18n();
 </script>

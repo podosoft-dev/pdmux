@@ -77,7 +77,7 @@ JSON is **pure data with no comments** (Go reads it with `encoding/json`).
 
 A hand-written expectation only proves "the author and the author's schema agree with each other".
 Change a `.default()` and the expectation changes in the same commit, and the corpus quietly stops
-checking anything. Generated, the opposite holds: **the diff from `npm run expect:build` is the
+checking anything. Generated, the opposite holds: **the diff from `bun run --cwd packages/protocol expect:build` is the
 behaviour change**, and it turns up in review.
 
 Conversely, **the inputs (`cases/`) must be hand-written.** Inputs generated from a schema only touch
@@ -86,10 +86,10 @@ what the schema already thought of.
 ## Commands
 
 ```bash
-npm run build   -w @pdmux/protocol   # expect:build reads dist/, so build first
-npm run expect:build -w @pdmux/protocol   # regenerate expected/*.json
-npm run expect:check -w @pdmux/protocol   # regenerate in memory, compare against the committed files, exit 1 on a difference (writes nothing)
-npx vitest run --root packages/protocol test/conformance.test.ts
+bun run --cwd packages/protocol build          # expect:build reads dist/, so build first
+bun run --cwd packages/protocol expect:build   # regenerate expected/*.json
+bun run --cwd packages/protocol expect:check   # regenerate in memory, compare against the committed files, exit 1 on a difference (writes nothing)
+bunx --bun vitest run --root packages/protocol test/conformance.test.ts
 ```
 
 `expect:build` also checks the corpus itself — it **fails** if something marked `accept` is rejected,
@@ -102,9 +102,9 @@ schema and do not regenerate, that test tells you **which field moved, as a diff
 ## Adding a case
 
 1. Add an entry to `cases` in `cases/<direction>-<verdict>.json` (`why` is required).
-2. `npm run build -w @pdmux/protocol && npm run expect:build -w @pdmux/protocol`.
+2. `bun run --cwd packages/protocol build && bun run --cwd packages/protocol expect:build`.
 3. **Read** the `expected/` diff — that is the contract change.
-4. Confirm with `npx vitest run --root packages/protocol test/conformance.test.ts`.
+4. Confirm with `bunx --bun vitest run --root packages/protocol test/conformance.test.ts`.
 
 Only two TC tags are used here: `TC-PDPROTO-010` (the frame corpus) and `TC-PDPROTO-011` (the semver
 tables).

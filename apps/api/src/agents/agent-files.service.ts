@@ -1,6 +1,6 @@
+import { ProductLogger } from "../logging/product-logger";
 import { randomUUID } from "node:crypto";
 
-import { Injectable, Logger } from "@nestjs/common";
 import {
   FS_CHUNK_BYTES,
   type AgentDownstream,
@@ -59,9 +59,8 @@ interface Pending<T> {
   hostId: string;
 }
 
-@Injectable()
 export class AgentFilesService {
-  private readonly logger = new Logger(AgentFilesService.name);
+  private readonly logger = new ProductLogger(AgentFilesService.name);
   private readonly pending = new Map<string, Pending<FsAnswer>>();
 
   constructor(

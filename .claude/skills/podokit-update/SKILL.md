@@ -1,6 +1,6 @@
 ---
 name: podokit-update
-description: Use when the user wants to update the project to a newer PodoKit version, pull in template/module improvements, check what they've changed vs the generated code, or take ownership of a managed file. Covers podo status/diff/doctor/update/eject.
+description: Use when the user wants to update a Bun-based project to a newer PodoKit v1 version, pull in template/module improvements, check local edits, or take ownership of a managed file. Covers podo status/diff/doctor/update/eject.
 ---
 
 # Keep a PodoKit project up to date
@@ -24,3 +24,5 @@ Rules to respect:
   the `// podokit:begin…end` fences.
 - Run `podo update` (dry-run) first and read the plan before `--apply`. Commit or
   stash your work beforehand so a merge is easy to review.
+- PodoKit v1 projects are Bun-only. A PodoKit 0.x project must keep using its
+  pinned 0.x CLI; there is no in-place NestJS/Node conversion path.

@@ -17,7 +17,7 @@ than half way through a rollout.
 
 | Job | Where | What |
 | --- | --- | --- |
-| `verify` | `ubuntu-latest` | `npm run lint` + `npm test`, and reads the deployment profile for the image repositories. Runs once — the suites are portable code and the answer does not depend on the machine |
+| `verify` | `ubuntu-latest` | `bun run lint` + `bun run test`, and reads the deployment profile for the image repositories. Runs once — the suites are portable code and the answer does not depend on the machine |
 | `build` | `ubuntu-latest` **and** `ubuntu-24.04-arm` | each builds both images NATIVELY for its own architecture and pushes them **by digest, with no tag** |
 | `publish` | `ubuntu-latest` | `docker buildx imagetools create` joins the digests into one manifest list per image, then builds the agent binaries and attaches them to the GitHub release |
 

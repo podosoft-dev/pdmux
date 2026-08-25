@@ -1,61 +1,30 @@
-import { describe, expect, it } from "@jest/globals";
-import { firstValueFrom, take } from "rxjs";
+import { describe, expect, it } from "bun:test";
 import { ReadinessService } from "../health/readiness.service";
 import { EventsService } from "./events.service";
-import type { EventHandler, EventsTransport } from "./events.transport";
-
-class TestTransport implements EventsTransport {
-  handler?: EventHandler;
-  published: unknown[] = [];
-  available = true;
-
-  connect(handler: EventHandler): Promise<void> {
-    this.handler = handler;
-    return Promise.resolve();
-  }
-
-  publish(data: unknown): Promise<void> {
-    if (!this.available) return Promise.reject(new Error("unavailable"));
-    this.published.push(data);
-    this.handler?.(data);
-    return Promise.resolve();
-  }
-
-  ready(): Promise<void> {
-    return this.available ? Promise.resolve() : Promise.reject(new Error("unavailable"));
-  }
-
-  close(): Promise<void> {
-    return Promise.resolve();
-  }
-}
+import { MemoryEventsTransport } from "./events.transport";
 
 describe("EventsService", () => {
-  it("publishes through the transport and exposes local delivery", async () => {
-    const transport = new TestTransport();
+  it("publishes through the transport and delivers locally", async () => {
     const readiness = new ReadinessService();
-    const service = new EventsService(transport, readiness);
-    await service.onModuleInit();
-
-    const next = firstValueFrom(service.asObservable().pipe(take(1)));
+    const service = new EventsService(new MemoryEventsTransport(), readiness);
+    const received: unknown[] = [];
+    service.subscribe((data) => received.push(data));
+    await service.connect();
     await service.publishAsync({ type: "changed" });
-    await expect(next).resolves.toEqual({ data: { type: "changed" } });
-    expect(transport.published).toEqual([{ type: "changed" }]);
-
+    expect(received).toEqual([{ type: "changed" }]);
     await expect(readiness.run()).resolves.toEqual({ events: "up" });
-    await service.onModuleDestroy();
-    await expect(readiness.run()).resolves.toEqual({});
+    await service.close();
   });
 
-  it("reports a failed transport through publishAsync and readiness", async () => {
-    const transport = new TestTransport();
-    const readiness = new ReadinessService();
-    const service = new EventsService(transport, readiness);
-    await service.onModuleInit();
-    transport.available = false;
-
-    await expect(service.publishAsync({ type: "changed" })).rejects.toThrow("unavailable");
-    await expect(readiness.run()).resolves.toEqual({ events: "down" });
-    await service.onModuleDestroy();
+  it("rejects events larger than the configured limit", async () => {
+    const service = new EventsService(
+      new MemoryEventsTransport({ SSE_MAX_EVENT_BYTES: "8" }),
+      new ReadinessService(),
+    );
+    await service.connect();
+    await expect(service.publishAsync({ message: "too large" })).rejects.toThrow(
+      "Event data exceeds SSE_MAX_EVENT_BYTES",
+    );
+    await service.close();
   });
 });

@@ -16,11 +16,11 @@
   import UploadIcon from "@lucide/svelte/icons/upload";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import * as Select from "$lib/components/ui/select";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import * as Select from "#lib/components/ui/select/index.js";
   import { toast } from "svelte-sonner";
-  import { fmt, getI18n } from "$lib/i18n";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
   import type { FilesDock } from "../files-dock.svelte";
   import type { HostView } from "../types";
   import ConfirmDialog from "./confirm-dialog.svelte";

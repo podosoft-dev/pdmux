@@ -15,7 +15,7 @@
  * navigation-group on the client, which is exactly the lifetime the shell needs.
  */
 import { getContext, setContext } from "svelte";
-import { browser } from "$app/environment";
+import { browser } from "$app/env";
 import {
   type CardPrefsMap,
   type CardWidget,

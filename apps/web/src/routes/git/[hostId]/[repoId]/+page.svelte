@@ -7,11 +7,11 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { DETAIL_HEIGHT_MAX, DETAIL_HEIGHT_MIN } from "@pdmux/core";
-  import { getI18n } from "$lib/i18n";
-  import CommitDock from "$lib/dashboard/components/commit-dock.svelte";
-  import { GitDock } from "$lib/dashboard/git-dock.svelte";
-  import type { HostView } from "$lib/dashboard/types";
-  import { uiTranslate } from "$lib/dashboard/ui-i18n";
+  import { getI18n } from "#lib/i18n/index.js";
+  import CommitDock from "#lib/dashboard/components/commit-dock.svelte";
+  import { GitDock } from "#lib/dashboard/git-dock.svelte.ts";
+  import type { HostView } from "#lib/dashboard/types.js";
+  import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
 
   let { data }: { data: { hostId: string; repoId: string; hosts: HostView[] } } = $props();
 
@@ -63,7 +63,7 @@
     onRepoChange={(repoId) => {
       // The URL is the identity of this window: navigating keeps a reload (and a
       // bookmark) on the repository the user is actually looking at.
-      void goto(`/git/${dock.hostId ?? data.hostId}/${repoId}`, { replaceState: true, noScroll: true });
+      void goto(`/git/${dock.hostId ?? data.hostId}/${repoId}`, { replace: true, reset: false });
       void dock.openRepo(repoId);
     }}
   />

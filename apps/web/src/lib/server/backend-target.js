@@ -1,11 +1,8 @@
 /**
  * Where the API is, and how a client's address is spelled on the way there.
  *
- * WHY THIS IS PLAIN JAVASCRIPT: the built web server (`apps/web/server.js`) proxies
- * the terminal WebSocket upgrade itself, and that entry runs OUTSIDE the SvelteKit
- * bundle — it cannot import TypeScript, `$lib`, or anything from `build/server`. The
- * two facts below are needed by both worlds, so they live in a module both can load.
- * Duplicating them is how "where is the backend" ends up answered twice, differently.
+ * WHY THIS IS PLAIN JAVASCRIPT: server proxy helpers and their tests import this
+ * boundary without requiring Svelte compilation or generated types.
  */
 
 /** @returns {string} Origin of the API, as seen from this process. */

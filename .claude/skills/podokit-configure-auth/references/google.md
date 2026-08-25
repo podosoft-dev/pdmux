@@ -34,8 +34,8 @@ preview deployment. Use a separate Google Cloud project and Web client for devel
    export AUTH_SETUP_ADMIN_PASSWORD="<from-secret-manager>"
    export OAUTH_CLIENT_ID="<google-client-id>"
    export OAUTH_CLIENT_SECRET="<from-secret-manager>"
-   npm run auth:configure -w <app>-api -- --provider google --dry-run
-   npm run auth:configure -w <app>-api -- --provider google
+   bun run --cwd apps/api auth:configure -- --provider google --dry-run
+   bun run --cwd apps/api auth:configure -- --provider google
    ```
 
    If only an existing callback is stale, keep the stored client ID, client
@@ -43,7 +43,7 @@ preview deployment. Use a separate Google Cloud project and Web client for devel
 
    ```bash
    AUTH_SETUP_ORIGIN=https://app-dev.example.com \
-     npm run auth:configure -w <app>-api -- --provider google --redirect-only
+     bun run --cwd apps/api auth:configure -- --provider google --redirect-only
    ```
 
 5. Start and finish Google sign-in through the HTTPS origin. Do not mix it with

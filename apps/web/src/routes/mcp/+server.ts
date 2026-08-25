@@ -1,6 +1,6 @@
 import type { RequestHandler } from "@sveltejs/kit";
 
-import { backendBaseUrl, proxyRequest } from "$lib/server/backend-proxy";
+import { backendBaseUrl, proxyRequest } from "#lib/server/backend-proxy.js";
 
 /**
  * The public MCP endpoint, proxied straight through to the API.

@@ -1,17 +1,26 @@
 import { isIP } from "node:net";
 
 export interface RateLimitConfig {
+  keyPrefix: string;
   ttlSeconds: number;
   limit: number;
   authTtlSeconds: number;
   authLimit: number;
   runtimeLimit: number;
-  mcpTtlSeconds: number;
-  mcpLimit: number;
   trustedProxyHops: number;
   proxyHeader: string;
   storageTimeoutMs: number;
   unavailableRetryAfterSeconds: number;
+}
+
+function keyPrefix(value: string | undefined): string {
+  const normalized = (value || "podokit:rate-limit").trim();
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}$/.test(normalized)) {
+    throw new Error(
+      "RATE_LIMIT_KEY_PREFIX must be 1-128 characters using letters, numbers, colons, underscores, or hyphens",
+    );
+  }
+  return normalized;
 }
 
 function positiveInteger(name: string, value: string | undefined, fallback: number): number {
@@ -42,6 +51,7 @@ function headerName(value: string | undefined): string {
 
 export function rateLimitConfig(env: NodeJS.ProcessEnv = process.env): RateLimitConfig {
   return {
+    keyPrefix: keyPrefix(env.RATE_LIMIT_KEY_PREFIX),
     ttlSeconds: positiveInteger("RATE_LIMIT_TTL", env.RATE_LIMIT_TTL, 60),
     limit: positiveInteger("RATE_LIMIT_MAX", env.RATE_LIMIT_MAX, 300),
     authTtlSeconds: positiveInteger(
@@ -55,12 +65,6 @@ export function rateLimitConfig(env: NodeJS.ProcessEnv = process.env): RateLimit
       env.RATE_LIMIT_RUNTIME_MAX,
       1000,
     ),
-    // `/mcp` needs its own budget. An MCP client makes several calls per turn of a
-    // conversation, and it reaches the API through the web app's proxy — so without
-    // a bucket of its own it lands in the generic IP pool together with every
-    // browser request, and one busy coding agent starts 429ing the dashboard.
-    mcpTtlSeconds: positiveInteger("RATE_LIMIT_MCP_TTL", env.RATE_LIMIT_MCP_TTL, 60),
-    mcpLimit: positiveInteger("RATE_LIMIT_MCP_MAX", env.RATE_LIMIT_MCP_MAX, 600),
     trustedProxyHops: nonNegativeInteger(
       "RATE_LIMIT_TRUSTED_PROXY_HOPS",
       env.RATE_LIMIT_TRUSTED_PROXY_HOPS,
@@ -90,6 +94,7 @@ function normalizeIp(value: string | undefined): string | undefined {
 }
 
 function headerValue(headers: unknown, name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined;
   if (!headers || typeof headers !== "object") return undefined;
   const value = (headers as Record<string, unknown>)[name];
   if (typeof value === "string") return value;

@@ -28,7 +28,7 @@ Then rebuild the string module the components import — the icons are not read
 from disk at runtime:
 
 ```sh
-node tools/build-file-icons.mjs               # writes ../file-icons.gen.ts
+bun tools/build-file-icons.mjs                # writes ../file-icons.gen.ts
 ```
 
 ## Why these 62

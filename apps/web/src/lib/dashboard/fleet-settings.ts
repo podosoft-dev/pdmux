@@ -10,8 +10,8 @@
  *
  * ⚠ THE BOUNDS ARE A MIRROR, NOT A SECOND OPINION. The source of truth is
  * `apps/api/src/fleet/fleet-settings.ts` (`NUMBER_BOUNDS`, and `FLEET_SETTING_DEFAULTS`
- * beside it), which this app cannot import: it is a NestJS workspace and pulling it in
- * would drag decorators and TypeORM into a browser bundle (the reason `types.ts` gives
+ * beside it), which this app cannot import: it is a server workspace and pulling it in
+ * would drag database and runtime dependencies into a browser bundle (the reason `types.ts` gives
  * for restating the wire shapes). `test/fleet-settings.test.ts` READS that file and
  * fails when the two disagree, so the copy cannot drift in silence.
  */

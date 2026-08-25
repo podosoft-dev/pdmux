@@ -1,12 +1,12 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import * as Card from "$lib/components/ui/card";
-  import * as Alert from "$lib/components/ui/alert";
-  import { api } from "$lib/api";
-  import { getI18n } from "$lib/i18n";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import * as Alert from "#lib/components/ui/alert/index.js";
+  import { api } from "#lib/api.js";
+  import { getI18n } from "#lib/i18n/index.js";
 
   const i18n = getI18n();
   let email = $state("");

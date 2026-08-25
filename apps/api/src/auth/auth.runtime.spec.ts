@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "@jest/globals";
+import { afterEach, describe, expect, test } from "bun:test";
 import { authBaseUrl, authSecret } from "./auth-environment";
 
 const originalEnvironment = {
@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe("authentication production environment", () => {
-  it("rejects missing and placeholder production secrets", () => {
+  test("rejects missing and placeholder production secrets", () => {
     process.env.NODE_ENV = "production";
     delete process.env.BETTER_AUTH_SECRET;
     expect(() => authSecret()).toThrow("must be set");
@@ -23,7 +23,7 @@ describe("authentication production environment", () => {
     expect(() => authSecret()).toThrow("non-placeholder");
   });
 
-  it("requires an HTTPS production origin", () => {
+  test("requires an HTTPS production origin", () => {
     process.env.NODE_ENV = "production";
     delete process.env.BETTER_AUTH_URL;
     expect(() => authBaseUrl()).toThrow("must be set");

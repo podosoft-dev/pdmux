@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { LessThan, Repository } from "typeorm";
 import { recordAudit } from "../audit/audit-events";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
@@ -42,12 +41,11 @@ export interface StaleHostSweep {
  * socket to close. The sweep also runs in the worker process, where the gateway
  * that owns those sockets does not exist.
  */
-@Injectable()
 export class StaleHostsService {
-  private readonly logger = new Logger(StaleHostsService.name);
+  private readonly logger = new ProductLogger(StaleHostsService.name);
 
   constructor(
-    @InjectRepository(Host) private readonly hosts: Repository<Host>,
+    private readonly hosts: Repository<Host>,
     private readonly settings: FleetSettingsService,
   ) {}
 

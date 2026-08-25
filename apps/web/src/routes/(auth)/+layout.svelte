@@ -1,6 +1,6 @@
 <script lang="ts">
-  import LanguageSwitch from "$lib/components/language-switch.svelte";
-  import SiteFooter from "$lib/components/site-footer.svelte";
+  import LanguageSwitch from "#lib/components/language-switch.svelte";
+  import SiteFooter from "#lib/components/site-footer.svelte";
   let { children } = $props();
 </script>
 

@@ -1,4 +1,3 @@
-import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import { IsIn, IsInt, IsOptional, IsString, Length, Matches } from "class-validator";
 
@@ -26,7 +25,6 @@ export class CreateAgentTokenDto {
    * dashboard's new select fail with a validation error that says nothing about
    * expiry.
    */
-  @ApiPropertyOptional({ enum: AGENT_TOKEN_EXPIRY_DAYS, description: "Days until the token stops working" })
   @IsOptional()
   @IsInt()
   @IsIn([...AGENT_TOKEN_EXPIRY_DAYS])

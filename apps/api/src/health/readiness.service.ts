@@ -1,9 +1,6 @@
-import { Injectable } from "@nestjs/common";
-
 export type ReadinessStatus = "up" | "down";
 export type ReadinessCheck = () => Promise<void>;
 
-@Injectable()
 export class ReadinessService {
   private readonly checks = new Map<string, ReadinessCheck>();
 

@@ -14,36 +14,36 @@
    * Reordering sends the WHOLE order rather than the moved pair — that makes the call
    * idempotent, so a dropped click leaves the list consistent instead of shuffled.
    */
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import { Checkbox } from "$lib/components/ui/checkbox";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import * as Table from "$lib/components/ui/table";
-  import DataTable, { type DataTableColumn, type SortState } from "$lib/components/data-table.svelte";
-  import TableToolbar, { type ToolbarFilter, type ToolbarSearchField } from "$lib/components/table-toolbar.svelte";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Checkbox } from "#lib/components/ui/checkbox/index.js";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import DataTable, { type DataTableColumn, type SortState } from "#lib/components/data-table.svelte";
+  import TableToolbar, { type ToolbarFilter, type ToolbarSearchField } from "#lib/components/table-toolbar.svelte";
   import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { toast } from "svelte-sonner";
-  import { fmt, formatDateTime, getI18n } from "$lib/i18n";
-  import { agentUpdateApi, errorCode, hostsApi } from "$lib/dashboard/api";
+  import { fmt, formatDateTime, getI18n } from "#lib/i18n/index.js";
+  import { agentUpdateApi, errorCode, hostsApi } from "#lib/dashboard/api.js";
   import {
     failureCodes,
     offersUpdate,
     paneSlots,
     selectAllState,
     updateInFlight,
-  } from "$lib/dashboard/agent-update";
-  import AgentUpdateDialog from "$lib/dashboard/components/agent-update-dialog.svelte";
-  import AgentVersionCell from "$lib/dashboard/components/agent-version-cell.svelte";
-  import BulkUpdateDialog from "$lib/dashboard/components/bulk-update-dialog.svelte";
-  import ConfirmDialog from "$lib/dashboard/components/confirm-dialog.svelte";
-  import HostFormDialog from "$lib/dashboard/components/host-form-dialog.svelte";
-  import HostInstallDialog from "$lib/dashboard/components/host-install-dialog.svelte";
-  import ShellBreadcrumb from "$lib/dashboard/components/shell-breadcrumb.svelte";
-  import { hostAddress, hostState } from "$lib/dashboard/map";
-  import { useShellState } from "$lib/dashboard/shell-state.svelte";
-  import { causeMessage, codeMessage, agentUpdateMessage } from "$lib/dashboard/wording";
-  import type { HostView } from "$lib/dashboard/types";
+  } from "#lib/dashboard/agent-update.js";
+  import AgentUpdateDialog from "#lib/dashboard/components/agent-update-dialog.svelte";
+  import AgentVersionCell from "#lib/dashboard/components/agent-version-cell.svelte";
+  import BulkUpdateDialog from "#lib/dashboard/components/bulk-update-dialog.svelte";
+  import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
+  import HostFormDialog from "#lib/dashboard/components/host-form-dialog.svelte";
+  import HostInstallDialog from "#lib/dashboard/components/host-install-dialog.svelte";
+  import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
+  import { hostAddress, hostState } from "#lib/dashboard/map.js";
+  import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
+  import { causeMessage, codeMessage, agentUpdateMessage } from "#lib/dashboard/wording.js";
+  import type { HostView } from "#lib/dashboard/types.js";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();

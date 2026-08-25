@@ -1,29 +1,30 @@
-import { NestFactory } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
-import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
-import { AppModule } from "./app.module";
-import { AllExceptionsFilter } from "./common/all-exceptions.filter";
+import { createApp } from "./app";
+import { validateEnv } from "./config/env.validation";
+import { createCoreServices } from "./core/services";
+
+const env = validateEnv(process.env);
+const services = createCoreServices(env);
+const app = createApp({ env, services });
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
-
-  app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
-  );
-  app.useGlobalFilters(new AllExceptionsFilter());
-
-  const corsOrigin = process.env.CORS_ORIGIN?.split(",").map((o) => o.trim());
-  app.enableCors({ origin: corsOrigin ?? true, credentials: true });
-
-  const config = new DocumentBuilder()
-    .setTitle("pdmux API")
-    .setDescription("Generated with PodoKit")
-    .setVersion("0.0.0")
-    .build();
-  SwaggerModule.setup("api-docs", app, SwaggerModule.createDocument(app, config));
-
-  const port = Number(process.env.PORT ?? 5002);
-  await app.listen(port);
+  try {
+    await services.start();
+    app.listen({ hostname: "0.0.0.0", port: env.PORT });
+    process.stdout.write(`API listening on http://0.0.0.0:${env.PORT}\n`);
+  } catch (error) {
+    await services.close();
+    throw error;
+  }
 }
 
 void bootstrap();
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    void (async () => {
+      await app.stop();
+      await services.close();
+      process.exit(0);
+    })();
+  });
+}

@@ -10,7 +10,7 @@ services:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
-    command: ["node", "dist/main-worker"]
+    command: ["bun", "dist/main-worker.js"]
     environment:
       REDIS_HOST: redis
       REDIS_PORT: "6379"

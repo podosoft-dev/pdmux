@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { IsNull, Repository } from "typeorm";
 
 import { AppException } from "../common/app-exception";
@@ -67,12 +66,11 @@ function view(row: HostMcpKey): McpKeyView {
   };
 }
 
-@Injectable()
 export class HostMcpKeysService {
-  private readonly logger = new Logger(HostMcpKeysService.name);
+  private readonly logger = new ProductLogger(HostMcpKeysService.name);
 
   constructor(
-    @InjectRepository(HostMcpKey) private readonly keys: Repository<HostMcpKey>,
+    private readonly keys: Repository<HostMcpKey>,
     private readonly hosts: HostsService,
   ) {}
 

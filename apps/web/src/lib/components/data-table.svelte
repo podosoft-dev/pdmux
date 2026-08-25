@@ -1,15 +1,12 @@
 <script lang="ts" module>
   import type { Snippet } from "svelte";
-  import { cn } from "$lib/utils";
+  import { cn } from "#lib/utils.js";
 
   export type DataTableBreakpoint = "sm" | "md" | "lg" | "xl";
   export type DataTableColumn<Row> = {
     key: string;
     label: string;
-    // Rendered in the header cell INSTEAD of `label`, for a column whose heading is a
-    // control rather than a word — a select-all checkbox over a selection column being
-    // the case this exists for. Additive: a column without it is unchanged, and `label`
-    // stays the accessible name to fall back on.
+    /** Optional interactive header content, such as a select-all checkbox. */
     head?: Snippet;
     sortable?: boolean;
     class?: string;
@@ -43,9 +40,9 @@
 </script>
 
 <script lang="ts" generics="Row">
-  import { Button } from "$lib/components/ui/button";
-  import * as Table from "$lib/components/ui/table";
-  import TablePagination from "$lib/components/table-pagination.svelte";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import TablePagination from "#lib/components/table-pagination.svelte";
   import ChevronUpIcon from "@lucide/svelte/icons/chevron-up";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";

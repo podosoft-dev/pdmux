@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { AgentRegistryService, type AgentSocket } from "./agent-registry.service";
 
 class RecordingSocket implements AgentSocket {

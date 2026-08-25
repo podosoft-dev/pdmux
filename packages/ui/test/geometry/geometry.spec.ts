@@ -8,7 +8,7 @@
  * missed it, because every verification queried the DOM, where the content was
  * always present. What was missing was its POSITION ON SCREEN.
  *
- * OPT-IN: needs a browser binary. Run `npm run test:geometry -w @pdmux/ui`
+ * OPT-IN: needs a browser binary. Run `bun run --cwd packages/ui test:geometry`
  * (which sets PDMUX_BROWSER_TEST=1); without the flag these skip and no server runs.
  */
 import { expect, test } from '@playwright/test';

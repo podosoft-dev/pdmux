@@ -1,5 +1,5 @@
 import type { PageServerLoad } from "./$types";
-import { requireAdmin } from "$lib/server/guards";
+import { requireAdmin } from "#lib/server/guards.js";
 
 export const load: PageServerLoad = ({ locals }) => {
   requireAdmin(locals.user, locals);

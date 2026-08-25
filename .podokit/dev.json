@@ -1,4 +1,5 @@
 {
   "schemaVersion": 1,
-  "hostname": "pdmux.localhost"
+  "hostname": "pdmux.localhost",
+  "webSocketPaths": ["/agent/ws", "/terminal/ws"]
 }

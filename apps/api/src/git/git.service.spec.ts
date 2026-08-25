@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { repoSnapshotSchema, type RepoSnapshot } from "@pdmux/protocol";
 import { AppException } from "../common/app-exception";
 import { FleetSetting } from "../fleet/fleet-setting.entity";

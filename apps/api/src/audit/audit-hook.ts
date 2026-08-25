@@ -3,8 +3,8 @@ import { recordAudit } from "./audit-events";
 import { auditEnabled } from "./audit-enabled";
 
 // Map mutating auth/admin endpoints to semantic action codes. better-auth is
-// mounted as middleware and bypasses the NestJS interceptor, so these security
-// events are caught here and recorded through the same pipeline.
+// mounted directly in Elysia, so these security events are recorded through the
+// same application audit pipeline.
 const ACTIONS: Record<string, string> = {
   "/sign-in/email": "auth.login",
   "/sign-up/email": "auth.signup",

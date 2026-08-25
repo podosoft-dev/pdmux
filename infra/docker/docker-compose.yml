@@ -47,9 +47,9 @@ services:
   # Local SMS catcher (the "Mailpit for SMS"): the app posts outgoing SMS here via
   # SMS_WEBHOOK_URL and tests read them over REST. Development only.
   sms-sink:
-    image: node:20-alpine
+    image: oven/bun:1.4.0-alpine
     profiles: ["dev"]
-    command: ["node", "/app/sms-sink.mjs"]
+    command: ["bun", "/app/sms-sink.mjs"]
     environment:
       PORT: "8095"
     ports:

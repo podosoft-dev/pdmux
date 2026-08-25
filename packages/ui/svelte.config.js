@@ -19,7 +19,7 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
  * `@sveltejs/load-config` 0.2.1, which finds the options by looking for a resolved plugin
  * named **`vite-plugin-svelte:config`** — a name that only exists in vite-plugin-svelte v5.
  * This package is on v4, which emits `vite-plugin-svelte`, so the lookup returns undefined
- * and `npm run lint` failed on a file with nothing wrong with it. Upgrading the plugin means
+ * and `bun run lint` failed on a file with nothing wrong with it. Upgrading the plugin means
  * Vite 6 and a vitest bump with it, which is not a trade this harness is worth.
  *
  * Naming this file explicitly is also just true: it IS the config for every `.svelte` in the

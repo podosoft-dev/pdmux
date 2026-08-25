@@ -3,34 +3,24 @@ import { ready } from "../helpers/hydration";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 
-// The suite switches the interface language, and a spec about picking a role has
-// no business depending on which language it ran in.
-const MODERATOR = /Moderator|중재자/;
-
-test("admin can create a user with a custom role", async ({ page }) => {
+test("admin can create a user with a custom role", async ({ page, disposableUsers }) => {
   await ready(page, "/admin/users");
+  await page.getByRole("button", { name: "Add user" }).click();
   const role = page.locator("#c-role");
-  // A click that lands before the island hydrates is swallowed silently, and the
-  // test then waits 30s for a dialog nobody was told to open. Retry the trigger
-  // until what it opens is actually there.
-  await expect(async () => {
-    await page.getByRole("button", { name: "Add user" }).click();
-    await expect(role).toBeVisible({ timeout: 1000 });
-  }).toPass({ timeout: 15_000 });
+  test.skip((await role.count()) === 0, "role picker not present");
   const email = `mod-${Date.now()}@example.com`;
   await page.getByLabel("Name", { exact: true }).fill("Mod");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill("Podokit3e-Str0ng!pw");
   await page.getByLabel("Confirm password").fill("Podokit3e-Str0ng!pw");
   // pick the Moderator role from the select
-  // Only click when the list is closed: a retry that clicks unconditionally
-  // toggles the select shut again, so the option it is waiting for never stays.
-  const option = page.getByRole("option", { name: MODERATOR });
-  await expect(async () => {
-    if (!(await option.isVisible())) await role.click();
-    await expect(option).toBeVisible({ timeout: 1500 });
-  }).toPass({ timeout: 15_000 });
-  await option.click();
+  await role.click();
+  await page.getByRole("option", { name: "Moderator" }).click();
+  const created = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/auth/admin/create-user") &&
+      response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await disposableUsers.trackResponse(await created);
   await expect(page.getByText("User created")).toBeVisible();

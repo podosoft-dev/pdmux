@@ -13,21 +13,21 @@
    * that catches it has existed in the agent the whole time without anything
    * rendering it.
    */
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
-  import * as Card from "$lib/components/ui/card";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import * as Table from "$lib/components/ui/table";
-  import DataTable, { type DataTableColumn, type SortState } from "$lib/components/data-table.svelte";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import DataTable, { type DataTableColumn, type SortState } from "#lib/components/data-table.svelte";
   import ConfirmDialog from "./confirm-dialog.svelte";
   import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import { toast } from "svelte-sonner";
-  import { fmt, getI18n } from "$lib/i18n";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
   import { errorCode, gitRootsApi } from "../api";
   import { causeMessage } from "../wording";
   import { gitMissing, gitRootRows, type GitRootRow } from "../git-roots";

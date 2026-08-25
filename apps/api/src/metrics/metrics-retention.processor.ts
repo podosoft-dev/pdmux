@@ -1,16 +1,12 @@
-import { Processor, WorkerHost } from "@nestjs/bullmq";
-import { Logger } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import { MetricsRetentionService, type RetentionRun } from "./metrics-retention.service";
-import { METRICS_QUEUE } from "./metrics.queue";
 
 /** Runs in the worker process (main-worker.ts), so a long delete never blocks a
  *  request thread that is relaying terminal bytes. */
-@Processor(METRICS_QUEUE)
-export class MetricsRetentionProcessor extends WorkerHost {
-  private readonly logger = new Logger(MetricsRetentionProcessor.name);
+export class MetricsRetentionProcessor {
+  private readonly logger = new ProductLogger(MetricsRetentionProcessor.name);
 
   constructor(private readonly retention: MetricsRetentionService) {
-    super();
   }
 
   async process(): Promise<RetentionRun> {

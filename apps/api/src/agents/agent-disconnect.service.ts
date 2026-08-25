@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import {
   AGENT_CLOSE_HOST_DELETED,
   AGENT_CLOSE_HOST_DISABLED,
@@ -39,16 +39,15 @@ import { AgentRegistryService } from "./agent-registry.service";
  * committed, so a socket that is mid-close must not turn a completed write into a
  * 500 — the same rule the config push follows.
  */
-@Injectable()
-export class AgentDisconnectService implements OnModuleInit {
-  private readonly logger = new Logger(AgentDisconnectService.name);
+export class AgentDisconnectService {
+  private readonly logger = new ProductLogger(AgentDisconnectService.name);
 
   constructor(
     private readonly hosts: HostsService,
     private readonly registry: AgentRegistryService,
   ) {}
 
-  onModuleInit(): void {
+  connect(): void {
     this.hosts.setEnabledChangeListener((hostId, enabled) => this.applyEnabled(hostId, enabled));
     this.hosts.setRemovedListener((hostId) => this.applyRemoved(hostId));
   }

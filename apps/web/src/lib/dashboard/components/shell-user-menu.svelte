@@ -19,15 +19,15 @@
    * same routes and the same message keys.
    */
   import { goto } from "$app/navigation";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import { Button } from "$lib/components/ui/button";
-  import UserAvatar from "$lib/components/user-avatar.svelte";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import UserAvatar from "#lib/components/user-avatar.svelte";
   import LogOutIcon from "@lucide/svelte/icons/log-out";
   import ShieldIcon from "@lucide/svelte/icons/shield";
   import UserIcon from "@lucide/svelte/icons/user";
-  import { api } from "$lib/api";
-  import { getI18n } from "$lib/i18n";
-  import { APP_VERSION } from "$lib/version";
+  import { api } from "#lib/api.js";
+  import { getI18n } from "#lib/i18n/index.js";
+  import { APP_VERSION } from "#lib/version.js";
   import type { SessionUser } from "../../../app.d.ts";
 
   let { user }: { user: SessionUser } = $props();

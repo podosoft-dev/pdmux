@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { Repository } from "typeorm";
 import { FleetSetting } from "./fleet-setting.entity";
 import {
@@ -19,13 +18,12 @@ import {
  */
 export type FleetSettingsChangeListener = (organizationId: string) => Promise<void> | void;
 
-@Injectable()
 export class FleetSettingsService {
-  private readonly logger = new Logger(FleetSettingsService.name);
+  private readonly logger = new ProductLogger(FleetSettingsService.name);
   private changeListener: FleetSettingsChangeListener = () => {};
 
   constructor(
-    @InjectRepository(FleetSetting) private readonly repo: Repository<FleetSetting>,
+    private readonly repo: Repository<FleetSetting>,
   ) {}
 
   /** Called once by the agent config pusher at startup (avoids a circular provider). */

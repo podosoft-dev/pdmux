@@ -1,5 +1,5 @@
 <script lang="ts">
-  import * as Avatar from "$lib/components/ui/avatar";
+  import * as Avatar from "#lib/components/ui/avatar/index.js";
   import type { SessionUser } from "../../app.d.ts";
 
   let { user, class: className }: { user: Pick<SessionUser, "name" | "email" | "image">; class?: string } = $props();

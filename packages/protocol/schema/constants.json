@@ -1,5 +1,5 @@
 {
-  "$comment": "GENERATED FILE — do not hand-edit. Derived from packages/protocol/src/index.ts; regenerate with `npm run schema:build -w @pdmux/protocol`.",
+  "$comment": "GENERATED FILE — do not hand-edit. Derived from packages/protocol/src/index.ts; regenerate with `bun run --cwd packages/protocol schema:build`.",
   "AGENT_CLOSE_HOST_DELETED": 4004,
   "AGENT_CLOSE_HOST_DISABLED": 4002,
   "AGENT_CLOSE_REPLACED": 4000,
@@ -16,7 +16,7 @@
   "PROTOCOL_VERSION": 1,
   "TERMINAL_WS_PATH": "/terminal/ws",
   "_generated": {
-    "command": "npm run schema:build -w @pdmux/protocol",
+    "command": "bun run --cwd packages/protocol schema:build",
     "doNotEdit": true,
     "generator": "packages/protocol/scripts/build-schema.mjs",
     "source": "packages/protocol/src/index.ts"

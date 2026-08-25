@@ -1,8 +1,5 @@
 <script lang="ts">
-  import * as Pagination from "$lib/components/ui/pagination";
-  import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
-  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
-  import { getI18n } from "$lib/i18n";
+  import * as Pagination from "#lib/components/ui/pagination/index.js";
 
   // Shared table footer: a count label plus shadcn-svelte pagination. The pager
   // is always shown (even for a single page or an empty list) so the footer stays
@@ -16,7 +13,6 @@
     onPageChange?: (page: number) => void;
   };
   let { count, perPage = 5, page = $bindable(1), label, onPageChange }: Props = $props();
-  const i18n = getI18n();
 </script>
 
 <div class="flex items-center justify-between gap-2">
@@ -26,12 +22,7 @@
   <Pagination.Root count={Math.max(count, 1)} {perPage} bind:page {onPageChange}>
     {#snippet children({ pages, currentPage })}
       <Pagination.Content>
-        <Pagination.Item>
-          <Pagination.PrevButton>
-            <ChevronLeftIcon class="size-4" />
-            <span>{i18n.t.dash.table.prevPage}</span>
-          </Pagination.PrevButton>
-        </Pagination.Item>
+        <Pagination.Item><Pagination.PrevButton /></Pagination.Item>
         {#each pages as p (p.key)}
           {#if p.type === "ellipsis"}
             <Pagination.Item><Pagination.Ellipsis /></Pagination.Item>
@@ -41,12 +32,7 @@
             </Pagination.Item>
           {/if}
         {/each}
-        <Pagination.Item>
-          <Pagination.NextButton>
-            <span>{i18n.t.dash.table.nextPage}</span>
-            <ChevronRightIcon class="size-4" />
-          </Pagination.NextButton>
-        </Pagination.Item>
+        <Pagination.Item><Pagination.NextButton /></Pagination.Item>
       </Pagination.Content>
     {/snippet}
   </Pagination.Root>

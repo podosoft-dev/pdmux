@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { pathToFileURL } from "node:url";
 
@@ -17,9 +17,9 @@ function usage() {
   console.log(`Create or verify the initial PodoKit administrator.
 
 Usage:
-  npm run admin:bootstrap -w <app>-api
-  npm run admin:bootstrap -w <app>-api -- --dry-run
-  npm run admin:bootstrap -w <app>-api -- --check-only
+  bun run --cwd apps/api admin:bootstrap
+  bun run --cwd apps/api admin:bootstrap -- --dry-run
+  bun run --cwd apps/api admin:bootstrap -- --check-only
 
 Required environment:
   ADMIN_EMAILS               Allowed administrator emails (comma-separated)

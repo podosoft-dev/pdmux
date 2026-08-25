@@ -1,5 +1,4 @@
 import { pool } from "../auth/db";
-import { FLAG_DEFAULTS } from "../settings/flag-defaults";
 
 /**
  * Is this pdmux server an MCP server at all?
@@ -27,7 +26,7 @@ const TTL_MS = 3_000;
  * Settings page can toggle it through the existing `PUT /account/settings`. This
  * constant is the fallback used when the read itself fails.
  */
-const FALLBACK = FLAG_DEFAULTS.mcpEnabled;
+const FALLBACK = true;
 
 let cached = FALLBACK;
 let fetchedAt = 0;

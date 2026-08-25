@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/podosoft-dev/pdmux/agent/internal/config"
 	"github.com/podosoft-dev/pdmux/agent/internal/log"
 )
 
@@ -41,6 +42,12 @@ func newHarness(t *testing.T) *harness {
 		Username:   "dev",
 		Executable: binary,
 		GOOS:       "linux",
+		ReadConfigFile: func(path string) (string, bool) {
+			if !strings.HasPrefix(path, h.home+string(os.PathSeparator)) {
+				return "", false
+			}
+			return config.ReadFileOrMissing(path)
+		},
 		// The real check would consult this machine's uids; the placement branch
 		// has its own tests.
 		ExecDirWritable: func(string, string) bool { return true },

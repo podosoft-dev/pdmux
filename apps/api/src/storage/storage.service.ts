@@ -1,56 +1,47 @@
-import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-  HeadBucketCommand,
-  PutObjectCommand,
-  S3Client,
-} from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client } from "bun";
 import { ReadinessService } from "../health/readiness.service";
-import { storageClientConfig, storageSettings } from "./storage.config";
+import { storageSettings } from "./storage.config";
 
-@Injectable()
-export class StorageService implements OnModuleInit, OnModuleDestroy {
-  private readonly client = new S3Client(storageClientConfig());
-  private readonly bucket = storageSettings().bucket;
+export class StorageService {
+  private readonly client: S3Client;
   private unregisterReadiness?: () => void;
 
-  constructor(private readonly readiness: ReadinessService) {}
-
-  onModuleInit(): void {
-    this.unregisterReadiness = this.readiness.register("object-storage", async () => {
-      await this.client.send(
-        new HeadBucketCommand({ Bucket: this.bucket }),
-        { abortSignal: AbortSignal.timeout(3_000) },
-      );
+  constructor(readiness: ReadinessService) {
+    const settings = storageSettings();
+    this.client = new S3Client({
+      bucket: settings.bucket,
+      region: settings.region,
+      virtualHostedStyle: settings.virtualHostedStyle,
+      ...(settings.endpoint ? { endpoint: settings.endpoint } : {}),
+      ...(settings.accessKeyId ? { accessKeyId: settings.accessKeyId } : {}),
+      ...(settings.secretAccessKey ? { secretAccessKey: settings.secretAccessKey } : {}),
+    });
+    this.unregisterReadiness = readiness.register("object-storage", async () => {
+      await this.client.exists(".podokit-readiness");
     });
   }
 
-  async put(key: string, body: Buffer | string, contentType?: string): Promise<void> {
-    await this.client.send(
-      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
-    );
+  async put(key: string, body: Uint8Array | string | Blob, contentType?: string): Promise<void> {
+    await this.client.file(key).write(body, contentType ? { type: contentType } : undefined);
   }
 
   async get(key: string): Promise<Buffer> {
-    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
-    const bytes = await res.Body?.transformToByteArray();
-    return Buffer.from(bytes ?? new Uint8Array());
+    return Buffer.from(await this.client.file(key).bytes());
+  }
+
+  async exists(key: string): Promise<boolean> {
+    return this.client.exists(key);
   }
 
   presignedGetUrl(key: string, expiresIn = 3600): Promise<string> {
-    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
-      expiresIn,
-    });
+    return Promise.resolve(this.client.presign(key, { expiresIn }));
   }
 
   async delete(key: string): Promise<void> {
-    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    await this.client.delete(key);
   }
 
-  onModuleDestroy(): void {
+  close(): void {
     this.unregisterReadiness?.();
-    this.client.destroy();
   }
 }

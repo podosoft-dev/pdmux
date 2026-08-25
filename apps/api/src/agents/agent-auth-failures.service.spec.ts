@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "bun:test";
 import type { Repository } from "typeorm";
 
 import { FleetSetting } from "../fleet/fleet-setting.entity";

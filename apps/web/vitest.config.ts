@@ -20,16 +20,20 @@ export default defineConfig({
    * and importing one throws. No component is rendered here — that is what `tests/ui`
    * and `@pdmux/ui` are for.
    */
-  plugins: [svelte({ hot: false })],
+  plugins: [svelte()],
   test: {
     include: ["test/**/*.test.ts"],
     environment: "node",
+    // Bun exposes `__esModule` on genuine ESM namespaces with an undefined
+    // value. Vitest 4 otherwise applies CommonJS interop and loses named
+    // exports such as Zod's `z` when a workspace package is imported.
+    deps: { interopDefault: false },
   },
   resolve: {
     alias: {
       $lib: fileURLToPath(new URL("./src/lib", import.meta.url)),
       // The dashboard logic reads `browser` from here; see the stub for why it is false.
-      "$app/environment": fileURLToPath(new URL("./test/stubs/app-environment.ts", import.meta.url)),
+      "$app/env": fileURLToPath(new URL("./test/stubs/app-environment.ts", import.meta.url)),
     },
   },
 });

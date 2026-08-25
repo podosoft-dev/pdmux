@@ -7,15 +7,15 @@
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Sun from "@lucide/svelte/icons/sun";
   import X from "@lucide/svelte/icons/x";
-  import * as Card from "$lib/components/ui/card";
-  import { Button } from "$lib/components/ui/button";
-  import * as Collapsible from "$lib/components/ui/collapsible";
-  import { Input } from "$lib/components/ui/input";
-  import { Label } from "$lib/components/ui/label";
+  import * as Card from "#lib/components/ui/card/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as Collapsible from "#lib/components/ui/collapsible/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
   import { toast } from "svelte-sonner";
-  import { api } from "$lib/api";
-  import { getI18n } from "$lib/i18n";
-  import { site, type SiteSettings } from "$lib/site.svelte";
+  import { api } from "#lib/api.js";
+  import { getI18n } from "#lib/i18n/index.js";
+  import { site, type SiteSettings } from "#lib/site.svelte.js";
   import {
     FEATURED_THEME_PRESET_KEYS,
     THEME_TOKEN_KEYS,
@@ -23,7 +23,7 @@
     themePresets,
     type ThemePreset,
     type ThemeTokens,
-  } from "$lib/site/themes";
+  } from "#lib/site/themes.js";
   import {
     applyTheme,
     buildVarString,
@@ -32,7 +32,7 @@
     type ThemeConfig,
     type ThemeMode,
     type ThemeOverrides,
-  } from "$lib/site/apply-theme";
+  } from "#lib/site/apply-theme.js";
 
   const i18n = getI18n();
   const t = $derived(i18n.t.general);

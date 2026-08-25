@@ -11,7 +11,7 @@ whether a module provides it — modules wire themselves into the app correctly.
 ```bash
 podo add                 # list available modules
 podo add <module>        # e.g. auth, admin-dashboard, redis, bullmq, file-upload
-npm install              # install newly-added dependencies
+bun install              # install newly-added dependencies
 ```
 
 Common modules: `auth` (better-auth: email/password, sessions, OAuth, 2FA,
@@ -23,5 +23,5 @@ runtime settings, requires auth), `redis`, `bullmq` (queue + worker),
 Notes:
 - A module auto-adds its required modules (e.g. `admin-dashboard` adds `auth`).
 - After adding, follow the printed next steps (often DB migrations, e.g.
-  `npx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts`).
+  `bunx --bun @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts`).
 - Module wiring lands inside `// podokit:` fenced regions — don't hand-edit those.

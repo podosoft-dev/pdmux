@@ -20,11 +20,11 @@
    * when it is happening on six machines at once. The gate is on the count, so it
    * cannot be configured away.
    */
-  import { Button } from "$lib/components/ui/button";
-  import * as Dialog from "$lib/components/ui/dialog";
-  import { fmt, getI18n } from "$lib/i18n";
-  import { canaryNeeded, panePlan, planBulkUpdate, type PaneSlot } from "$lib/dashboard/agent-update";
-  import type { HostView } from "$lib/dashboard/types";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
+  import { canaryNeeded, panePlan, planBulkUpdate, type PaneSlot } from "#lib/dashboard/agent-update.js";
+  import type { HostView } from "#lib/dashboard/types.js";
 
   let {
     open = $bindable(false),

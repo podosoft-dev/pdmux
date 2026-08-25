@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { Button } from "$lib/components/ui/button";
-  import { Badge } from "$lib/components/ui/badge";
-  import * as Table from "$lib/components/ui/table";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "$lib/components/data-table.svelte";
-  import TableToolbar, { type ToolbarSearchField } from "$lib/components/table-toolbar.svelte";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import * as Table from "#lib/components/ui/table/index.js";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
+  import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "#lib/components/data-table.svelte";
+  import TableToolbar, { type ToolbarSearchField } from "#lib/components/table-toolbar.svelte";
   import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
   import { toast } from "svelte-sonner";
-  import { api } from "$lib/api";
-  import { getI18n, fmt, formatDateTime } from "$lib/i18n";
-  import { deviceLabel } from "$lib/device-label";
+  import { api } from "#lib/api.js";
+  import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
+  import { deviceLabel } from "#lib/device-label.js";
 
   const i18n = getI18n();
 

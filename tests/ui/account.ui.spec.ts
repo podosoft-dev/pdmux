@@ -226,6 +226,57 @@ test("account nav shows the core sections", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Sessions" })).toBeVisible();
 });
 
+test("connected account unlink uses the local account row id @smoke", async ({ page }) => {
+  const provider = "google";
+  let unlinkBody: unknown;
+  await page.route("**/api/auth/list-accounts", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { id: "local-account-id", providerId: provider, accountId: "provider-subject" },
+      ]),
+    }),
+  );
+  await page.route("**/api/auth/unlink-account", async (route) => {
+    unlinkBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+
+  try {
+    const enabled = await page.request.put("/api/account/auth-config", {
+      data: {
+        social: {
+          [provider]: {
+            enabled: true,
+            clientId: "podokit",
+            clientSecret: "podokit",
+          },
+        },
+      },
+    });
+    expect(enabled.ok()).toBeTruthy();
+    await expect
+      .poll(async () => {
+        const response = await page.request.get("/api/account/capabilities");
+        const body = (await response.json()) as { providers?: string[] };
+        return body.providers ?? [];
+      }, { timeout: 8_000 })
+      .toContain(provider);
+
+    await ready(page, "/admin/account");
+    await page.getByRole("button", { name: "Connected", exact: true }).click();
+    await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+
+    await expect.poll(() => unlinkBody).toEqual({ accountId: "local-account-id" });
+    await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
+  } finally {
+    await page.request.put("/api/account/auth-config", {
+      data: { social: { [provider]: { enabled: false } } },
+    });
+  }
+});
+
 test("two-factor setup shows a scannable QR code when enabled", async ({ page }) => {
   await ready(page, "/admin/account");
   await page.getByRole("button", { name: "Security" }).click();

@@ -4,12 +4,9 @@ import { authConfigStore } from "./auth-config-store";
 // Runtime auth instance that rebuilds when the DB config changes, so admin edits
 // (OAuth credentials, SMTP, server-enforced toggles) apply WITHOUT a restart.
 //
-// @thallesp/nestjs-better-auth reads `auth.handler` exactly once (via toNodeHandler)
-// and `auth.api` per request. We hand it a Proxy: `.handler` is a STABLE delegating
-// function (so the adapter's captured reference stays valid) that redispatches each
-// request to the currently-built instance; every other access forwards to the
-// current instance too. The guard/session behavior is unchanged (session tokens are
-// signed with the stable BETTER_AUTH_SECRET; trustedOrigins is baked into every build).
+// Elysia mounts `auth.handler` once. The proxy exposes a stable delegating handler
+// that refreshes the DB-backed configuration and dispatches to the current Better
+// Auth instance. Session tokens remain valid because BETTER_AUTH_SECRET is stable.
 
 const TTL_MS = 3_000;
 

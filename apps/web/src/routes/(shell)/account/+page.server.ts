@@ -1,4 +1,4 @@
-import { loadAccountData } from "$lib/account-data.server";
+import { loadAccountData } from "#lib/account-data.server.js";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ locals, fetch }) => loadAccountData(locals, fetch);

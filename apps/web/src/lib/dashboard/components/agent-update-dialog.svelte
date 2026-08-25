@@ -7,10 +7,10 @@
    * because the sidebar popover shows the same thing and a second implementation
    * would be a second, weaker door to the same destructive action.
    */
-  import * as Dialog from "$lib/components/ui/dialog";
-  import { fmt, getI18n } from "$lib/i18n";
-  import type { PaneSlot } from "$lib/dashboard/agent-update";
-  import type { HostView } from "$lib/dashboard/types";
+  import * as Dialog from "#lib/components/ui/dialog/index.js";
+  import { fmt, getI18n } from "#lib/i18n/index.js";
+  import type { PaneSlot } from "#lib/dashboard/agent-update.js";
+  import type { HostView } from "#lib/dashboard/types.js";
   import AgentUpdateConfirm from "./agent-update-confirm.svelte";
 
   let {

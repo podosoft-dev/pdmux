@@ -1,32 +1,24 @@
-import {
-  Injectable,
-  Optional,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from "@nestjs/common";
-import Redis from "ioredis";
-import { redisConnectionOptions } from "../config/redis.connection";
+import { RedisClient } from "bun";
+import { redisConnectionUrl } from "../config/redis.connection";
 import { ReadinessService } from "../health/readiness.service";
 
-@Injectable()
-export class RedisService implements OnModuleInit, OnModuleDestroy {
-  readonly client = new Redis(redisConnectionOptions(process.env, {
-    lazyConnect: true,
-    enableReadyCheck: true,
-    enableOfflineQueue: false,
-    maxRetriesPerRequest: 1,
-    connectTimeout: 5_000,
-    commandTimeout: 5_000,
-  }));
-  private readonly subscribers: Redis[] = [];
+export class RedisService {
+  readonly client: RedisClient;
+  private readonly subscribers: RedisClient[] = [];
   private unregisterReadiness?: () => void;
 
-  constructor(@Optional() private readonly readiness?: ReadinessService) {}
+  constructor(private readonly readiness?: ReadinessService) {
+    this.client = new RedisClient(redisConnectionUrl(), {
+      connectionTimeout: 5_000,
+      enableOfflineQueue: false,
+      maxRetries: 1,
+    });
+  }
 
-  async onModuleInit(): Promise<void> {
-    await this.client.connect();
+  async connect(): Promise<void> {
+    if (!this.client.connected) await this.client.connect();
     await this.client.ping();
-    this.unregisterReadiness = this.readiness?.register("redis", async () => {
+    this.unregisterReadiness ??= this.readiness?.register("redis", async () => {
       await this.client.ping();
     });
   }
@@ -36,8 +28,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
-    if (ttlSeconds) await this.client.set(key, value, "EX", ttlSeconds);
-    else await this.client.set(key, value);
+    await this.client.set(key, value);
+    if (ttlSeconds !== undefined) await this.client.expire(key, ttlSeconds);
   }
 
   del(key: string): Promise<number> {
@@ -48,37 +40,23 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.publish(channel, message);
   }
 
-  async subscribe(
-    channel: string,
-    handler: (message: string) => void,
-  ): Promise<() => Promise<void>> {
-    const sub = new Redis(redisConnectionOptions(process.env, {
-      lazyConnect: true,
-      enableReadyCheck: true,
-      maxRetriesPerRequest: null,
-      connectTimeout: 5_000,
-    }));
-    try {
-      await sub.connect();
-      await sub.subscribe(channel);
-    } catch (error) {
-      await sub.quit().catch(() => undefined);
-      throw error;
-    }
-    this.subscribers.push(sub);
-    sub.on("message", (ch, message) => {
-      if (ch === channel) handler(message);
-    });
+  async subscribe(channel: string, handler: (message: string) => void): Promise<() => Promise<void>> {
+    const subscriber = await this.client.duplicate();
+    await subscriber.connect();
+    const listener = (message: string): void => handler(message);
+    await subscriber.subscribe(channel, listener);
+    this.subscribers.push(subscriber);
     return async () => {
-      const index = this.subscribers.indexOf(sub);
+      const index = this.subscribers.indexOf(subscriber);
       if (index >= 0) this.subscribers.splice(index, 1);
-      await sub.unsubscribe(channel);
-      await sub.quit();
+      await subscriber.unsubscribe(channel, listener);
+      subscriber.close();
     };
   }
 
-  async onModuleDestroy(): Promise<void> {
+  close(): void {
     this.unregisterReadiness?.();
-    await Promise.allSettled([this.client.quit(), ...this.subscribers.map((s) => s.quit())]);
+    for (const subscriber of this.subscribers) subscriber.close();
+    this.client.close();
   }
 }

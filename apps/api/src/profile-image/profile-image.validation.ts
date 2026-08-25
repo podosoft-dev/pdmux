@@ -6,7 +6,7 @@ import {
   PROFILE_IMAGE_TYPE_INVALID,
   type ProfileImageMimeType,
 } from "@podosoft/podokit-contracts";
-import { imageSize } from "image-size";
+import probe from "probe-image-size";
 
 export interface ProfileImageUpload {
   buffer: Buffer;
@@ -37,9 +37,9 @@ export function validateProfileImage(file: ProfileImageUpload): ProfileImageMeta
     );
   }
 
-  let dimensions: ReturnType<typeof imageSize>;
+  let dimensions: ReturnType<typeof probe.sync>;
   try {
-    dimensions = imageSize(file.buffer);
+    dimensions = probe.sync(file.buffer);
   } catch {
     throw new AppException(
       PROFILE_IMAGE_TYPE_INVALID,
@@ -47,7 +47,7 @@ export function validateProfileImage(file: ProfileImageUpload): ProfileImageMeta
     );
   }
 
-  const detected = dimensions.type ? DETECTED_TYPES[dimensions.type] : undefined;
+  const detected = dimensions ? DETECTED_TYPES[dimensions.type] : undefined;
   if (!detected || detected.contentType !== file.mimetype) {
     throw new AppException(
       PROFILE_IMAGE_TYPE_INVALID,
@@ -55,8 +55,7 @@ export function validateProfileImage(file: ProfileImageUpload): ProfileImageMeta
     );
   }
   if (
-    dimensions.width === undefined
-    || dimensions.height === undefined
+    !dimensions
     || dimensions.width > PROFILE_IMAGE_POLICY.maxWidth
     || dimensions.height > PROFILE_IMAGE_POLICY.maxHeight
   ) {

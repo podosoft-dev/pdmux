@@ -1,23 +1,4 @@
-# Containerized development environment.
-#
-#   podo dev watch                                                # core stack
-#   podo dev watch --profile cache --profile storage \
-#     --profile queue                                             # with modules
-#
-# A user-level PodoKit gateway owns loopback :80 and routes each *.localhost host
-# to this stack. The legacy per-project Traefik service is opt-in only.
-# api/postgres/redis/minio have NO published ports — they talk by service name
-# on the internal network, so this stack never collides with other projects.
-#
-# Core services (traefik, web, api, postgres) always run. Module-specific
-# services are behind profiles — enable the ones your app uses:
-#   --profile cache    redis    (redis / rate-limit / bullmq modules)
-#   --profile storage  minio    (object-storage-s3 / file-upload modules)
-#   --profile queue    worker   (bullmq / job-progress modules)
-#
-# `watch` syncs your edits into the containers: the web has instant vite HMR;
-# an API source change restarts the api service (~5s), which is the stable
-# approach for nest inside a container.
+# Containerized Bun development environment.
 name: pdmux-dev
 
 services:
@@ -32,7 +13,7 @@ services:
       - --api.insecure=true
     ports:
       - "${TRAEFIK_PORT:-80}:80"
-      - "127.0.0.1:${TRAEFIK_DASHBOARD_PORT:-8080}:8080" # Traefik dashboard (dev only)
+      - "127.0.0.1:${TRAEFIK_DASHBOARD_PORT:-8080}:8080"
     volumes:
       - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
     networks: [podokit]
@@ -41,25 +22,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    command: npm run dev -w pdmux-web -- --host 0.0.0.0
+      args:
+        PODOKIT_NPM_REGISTRY: ${PODOKIT_NPM_REGISTRY:-}
+    command: bun run --cwd apps/web dev -- --host 0.0.0.0
     working_dir: /app
     env_file: .env.docker
-    # ⚠ THE AGENT BINARIES CANNOT COME FROM THE IMAGE, AND WITHOUT THIS LINE THEY
-    # COME FROM NOWHERE. They are build output, so `.gitignore` keeps them out of the
-    # repo and therefore out of the image; the `sync` rule below only populates them
-    # while `docker compose watch` is actually running. Started any other way, this
-    # container serves `vite dev` out of a `static/` that has a favicon in it — and
-    # `/agent/<version>/<binary>` 404s. Which was REPORTED, from the far end: the
-    # dashboard offered an update, the operator confirmed it, and the agent recorded
-    # `DOWNLOAD_FAILED — the server answered 404 Not Found for the artifact`. Nothing
-    # on the button was wrong.
-    volumes:
-      - ./apps/web/static/agent:/app/apps/web/static/agent:ro
     environment:
       - VITE_DOCKER=1
       - BACKEND_INTERNAL_URL=http://api:5002
-      # One trusted Traefik proxy sits in front of SvelteKit. This keeps
-      # getClientAddress() tied to the visitor instead of the proxy container.
       - ADDRESS_HEADER=x-forwarded-for
       - XFF_DEPTH=1
     depends_on: [api]
@@ -70,61 +40,35 @@ services:
         - { action: sync, path: ./apps/web/static, target: /app/apps/web/static }
         - { action: sync+restart, path: ./apps/web/vite.config.ts, target: /app/apps/web/vite.config.ts }
         - { action: rebuild, path: ./apps/web/package.json }
-        # ⚠ REBUILD, NOT SYNC, AND THE PACKAGES HAD NO RULE AT ALL UNTIL THIS LINE.
-        # The app imports `@pdmux/*` through their built `dist/`, which `.dockerignore`
-        # keeps out of the image and the Dockerfile builds inside it — so syncing the
-        # source would leave the app running the OLD build with NEW sources beside it,
-        # which is exactly the state that cost an afternoon: the sidebar's new markup
-        # was in the repo, in the local dist, and nowhere the container could see.
-        # Editing a package is rare and rebuilding is the only thing that is honest.
-        - { action: rebuild, path: ./packages }
 
   api:
     build:
       context: .
       dockerfile: Dockerfile.dev
+      args:
+        PODOKIT_NPM_REGISTRY: ${PODOKIT_NPM_REGISTRY:-}
     init: true
-    command: npm run dev -w pdmux-api
+    command: bun run --cwd apps/api dev
     working_dir: /app
     env_file: .env.docker
-    # ⚠ NAME THE ROOT, BECAUSE THE FALLBACK PICKS ONE THE WEB TIER CANNOT SERVE.
-    # `fileSystemAgentReleases` searches `../web/build/client/agent` AND
-    # `../web/static/agent` and takes the newest across both — which is right for a
-    # checkout that has both, and wrong here: the image bakes `build/client/agent`
-    # (from its own `npm run build`) while the thing serving bytes is `vite dev`,
-    # which reads `static/` only. So the API advertised 0.1.15 out of a directory no
-    # request could reach, and the dashboard offered an update that could not download.
-    # Pointing the API at exactly the directory the web serves makes the two halves
-    # agree: whatever is offered is fetchable, and an empty mount offers nothing
-    # ("no published build for that platform") instead of offering a 404.
-    environment:
-      - AGENT_RELEASE_DIR=/app/apps/web/static/agent
-    volumes:
-      - ./apps/web/static/agent:/app/apps/web/static/agent:ro
     depends_on:
       postgres: { condition: service_healthy }
     networks: [podokit]
     develop:
       watch:
-        # nest-cli's in-container watch does not reliably respawn the app process,
-        # so restart the service on an API source change (~5s). The Docker docs'
-        # sync+restart is the stable, recommended approach; the web keeps instant
-        # HMR via plain sync.
         - { action: sync+restart, path: ./apps/api/src, target: /app/apps/api/src }
         - { action: sync, path: ./apps/api/scripts, target: /app/apps/api/scripts }
         - { action: rebuild, path: ./apps/api/package.json }
-        # Same reason as the web service: the API imports `@pdmux/protocol` and
-        # `@pdmux/mcp` from their built output, which only exists inside the image.
-        - { action: rebuild, path: ./packages }
 
   worker:
-    # started only with the bullmq / job-progress modules: --profile queue
     profiles: [queue]
     build:
       context: .
       dockerfile: Dockerfile.dev
+      args:
+        PODOKIT_NPM_REGISTRY: ${PODOKIT_NPM_REGISTRY:-}
     init: true
-    command: npm run dev:worker -w pdmux-api
+    command: bun run --cwd apps/api dev:worker
     working_dir: /app
     env_file: .env.docker
     depends_on:
@@ -132,10 +76,6 @@ services:
     networks: [podokit]
     develop:
       watch:
-        # nest-cli's in-container watch does not reliably respawn the app process,
-        # so restart the service on an API source change (~5s). The Docker docs'
-        # sync+restart is the stable, recommended approach; the web keeps instant
-        # HMR via plain sync.
         - { action: sync+restart, path: ./apps/api/src, target: /app/apps/api/src }
         - { action: sync, path: ./apps/api/scripts, target: /app/apps/api/scripts }
         - { action: rebuild, path: ./apps/api/package.json }
@@ -153,16 +93,14 @@ services:
       retries: 20
     volumes:
       - pgdata:/var/lib/postgresql/data
-    networks: [podokit] # no published ports — internal only
+    networks: [podokit]
 
   redis:
-    # started only with the redis / rate-limit / bullmq modules: --profile cache
     profiles: [cache]
     image: redis:7-alpine
-    networks: [podokit] # internal only
+    networks: [podokit]
 
   minio:
-    # started only with the object-storage-s3 / file-upload modules: --profile storage
     profiles: [storage]
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -171,7 +109,7 @@ services:
       MINIO_ROOT_PASSWORD: podokitsecret
     volumes:
       - miniodata:/data
-    networks: [podokit] # internal only
+    networks: [podokit]
 
   minio-init:
     profiles: [storage]

@@ -1,14 +1,14 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Cross-compiles the Go host agent and lays the result out the way the public
  * installer will ask for it.
  *
  * HOW TO RUN IT
  *
- *   npm run build:agent          # from the repo root, needs a Go toolchain
+ *   bun run build:agent          # from the repo root, needs a Go toolchain
  *
- * ⚠ IT IS DELIBERATELY NOT PART OF `npm run build`. The root build is
- * `npm run build --workspaces --if-present`, which runs on every CI machine, and CI
+ * ⚠ IT IS DELIBERATELY NOT PART OF `bun run build`. The root build is
+ * `bun run --workspaces --if-present build`, which runs on every CI machine, and CI
  * has no Go toolchain — wiring this in would turn "no Go" into a red build for a
  * change that never touched the agent. It is opt-in: a release job, the Docker
  * builder stage (`apps/web/Dockerfile`), or a human runs it on purpose.
@@ -106,7 +106,7 @@ function goVersion() {
   } catch {
     throw new Error(
       "No `go` on PATH. This script cross-compiles the agent, so it needs a Go toolchain " +
-        "(that is also why it is not part of `npm run build`).",
+        "(that is also why it is not part of `bun run build`).",
     );
   }
 }

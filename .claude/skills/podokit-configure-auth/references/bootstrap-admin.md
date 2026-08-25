@@ -30,9 +30,9 @@ fallbacks so the same ephemeral values can immediately configure OAuth and SMTP.
 ## Preview, create, and verify
 
 ```bash
-npm run admin:bootstrap -w <app>-api -- --dry-run
-npm run admin:bootstrap -w <app>-api
-npm run admin:bootstrap -w <app>-api -- --check-only
+bun run --cwd apps/api admin:bootstrap -- --dry-run
+bun run --cwd apps/api admin:bootstrap
+bun run --cwd apps/api admin:bootstrap -- --check-only
 ```
 
 The create path writes `role=admin`, `emailVerified=true`, and

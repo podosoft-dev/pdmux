@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it } from "bun:test";
 import { buildSeries, clampPct, retentionCutoff, shouldSample } from "./metric-series";
 
 describe("[TC-PDMETRIC-001] metric downsampling", () => {

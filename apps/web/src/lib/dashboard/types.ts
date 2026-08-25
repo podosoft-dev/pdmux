@@ -1,9 +1,9 @@
 /**
  * The shapes the dashboard reads from the API.
  *
- * WHY THEY ARE RESTATED HERE: the API's view types live in a NestJS workspace that
- * this app does not (and should not) import — pulling them in would drag decorators,
- * entities and TypeORM into a browser bundle. What travels between the two is JSON,
+ * WHY THEY ARE RESTATED HERE: the API's view types live in a server workspace that
+ * this app does not (and should not) import — pulling them in would drag entities,
+ * database code and server-only dependencies into a browser bundle. What travels between the two is JSON,
  * so JSON is what this file describes. Anything that is a real contract between
  * three programs lives in `@pdmux/protocol` instead and is imported from there.
  */

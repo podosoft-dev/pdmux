@@ -15,11 +15,13 @@ async function loginFresh(page: import("@playwright/test").Page, playwright: imp
   const api = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   await api.post("/api/auth/sign-up/email", { data: { email, password: PW, name: "Acc" } });
   await api.dispose();
-  await ready(page, `/login?redirect=${encodeURIComponent("/admin/account")}`);
+  await ready(page, `/login?redirect=${encodeURIComponent("/account")}`);
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(PW);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page).toHaveURL(/\/admin\/account/);
+  await expect(page).toHaveURL((url) => url.pathname === "/account");
+  await expect(page.getByRole("heading", { name: "Account" })).toBeVisible();
+  await expect(page.getByLabel("Name", { exact: true })).toBeVisible();
 }
 
 test("account: register and verify a phone number", async ({ page, playwright }) => {

@@ -1,5 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { ProductLogger } from "../logging/product-logger";
 import { Repository } from "typeorm";
 import type { CommitDetail, GitBlob, GitTree, WorkingDiff } from "@pdmux/protocol";
 import { AppException } from "../common/app-exception";
@@ -78,15 +77,14 @@ export type AgentGitRequest =
   | { kind: "tree"; sha: string }
   | { kind: "blob"; sha: string; path: string };
 
-@Injectable()
 export class GitService {
-  private readonly logger = new Logger(GitService.name);
+  private readonly logger = new ProductLogger(GitService.name);
   private detailRequestListener: CommitDetailRequestListener = () => false;
 
   constructor(
-    @InjectRepository(Repo) private readonly repos: Repository<Repo>,
-    @InjectRepository(RepoRef) private readonly refs: Repository<RepoRef>,
-    @InjectRepository(RepoCommit) private readonly commits: Repository<RepoCommit>,
+    private readonly repos: Repository<Repo>,
+    private readonly refs: Repository<RepoRef>,
+    private readonly commits: Repository<RepoCommit>,
     private readonly details: GitDetailService,
     private readonly blobs: GitBlobBufferService,
     private readonly hosts: HostsService,

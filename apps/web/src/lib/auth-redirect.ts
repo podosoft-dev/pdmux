@@ -16,7 +16,7 @@ export function safeAuthRedirect(value: string | null | undefined, fallback = "/
 }
 
 /** Current same-site path, suitable for a login return target. */
-export function currentPath(url: URL): string {
+export function currentPath(url: Pick<URL, "pathname" | "search" | "hash">): string {
   return safeAuthRedirect(`${url.pathname}${url.search}${url.hash}`);
 }
 

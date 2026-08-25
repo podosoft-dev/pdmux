@@ -17,9 +17,9 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
-    "lint": "tsc -p tsconfig.test.json"
+    "build": "bunx --bun tsc -p tsconfig.json",
+    "test": "bunx --bun vitest run",
+    "lint": "bunx --bun tsc -p tsconfig.test.json"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

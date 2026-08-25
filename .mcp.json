@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "podokit": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@podosoft/podokit-mcp"
-      ]
+      "command": "bunx",
+      "args": ["--bun", "@podosoft/podokit-mcp"]
     }
   }
 }

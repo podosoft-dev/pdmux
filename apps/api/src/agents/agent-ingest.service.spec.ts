@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "bun:test";
 import type { Heartbeat } from "@pdmux/protocol";
 import { ReadinessService } from "../health/readiness.service";
 import { EventsService } from "../events/events.service";
@@ -72,9 +72,9 @@ function build(): {
   // The in-memory transport delivers locally, and connect() installs the handler
   // synchronously, so the assertions below still see events without awaiting here.
   const events = new EventsService(new MemoryEventsTransport(), new ReadinessService());
-  void events.onModuleInit();
+  void events.connect();
   const published: unknown[] = [];
-  events.asObservable().subscribe((event) => published.push(event.data));
+  events.subscribe((event) => published.push(event));
   const registry = new AgentRegistryService();
   // Git ingest is exercised in its own spec; here it must simply never be reached
   // by a malformed frame.

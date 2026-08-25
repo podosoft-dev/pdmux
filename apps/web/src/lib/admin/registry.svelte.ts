@@ -1,5 +1,5 @@
 import type { Component } from "svelte";
-import type { Messages } from "$lib/i18n/messages";
+import type { Messages } from "#lib/i18n/messages.js";
 // Modules import their nav-entry icons here.
 // podokit:begin:admin-nav-imports
 // podokit:end:admin-nav-imports

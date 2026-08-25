@@ -1,0 +1,4 @@
+interface:
+  display_name: "PodoKit Deploy"
+  short_description: "Plan and verify safe Kubernetes releases"
+  default_prompt: "Use $podokit-deploy to inspect and plan this PodoKit Kubernetes release safely."

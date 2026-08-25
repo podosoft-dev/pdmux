@@ -1,9 +1,5 @@
-import { Logger } from "@nestjs/common";
-import Redis from "ioredis";
-import {
-  redisConnectionOptions,
-  type RedisConnectionOptions,
-} from "../config/redis.connection";
+import { RedisClient } from "bun";
+import { redisConnectionUrl } from "../config/redis.connection";
 
 export type EventHandler = (data: unknown) => void;
 
@@ -12,23 +8,6 @@ export interface EventsTransport {
   publish(data: unknown): Promise<void>;
   ready(): Promise<void>;
   close(): Promise<void>;
-}
-
-interface RedisClient {
-  readonly status: string;
-  connect(): Promise<void>;
-  publish(channel: string, message: string): Promise<number>;
-  subscribe(channel: string): Promise<unknown>;
-  ping(): Promise<string>;
-  quit(): Promise<string>;
-  on(event: "message", listener: (channel: string, message: string) => void): this;
-  off(event: "message", listener: (channel: string, message: string) => void): this;
-}
-
-export type RedisClientFactory = (options: RedisConnectionOptions) => RedisClient;
-
-function defaultRedisClientFactory(options: RedisConnectionOptions): RedisClient {
-  return new Redis(options);
 }
 
 function maxEventBytes(env: NodeJS.ProcessEnv): number {
@@ -41,9 +20,7 @@ function maxEventBytes(env: NodeJS.ProcessEnv): number {
 
 function encodedEvent(data: unknown, maximumBytes: number): string {
   const message = JSON.stringify(data);
-  if (message === undefined) {
-    throw new Error("Event data must be JSON serializable");
-  }
+  if (message === undefined) throw new Error("Event data must be JSON serializable");
   if (Buffer.byteLength(message, "utf8") > maximumBytes) {
     throw new Error("Event data exceeds SSE_MAX_EVENT_BYTES");
   }
@@ -64,8 +41,7 @@ export class MemoryEventsTransport implements EventsTransport {
   }
 
   async publish(data: unknown): Promise<void> {
-    const message = encodedEvent(data, this.maximumBytes);
-    this.handler?.(JSON.parse(message) as unknown);
+    this.handler?.(JSON.parse(encodedEvent(data, this.maximumBytes)) as unknown);
   }
 
   ready(): Promise<void> {
@@ -79,64 +55,34 @@ export class MemoryEventsTransport implements EventsTransport {
 }
 
 export class RedisEventsTransport implements EventsTransport {
-  private readonly logger = new Logger(RedisEventsTransport.name);
   private readonly publisher: RedisClient;
   private readonly subscriber: RedisClient;
   private readonly channel: string;
   private readonly maximumBytes: number;
   private handler?: EventHandler;
+  private listener?: (message: string) => void;
 
-  constructor(
-    env: NodeJS.ProcessEnv = process.env,
-    createClient: RedisClientFactory = defaultRedisClientFactory,
-  ) {
+  constructor(env: NodeJS.ProcessEnv = process.env) {
+    const url = redisConnectionUrl(env);
+    this.publisher = new RedisClient(url, { connectionTimeout: 5_000 });
+    this.subscriber = new RedisClient(url, { connectionTimeout: 5_000 });
     this.channel = env.SSE_REDIS_CHANNEL?.trim() || "podokit:events";
     this.maximumBytes = maxEventBytes(env);
-    this.publisher = createClient(
-      redisConnectionOptions(env, {
-        lazyConnect: true,
-        enableReadyCheck: true,
-        maxRetriesPerRequest: 1,
-        connectTimeout: 5_000,
-        commandTimeout: 5_000,
-      }),
-    );
-    this.subscriber = createClient(
-      redisConnectionOptions(env, {
-        lazyConnect: true,
-        enableReadyCheck: true,
-        maxRetriesPerRequest: null,
-        connectTimeout: 5_000,
-      }),
-    );
   }
-
-  private readonly onMessage = (channel: string, message: string): void => {
-    if (channel !== this.channel) return;
-    if (Buffer.byteLength(message, "utf8") > this.maximumBytes) {
-      this.logger.warn("Discarded oversized event transport message");
-      return;
-    }
-    try {
-      this.handler?.(JSON.parse(message) as unknown);
-    } catch {
-      this.logger.warn("Discarded malformed event transport message");
-    }
-  };
 
   async connect(handler: EventHandler): Promise<void> {
     this.handler = handler;
-    this.subscriber.on("message", this.onMessage);
-    try {
-      await Promise.all([this.publisher.connect(), this.subscriber.connect()]);
-      await this.subscriber.subscribe(this.channel);
-      await this.ready();
-    } catch (error) {
-      this.subscriber.off("message", this.onMessage);
-      this.handler = undefined;
-      await Promise.allSettled([this.publisher.quit(), this.subscriber.quit()]);
-      throw error;
-    }
+    this.listener = (message: string): void => {
+      if (Buffer.byteLength(message, "utf8") > this.maximumBytes) return;
+      try {
+        this.handler?.(JSON.parse(message) as unknown);
+      } catch {
+        process.stderr.write("Discard malformed event transport message\n");
+      }
+    };
+    await Promise.all([this.publisher.connect(), this.subscriber.connect()]);
+    await this.subscriber.subscribe(this.channel, this.listener);
+    await this.ready();
   }
 
   async publish(data: unknown): Promise<void> {
@@ -144,16 +90,16 @@ export class RedisEventsTransport implements EventsTransport {
   }
 
   async ready(): Promise<void> {
-    if (this.subscriber.status !== "ready") {
-      throw new Error("Redis event subscriber is not ready");
-    }
+    if (!this.subscriber.connected) throw new Error("Redis event subscriber is not ready");
     await this.publisher.ping();
   }
 
   async close(): Promise<void> {
-    this.subscriber.off("message", this.onMessage);
+    if (this.listener) await this.subscriber.unsubscribe(this.channel, this.listener);
     this.handler = undefined;
-    await Promise.allSettled([this.publisher.quit(), this.subscriber.quit()]);
+    this.listener = undefined;
+    this.publisher.close();
+    this.subscriber.close();
   }
 }
 

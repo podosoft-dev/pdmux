@@ -1,6 +1,6 @@
+import { ProductLogger } from "../logging/product-logger";
 import { randomUUID } from "node:crypto";
 
-import { Injectable, Logger } from "@nestjs/common";
 import type { ExecResult } from "@pdmux/protocol";
 
 import { AppException } from "../common/app-exception";
@@ -25,9 +25,8 @@ interface Pending {
   timer: NodeJS.Timeout;
 }
 
-@Injectable()
 export class AgentExecService {
-  private readonly logger = new Logger(AgentExecService.name);
+  private readonly logger = new ProductLogger(AgentExecService.name);
   private readonly pending = new Map<string, Pending>();
 
   constructor(

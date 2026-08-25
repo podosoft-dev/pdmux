@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { repoSnapshotSchema, type RepoSnapshot } from "@pdmux/protocol";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
@@ -120,9 +120,9 @@ async function build(pending = 1): Promise<{
   const git = new GitService(repos.asRepository(), refs.asRepository(), commits.asRepository(), details, blobs, hosts);
   const registry = new AgentRegistryService();
   // The seam under test: the requester registers itself on the git service from
-  // the agents side, exactly as Nest does at startup.
+  // the agents side, exactly as the runtime does at startup.
   const service = new AgentDetailRequestService(git, registry);
-  service.onModuleInit();
+  service.connect();
 
   return {
     git,

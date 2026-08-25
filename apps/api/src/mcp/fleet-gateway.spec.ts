@@ -1,4 +1,4 @@
-import { describe, expect, it, jest } from "@jest/globals";
+import { describe, expect, it, mock } from "bun:test";
 import "reflect-metadata";
 
 import { AppException } from "../common/app-exception";
@@ -57,20 +57,20 @@ function fakeHosts() {
     lastUpdate: null,
   });
   return {
-    get: jest.fn(async (scope: string, id: string) => {
+    get: mock(async (scope: string, id: string) => {
       if (scope !== SCOPE || id !== MINE) throw notFound();
       return row(id);
     }),
-    list: jest.fn(async (scope: string) => (scope === SCOPE ? [{ ...row(MINE), online: true, agentVersionState: "current", sessions: [], usage: [] }] : [])),
-    createWithEnrollment: jest.fn(async () => ({
+    list: mock(async (scope: string) => (scope === SCOPE ? [{ ...row(MINE), online: true, agentVersionState: "current", sessions: [], usage: [] }] : [])),
+    createWithEnrollment: mock(async () => ({
       ...row(MINE),
       enrollment: { id: "e1", code: "pdmxe_AAAAA-BBBBB-CCCCC-DDDDD", expiresAt: new Date().toISOString(), expiresInSec: 900 },
     })),
-    update: jest.fn(async (scope: string, id: string) => {
+    update: mock(async (scope: string, id: string) => {
       if (scope !== SCOPE || id !== MINE) throw notFound();
       return row(id);
     }),
-    remove: jest.fn(async (scope: string, id: string) => {
+    remove: mock(async (scope: string, id: string) => {
       if (scope !== SCOPE || id !== MINE) throw notFound();
       return { id, label: "build-01" };
     }),
@@ -80,17 +80,17 @@ function fakeHosts() {
 function context(identity: McpUserIdentity = IDENTITY) {
   const hosts = fakeHosts();
   const scoped = <T>(name: string, value: T) =>
-    jest.fn(async (scope: string, id: string) => {
+    mock(async (scope: string, id: string) => {
       // Every sibling service takes the scope too; refusing here is what proves the
       // gateway passed it rather than reaching past it.
       if (scope !== SCOPE || id !== MINE) throw new AppException("HOST_NOT_FOUND", `${name} not found`, 404);
       return value;
     });
-  const audit = jest.fn();
+  const audit = mock();
   const gateway = new ApiFleetGateway(identity, {
     hosts: hosts as never,
     hostServices: { list: scoped("services", []) } as never,
-    metrics: { series: jest.fn(async () => ({ points: [] })) } as never,
+    metrics: { series: mock(async () => ({ points: [] })) } as never,
     git: { listRepos: scoped("repos", []) } as never,
     // ⚠ THE FAKES REFUSE A FOREIGN SCOPE TOO, because the real services do. A fake
     // that answered for any scope would let the gateway reach past `hosts.get` and
@@ -102,7 +102,7 @@ function context(identity: McpUserIdentity = IDENTITY) {
     exec: { run: scoped("exec", { exitCode: 0, stdout: "", stderr: "", truncated: false, timedOut: false, code: null, message: "" }) } as never,
     updates: {
       updateHost: scoped("update", { commandId: "c1" }),
-      updateFleet: jest.fn(async (scope: string) => {
+      updateFleet: mock(async (scope: string) => {
         if (scope !== SCOPE) throw new AppException("HOST_NOT_FOUND", "not found", 404);
         return { started: 1 };
       }),
@@ -143,7 +143,7 @@ describe("[TC-PDMCP-055] a fleet token reaches only its own scope", () => {
 
   it.each(NAMED)("%s answers for a host in its own scope", async (_name, call) => {
     const { gateway } = context();
-    await expect(call(gateway, MINE)).resolves.not.toThrow();
+    await call(gateway, MINE);
   });
 
   /**

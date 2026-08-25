@@ -1,13 +1,13 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
-  import * as Sidebar from "$lib/components/ui/sidebar";
+  import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
+  import * as Sidebar from "#lib/components/ui/sidebar/index.js";
   import UserAvatar from "./user-avatar.svelte";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
   import LogOutIcon from "@lucide/svelte/icons/log-out";
   import UserIcon from "@lucide/svelte/icons/user";
-  import { api } from "$lib/api";
-  import { getI18n } from "$lib/i18n";
+  import { api } from "#lib/api.js";
+  import { getI18n } from "#lib/i18n/index.js";
   import type { SessionUser } from "../../app.d.ts";
 
   let { user }: { user: SessionUser } = $props();

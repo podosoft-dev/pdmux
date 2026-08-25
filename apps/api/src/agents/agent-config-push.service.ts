@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { ProductLogger } from "../logging/product-logger";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { HostGitRootsService } from "../hosts/host-git-roots.service";
 import { HostServicesService } from "../hosts/host-services.service";
@@ -29,9 +29,8 @@ import { AgentRegistryService } from "./agent-registry.service";
  * a second delivery path holding stale copies of a value the reconnect already
  * answers correctly.
  */
-@Injectable()
-export class AgentConfigPushService implements OnModuleInit {
-  private readonly logger = new Logger(AgentConfigPushService.name);
+export class AgentConfigPushService {
+  private readonly logger = new ProductLogger(AgentConfigPushService.name);
 
   constructor(
     private readonly settings: FleetSettingsService,
@@ -48,7 +47,7 @@ export class AgentConfigPushService implements OnModuleInit {
    * `setEnrollmentIssuer`: `AgentsModule` already imports both of those modules, so
    * the dependency only runs one way and no `forwardRef` is needed.
    */
-  onModuleInit(): void {
+  connect(): void {
     this.settings.setChangeListener((organizationId) => this.pushScope(organizationId));
     this.hostServices.setChangeListener((hostId, organizationId) =>
       this.pushHost(hostId, organizationId),

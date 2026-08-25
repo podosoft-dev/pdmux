@@ -1,15 +1,15 @@
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ExecResult } from "@pdmux/protocol";
 import { validate } from "class-validator";
 import { plainToInstance } from "class-transformer";
-import type { UserSession } from "@thallesp/nestjs-better-auth";
+import type { AuthSession } from "../auth/auth.service";
 import { AgentExecService } from "../agents/agent-exec.service";
 import { AppException } from "../common/app-exception";
 import { MuxCopyModeDto, MuxHistoryDto } from "./dto/terminal-mux.dto";
 import { TerminalMuxController } from "./terminal-mux.controller";
 
 const HOST = "11111111-2222-3333-4444-555555555555";
-const SESSION = { user: { id: "u1" }, session: { activeOrganizationId: "org-a" } } as unknown as UserSession;
+const SESSION = { user: { id: "u1" }, session: { activeOrganizationId: "org-a" } } as AuthSession;
 
 function ok(stdout = ""): ExecResult {
   return { commandId: "c", exitCode: 0, stdout, stderr: "", truncated: false, timedOut: false, code: null, message: "" };
@@ -22,7 +22,7 @@ function build(...results: ExecResult[]): {
   const calls: { organizationId: string; hostId: string; args: string[] }[] = [];
   const queue = [...results];
   const exec = {
-    run: jest.fn(async (organizationId: string, hostId: string, input: { command: string; args?: string[] }) => {
+    run: mock(async (organizationId: string, hostId: string, input: { command: string; args?: string[] }) => {
       calls.push({ organizationId, hostId, args: [input.command, ...(input.args ?? [])] });
       return queue.shift() ?? ok();
     }),

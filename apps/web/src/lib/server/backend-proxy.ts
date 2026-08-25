@@ -46,9 +46,7 @@ const RELAYED_RESPONSE_HEADERS = [
   "x-content-type-options",
 ];
 
-// The API's address and the client-IP spelling are shared with `server.js`, which
-// proxies the terminal upgrade outside the bundle and cannot import TypeScript.
-// Re-exported here so this module stays the one import site for the proxy boundary.
+// Re-export the API target and client-IP spelling so server routes share one boundary.
 export { backendBaseUrl, normalizeClientIp } from "./backend-target.js";
 import { normalizeClientIp } from "./backend-target.js";
 

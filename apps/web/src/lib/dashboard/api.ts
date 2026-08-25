@@ -8,7 +8,7 @@
  */
 import { ApiError } from "@podosoft/podokit-api-client";
 import type { CommitDetail, GitBlob, GitTree, WorkingDiff } from "@pdmux/protocol";
-import { api } from "$lib/api";
+import { api } from "#lib/api.js";
 import type { FsDirView } from "@pdmux/ui";
 import type {
   AgentEnrollmentView,

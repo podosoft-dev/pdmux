@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 /**
- * Token minting/hashing, kept free of Nest and TypeORM so the security-critical
+ * Token minting/hashing, kept free of the HTTP framework and TypeORM so the security-critical
  * rules can be unit-tested directly.
  */
 

@@ -1,14 +1,18 @@
 import "dotenv/config";
-import { NestFactory } from "@nestjs/core";
-import { WorkerModule } from "./jobs/worker.module";
+import { startWorkers } from "./jobs/worker.module";
 
-// Runs BullMQ processors in their own process (no HTTP server).
-async function bootstrap(): Promise<void> {
-  const app = await NestFactory.createApplicationContext(WorkerModule);
-  await app.init();
-  // Keep the process alive to consume jobs.
-  process.on("SIGINT", () => void app.close().then(() => process.exit(0)));
-  process.on("SIGTERM", () => void app.close().then(() => process.exit(0)));
+const runtime = awaitRuntime();
+
+async function awaitRuntime(): Promise<Awaited<ReturnType<typeof startWorkers>>> {
+  const started = await startWorkers();
+  for (const worker of started.workers) worker.on("failed", (job, error) => {
+    process.stderr.write(`Process job failed: ${job?.id ?? "unknown"} ${error.message}\n`);
+  });
+  return started;
 }
 
-void bootstrap();
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    void runtime.then((started) => started.close()).finally(() => process.exit(0));
+  });
+}

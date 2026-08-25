@@ -1,11 +1,11 @@
-import { ForbiddenException } from "@nestjs/common";
+import { AppException } from "@podosoft/podokit-contracts";
 
 /**
  * The parts of a session these helpers read.
  *
- * Structural rather than `UserSession` so the same rule serves both a Nest
- * request (where better-auth's type flows in) and the WebSocket upgrade path
- * (where the session is resolved by hand, off the request pipeline). One scope
+ * Structural rather than a framework session type so the same rule serves both an
+ * HTTP request and the WebSocket upgrade path (where the session is resolved before
+ * the socket is accepted). One scope
  * resolver, two entry points — the alternative is a second copy that drifts.
  */
 export interface ScopedSession {
@@ -32,7 +32,7 @@ export function resolveScopeId(session: ScopedSession): string {
   if (typeof userId === "string" && userId.length > 0) return `personal:${userId}`;
   // A session without a user cannot happen behind AuthGuard; failing closed here
   // means a future code path that forgets the guard cannot read another tenant.
-  throw new ForbiddenException("No organization scope for this session");
+  throw new AppException("FLEET_SCOPE_REQUIRED", "No organization scope for this session", 403);
 }
 
 /** App-level admin (the `admin` role from auth/permissions.ts), not an org role. */
@@ -79,7 +79,7 @@ export function isPersonalScope(session: ScopedSession): boolean {
 export function assertCanManageFleet(session: ScopedSession): void {
   if (isAdmin(session)) return;
   if (isPersonalScope(session)) return;
-  throw new ForbiddenException("Admins only");
+  throw new AppException("FLEET_ADMIN_REQUIRED", "Fleet administrator access is required", 403);
 }
 
 /**

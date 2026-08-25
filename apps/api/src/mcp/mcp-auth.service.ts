@@ -1,4 +1,3 @@
-import { Injectable } from "@nestjs/common";
 
 import { HostMcpKeysService, type McpIdentity } from "./host-mcp-keys.service";
 import { looksLikeMcpKey } from "./host-mcp-key.crypto";
@@ -17,7 +16,6 @@ export type McpCaller =
   | { kind: "host"; identity: McpIdentity }
   | { kind: "user"; identity: McpUserIdentity };
 
-@Injectable()
 export class McpAuthService {
   constructor(
     private readonly hostKeys: HostMcpKeysService,

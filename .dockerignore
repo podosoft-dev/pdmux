@@ -6,7 +6,10 @@ dist
 **/.svelte-kit
 .git
 *.log
-# A local `npm run build:agent` leaves ~30MB here. The image builds its own copy in
-# the `agent` stage, so shipping the host's would only bloat the build context — and
-# risk baking in whatever a developer happened to have lying around.
-apps/web/static/agent
+
+# Real environment files never enter a build context. The build stages copy the
+# whole repository, so an .env left here is baked into an image layer even when the
+# runtime stage does not copy it -- and getting-started tells you to create one.
+.env
+.env.*
+!.env.example
