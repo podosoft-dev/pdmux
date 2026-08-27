@@ -17,6 +17,11 @@ describe("release workflow", () => {
   test("[TC-PDHOST-024] preserves multi-architecture images and agent assets", () => {
     for (const fragment of [
       "bun-version: 1.4.0",
+      "workflow_dispatch:",
+      "releaseTag:",
+      "ref: ${{ inputs.releaseTag || github.ref }}",
+      "RELEASE_TAG: ${{ inputs.releaseTag || github.ref_name }}",
+      "Release tag must be a plain vX.Y.Z tag",
       "bun ci",
       "arch: amd64",
       "runner: ubuntu-latest",
@@ -32,9 +37,12 @@ describe("release workflow", () => {
       "pdmux-agent-*",
       "SHA256SUMS",
       "manifest.json",
+      "tag_name: ${{ needs.verify.outputs.tag }}",
     ]) {
       expect(workflow).toContain(fragment);
     }
+
+    expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(2);
 
     expect(workflow).not.toContain("secrets.REGISTRY_USERNAME");
     expect(workflow).not.toContain("secrets.REGISTRY_PASSWORD");
