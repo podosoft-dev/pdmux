@@ -104,10 +104,16 @@ test("admin can disable the MCP endpoint and restore it live", async ({ page }) 
 
   try {
     await setEnabled(true);
-    expect((await page.request.post("/mcp")).status()).toBe(401);
+    await expect(async () => {
+      expect((await page.request.post("/mcp")).status()).toBe(401);
+    }).toPass({ timeout: 5_000 });
 
     await setEnabled(false);
-    expect((await page.request.post("/mcp")).status()).toBe(404);
+    // The endpoint reads the database through a short cross-replica cache. Poll the
+    // externally visible contract instead of assuming this request hits the writer.
+    await expect(async () => {
+      expect((await page.request.post("/mcp")).status()).toBe(404);
+    }).toPass({ timeout: 5_000 });
   } finally {
     await setEnabled(original);
   }

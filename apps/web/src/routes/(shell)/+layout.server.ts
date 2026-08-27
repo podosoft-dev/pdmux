@@ -50,6 +50,22 @@ export const load: LayoutServerLoad = async ({ locals, url, fetch, request }) =>
   requireBackendAvailable(locals);
   if (!locals.user) redirect(303, `/login?redirect=${encodeURIComponent(url.pathname)}`);
 
+  // This product shell owns `/account`, so it does not pass through PodoKit's
+  // `(app)` layout where the enrolment redirect normally lives. Keep the API guard
+  // authoritative and provide the same UX here before protected shell calls are made.
+  const user = locals.user as App.Locals["user"] & { twoFactorEnabled?: boolean };
+  if (!user.twoFactorEnabled) {
+    let mustEnrol = false;
+    try {
+      const response = await fetch("/api/account/require-2fa");
+      mustEnrol = response.ok &&
+        ((await response.json()) as { require2fa?: boolean }).require2fa === true;
+    } catch {
+      // The backend guard still fails closed if the policy endpoint is unavailable.
+    }
+    if (mustEnrol) redirect(302, "/setup-2fa");
+  }
+
   const [hosts, prefs, fleet, scope] = await Promise.all([
     readJson<HostView[]>(fetch, "/api/hosts", []),
     readJson<PrefsView>(fetch, "/api/prefs", EMPTY_PREFS),

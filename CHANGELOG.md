@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 0.11.0
+
+- **The API now runs directly on Bun 1.4 and Elysia.** The NestJS and Node runtime layers
+  have been removed while the product's 60 HTTP routes, two WebSocket gateways, audit
+  events, authentication policies, OpenAPI contract, MCP surface, and host-agent protocol
+  remain covered by their existing contracts and replacement tests.
+- **The web application remains SvelteKit and now builds and runs on Bun.** The official
+  Bun adapter produces the self-hosted server, while Caddy owns production HTTP and the
+  exact `/agent/ws` and `/terminal/ws` upgrade routes. The browser-facing product shell and
+  account flows are unchanged.
+- **The generated foundation is updated to PodoKit 1.0.2.** Product-specific Dockerfiles,
+  the relocated account loader, and release automation are explicitly application-owned so
+  future toolkit updates cannot silently replace them.
+- **Releases are multi-architecture again.** Native amd64 and arm64 image builds are joined
+  into one GHCR manifest, and each GitHub Release carries all four agent binaries plus
+  `SHA256SUMS` and `manifest.json`. The workflow verifies that both image architectures and
+  the standalone assets contain identical agent bytes. Agent 0.1.23 accompanies this release.
+
 ## 0.10.0
 
 - **The file explorer is a table now.** Every row wears the icon of its file type — folders,

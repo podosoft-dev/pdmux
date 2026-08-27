@@ -1,44 +1,17 @@
-# Build and publish the release images for a tag.
+# Build and publish the release images and agent artifacts for a tag.
 #
-# `podo deploy` consumes images; it does not build them. This is the other half:
-# tagging a commit produces the two images that `podo deploy apply` then rolls out.
-# It stops at the push, because rolling out requires confirming a plan hash and that
-# approval belongs to a person.
+# `podo deploy` consumes images; it does not build them. Tagging a commit produces
+# the two images that `podo deploy apply` rolls out. The workflow stops at publish,
+# because rollout requires a person to approve the exact deployment plan hash.
 #
-# ── Which runner, and what it costs ──────────────────────────────────────────────
+# amd64 and arm64 are built on native GitHub-hosted runners. Each matrix job pushes
+# untagged image digests, and the publish job joins both digests into one manifest
+# tag. Publishing a tag from each architecture would let the last writer silently
+# replace the other architecture.
 #
-# GitHub-hosted runners are free for PUBLIC repositories only. In a PRIVATE
-# repository every minute is metered against the account's included Actions minutes
-# and billed beyond them -- and image builds are the most expensive job most
-# projects run. A self-hosted runner consumes no Actions minutes at all, whatever
-# the repository's visibility.
-#
-# So the runner is a variable rather than a constant:
-#
-#   PODOKIT_RUNNER   repository or organization variable, a JSON array of labels.
-#                    Unset -> ["ubuntu-latest"], which is right for a public
-#                    repository and costs money in a private one.
-#                    Self-hosted example: ["self-hosted","Linux","X64"]
-#
-# Set it before the first tag if this repository is private. Nothing here warns you
-# when you have not: the workflow succeeds either way, and the difference shows up
-# on a bill.
-#
-# ── The other two variables ──────────────────────────────────────────────────────
-#
-#   PODOKIT_DEPLOY_PROFILE   which .podokit/deploy/<name>.json names the image
-#                            repositories. Unset -> production.
-#   PODOKIT_IMAGE_PLATFORM   the architecture the deployment target runs.
-#                            Unset -> linux/amd64. Building for the wrong one
-#                            produces "exec format error" at rollout, after the
-#                            migration has already run.
-#
-# ── Secrets ──────────────────────────────────────────────────────────────────────
-#
-#   REGISTRY_USERNAME / REGISTRY_PASSWORD   credentials for the registry named by
-#   the profile. A robot or deploy account is enough, but note that some registries
-#   refuse to let a robot CREATE a repository -- push the first tag of a new
-#   repository with an account that can, or create it in the registry first.
+# The release also attaches the four host-agent binaries, SHA256SUMS, and the agent
+# manifest. Agents still download from the authenticated PDMUX server; the GitHub
+# assets are the public distribution surface for operators.
 
 name: release
 
@@ -52,11 +25,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  images:
-    # One job builds both images rather than a matrix of two. A self-hosted pool is
-    # usually small, and fanning out here takes runners away from every other
-    # repository that shares it for no wall-clock gain on a multi-core machine.
-    runs-on: ${{ fromJSON(vars.PODOKIT_RUNNER || '["ubuntu-latest"]') }}
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.profile.outputs.api }}
+      web: ${{ steps.profile.outputs.web }}
+      registry: ${{ steps.profile.outputs.registry }}
+      tag: ${{ steps.profile.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
 
@@ -66,10 +41,18 @@ jobs:
 
       - run: bun ci
 
-      # Verify before publishing. An image built from a commit that never passed is
-      # indistinguishable from one that did, once it is in the registry.
+      # Workspace packages expose their compiled entry points to the apps, so they
+      # must exist before lint resolves the workspace imports.
+      - name: Build packages
+        run: |
+          bun run --filter @pdmux/protocol build
+          bun run --filter @pdmux/core build
+          bun run --filter @pdmux/ui build
+          bun run --filter @pdmux/mcp build
+
       - run: bun run lint
       - run: bun run test
+      - run: bun run test:release-workflow
 
       - name: Read the release target from the deployment profile
         id: profile
@@ -88,8 +71,6 @@ jobs:
             if (!apiRepository || !webRepository) {
               throw new Error(`${path} does not declare release.apiRepository and release.webRepository.`);
             }
-            // Everything before the first slash is a registry host only when it
-            // looks like one; otherwise the reference is a Docker Hub short name.
             const first = apiRepository.split("/")[0];
             const registry = /[.:]/.test(first) ? first : "";
             const out = [
@@ -103,39 +84,160 @@ jobs:
         env:
           PROFILE: ${{ vars.PODOKIT_DEPLOY_PROFILE }}
 
+  build:
+    needs: verify
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
         with:
-          registry: ${{ steps.profile.outputs.registry }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          registry: ${{ needs.verify.outputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push the API image
+      # Push by digest so the architecture jobs cannot overwrite one shared tag.
+      - name: Build and push the API image by digest
+        id: api
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/api/Dockerfile
-          platforms: ${{ vars.PODOKIT_IMAGE_PLATFORM || 'linux/amd64' }}
-          push: true
-          tags: ${{ steps.profile.outputs.api }}:${{ steps.profile.outputs.tag }}
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,scope=api,mode=max
+          platforms: linux/${{ matrix.arch }}
+          provenance: false
+          outputs: type=image,name=${{ needs.verify.outputs.api }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=api-${{ matrix.arch }}
+          cache-to: type=gha,scope=api-${{ matrix.arch }},mode=max
 
-      - name: Build and push the web image
+      - name: Build and push the web image by digest
+        id: web
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/web/Dockerfile
-          platforms: ${{ vars.PODOKIT_IMAGE_PLATFORM || 'linux/amd64' }}
-          push: true
-          tags: ${{ steps.profile.outputs.web }}:${{ steps.profile.outputs.tag }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,scope=web,mode=max
+          platforms: linux/${{ matrix.arch }}
+          provenance: false
+          outputs: type=image,name=${{ needs.verify.outputs.web }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=web-${{ matrix.arch }}
+          cache-to: type=gha,scope=web-${{ matrix.arch }},mode=max
+
+      - name: Hand the digests to the publish job
+        run: |
+          mkdir -p /tmp/digests/api /tmp/digests/web
+          api='${{ steps.api.outputs.digest }}'
+          web='${{ steps.web.outputs.digest }}'
+          [ -n "$api" ] && [ -n "$web" ] || { echo "::error::build-push-action reported no digest"; exit 1; }
+          touch "/tmp/digests/api/${api#sha256:}" "/tmp/digests/web/${web#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [verify, build]
+    permissions:
+      contents: write
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digests-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ needs.verify.outputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Join the per-architecture digests into one tag
+        run: |
+          set -euo pipefail
+          tag='${{ needs.verify.outputs.tag }}'
+          join() {
+            local repo="$1" dir="/tmp/digests/$2" refs=()
+            for d in "$dir"/*; do refs+=("${repo}@sha256:$(basename "$d")"); done
+            [ "${#refs[@]}" -eq 2 ] || { echo "::error::expected 2 digests for $repo, found ${#refs[@]}"; exit 1; }
+            docker buildx imagetools create -t "${repo}:${tag}" "${refs[@]}"
+            docker buildx imagetools inspect "${repo}:${tag}"
+          }
+          join '${{ needs.verify.outputs.api }}' api
+          join '${{ needs.verify.outputs.web }}' web
+
+      - name: Set up Go for the agent build
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache: false
+
+      - name: Build the agent binaries
+        id: agent
+        run: |
+          bun tools/build-agent-binaries.mjs
+          version="$(sed -nE 's/^[[:space:]]*(var|const)[[:space:]]+AgentVersion[[:space:]]*=[[:space:]]*"([^"]*)".*/\2/p' agent/internal/cli/version.go)"
+          [ -n "$version" ] || { echo "::error file=agent/internal/cli/version.go::Could not read AgentVersion."; exit 1; }
+          dir="apps/web/static/agent/$version"
+          [ -d "$dir" ] || { echo "::error::build-agent-binaries.mjs produced no $dir"; exit 1; }
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Agent $version" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^/    /' "$dir/SHA256SUMS" >> "$GITHUB_STEP_SUMMARY"
+
+      # A version must identify identical bytes whether the web image is amd64,
+      # arm64, or the standalone GitHub release asset.
+      - name: Check both architectures carry the same agent binaries
+        run: |
+          set -euo pipefail
+          web='${{ needs.verify.outputs.web }}:${{ needs.verify.outputs.tag }}'
+          version='${{ steps.agent.outputs.version }}'
+          for arch in amd64 arm64; do
+            docker pull -q --platform "linux/$arch" "$web"
+            cid="$(docker create --platform "linux/$arch" "$web")"
+            docker cp "$cid:/app/apps/web/build/client/agent/$version/SHA256SUMS" "/tmp/sums-$arch"
+            docker rm -f "$cid" >/dev/null
+          done
+          if ! diff -u "/tmp/sums-amd64" "/tmp/sums-arm64"; then
+            echo "::error::The two architectures' web images carry different agent $version binaries."
+            exit 1
+          fi
+          if ! diff -u "/tmp/sums-amd64" "${{ steps.agent.outputs.dir }}/SHA256SUMS"; then
+            echo "::error::The release assets differ from the agent $version binaries inside the images."
+            exit 1
+          fi
+          echo "Agent $version is identical in both images and in the release assets." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach agent artifacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.agent.outputs.dir }}/pdmux-agent-*
+            ${{ steps.agent.outputs.dir }}/SHA256SUMS
+            ${{ steps.agent.outputs.dir }}/manifest.json
 
       - name: Report what to deploy
         run: |
-          echo "Pushed ${{ steps.profile.outputs.api }}:${{ steps.profile.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Pushed ${{ steps.profile.outputs.web }}:${{ steps.profile.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed ${{ needs.verify.outputs.api }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed ${{ needs.verify.outputs.web }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo 'Roll out with `podo deploy plan --profile <name> --release ${{ steps.profile.outputs.tag }}`, then apply the printed hash.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Roll out with `podo deploy plan --profile <name> --release ${{ needs.verify.outputs.tag }}`, then apply the printed hash.' >> "$GITHUB_STEP_SUMMARY"

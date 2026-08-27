@@ -18,12 +18,12 @@ test("landing shows language, theme, and signed-in account actions", async ({ pa
   await expect(language.locator("svg")).toBeVisible();
   await expect(theme).toBeVisible();
   await expect(theme.locator("svg:visible")).toBeVisible();
-  await page.getByTestId("account-menu").click();
-  const label = page.getByRole("menu").locator('[data-slot="dropdown-menu-label"]');
+  await page.getByTestId("shell-user").click();
+  const label = page.getByTestId("shell-user-identity");
   await expect(label.getByText(ADMIN.name, { exact: true })).toBeVisible();
   await expect(label.getByText(ADMIN.email, { exact: true })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Account" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Sign out" })).toBeVisible();
+  await expect(page.getByTestId("shell-user-account")).toBeVisible();
+  await expect(page.getByTestId("shell-user-signout")).toBeVisible();
 });
 
 test("sidebar navigates to sessions and account @smoke", async ({ page }) => {

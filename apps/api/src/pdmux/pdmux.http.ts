@@ -109,7 +109,11 @@ async function audit<T>(
 ): Promise<T> {
   const result = await operation();
   await services.audit.recordRequest(action, request, session, target(result));
-  return result;
+  // Elysia treats class instances as text responses. TypeORM entities therefore
+  // became "[object Object]" at this boundary even though arrays of the same rows
+  // serialized as JSON. HTTP has no class prototypes, so normalize audited results
+  // to their actual wire representation before Elysia chooses a response mapper.
+  return JSON.parse(JSON.stringify(result)) as T;
 }
 
 async function sessionFor(services: PdmuxServices, request: Request): Promise<AuthSession> {

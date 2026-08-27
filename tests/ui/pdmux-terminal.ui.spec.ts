@@ -79,10 +79,28 @@ async function restoreLayout(
   request: import("@playwright/test").APIRequestContext,
   saved: SavedLayout | null,
 ): Promise<void> {
-  if (!saved) return;
-  await request.put(`/api/prefs/layouts/${encodeURIComponent(saved.name)}`, {
+  if (!saved) {
+    const response = await request.delete("/api/prefs/layouts/default");
+    expect(response.ok(), "remove the layout created by the test").toBeTruthy();
+    return;
+  }
+  const response = await request.put(`/api/prefs/layouts/${encodeURIComponent(saved.name)}`, {
     data: { payload: saved.payload, isDefault: saved.isDefault },
   });
+  expect(response.ok(), "restore the layout captured before the test").toBeTruthy();
+}
+
+async function ensureGridPane(page: Page, host: HostRow): Promise<ReturnType<Page["locator"]>> {
+  const panes = page.locator("[data-pdmux-pane]:not([hidden])");
+  if ((await panes.count()) === 0) {
+    await page.locator("[data-testid='add-terminal']").click();
+    const picker = page.locator("[data-pdmux-popover='target-picker']");
+    await expect(picker).toBeVisible();
+    await picker.locator(`[data-pdmux-host='${host.id}']`).click();
+    await picker.locator("[data-pdmux-action='new']").click();
+  }
+  await expect(panes.first()).toBeVisible();
+  return panes.first();
 }
 
 // Its own account, host and agent (see `E2E_ADMIN`): these specs write the dashboard
@@ -132,19 +150,9 @@ test.describe("pdmux terminal", () => {
     if (!host) return;
 
     await ready(page, "/");
-    const panes = page.locator("[data-pdmux-pane]:not([hidden])");
-    if ((await panes.count()) === 0) {
-      // Nothing assigned yet: pick a target through the picker, the same way a user
-      // fills an empty cell.
-      await page.locator("[data-testid='add-terminal']").click();
-      const picker = page.locator("[data-pdmux-popover='target-picker']");
-      await expect(picker).toBeVisible();
-      await picker.locator(`[data-pdmux-host='${host.id}']`).click();
-      await picker.locator("[data-pdmux-action='new']").click();
-    }
-    await expect(panes.first()).toBeVisible();
-    await expectOnScreen(panes.first(), "grid pane");
-    await expect(panes.first().locator("[data-pdmux-surface] .xterm-rows")).toBeVisible({ timeout: 15_000 });
+    const pane = await ensureGridPane(page, host);
+    await expectOnScreen(pane, "grid pane");
+    await expect(pane.locator("[data-pdmux-surface] .xterm-rows")).toBeVisible({ timeout: 15_000 });
     await expectViewportBound(page);
   });
 
@@ -156,7 +164,7 @@ test.describe("pdmux terminal", () => {
     const saved = await captureLayout(request);
     await ready(page, "/");
     const panes = page.locator("[data-pdmux-pane]:not([hidden])");
-    await expect(panes.first()).toBeVisible();
+    await ensureGridPane(page, host);
 
     // Identify the pane by its slot id and assert on THAT one. Counting panes is a
     // moving baseline — neighbours finish mounting while this test runs — and a count
@@ -195,8 +203,6 @@ test.describe("pdmux terminal", () => {
     // multiplexer sessions, so a teardown that grabs one attaches a pane to somebody's
     // live work — which is how this suite ended up typing into a session it did not own.
     await restoreLayout(request, saved);
-    await ready(page, "/");
-    await expect(panes.first()).toBeVisible();
   });
 
   test("[TC-PDUI-142] the focused pane is marked on its frame, not over the terminal", async ({ page, request }) => {
@@ -548,8 +554,7 @@ test.describe("pdmux terminal", () => {
     // Retarget an existing cell rather than adding one: the grid is usually full, and
     // then "add terminal" has no cell to fill and quietly does nothing. The layout
     // captured above is put back at the end, so borrowing a cell costs the user nothing.
-    const firstPane = page.locator("[data-pdmux-pane]:not([hidden])").first();
-    await expect(firstPane).toBeVisible();
+    const firstPane = await ensureGridPane(page, host);
     await firstPane.locator("[data-pdmux-retarget]").click();
     const picker = page.locator("[data-pdmux-popover='target-picker']");
     await expect(picker).toBeVisible();

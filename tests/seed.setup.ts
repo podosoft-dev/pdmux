@@ -1,10 +1,14 @@
 import { test as setup, expect } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { chmod, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   ADMIN,
+  E2E_ADMIN,
   USER,
   adminState,
+  e2eAdminState,
+  e2eAgentToken,
   userState,
   userBaselineState,
   type Account,
@@ -12,6 +16,13 @@ import {
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 mkdirSync(dirname(adminState), { recursive: true });
+
+/** The label the e2e host is registered under, so repeated runs reuse it. */
+const E2E_HOST_LABEL = "pdmux-e2e-host";
+/** Offline filler cards make the sidebar overflow contract observable. */
+const FILLER_HOSTS = 11;
+/** The checkout the git specs read. A runner elsewhere can point at its own checkout. */
+const E2E_GIT_ROOT = process.env.E2E_GIT_ROOT ?? process.cwd().replace(/\/tests$/, "");
 
 type StorageState = Awaited<
   ReturnType<import("@playwright/test").APIRequestContext["storageState"]>
@@ -83,6 +94,47 @@ setup("enable optional features", async ({ playwright }) => {
 
 setup("seed user session", async ({ playwright }) => {
   await seedSession(playwright, USER, userState);
+});
+
+/**
+ * Seed an account, host and token used only by the pdmux product specs.
+ *
+ * Fleet rows are account-scoped, so the isolated account must own the live host used by
+ * terminal, git and MCP tests. The token is written once for the local agent process that
+ * the e2e runner starts after setup.
+ */
+setup("seed pdmux e2e host", async ({ playwright }) => {
+  await seedSession(playwright, E2E_ADMIN, e2eAdminState);
+  const ctx = await playwright.request.newContext({
+    baseURL: base,
+    extraHTTPHeaders: { origin: base },
+    storageState: e2eAdminState,
+  });
+  const existing = (await (await ctx.get("/api/hosts")).json()) as { id: string; label: string }[];
+  const host =
+    existing.find((entry) => entry.label === E2E_HOST_LABEL) ??
+    ((await (
+      await ctx.post("/api/hosts", { data: { label: E2E_HOST_LABEL, address: "127.0.0.1" } })
+    ).json()) as { id: string });
+  expect(host?.id, "register the e2e host").toBeTruthy();
+
+  const minted = (await (
+    await ctx.post(`/api/hosts/${host.id}/tokens`, { data: { name: "e2e" } })
+  ).json()) as { token?: string };
+  if (minted.token) {
+    await writeFile(e2eAgentToken, minted.token, { encoding: "utf8", mode: 0o600 });
+    await chmod(e2eAgentToken, 0o600);
+  }
+
+  await ctx.put("/api/fleet/settings", { data: { gitRoots: [E2E_GIT_ROOT], gitIntervalSec: 30 } });
+
+  const labels = new Set(existing.map((entry) => entry.label));
+  for (let index = 0; index < FILLER_HOSTS; index += 1) {
+    const label = `${E2E_HOST_LABEL}-filler-${index}`;
+    if (labels.has(label)) continue;
+    await ctx.post("/api/hosts", { data: { label, address: "127.0.0.1" } });
+  }
+  await ctx.dispose();
 });
 
 setup("capture the user cleanup baseline", async ({ playwright }) => {

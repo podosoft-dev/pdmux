@@ -42,11 +42,11 @@ export function createPdmuxWsPlugin(gateway: PdmuxGateway): AppPlugin {
             return;
           }
           agentContexts.delete(ws.data.request);
-          await gateway.openAgent(ws, context);
+          await gateway.openAgent(ws.raw, context);
         },
-        message: (ws, message) => gateway.agentMessage(ws, message),
-        pong: (ws) => gateway.agentPong(ws),
-        close: (ws) => gateway.agentClose(ws),
+        message: (ws, message) => gateway.agentMessage(ws.raw, message),
+        pong: (ws) => gateway.agentPong(ws.raw),
+        close: (ws) => gateway.agentClose(ws.raw),
       })
       .ws(TERMINAL_WS_PATH, {
         beforeHandle: async ({ request }) => {
@@ -64,12 +64,12 @@ export function createPdmuxWsPlugin(gateway: PdmuxGateway): AppPlugin {
             return;
           }
           terminalContexts.delete(ws.data.request);
-          gateway.openTerminal(ws, context);
+          gateway.openTerminal(ws.raw, context);
         },
-        message: (ws, message) => gateway.terminalMessage(ws, message),
-        drain: (ws) => gateway.terminalDrain(ws),
-        pong: (ws) => gateway.terminalPong(ws),
-        close: (ws, code, reason) => gateway.terminalClose(ws, code, reason),
+        message: (ws, message) => gateway.terminalMessage(ws.raw, message),
+        drain: (ws) => gateway.terminalDrain(ws.raw),
+        pong: (ws) => gateway.terminalPong(ws.raw),
+        close: (ws, code, reason) => gateway.terminalClose(ws.raw, code, reason),
       });
   };
 }
