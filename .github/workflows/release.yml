@@ -16,12 +16,18 @@
 name: release
 
 on:
+  workflow_dispatch:
+    inputs:
+      releaseTag:
+        description: Existing release tag to rebuild idempotently
+        required: true
+        type: string
   push:
     tags:
       - "v*.*.*"
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.releaseTag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -34,6 +40,8 @@ jobs:
       tag: ${{ steps.profile.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.releaseTag || github.ref }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -73,16 +81,21 @@ jobs:
             }
             const first = apiRepository.split("/")[0];
             const registry = /[.:]/.test(first) ? first : "";
+            const releaseTag = process.env.RELEASE_TAG ?? "";
+            if (!/^v\d+\.\d+\.\d+$/.test(releaseTag)) {
+              throw new Error(`Release tag must be a plain vX.Y.Z tag, received ${releaseTag || "nothing"}.`);
+            }
             const out = [
               `api=${apiRepository}`,
               `web=${webRepository}`,
               `registry=${registry}`,
-              `tag=${process.env.GITHUB_REF_NAME}`,
+              `tag=${releaseTag}`,
             ].join("\n");
             process.stdout.write(out + "\n");
           ' >> "$GITHUB_OUTPUT"
         env:
           PROFILE: ${{ vars.PODOKIT_DEPLOY_PROFILE }}
+          RELEASE_TAG: ${{ inputs.releaseTag || github.ref_name }}
 
   build:
     needs: verify
@@ -99,6 +112,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.releaseTag || github.ref }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -156,6 +171,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.releaseTag || github.ref }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -170,6 +187,10 @@ jobs:
           registry: ${{ needs.verify.outputs.registry }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
 
       - name: Join the per-architecture digests into one tag
         run: |
@@ -230,6 +251,7 @@ jobs:
       - name: Attach agent artifacts to the release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.verify.outputs.tag }}
           files: |
             ${{ steps.agent.outputs.dir }}/pdmux-agent-*
             ${{ steps.agent.outputs.dir }}/SHA256SUMS
