@@ -11,7 +11,7 @@ that keep those promises.
 
 | Line | Source of truth | Today | When it moves |
 |---|---|---|---|
-| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.10.0` | every product release |
+| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.11.0` | every product release |
 | **The agent** | `AgentVersion` in `agent/internal/cli/version.go` | `0.1.23` | only when `agent/**` or `packages/protocol/**` changes |
 
 **Why they are not one number**: the agent is not something we deploy — it is something a
@@ -125,6 +125,9 @@ Builds all four with `bun run build:agent`, then:
    `manifest.json`.
 2. Runs `sha256sum -c SHA256SUMS`, then `diff`s the hash list in `manifest.json` against
    `SHA256SUMS`.
+3. Compares the generated checksums and manifest with the committed metadata, ignoring only
+   `builtAt`. This prevents a checkout or development build from serving an older binary while
+   tagged images quietly rebuild the current source.
 
 The first is not a hypothetical. While `AgentVersion` was a **`const`**, the linker's
 `-ldflags -X` **silently did nothing** — `-X` only works on string *variables*. The
