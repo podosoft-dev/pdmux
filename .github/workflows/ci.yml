@@ -50,6 +50,9 @@ jobs:
       - name: unit tests
         run: bun run --workspaces --if-present test
 
+      - name: release workflow
+        run: bun run test:release-workflow
+
       # ⚠ A COMMITTED GENERATED FILE GOING STALE IS SILENT, AND THIS JOB IS WHERE IT
       # STOPS. `AGENT_GO.md` used to say these two ran here; they did not, and the
       # conformance corpus was stale from the moment `fsPut`/`fsDelete`/`fsGet` were
@@ -188,6 +191,22 @@ jobs:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
 
+      # Keep the committed checkout metadata before the builder replaces the
+      # directory. `builtAt` is intentionally volatile; every artifact promise is not.
+      - name: Capture committed agent metadata
+        id: release
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^var AgentVersion = "\(.*\)"$/\1/p' agent/internal/cli/version.go)
+          if [ -z "$version" ]; then
+            echo "::error file=agent/internal/cli/version.go::cannot read AgentVersion"
+            exit 1
+          fi
+          dir="apps/web/static/agent/${version}"
+          git show HEAD:"$dir/SHA256SUMS" > /tmp/committed-agent-sums
+          git show HEAD:"$dir/manifest.json" | jq 'del(.builtAt)' > /tmp/committed-agent-manifest
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
       # Not part of `bun run build`: the other jobs have no Go toolchain. This is the
       # one place the four release artifacts are actually produced in CI, so it is
       # also the only place their honesty can be checked.
@@ -199,29 +218,6 @@ jobs:
       # and updates again — forever. It is silent at build time because `-ldflags -X`
       # says nothing when it fails to apply (it cannot write a `const`, only a `var`),
       # which is exactly how this was found.
-      # The release directory keeps EVERY published version -- a version that is
-      # deleted can no longer be named by an intentional downgrade. So `find` here
-      # returned one path only until the second release was committed, and then
-      # returned three and handed jq a filename with newlines in it. This job had
-      # failed on that ever since, which meant both honesty checks were dead exactly
-      # when they mattered. Address the one directory this build just wrote, named by
-      # the same source the build script reads.
-      - name: locate the release this build produced
-        id: release
-        run: |
-          set -euo pipefail
-          version=$(sed -n 's/^var AgentVersion = "\(.*\)"$/\1/p' agent/internal/cli/version.go)
-          if [ -z "$version" ]; then
-            echo "::error file=agent/internal/cli/version.go::cannot read AgentVersion"
-            exit 1
-          fi
-          dir="apps/web/static/agent/${version}"
-          if [ ! -f "$dir/manifest.json" ]; then
-            echo "::error::bun run build:agent did not write ${dir}/manifest.json"
-            exit 1
-          fi
-          echo "dir=$dir" >> "$GITHUB_OUTPUT"
-
       - name: the shipped binary reports the version the manifest promises
         run: |
           set -euo pipefail
@@ -248,3 +244,17 @@ jobs:
           sha256sum -c SHA256SUMS
           jq -r '.artifacts[] | "\(.sha256)  \(.path | split("/") | last)"' manifest.json > manifest.sums
           diff SHA256SUMS manifest.sums
+
+      - name: committed agent metadata matches this source
+        run: |
+          set -euo pipefail
+          dir='${{ steps.release.outputs.dir }}'
+          if ! diff -u /tmp/committed-agent-sums "$dir/SHA256SUMS"; then
+            echo "::error file=${dir}/SHA256SUMS::Committed agent checksums differ from this source. Run bun run build:agent with Go from agent/go.mod and commit the generated metadata."
+            exit 1
+          fi
+          jq 'del(.builtAt)' "$dir/manifest.json" > /tmp/generated-agent-manifest
+          if ! diff -u /tmp/committed-agent-manifest /tmp/generated-agent-manifest; then
+            echo "::error file=${dir}/manifest.json::Committed agent manifest differs from this source. Run bun run build:agent with Go from agent/go.mod and commit the generated metadata."
+            exit 1
+          fi

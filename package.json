@@ -21,6 +21,7 @@
     "build": "bun run --workspaces --if-present build",
     "lint": "bun run --workspaces --if-present lint",
     "test": "bun run --workspaces --if-present test",
+    "test:release-workflow": "bun test apps/api/src/release-workflow.spec.ts",
     "test:e2e": "bun run --cwd tests test:e2e",
     "test:e2e:ui": "bun run --cwd tests test:e2e:ui",
     "test:e2e:api": "bun run --cwd tests test:e2e:api",
