@@ -49,7 +49,7 @@ test("account displays profile image limits and updates every avatar", async ({ 
   await expect(page.getByTestId("profile-image-preview").locator("img")).toBeVisible();
 
   await ready(page, "/");
-  await expect(page.getByTestId("account-menu").locator("img")).toBeVisible();
+  await expect(page.getByTestId("shell-user").locator("img")).toBeVisible();
   await ready(page, "/admin");
   await expect(page.getByTestId("sidebar-user-menu").locator("img")).toBeVisible();
 

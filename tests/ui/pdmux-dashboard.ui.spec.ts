@@ -1168,6 +1168,7 @@ test("[TC-PDUI-203] the commit list keeps its width when the branch panel opens"
     }),
   );
 
+  await resetDock(page.request);
   await page.goto("/");
   await page.waitForSelector("[data-testid='commit-dock']");
   await page.waitForSelector(".pdmux-graph-list");
@@ -1271,6 +1272,7 @@ async function withFabricatedCommit(page: Page): Promise<void> {
       },
     });
   });
+  await resetDock(page.request);
   await page.goto("/");
   await page.waitForSelector("[data-testid='commit-dock']");
   await page.locator(".pdmux-graph-row").first().click();
@@ -1451,6 +1453,7 @@ test("[TC-PDUI-207] fetches a commit’s file listing only when that face is ope
     });
   });
 
+  await resetDock(page.request);
   await page.goto("/");
   await page.waitForSelector("[data-testid='commit-dock']");
   await page.locator(".pdmux-graph-row").first().click();
@@ -1552,6 +1555,7 @@ test("[TC-PDUI-207] gives up on an unanswerable listing instead of asking foreve
     });
   });
 
+  await resetDock(page.request);
   await page.goto("/");
   await page.waitForSelector("[data-testid='commit-dock']");
   await page.locator(".pdmux-graph-row").first().click();
@@ -1583,6 +1587,7 @@ test("[TC-PDUI-207] gives up on an unanswerable listing instead of asking foreve
  */
 test("[TC-PDUI-206] the phone tab bar is not drawn at desktop width", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
+  await resetDock(page.request);
   await page.goto("/");
   await page.waitForSelector("[data-testid='commit-dock']");
 

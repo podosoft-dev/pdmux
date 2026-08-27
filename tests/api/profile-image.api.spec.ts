@@ -3,6 +3,9 @@ import { ADMIN } from "../helpers/accounts";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
+const expectedImageCache = process.env.E2E_DEV_SERVER === "1"
+  ? "no-cache"
+  : "public, max-age=31536000, immutable";
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADAQMAAACDJEzCAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURWYzmf///129H+IAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gcVCSUTzXBDTwAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNy0yMVQwOTozNzoxOSswMDowMOuehLIAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDctMjFUMDk6Mzc6MTkrMDA6MDCawzwOAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA3LTIxVDA5OjM3OjE5KzAwOjAwzdYd0QAAAAtJREFUCNdjYAABAAAGAAFm9MlsAAAAAElFTkSuQmCC",
   "base64",
@@ -47,7 +50,7 @@ test("profile image upload, replacement, public read, and removal", async ({ pla
   const firstImage = await admin.get(firstBody.image);
   expect(firstImage.ok()).toBeTruthy();
   expect(firstImage.headers()["content-type"]).toContain("image/png");
-  expect(firstImage.headers()["cache-control"]).toBe("public, max-age=31536000, immutable");
+  expect(firstImage.headers()["cache-control"]).toBe(expectedImageCache);
 
   const replacement = await admin.post("/api/account/profile-image", {
     multipart: { file: { name: "replacement.png", mimeType: "image/png", buffer: PNG } },

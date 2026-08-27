@@ -14,7 +14,11 @@ const REDIRECT = "https://example.com/callback";
 // docs/modules.md for the manual round-trip checklist.
 test("OIDC provider: discovery, JWKS, client registration, authorize handoff", async ({ page, baseURL }) => {
   const headers = { origin: baseURL ?? "" };
-  await page.request.put("/api/account/settings", { data: { oidcProvider: true }, headers });
+  const enabled = await page.request.put("/api/account/settings", {
+    data: { oidcProvider: true },
+    headers,
+  });
+  expect(enabled.ok(), await enabled.text()).toBeTruthy();
   await expect
     .poll(async () => (await page.request.get("/api/auth/.well-known/openid-configuration")).status(), { timeout: 8000 })
     .toBe(200);
@@ -61,6 +65,10 @@ test("OIDC provider: discovery, JWKS, client registration, authorize handoff", a
     await page.goto(consentUrl);
     await expect(page.getByRole("button", { name: "Allow" })).toBeVisible();
   } finally {
-    await page.request.put("/api/account/settings", { data: { oidcProvider: false }, headers });
+    const disabled = await page.request.put("/api/account/settings", {
+      data: { oidcProvider: false },
+      headers,
+    });
+    expect(disabled.ok(), await disabled.text()).toBeTruthy();
   }
 });
