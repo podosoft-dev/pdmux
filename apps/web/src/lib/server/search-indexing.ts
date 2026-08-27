@@ -1,4 +1,5 @@
 const NON_INDEXABLE_PATH_PREFIXES = [
+  "/",
   "/api",
   "/admin",
   "/account",

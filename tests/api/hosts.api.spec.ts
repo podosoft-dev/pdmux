@@ -91,4 +91,34 @@ test.describe("[TC-PDADMIN-021] a member registers their own machine", () => {
     expect(res.ok(), await res.text()).toBeTruthy();
     expect(await res.json()).toEqual({ personal: true, canManage: true });
   });
+
+  test("returns a created service as JSON and lists it immediately", async ({ playwright }) => {
+    const member = await signedIn(playwright, USER);
+    const created = await member.post("/api/hosts", {
+      data: { label: `service-host-${Date.now()}`, tags: [] },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const host = (await created.json()) as { id: string };
+
+    try {
+      const response = await member.post(`/api/hosts/${host.id}/services`, {
+        data: { label: "api", port: 5002, probe: "tcp", path: "/" },
+      });
+      expect(response.status(), await response.text()).toBe(201);
+      expect(response.headers()["content-type"]).toContain("application/json");
+      expect((await response.json()) as { label: string; port: number }).toMatchObject({
+        label: "api",
+        port: 5002,
+      });
+
+      const listed = await member.get(`/api/hosts/${host.id}/services`);
+      expect(listed.ok(), await listed.text()).toBeTruthy();
+      expect((await listed.json()) as { label: string }[]).toEqual([
+        expect.objectContaining({ label: "api" }),
+      ]);
+    } finally {
+      await member.delete(`/api/hosts/${host.id}`);
+      await member.dispose();
+    }
+  });
 });

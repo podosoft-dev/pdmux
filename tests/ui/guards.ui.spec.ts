@@ -11,13 +11,10 @@ test.describe("unauthenticated", () => {
   });
 
   test("private and authentication routes prevent search indexing", async ({ request }) => {
-    for (const route of ["/admin", "/account", "/login", "/api/account/me"]) {
+    for (const route of ["/", "/admin", "/account", "/login", "/api/account/me"]) {
       const response = await request.get(route, { maxRedirects: 0 });
       expect(response.headers()["x-robots-tag"]).toBe("noindex, nofollow");
     }
-
-    const landing = await request.get("/");
-    expect(landing.headers()["x-robots-tag"]).toBeUndefined();
   });
 });
 
