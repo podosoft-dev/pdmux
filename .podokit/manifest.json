@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "podokitVersion": "1.0.1",
+  "podokitVersion": "1.0.2",
   "template": "fullstack",
   "toolchain": {
     "runtime": "bun",
@@ -117,7 +117,22 @@
     ".env.docker",
     "infra/traefik/**",
     ".podokit/dev.json",
-    "tests/playwright.projects.cjs"
+    "tests/playwright.projects.cjs",
+    ".github/workflows/release.yml",
+    "apps/api/Dockerfile",
+    "apps/web/Dockerfile",
+    "apps/web/src/routes/account/+page.server.ts",
+    "tests/helpers/accounts.ts",
+    "tests/seed.setup.ts",
+    "tests/api/rate-limit.api.spec.ts",
+    "tests/api/profile-image.api.spec.ts",
+    "tests/helpers/hydration.ts",
+    "tests/ui/account.ui.spec.ts",
+    "tests/ui/dashboard.ui.spec.ts",
+    "tests/ui/guards.ui.spec.ts",
+    "apps/web/src/lib/server/search-indexing.ts",
+    "tests/ui/settings.ui.spec.ts",
+    "tests/ui/smoke.ui.spec.ts"
   ],
   "managedOverrides": [
     "apps/web/src/lib/components/ui/input/input.svelte",
