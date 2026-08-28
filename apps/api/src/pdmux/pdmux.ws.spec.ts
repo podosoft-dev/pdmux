@@ -22,10 +22,23 @@ function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
   });
 }
 
+function pingSocket(socket: unknown): void {
+  if (
+    typeof socket !== "object" ||
+    socket === null ||
+    !("ping" in socket) ||
+    typeof socket.ping !== "function"
+  ) {
+    throw new Error("WebSocket transport did not expose a ping method");
+  }
+  socket.ping();
+}
+
 describe("PDMUX WebSocket transport", () => {
   it("[TC-PDAGENT-059] uses the stable Bun socket across agent lifecycle callbacks", async () => {
-    const openAgent = mock(async (_socket: unknown, _context: unknown) => undefined);
+    const openAgent = mock(async (socket: unknown, _context: unknown) => pingSocket(socket));
     const agentMessage = mock((_socket: unknown, _message: unknown) => undefined);
+    const agentPong = mock((_socket: unknown) => undefined);
     const agentClose = mock((_socket: unknown) => undefined);
     const gateway = {
       authorizeAgent: mock(async () => ({
@@ -37,7 +50,7 @@ describe("PDMUX WebSocket transport", () => {
       })),
       openAgent,
       agentMessage,
-      agentPong: mock(() => undefined),
+      agentPong,
       agentClose,
       authorizeTerminal: mock(async () => {
         throw new Error("unexpected terminal authorization");
@@ -61,11 +74,13 @@ describe("PDMUX WebSocket transport", () => {
         });
       });
       await waitFor(() => agentMessage.mock.calls.length === 1);
+      await waitFor(() => agentPong.mock.calls.length === 1);
       socket.close();
       await waitFor(() => agentClose.mock.calls.length === 1);
 
       expect(openAgent).toHaveBeenCalledTimes(1);
       expect(agentMessage.mock.calls[0]?.[0]).toBe(openAgent.mock.calls[0]?.[0]);
+      expect(agentPong.mock.calls[0]?.[0]).toBe(openAgent.mock.calls[0]?.[0]);
       expect(agentClose.mock.calls[0]?.[0]).toBe(openAgent.mock.calls[0]?.[0]);
       expect(agentMessage.mock.calls[0]?.[1]).toEqual({ type: "hello", version: "0.1.23" });
     } finally {
@@ -75,8 +90,9 @@ describe("PDMUX WebSocket transport", () => {
   });
 
   it("[TC-PDTERM-057] uses the stable Bun socket across terminal lifecycle callbacks", async () => {
-    const openTerminal = mock((_socket: unknown, _context: unknown) => undefined);
+    const openTerminal = mock((socket: unknown, _context: unknown) => pingSocket(socket));
     const terminalMessage = mock((_socket: unknown, _message: unknown) => undefined);
+    const terminalPong = mock((_socket: unknown) => undefined);
     const terminalClose = mock((_socket: unknown, _code: number, _reason: string) => undefined);
     const gateway = {
       authorizeAgent: mock(async () => {
@@ -96,7 +112,7 @@ describe("PDMUX WebSocket transport", () => {
       openTerminal,
       terminalMessage,
       terminalDrain: mock(() => undefined),
-      terminalPong: mock(() => undefined),
+      terminalPong,
       terminalClose,
     } as unknown as PdmuxGateway;
     const app = new Elysia()
@@ -117,11 +133,13 @@ describe("PDMUX WebSocket transport", () => {
         });
       });
       await waitFor(() => terminalMessage.mock.calls.length === 1);
+      await waitFor(() => terminalPong.mock.calls.length === 1);
       socket.close();
       await waitFor(() => terminalClose.mock.calls.length === 1);
 
       expect(openTerminal).toHaveBeenCalledTimes(1);
       expect(terminalMessage.mock.calls[0]?.[0]).toBe(openTerminal.mock.calls[0]?.[0]);
+      expect(terminalPong.mock.calls[0]?.[0]).toBe(openTerminal.mock.calls[0]?.[0]);
       expect(terminalClose.mock.calls[0]?.[0]).toBe(openTerminal.mock.calls[0]?.[0]);
       expect(terminalMessage.mock.calls[0]?.[1]).toEqual({
         type: "resize",

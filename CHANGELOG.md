@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 0.11.5
+
+- **Idle terminal WebSockets now survive the server heartbeat sweep.** Elysia passes Bun's raw
+  socket directly to `pong` callbacks at runtime, so the transport normalizes raw sockets and
+  wrappers before marking a connection alive instead of looking up `undefined` and closing the
+  terminal with `1006 ping timeout` after about one minute.
+- **The real Bun WebSocket adapter is covered by control ping/pong regressions.** Agent and terminal
+  callbacks must now report the same stable socket identity used by open, message, and close.
+
 ## 0.11.4
 
 - **Authenticated dashboard routes no longer load Zod through the complete protocol package.**
