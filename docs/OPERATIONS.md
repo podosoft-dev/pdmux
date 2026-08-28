@@ -47,6 +47,53 @@ If you must check something from a phone during development, do it **knowing tha
 make it a deployment shape. From the moment a release is in someone's hands it is the container in
 the table above.
 
+### 1-2. Upgrading published images
+
+Pin `PDMUX_VERSION` to an exact release. Back up PostgreSQL and the deployment `.env` before changing
+it; `BETTER_AUTH_SECRET` in that file is required to decrypt stored OAuth and SMTP credentials.
+For the supplied single-host Compose deployment, upgrade in this order:
+
+```bash
+# Edit only PDMUX_VERSION in .env, then review the rendered project before it changes anything.
+docker compose -f selfhost.compose.yml --env-file .env config --quiet
+docker compose -f selfhost.compose.yml --env-file .env pull
+docker compose -f selfhost.compose.yml --env-file .env up -d
+docker compose -f selfhost.compose.yml --env-file .env ps
+docker compose -f selfhost.compose.yml --env-file .env logs migrate
+```
+
+The one-shot `migrate` container uses the new API image and must finish successfully before API,
+web, or worker containers move to that release. A failed migration leaves the previous application
+containers and data in place; do not bypass the dependency or start a new API image against an
+unmigrated database. Database migrations are forward-only, so recover with a corrected newer release
+rather than trying to reverse the schema under an older image.
+
+**Installations with accounts must skip `0.11.0` and upgrade to `0.11.1` or later.** Better Auth 1.7
+made account identity the pair `(issuer, accountId)`. Release `0.11.0` delegated directly to the
+generated schema migration, which cannot choose a trusted issuer for existing rows. PostgreSQL fails
+safely before rollout, but that release cannot upgrade a populated account table.
+
+The corrected migration in `0.11.1` or later runs before Better Auth's generated migration. It:
+
+- inventories every legacy provider and uses an explicit issuer map for the social providers pdmux
+  supports;
+- changes credential identities to `local:credential` with the linked user id, and preserves the
+  existing stable provider identifier for supported social accounts;
+- checks unresolved rows and `(issuer, accountId)` collisions before adding the required constraint
+  and unique index;
+- installs a compatibility trigger in the same transaction, so an old API container still serving
+  during rollout can create supported accounts without writing an empty identity; and
+- rolls the entire transaction back for Microsoft or an unknown/custom provider instead of guessing
+  identity from mutable or unverified data.
+
+Microsoft is intentionally not automatic: Better Auth 1.7 changed its stable account identifier from
+the app-specific `sub` to the directory `oid`, and the old account row does not contain a trustworthy
+mapping. If the migration reports `microsoft` or another unmapped provider, keep the previous release
+running, pause authentication writes, and follow Better Auth's
+[account identity migration guide](https://better-auth.com/docs/guides/1-7-upgrade-guide#account-identity-is-scoped-by-issuer)
+with verified provider data. Re-run the same release after the inventory, collision check, and
+backfill are complete. Never infer ownership by email.
+
 ---
 
 ## 2. Agent onboarding

@@ -118,8 +118,9 @@ services:
       S3_BUCKET: ${S3_BUCKET:-pdmux}
     restart: "no"
 
-  # ⚠ RUNS TO COMPLETION BEFORE THE API STARTS. The schema has to exist first, and a
-  # migration is additive, so running it against the previous release is safe.
+  # ⚠ RUNS TO COMPLETION BEFORE THE API STARTS. The schema has to exist first. Every
+  # migration must remain compatible with the previous release, because its API may
+  # still serve while this container runs. See docs/OPERATIONS.md §1-2.
   migrate:
     image: ghcr.io/podosoft-dev/pdmux-api:${PDMUX_VERSION:?set PDMUX_VERSION in .env}
     command: ["bun", "run", "migrate:all"]

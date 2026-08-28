@@ -1,9 +1,15 @@
 import { getMigrations } from "better-auth/db/migration";
 import { auth } from "./auth/auth";
 import { pool } from "./auth/db";
+import {
+  migrateLegacyAccountIssuers,
+  postgresAccountIssuerMigrationDatabase,
+} from "./auth/account-issuer-migration";
 import dataSource from "./database/data-source";
 
 async function runMigrations(): Promise<void> {
+  await migrateLegacyAccountIssuers(postgresAccountIssuerMigrationDatabase(pool));
+
   const authMigrations = await getMigrations(auth.options);
   await authMigrations.runMigrations();
 

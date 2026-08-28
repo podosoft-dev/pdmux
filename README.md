@@ -117,6 +117,10 @@ includes Caddy, which obtains and renews the certificate on its own.
 Retention, backups, or putting your own gateway in front of this one instead:
 [docs/OPERATIONS.md](docs/OPERATIONS.md) §1.
 
+For upgrades, pin the new release in `PDMUX_VERSION`, pull the images, and let the one-shot migration
+finish before the application containers roll. Existing installations must skip `0.11.0` and use
+`0.11.1` or later; see [the upgrade procedure](docs/OPERATIONS.md#1-2-upgrading-published-images).
+
 ## Adding a host
 
 Add a host in the UI and it hands you the install command with an enrollment code already in it:

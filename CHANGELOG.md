@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 0.11.1
+
+- **Existing installations can upgrade safely to Better Auth 1.7.** Before the generated schema
+  migration runs, the API image now backfills the required account issuer from an explicit provider
+  map, validates credential ownership and identity collisions, and creates the required compound
+  identity index in one PostgreSQL transaction. A compatibility trigger protects supported account
+  writes from the old API release while the new containers roll out.
+- **Ambiguous identities fail closed.** Microsoft accounts need a verified `oid` and exact issuer,
+  while unknown providers need deployment-specific trusted data; the migration rolls back with an
+  actionable error instead of guessing from email or another mutable field. The operations guide now
+  documents the image-pull upgrade sequence and this manual boundary.
+
 ## 0.11.0
 
 - **The API now runs directly on Bun 1.4 and Elysia.** The NestJS and Node runtime layers
