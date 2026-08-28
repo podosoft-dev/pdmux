@@ -11,6 +11,14 @@ interface UpgradeError extends Error {
   statusCode?: number;
 }
 
+type GatewaySocket = Parameters<PdmuxGateway["agentPong"]>[0];
+type PongSocket = GatewaySocket | { readonly raw: GatewaySocket };
+
+function pongSocket(socket: PongSocket): GatewaySocket {
+  // Elysia 1.4 passes Bun's raw socket to pong at runtime despite typing it as an Elysia wrapper.
+  return "raw" in socket ? socket.raw : socket;
+}
+
 function rejection(error: unknown): Response {
   const candidate = error as UpgradeError;
   const status = typeof candidate.statusCode === "number" ? candidate.statusCode : 500;
@@ -45,7 +53,7 @@ export function createPdmuxWsPlugin(gateway: PdmuxGateway): AppPlugin {
           await gateway.openAgent(ws.raw, context);
         },
         message: (ws, message) => gateway.agentMessage(ws.raw, message),
-        pong: (ws) => gateway.agentPong(ws.raw),
+        pong: (ws) => gateway.agentPong(pongSocket(ws)),
         close: (ws) => gateway.agentClose(ws.raw),
       })
       .ws(TERMINAL_WS_PATH, {
@@ -68,7 +76,7 @@ export function createPdmuxWsPlugin(gateway: PdmuxGateway): AppPlugin {
         },
         message: (ws, message) => gateway.terminalMessage(ws.raw, message),
         drain: (ws) => gateway.terminalDrain(ws.raw),
-        pong: (ws) => gateway.terminalPong(ws.raw),
+        pong: (ws) => gateway.terminalPong(pongSocket(ws)),
         close: (ws, code, reason) => gateway.terminalClose(ws.raw, code, reason),
       });
   };
