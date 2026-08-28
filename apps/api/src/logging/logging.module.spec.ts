@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { loggingOptions } from "./logging.module";
 
 describe("logging options", () => {
-  it("[TC-PDHOST-024] disables the development transport in production", () => {
+  it("[TC-PDHOST-027] disables the development transport in production", () => {
     expect(loggingOptions({ NODE_ENV: "production" }).transport).toBeUndefined();
   });
 
