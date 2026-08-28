@@ -1,6 +1,6 @@
 {
   "name": "pdmux-tests",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "private": true,
   "scripts": {
     "test:e2e": "bunx playwright test",

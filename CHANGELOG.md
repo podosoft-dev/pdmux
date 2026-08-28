@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 0.11.2
+
+- **Production startup now uses the validated runtime environment when selecting the logger.**
+  Bun can replace direct `process.env.NODE_ENV` reads while bundling; the previous production
+  image therefore selected the development-only `pino-pretty` transport and exited at startup.
+  The logger now reads the runtime `AppEnv`, with a regression test that keeps the pretty transport
+  disabled in production bundles.
+
 ## 0.11.1
 
 - **Existing installations can upgrade safely to Better Auth 1.7.** Before the generated schema
