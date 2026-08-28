@@ -18,7 +18,7 @@
  * and because the default target is a multiplexer session, coming back reattaches to
  * work that kept running.
  */
-import { TERMINAL_WS_PATH, safeParse, terminalServerFrameSchema } from "@pdmux/protocol";
+import { TERMINAL_WS_PATH, parseTerminalServerFrame } from "@pdmux/protocol/terminal";
 import type { TerminalAdapter, TerminalConnection, TerminalOpenTarget } from "@pdmux/ui";
 
 /** What the page shows about the relay itself. */
@@ -396,7 +396,7 @@ export class TerminalRelay implements TerminalAdapter {
     } catch {
       return; // A frame we cannot read costs that frame, never the socket.
     }
-    const parsed = safeParse(terminalServerFrameSchema, payload);
+    const parsed = parseTerminalServerFrame(payload);
     if (!parsed.ok) return;
     const frame = parsed.data;
     const pane = connection.panes.get(frame.termId);

@@ -1,6 +1,6 @@
 {
   "name": "@pdmux/protocol",
-  "version": "0.11.3",
+  "version": "0.11.4",
   "type": "module",
   "description": "Agent<->server contract for pdmux: zod schemas and types shared by api, web and agent.",
   "license": "Apache-2.0",
@@ -14,6 +14,11 @@
       "types": "./dist/semver.d.ts",
       "import": "./dist/semver.js",
       "default": "./dist/semver.js"
+    },
+    "./terminal": {
+      "types": "./dist/terminal.d.ts",
+      "import": "./dist/terminal.js",
+      "default": "./dist/terminal.js"
     }
   },
   "main": "./dist/index.js",

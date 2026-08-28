@@ -38,4 +38,8 @@ describe("Bun toolchain commands", () => {
       expect(read(path), path).not.toMatch(STALE_RUNTIME_COMMAND);
     }
   });
+
+  it("loads the final terminal relay chunk during production smoke", () => {
+    expect(read("tools/smoke-web-build.mjs")).toContain("src/lib/dashboard/terminal-relay.ts");
+  });
 });

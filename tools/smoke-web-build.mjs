@@ -5,6 +5,33 @@
  * lazily loaded production route is evaluated.
  */
 
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const buildRoot = new URL("../apps/web/build/", import.meta.url).pathname;
+
+async function importLazyRelayChunks(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  let imported = 0;
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      imported += await importLazyRelayChunks(path);
+    } else if (entry.name.endsWith(".js.map")) {
+      const sourceMap = await readFile(path, "utf8");
+      if (sourceMap.includes("src/lib/dashboard/terminal-relay.ts")) {
+        await import(pathToFileURL(path.slice(0, -4)).href);
+        imported += 1;
+      }
+    }
+  }
+  return imported;
+}
+
+const relayChunks = await importLazyRelayChunks(buildRoot);
+if (relayChunks === 0) throw new Error("web build did not contain the terminal relay chunk");
+
 const cwd = new URL("../apps/web/", import.meta.url).pathname;
 const child = Bun.spawn(["bun", "./build"], {
   cwd,

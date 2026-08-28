@@ -149,8 +149,11 @@ jobs:
           # release commit bumps exactly that. Without this the gate fires on the
           # release itself and the only way past is to publish one more identical
           # build, which is the outcome the paragraph above calls dishonest.
+          # `src/terminal.ts` is the Zod-free browser parser. The agent embeds the
+          # generated schema from `index.ts`, and parity tests pin the two shapes,
+          # so this entry point cannot change the agent binary either.
           changed=$(git diff --name-only "$BASE" HEAD -- agent packages/protocol \
-            | grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|/package\.json$|^bun\.lock$)' \
+            | grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|^packages/protocol/src/terminal\.ts$|/package\.json$|^bun\.lock$)' \
             || true)
 
           if [ -z "$changed" ]; then

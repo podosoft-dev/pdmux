@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 0.11.4
+
+- **Authenticated dashboard routes no longer load Zod through the complete protocol package.**
+  The browser terminal relay now uses a small dependency-free parser that is parity-tested against
+  the canonical server schema, avoiding the Bun 1.4 bundler defect that returned 500 after login.
+- **The production smoke test now imports the final terminal relay chunk before a release can be
+  published.** This reproduces lazy authenticated-route failures without requiring production
+  credentials and prevents a successful Vite build from hiding a broken adapter bundle.
+
 ## 0.11.3
 
 - **The production installer route no longer pulls the complete protocol schema graph into its

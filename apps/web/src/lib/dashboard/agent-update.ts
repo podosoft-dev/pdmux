@@ -10,7 +10,8 @@
  * catalogue; what these functions return is counts, codes and verdicts.
  */
 import type { GridCell } from "@pdmux/core";
-import { type AgentVersionState, type UpdateStatus, compareVersionStrings } from "@pdmux/protocol";
+import type { UpdateStatus } from "@pdmux/protocol";
+import { type AgentVersionState, compareVersionStrings } from "@pdmux/protocol/semver";
 import type { FleetUpdateFailure, HostView } from "./types";
 
 /** Phases in which the agent is still working on a job we started. */

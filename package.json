@@ -1,6 +1,6 @@
 {
   "name": "pdmux",
-  "version": "0.11.3",
+  "version": "0.11.4",
   "private": true,
   "packageManager": "bun@1.4.0",
   "engines": {
