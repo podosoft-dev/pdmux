@@ -12,6 +12,7 @@ const CURRENT_COMMAND_SURFACES = [
   ".github/workflows/release.yml",
   "tools/demo-agent.mjs",
   "tools/preflight.sh",
+  "tools/smoke-web-build.mjs",
   "tools/build-agent-binaries.mjs",
   "tools/build-file-icons.mjs",
   "tools/reset-e2e-data.mjs",

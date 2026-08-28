@@ -13,6 +13,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { compareVersionStrings, parseSemver } from "@pdmux/protocol/semver";
+import { isPublicPath } from "../src/lib/server/guards";
 import {
   InstallScriptRenderError,
   isValidInstallScriptOrigin,
@@ -68,6 +70,17 @@ const ARTIFACTS: InstallScriptArtifact[] = [
 const ORIGIN = "https://pdmux.example.com";
 const script = (over: Partial<Parameters<typeof renderInstallScript>[0]> = {}): string =>
   renderInstallScript({ origin: ORIGIN, version: VERSION, artifacts: ARTIFACTS, ...over });
+
+describe("installer protocol boundary", () => {
+  it("loads SemVer helpers without importing the protocol schema graph", () => {
+    expect(parseSemver("1.2.3")).toMatchObject({ major: 1, minor: 2, patch: 3 });
+    expect(compareVersionStrings("1.2.4", "1.2.3")).toBe(1);
+  });
+
+  it("keeps the installer reachable while the backend is unavailable", () => {
+    expect(isPublicPath("/install.sh")).toBe(true);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Shell tooling

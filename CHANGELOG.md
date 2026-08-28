@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 0.11.3
+
+- **The production installer route no longer pulls the complete protocol schema graph into its
+  server bundle.** It imports pure SemVer helpers through a dedicated package subpath, avoiding a
+  Bun 1.4 bundler defect that could emit a missing Zod namespace and return 500 from `/install.sh`.
+  The installer is also explicitly public, so a temporary API outage cannot turn it into a 503.
+- **CI now starts the final SvelteKit adapter output and requests `/install.sh`.** A successful Vite
+  build is no longer enough: releases fail before publication if a lazy production route cannot be
+  evaluated by Bun.
+
 ## 0.11.2
 
 - **Production startup now uses the validated runtime environment when selecting the logger.**

@@ -44,6 +44,11 @@ jobs:
           bun run --filter pdmux-api build
           bun run --filter pdmux-web build
 
+      # Vite can finish successfully even when Bun emits a production bundle
+      # whose lazy route imports fail at runtime. Exercise the adapter output.
+      - name: web production smoke
+        run: bun run test:web-build
+
       - name: lint
         run: bun run --workspaces --if-present lint
 

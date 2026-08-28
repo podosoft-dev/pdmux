@@ -33,7 +33,7 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { compareVersionStrings, parseSemver } from "@pdmux/protocol";
+import { compareVersionStrings, parseSemver } from "@pdmux/protocol/semver";
 import type { InstallScriptArtifact } from "./render";
 
 export type AgentRelease = {

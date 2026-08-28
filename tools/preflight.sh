@@ -47,6 +47,8 @@ build_apps() {
 	bun run --filter pdmux-web build >/dev/null || return 1
 }
 
+web_smoke() { bun run test:web-build; }
+
 # ⚠ `--workspaces`, NOT A LIST. Naming the workspaces is how one gets left out, which
 # is the failure this file exists for.
 lint() { bun run --workspaces --if-present lint; }
@@ -128,6 +130,7 @@ agent_version() {
 
 step "build packages" build_packages
 step "build apps" build_apps
+step "web production smoke" web_smoke
 step "lint" lint
 step "unit tests" unit
 step "release workflow" release_workflow

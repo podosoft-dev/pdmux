@@ -13,6 +13,7 @@ const PUBLIC_PATHS = [
   "/verify-email",
   "/pending-approval",
   "/maintenance",
+  "/install.sh",
   // Modules add their public (no-session) page prefixes here.
   // podokit:begin:public-paths
   // podokit:end:public-paths
