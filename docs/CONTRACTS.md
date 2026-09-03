@@ -466,6 +466,29 @@ is a different axis from §4's read-only git rather than an exception to it — 
 
 ---
 
+## C6-4. Managed HTTP exposure connector
+
+Cloudflare orchestration extends existing frames with optional objects rather than extending the
+closed `capabilities` enum:
+
+```ts
+hello.connectors.cloudflared                 // boolean ability, default false
+config.cloudflared                           // { enabled, token, checkIntervalSec }
+heartbeat.cloudflared                        // { state, version, errorCode }
+```
+
+`state` is `off|installing|connecting|connected|failed`. The token is present only in the
+server-to-agent configuration and must be treated as a secret: it is not logged, echoed in a status
+frame or returned by a browser API. An absent object parses to the disabled/default state, so an old
+agent and an old server continue to exchange all earlier frames.
+
+The connector carries a remotely managed Cloudflare tunnel. Service routes still come from the
+server's service rows; the Cloudflare ingress origin is limited to HTTP or HTTPS on
+`127.0.0.1:<port>`. There is deliberately no TCP origin or arbitrary target-host field in this
+contract.
+
+---
+
 ## C7. HTTP response conventions
 
 - Errors follow the **error envelope**:

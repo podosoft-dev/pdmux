@@ -33,6 +33,9 @@ import type {
   RepoGraphResponse,
   RepoRow,
   FsFileView,
+  CloudflareDiscoveryView,
+  CloudflareIntegrationView,
+  ServiceExposureView,
 } from "./types";
 
 export interface HostInput {
@@ -104,6 +107,48 @@ export const servicesApi = {
     api.del<{ id: string; label: string }>(`/hosts/${hostId}/services/${id}`),
   reorder: (hostId: string, ids: string[]): Promise<HostServiceView[]> =>
     api.put<HostServiceView[]>(`/hosts/${hostId}/services/reorder`, { ids }),
+};
+
+export interface ServiceExposureInput {
+  hostname: string;
+  mode: "access" | "public";
+  originScheme: "http" | "https";
+  noTlsVerify?: boolean;
+  confirmPublic?: boolean;
+}
+
+export const cloudflareApi = {
+  get: (): Promise<CloudflareIntegrationView | null> =>
+    api.get<CloudflareIntegrationView | null>("/integrations/cloudflare"),
+  discover: (apiToken: string): Promise<CloudflareDiscoveryView> =>
+    api.post<CloudflareDiscoveryView>("/integrations/cloudflare/discover", { apiToken }),
+  connect: (input: {
+    apiToken: string;
+    zoneId: string;
+    baseDomain: string;
+    accessPolicyId: string;
+  }): Promise<CloudflareIntegrationView> =>
+    api.put<CloudflareIntegrationView>("/integrations/cloudflare", input),
+  disconnect: (): Promise<{ disconnected: true }> =>
+    api.del<{ disconnected: true }>("/integrations/cloudflare"),
+  exposures: (hostId: string): Promise<ServiceExposureView[]> =>
+    api.get<ServiceExposureView[]>(`/hosts/${hostId}/exposures`),
+  expose: (hostId: string, serviceId: string, input: ServiceExposureInput): Promise<ServiceExposureView> =>
+    api.post<ServiceExposureView>(`/hosts/${hostId}/services/${serviceId}/exposures`, input),
+  updateExposure: (
+    hostId: string,
+    serviceId: string,
+    exposureId: string,
+    input: ServiceExposureInput,
+  ): Promise<ServiceExposureView> =>
+    api.patch<ServiceExposureView>(
+      `/hosts/${hostId}/services/${serviceId}/exposures/${exposureId}`,
+      input,
+    ),
+  removeExposure: (hostId: string, serviceId: string, exposureId: string): Promise<{ id: string; hostname: string }> =>
+    api.del<{ id: string; hostname: string }>(
+      `/hosts/${hostId}/services/${serviceId}/exposures/${exposureId}`,
+    ),
 };
 
 /**

@@ -340,6 +340,58 @@ tools. The manifest carries a sha256 alongside it, and the installer writes only
 
 ---
 
+### 2-7. Publishing HTTP services with Cloudflare Tunnel
+
+This feature is for a registered host service that must be reachable outside its loopback or LAN.
+It supports **HTTP and HTTPS origins only**. It does not expose arbitrary TCP sockets.
+
+In **Fleet settings**, provide a scoped Cloudflare API token and select an active zone, a base domain
+inside that zone, and an existing reusable Access policy. The token needs the current equivalents of:
+
+- Zone Read, so pdmux can list and validate the selected zone;
+- DNS Write for that zone;
+- Cloudflare Tunnel Write for the account; and
+- Access Apps and Policies Write for the account.
+
+The token is validated before it is stored, envelope-encrypted with a key derived from
+`BETTER_AUTH_SECRET`, excluded from API responses and audit metadata, and never returned to the
+browser. Keep `BETTER_AUTH_SECRET` stable and backed up: changing it makes stored integration
+credentials undecryptable.
+
+Each host gets **one dedicated, remotely managed tunnel**. A service exposure contributes one
+ingress rule whose origin is `http://127.0.0.1:<registered-port>` or its HTTPS equivalent. In the
+default Access mode, pdmux creates the Access application first, writes the complete ingress list
+with a terminal `http_status:404` rule, and creates DNS last. Public mode omits the Access application
+and requires a separate confirmation in both the browser and API.
+
+The agent owns the connector process, but not as a system package:
+
+1. It reads Cloudflare's latest release metadata from the official GitHub repository.
+2. It accepts only the asset for its OS/architecture, bounds its size, checks the published SHA-256
+   digest, and executes `cloudflared --version` before an atomic swap.
+3. It keeps the previous verified executable beside the current one and restores it if the candidate
+   exits during startup.
+4. It passes the remotely managed tunnel token through `TUNNEL_TOKEN`, never an argv value. The
+   agent log registers the token for redaction. The status stays `connecting` until cloudflared
+   writes its pidfile after the first successful edge connection; process survival alone is not
+   reported as a working tunnel.
+
+The binary, cached release metadata and rollback copy live below the agent's private state directory
+in `cloudflared/`. Removing the last exposure removes DNS first, then ingress and Access, then the
+dedicated tunnel. Local exposure and connector rows are deleted only after provider cleanup, so a
+failed Cloudflare request leaves the identifiers available for an idempotent retry. A host or service
+delete uses the same cleanup path and fails closed instead of orphaning an externally reachable
+resource.
+
+| Symptom | Check |
+|---|---|
+| No zones or policies after checking the token | Verify Zone Read and Access Apps and Policies permissions, and that the policy belongs to the zone's account. |
+| “Update and connect this host's agent” | The connected agent predates managed connectors. Update it and wait for a new hello before publishing. |
+| `Installing connector` does not progress | The host must reach GitHub release metadata/assets and Cloudflare over outbound HTTPS. Inspect the agent log for the stable connector error code. |
+| Exposure removal or host deletion returns an error | Provider cleanup failed safely. Correct token/network access and retry; do not delete database rows by hand. |
+
+---
+
 ## 3. Retention and capacity
 
 | Data | Default retention | Adjusting it |

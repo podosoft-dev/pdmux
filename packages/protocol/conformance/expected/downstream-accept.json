@@ -6,6 +6,11 @@
 		"config-empty-all-defaults": {
 			"config": {
 				"bodyMaxChars": 1200,
+				"cloudflared": {
+					"checkIntervalSec": 86400,
+					"enabled": false,
+					"token": ""
+				},
 				"gitDetailBudget": 120,
 				"gitIntervalSec": 120,
 				"gitLimit": 300,
@@ -23,6 +28,11 @@
 		"config-unknown-field-stripped": {
 			"config": {
 				"bodyMaxChars": 1200,
+				"cloudflared": {
+					"checkIntervalSec": 86400,
+					"enabled": false,
+					"token": ""
+				},
 				"gitDetailBudget": 120,
 				"gitIntervalSec": 120,
 				"gitLimit": 300,
@@ -47,6 +57,11 @@
 		"welcome-without-server-version": {
 			"config": {
 				"bodyMaxChars": 1200,
+				"cloudflared": {
+					"checkIntervalSec": 86400,
+					"enabled": false,
+					"token": ""
+				},
 				"gitDetailBudget": 120,
 				"gitIntervalSec": 120,
 				"gitLimit": 300,

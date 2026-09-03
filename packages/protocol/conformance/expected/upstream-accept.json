@@ -5,6 +5,11 @@
 	"accepted": {
 		"heartbeat-minimal": {
 			"heartbeat": {
+				"cloudflared": {
+					"errorCode": null,
+					"state": "off",
+					"version": null
+				},
 				"diagnostics": [],
 				"resource": {
 					"cpuPct": null,
@@ -29,6 +34,11 @@
 		},
 		"heartbeat-zero-is-not-null": {
 			"heartbeat": {
+				"cloudflared": {
+					"errorCode": null,
+					"state": "off",
+					"version": null
+				},
 				"diagnostics": [],
 				"resource": {
 					"cpuPct": 0,
@@ -73,6 +83,11 @@
 		},
 		"heartbeat-unknown-field-stripped": {
 			"heartbeat": {
+				"cloudflared": {
+					"errorCode": null,
+					"state": "off",
+					"version": null
+				},
 				"diagnostics": [],
 				"resource": {
 					"cpuPct": 12,
@@ -106,6 +121,9 @@
 					"terminal",
 					"git"
 				],
+				"connectors": {
+					"cloudflared": false
+				},
 				"hostname": "build-01",
 				"os": "linux",
 				"protocolVersion": 1,

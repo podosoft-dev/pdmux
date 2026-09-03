@@ -68,6 +68,10 @@ import {
 import { MetricsService } from "../metrics/metrics.service";
 import { UserHostPref } from "../prefs/user-host-pref.entity";
 import { UserLayout } from "../prefs/user-layout.entity";
+import { CloudflareService } from "../integrations/cloudflare.service";
+import { HostConnector } from "../integrations/host-connector.entity";
+import { IntegrationConnection } from "../integrations/integration-connection.entity";
+import { ServiceExposure } from "../integrations/service-exposure.entity";
 import { PrefsService } from "../prefs/prefs.service";
 import { STORAGE } from "../storage/storage.module";
 import type { StorageService } from "../storage/storage.service";
@@ -105,6 +109,7 @@ export interface PdmuxServices {
   agentKit: AgentKitController;
   staleHosts: StaleHostsService;
   metricsRetention: MetricsRetentionService;
+  cloudflare: CloudflareService;
 }
 
 export const PDMUX = Symbol("pdmux") as ServiceKey<PdmuxServices>;
@@ -143,9 +148,17 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
     fleetSettings,
     releases,
     dataSource,
+    dataSource.getRepository(ServiceExposure),
   );
   const hostServices = new HostServicesService(dataSource.getRepository(HostService), hosts);
   const hostGitRoots = new HostGitRootsService(dataSource.getRepository(HostGitRoot), hosts);
+  const cloudflare = new CloudflareService(
+    dataSource.getRepository(IntegrationConnection),
+    dataSource.getRepository(HostConnector),
+    dataSource.getRepository(ServiceExposure),
+    hosts,
+    hostServices,
+  );
   const metrics = new MetricsService(dataSource.getRepository(HostMetricSample));
   const gitDetails = new GitDetailService(storage);
   const gitBlobs = new GitBlobBufferService();
@@ -169,7 +182,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
   const agentAck = new AgentAckService(git, agentRegistry);
   const agentExec = new AgentExecService(agentRegistry, hosts);
   const agentFiles = new AgentFilesService(agentRegistry, hosts);
-  const agentConfig = new AgentConfigService(fleetSettings, hostServices, hostGitRoots);
+  const agentConfig = new AgentConfigService(fleetSettings, hostServices, hostGitRoots, cloudflare);
   const disconnect = new AgentDisconnectService(hosts, agentRegistry);
   const agentTokens = new AgentTokensService(dataSource.getRepository(AgentToken), hosts, disconnect);
   const agentEnrollments = new AgentEnrollmentsService(
@@ -200,6 +213,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
     hosts,
     agentConfig,
     agentRegistry,
+    cloudflare,
   );
   const detailRequests = new AgentDetailRequestService(git, agentRegistry);
   const terminalRelay = new TerminalRelayService(agentRegistry);
@@ -238,6 +252,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
   services.onStart(async () => {
     await dataSource.initialize();
     hosts.setConnectedProbe((hostId) => agentRegistry.isConnected(hostId));
+    cloudflare.connect();
     agentEnrollments.connect();
     disconnect.connect();
     configPush.connect();
@@ -286,6 +301,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
     agentKit,
     staleHosts,
     metricsRetention,
+    cloudflare,
   };
   services.register(PDMUX, result);
   return result;

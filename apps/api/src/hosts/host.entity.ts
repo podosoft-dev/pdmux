@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
-import type { Heartbeat, UpdateStatus } from "@pdmux/protocol";
+import type { AgentConnectorAbility, Heartbeat, UpdateStatus } from "@pdmux/protocol";
 import { HostService } from "./host-service.entity";
 
 /**
@@ -83,6 +83,10 @@ export class Host {
   /** Capabilities the agent announced in `hello` (metrics, terminal, git, …). */
   @Column({ type: "text", array: true, default: () => "'{}'" })
   capabilities!: string[];
+
+  /** Growable connector abilities, kept outside the protocol's closed capability enum. */
+  @Column({ type: "jsonb", default: () => "'{\"cloudflared\":false}'::jsonb" })
+  connectorCapabilities!: AgentConnectorAbility;
 
   /**
    * When the server last heard from this host's agent. NULL means it has NEVER

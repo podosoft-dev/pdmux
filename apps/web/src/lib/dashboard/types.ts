@@ -32,6 +32,48 @@ export interface HostServiceView {
   enabled: boolean;
   status: ProbeStatus;
   latencyMs: number | null;
+  exposure?: {
+    id: string;
+    provider: "cloudflare";
+    url: string;
+    mode: "access" | "public";
+    status: "pending" | "protected" | "public" | "error";
+  } | null;
+}
+
+export interface CloudflareIntegrationView {
+  connected: true;
+  tokenConfigured: true;
+  accountId: string;
+  zoneId: string;
+  zoneName: string;
+  baseDomain: string;
+  accessPolicyId: string;
+  accessPolicyName: string;
+  updatedAt: string;
+}
+
+export interface CloudflareDiscoveryView {
+  zones: Array<{ id: string; name: string; accountId: string; accountName: string }>;
+  policies: Array<{ id: string; name: string; accountId: string }>;
+}
+
+export interface ServiceExposureView {
+  id: string;
+  serviceId: string;
+  provider: "cloudflare";
+  hostname: string;
+  url: string;
+  mode: "access" | "public";
+  originScheme: "http" | "https";
+  noTlsVerify: boolean;
+  status: "pending" | "protected" | "public" | "error";
+  errorCode: string | null;
+  connector: {
+    state: "off" | "installing" | "connecting" | "connected" | "failed";
+    version: string | null;
+    errorCode: string | null;
+  } | null;
 }
 
 /** `GET /hosts` — one row per host, already joined to its last heartbeat. */
@@ -62,6 +104,7 @@ export interface HostView {
   os: string | null;
   arch: string | null;
   capabilities: string[];
+  connectorCapabilities?: { cloudflared: boolean };
   lastSeenAt: string | null;
   online: boolean;
   connected: boolean;

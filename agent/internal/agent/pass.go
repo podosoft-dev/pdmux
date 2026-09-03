@@ -39,6 +39,7 @@ func (a *Agent) heartbeatPass(ctx context.Context) {
 	// show up on this one.
 	a.diagnostics.NoteLedger(a.store.Unavailable())
 	beat := collect.Heartbeat(ctx, a.Config(), a.deps)
+	beat.Cloudflared = a.cloudflared.Status()
 	a.client.Send(&protocol.HeartbeatFrame{Heartbeat: beat})
 }
 

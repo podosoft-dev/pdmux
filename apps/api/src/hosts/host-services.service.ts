@@ -21,9 +21,27 @@ export type HostServiceChangeListener = (
   organizationId: string,
 ) => Promise<void> | void;
 
+/** External resources must be removed before the row that identifies them. */
+export type HostServiceRemovingListener = (
+  hostId: string,
+  serviceId: string,
+  organizationId: string,
+) => Promise<void> | void;
+
+export type HostServiceUpdateRollback = () => Promise<void> | void;
+
+/** Prepare provider routes before the service port is committed. */
+export type HostServiceUpdatingListener = (
+  current: HostService,
+  next: HostService,
+  organizationId: string,
+) => Promise<HostServiceUpdateRollback | void> | HostServiceUpdateRollback | void;
+
 export class HostServicesService {
   private readonly logger = new ProductLogger(HostServicesService.name);
   private changeListener: HostServiceChangeListener = () => {};
+  private removingListener: HostServiceRemovingListener = () => {};
+  private updatingListener: HostServiceUpdatingListener = () => {};
 
   constructor(
     private readonly services: Repository<HostService>,
@@ -33,6 +51,14 @@ export class HostServicesService {
   /** Called once by the agent config pusher at startup (avoids a circular provider). */
   setChangeListener(listener: HostServiceChangeListener): void {
     this.changeListener = listener;
+  }
+
+  setRemovingListener(listener: HostServiceRemovingListener): void {
+    this.removingListener = listener;
+  }
+
+  setUpdatingListener(listener: HostServiceUpdatingListener): void {
+    this.updatingListener = listener;
   }
 
   /** Every method resolves the host through the scoped lookup first, so a service
@@ -77,21 +103,45 @@ export class HostServicesService {
     const service = await this.get(organizationId, hostId, id);
     if (dto.label !== undefined && dto.label !== service.label) {
       await this.assertLabelFree(service.hostId, dto.label, service.id);
-      service.label = dto.label;
     }
-    if (dto.port !== undefined) service.port = dto.port;
-    if (dto.probe !== undefined) service.probe = dto.probe;
-    if (dto.path !== undefined) service.path = dto.path;
-    if (dto.urlTemplate !== undefined) service.urlTemplate = dto.urlTemplate ?? null;
-    if (dto.sortOrder !== undefined) service.sortOrder = dto.sortOrder;
-    if (dto.enabled !== undefined) service.enabled = dto.enabled;
-    const saved = await this.services.save(service);
+    // Do not mutate the loaded entity. The provider update runs before the
+    // database write, and an in-place mutation would make rollback read the new
+    // port from TypeORM's identity map (and from the in-memory test repository).
+    const next = this.services.create({
+      ...service,
+      label: dto.label ?? service.label,
+      port: dto.port ?? service.port,
+      probe: dto.probe ?? service.probe,
+      path: dto.path ?? service.path,
+      urlTemplate: dto.urlTemplate !== undefined ? dto.urlTemplate ?? null : service.urlTemplate,
+      sortOrder: dto.sortOrder ?? service.sortOrder,
+      enabled: dto.enabled ?? service.enabled,
+    });
+    const rollback = await this.updatingListener(service, next, organizationId);
+    let saved: HostService;
+    try {
+      saved = await this.services.save(next);
+    } catch (error) {
+      if (rollback) {
+        try {
+          await rollback();
+        } catch (rollbackError) {
+          this.logger.error(
+            `Provider rollback after a service update failed service=${service.id}: ${String(rollbackError)}`,
+          );
+        }
+      }
+      throw error;
+    }
     await this.notifyChanged(saved.hostId, organizationId);
     return saved;
   }
 
   async remove(organizationId: string, hostId: string, id: string): Promise<{ id: string; label: string }> {
     const service = await this.get(organizationId, hostId, id);
+    // Fail closed: deleting the local row first would orphan public DNS and an
+    // Access application that no longer has a control surface.
+    await this.removingListener(service.hostId, service.id, organizationId);
     await this.services.delete({ id: service.id });
     // A deleted service is a port the agent must stop opening, so the push matters
     // here for the same reason it does on create.

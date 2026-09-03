@@ -7,6 +7,36 @@ package protocol
 
 import "encoding/json"
 
+// NewAgentCloudflaredConfig returns a new AgentCloudflaredConfig, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewAgentCloudflaredConfig() AgentCloudflaredConfig {
+	var value AgentCloudflaredConfig
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero AgentCloudflaredConfig.
+func (x *AgentCloudflaredConfig) applyDefaults() {
+	x.CheckIntervalSec = 86400
+	x.Enabled = false
+	x.Token = ""
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so AgentCloudflaredConfig inside a list is defaulted exactly like one at the root.
+func (x *AgentCloudflaredConfig) UnmarshalJSON(data []byte) error {
+	*x = AgentCloudflaredConfig{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain AgentCloudflaredConfig
+	return json.Unmarshal(data, (*plain)(x))
+}
+
 // NewAgentConfig returns a new AgentConfig, seeded with every default the contract declares.
 // Build values this way rather than as a struct literal: a literal leaves
 // slices nil (they marshal to null, which the server rejects) and non-zero
@@ -20,6 +50,7 @@ func NewAgentConfig() AgentConfig {
 // applyDefaults writes the contract's defaults over a zero AgentConfig.
 func (x *AgentConfig) applyDefaults() {
 	x.BodyMaxChars = 1200
+	x.Cloudflared.applyDefaults()
 	x.GitDetailBudget = 120
 	x.GitIntervalSec = 120
 	x.GitLimit = 300
@@ -43,6 +74,34 @@ func (x *AgentConfig) UnmarshalJSON(data []byte) error {
 	// A local type with the same fields and none of the methods — without it this
 	// call would recurse into itself.
 	type plain AgentConfig
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewAgentConnectorAbility returns a new AgentConnectorAbility, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewAgentConnectorAbility() AgentConnectorAbility {
+	var value AgentConnectorAbility
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero AgentConnectorAbility.
+func (x *AgentConnectorAbility) applyDefaults() {
+	x.Cloudflared = false
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so AgentConnectorAbility inside a list is defaulted exactly like one at the root.
+func (x *AgentConnectorAbility) UnmarshalJSON(data []byte) error {
+	*x = AgentConnectorAbility{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain AgentConnectorAbility
 	return json.Unmarshal(data, (*plain)(x))
 }
 
@@ -119,6 +178,7 @@ func NewAgentHello() AgentHello {
 func (x *AgentHello) applyDefaults() {
 	x.Address = ""
 	x.Capabilities = []AgentCapability{}
+	x.Connectors.applyDefaults()
 	x.Update.applyDefaults()
 }
 
@@ -249,6 +309,36 @@ func (x *AgentUsage) UnmarshalJSON(data []byte) error {
 	// A local type with the same fields and none of the methods — without it this
 	// call would recurse into itself.
 	type plain AgentUsage
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewCloudflaredStatus returns a new CloudflaredStatus, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewCloudflaredStatus() CloudflaredStatus {
+	var value CloudflaredStatus
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero CloudflaredStatus.
+func (x *CloudflaredStatus) applyDefaults() {
+	x.ErrorCode = nil
+	x.State = "off"
+	x.Version = nil
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so CloudflaredStatus inside a list is defaulted exactly like one at the root.
+func (x *CloudflaredStatus) UnmarshalJSON(data []byte) error {
+	*x = CloudflaredStatus{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain CloudflaredStatus
 	return json.Unmarshal(data, (*plain)(x))
 }
 
@@ -864,6 +954,7 @@ func NewHeartbeat() Heartbeat {
 
 // applyDefaults writes the contract's defaults over a zero Heartbeat.
 func (x *Heartbeat) applyDefaults() {
+	x.Cloudflared.applyDefaults()
 	x.Diagnostics = []AgentDiagnostic{}
 	x.Resource.applyDefaults()
 	x.Services = []ServiceProbe{}

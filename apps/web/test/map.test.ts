@@ -214,6 +214,27 @@ describe("[TC-PDUI-105] service links", () => {
     expect(serviceUrl(host(), service({ urlTemplate: "http://{address}:{port}/" }))).toBe("http://10.0.0.1:3000/");
   });
 
+  it("[TC-PDUI-226] prefers a managed external URL over a host-local address", () => {
+    expect(serviceUrl(host(), service({
+      exposure: {
+        id: "e1",
+        provider: "cloudflare",
+        url: "https://api-alpha.apps.example.com",
+        mode: "access",
+        status: "protected",
+      },
+    }))).toBe("https://api-alpha.apps.example.com");
+    expect(serviceUrl(host(), service({
+      exposure: {
+        id: "e1",
+        provider: "cloudflare",
+        url: "https://api-alpha.apps.example.com",
+        mode: "access",
+        status: "error",
+      },
+    }))).toBe("http://10.0.0.1:3000");
+  });
+
   it("builds address:port when there is no template", () => {
     expect(serviceUrl(host(), service({ path: "/health" }))).toBe("http://10.0.0.1:3000/health");
     expect(serviceUrl(host(), service({ port: 443 }))).toBe("https://10.0.0.1:443");

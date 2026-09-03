@@ -36,6 +36,12 @@ import { CreateMcpTokenDto } from "../mcp/dto/create-mcp-token.dto";
 import { MCP_TIERS } from "../mcp/mcp-tier";
 import { MCP_TOKEN_EXPIRY_DAYS } from "../mcp/user-mcp-key.crypto";
 import { PutHostPrefDto, PutLayoutDto } from "../prefs/dto/prefs.dto";
+import {
+  CreateServiceExposureDto,
+  DiscoverCloudflareDto,
+  PutCloudflareIntegrationDto,
+  UpdateServiceExposureDto,
+} from "../integrations/dto/cloudflare.dto";
 import { MuxCopyModeDto, MuxHistoryDto } from "../terminal/dto/terminal-mux.dto";
 import { PDMUX, type PdmuxServices } from "./pdmux.services";
 
@@ -236,6 +242,45 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
         services.fleetSettings.update(resolveScopeId(session), update),
       (result) => ({ type: "fleet-settings", metadata: { settings: result } }));
     })
+    .post("/integrations/cloudflare/discover", async ({ request, body }) => {
+      const session = await sessionFor(services, request);
+      assertCanManageFleet(session);
+      const input = dto(DiscoverCloudflareDto, body);
+      return services.cloudflare.discover(input.apiToken);
+    })
+    .get("/integrations/cloudflare", async ({ request }) => {
+      const session = await sessionFor(services, request);
+      return services.cloudflare.get(resolveScopeId(session));
+    })
+    .put("/integrations/cloudflare", async ({ request, body }) => {
+      const session = await sessionFor(services, request);
+      assertCanManageFleet(session);
+      const input = dto(PutCloudflareIntegrationDto, body);
+      return audit(
+        services,
+        request,
+        session,
+        "integration.cloudflare.connect",
+        () => services.cloudflare.put(resolveScopeId(session), input),
+        (result) => ({
+          type: "integration",
+          label: "cloudflare",
+          metadata: { zone: result.zoneName, baseDomain: result.baseDomain },
+        }),
+      );
+    })
+    .delete("/integrations/cloudflare", async ({ request }) => {
+      const session = await sessionFor(services, request);
+      assertCanManageFleet(session);
+      return audit(
+        services,
+        request,
+        session,
+        "integration.cloudflare.disconnect",
+        () => services.cloudflare.removeConnection(resolveScopeId(session)),
+        () => ({ type: "integration", label: "cloudflare" }),
+      );
+    })
     .get("/hosts", async ({ request }) => {
       const session = await sessionFor(services, request);
       return services.hosts.list(resolveScopeId(session));
@@ -337,6 +382,70 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
       return audit(services, request, session, "host.service.delete", () =>
         services.hostServices.remove(resolveScopeId(session), params.hostId, params.id),
       (result) => ({ type: "host-service", id: result.id, label: result.label }));
+    })
+    .get("/hosts/:hostId/exposures", async ({ request, params }) => {
+      const session = await sessionFor(services, request);
+      return services.cloudflare.listForHost(resolveScopeId(session), params.hostId);
+    })
+    .post("/hosts/:hostId/services/:id/exposures", async ({ request, params, body, set }) => {
+      const session = await sessionFor(services, request);
+      assertCanManageFleet(session);
+      set.status = 201;
+      const input = dto(CreateServiceExposureDto, body);
+      return audit(
+        services,
+        request,
+        session,
+        "host.service.exposure.create",
+        () => services.cloudflare.createExposure(resolveScopeId(session), params.hostId, params.id, input),
+        (result) => ({
+          type: "service-exposure",
+          id: result.id,
+          label: result.hostname,
+          metadata: { provider: result.provider, mode: result.mode, originScheme: result.originScheme },
+        }),
+      );
+    })
+    .patch("/hosts/:hostId/services/:id/exposures/:exposureId", async ({ request, params, body }) => {
+      const session = await sessionFor(services, request);
+      assertCanManageFleet(session);
+      const input = dto(UpdateServiceExposureDto, body);
+      return audit(
+        services,
+        request,
+        session,
+        "host.service.exposure.update",
+        () => services.cloudflare.updateExposure(
+          resolveScopeId(session),
+          params.hostId,
+          params.id,
+          params.exposureId,
+          input,
+        ),
+        (result) => ({
+          type: "service-exposure",
+          id: result.id,
+          label: result.hostname,
+          metadata: { provider: result.provider, mode: result.mode, originScheme: result.originScheme },
+        }),
+      );
+    })
+    .delete("/hosts/:hostId/services/:id/exposures/:exposureId", async ({ request, params }) => {
+      const session = await sessionFor(services, request);
+      assertCanManageFleet(session);
+      return audit(
+        services,
+        request,
+        session,
+        "host.service.exposure.delete",
+        () => services.cloudflare.removeExposure(
+          resolveScopeId(session),
+          params.hostId,
+          params.id,
+          params.exposureId,
+        ),
+        (result) => ({ type: "service-exposure", id: result.id, label: result.hostname }),
+      );
     })
     .get("/hosts/:hostId/git-roots", async ({ request, params }) => {
       const session = await sessionFor(services, request);

@@ -662,11 +662,12 @@ func seedLine(defName, propName string, prop map[string]any, value any, field go
 		// whole frame down with it.
 		return fmt.Sprintf("x.%s = %s{}", field.Name, field.Type), nil
 
-	case isEmptyObject(value):
-		// TRAP 1 (see the file header): the schema says `{}`, but zod means "this
-		// object's own defaults". Recurse by type; never copy the literal.
+	case isObject(value):
+		// TRAP 1 (see the file header): a defaulted referenced object means "this
+		// object's own defaults", whether the artefact spells the effective object
+		// out or retains `{}`. Recurse by type; never copy a map literal.
 		if _, isRef := prop["$ref"]; !isRef {
-			return "", fmt.Errorf("%s defaults to {} but does not reference a named type, so its real defaults are unknowable", where)
+			return "", fmt.Errorf("%s has an object default but does not reference a named type, so its real defaults are unknowable", where)
 		}
 		if !field.Struct || field.Pointer {
 			return "", fmt.Errorf("%s defaults to its own defaults, so %s must be an inline struct, not a pointer", where, field.Name)
@@ -807,9 +808,9 @@ func isEmptyArray(value any) bool {
 	return ok && len(list) == 0
 }
 
-func isEmptyObject(value any) bool {
-	object, ok := value.(map[string]any)
-	return ok && len(object) == 0
+func isObject(value any) bool {
+	_, ok := value.(map[string]any)
+	return ok
 }
 
 // isGoZero reports whether Go already produces this value for an unset field.

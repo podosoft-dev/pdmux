@@ -11,6 +11,7 @@ import {
 } from "@pdmux/protocol";
 import type { Host } from "./host.entity";
 import type { HostService, ProbeKind } from "./host-service.entity";
+import type { ServiceExposure } from "../integrations/service-exposure.entity";
 
 /**
  * Shapes the sidebar reads. Kept as pure functions over rows + the stored
@@ -31,6 +32,14 @@ export interface HostServiceView {
   enabled: boolean;
   status: ProbeStatus;
   latencyMs: number | null;
+  /** Active public hostname, if this service is routed through a managed provider. */
+  exposure: {
+    id: string;
+    provider: "cloudflare";
+    url: string;
+    mode: "access" | "public";
+    status: "pending" | "protected" | "public" | "error";
+  } | null;
 }
 
 export interface HostView {
@@ -60,6 +69,7 @@ export interface HostView {
   os: string | null;
   arch: string | null;
   capabilities: string[];
+  connectorCapabilities: { cloudflared: boolean };
   lastSeenAt: string | null;
   online: boolean;
   connected: boolean;
@@ -119,12 +129,15 @@ export function isOnline(lastSeenAt: Date | null, heartbeatSec: number, now: num
 export function joinServiceProbes(
   services: HostService[],
   heartbeat: Heartbeat | null,
+  exposures: ServiceExposure[] = [],
 ): HostServiceView[] {
   const probes = new Map((heartbeat?.services ?? []).map((p) => [p.id, p]));
+  const exposureByService = new Map(exposures.map((exposure) => [exposure.serviceId, exposure]));
   return [...services]
     .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label))
     .map((service) => {
       const probe = probes.get(service.id);
+      const exposure = exposureByService.get(service.id);
       return {
         id: service.id,
         label: service.label,
@@ -138,6 +151,13 @@ export function joinServiceProbes(
         // support probing must not paint every service red.
         status: probe?.status ?? "unknown",
         latencyMs: probe?.latencyMs ?? null,
+        exposure: exposure ? {
+          id: exposure.id,
+          provider: "cloudflare",
+          url: `https://${exposure.hostname}`,
+          mode: exposure.mode,
+          status: exposure.status,
+        } : null,
       };
     });
 }
@@ -157,6 +177,7 @@ export function toHostView(
      * the API, the browser and the Go agent cannot reach three different verdicts.
      */
     latestAgentVersion: string | null;
+    exposures?: ServiceExposure[];
   },
 ): HostView {
   const heartbeat = host.lastHeartbeat;
@@ -181,6 +202,7 @@ export function toHostView(
     os: host.os,
     arch: host.arch,
     capabilities: host.capabilities ?? [],
+    connectorCapabilities: { cloudflared: host.connectorCapabilities?.cloudflared === true },
     lastSeenAt: host.lastSeenAt ? host.lastSeenAt.toISOString() : null,
     online: isOnline(host.lastSeenAt, options.heartbeatSec, options.now),
     connected: options.connected,
@@ -188,7 +210,7 @@ export function toHostView(
     sessions: heartbeat?.sessions ?? [],
     usage: heartbeat?.usage ?? [],
     diagnostics: heartbeat?.diagnostics ?? [],
-    services: joinServiceProbes(services, heartbeat),
+    services: joinServiceProbes(services, heartbeat, options.exposures),
     gitRootCount: options.gitRootCount,
     // ⚠ `?? null`, NOT `?? []`: the absence is the answer for an older agent.
     listeners: heartbeat?.listeners ?? null,

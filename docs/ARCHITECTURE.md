@@ -139,6 +139,33 @@ There are two places where a VPN genuinely does help, and this document does not
    prerequisite, so something has to create a path. VPN or proxy, it is then used **for
    reachability** and not as a replacement for the agent.
 
+### 2-3. External service reachability is a separate provider layer
+
+The agent's outbound WebSocket makes pdmux able to operate a host; it does not make a host's own web
+service reachable from another network. Card shortcuts therefore start hidden, and external service
+access is modelled separately as three provider-neutral records:
+
+```
+fleet integration connection → host connector → service exposure
+```
+
+Cloudflare is the first adapter. A connection owns the encrypted API token and selected zone/policy;
+a host connector owns one dedicated remotely managed tunnel and its encrypted run token; a service
+exposure owns the hostname, HTTP(S) origin choice, protection mode and provider resource ids. The
+separation matters during deletion: provider resources are removed while all identifiers still
+exist, and database cascades happen only after that succeeds.
+
+The public hostname is deliberately **not** implemented as another URL template. A template can draw
+a link but cannot prove that DNS, ingress and authentication exist, cannot tear them down, and cannot
+report connector state. A managed exposure can do all four and becomes the service's preferred URL
+only after provisioning succeeds.
+
+The model leaves room for a Tailscale adapter without pretending the providers are identical.
+Tailscale Serve (tailnet-only) and Funnel (public) have different identity and policy semantics from
+Cloudflare Access, so a future adapter should map the shared intent — private or explicitly public
+HTTP reachability — while keeping provider-specific configuration behind its boundary. It is not
+implemented in this release, and raw TCP is intentionally outside the current exposure contract.
+
 ---
 
 ## 3. Terminals: the agent opens the PTY

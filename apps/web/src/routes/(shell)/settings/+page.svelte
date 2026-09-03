@@ -36,6 +36,7 @@
   import { fmt, getI18n } from "#lib/i18n/index.js";
   import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
   import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
+  import CloudflareIntegrationCard from "#lib/dashboard/components/cloudflare-integration-card.svelte";
   import { errorCode, fleetApi } from "#lib/dashboard/api.js";
   import {
     FLEET_FIELD_GROUPS,
@@ -266,6 +267,8 @@
       </label>
     </Card.Content>
   </Card.Root>
+
+  <CloudflareIntegrationCard canManage={data.canManage} />
 
   <!--
     THE SWEEP, APART FROM EVERYTHING ABOVE IT.

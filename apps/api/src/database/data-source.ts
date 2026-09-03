@@ -17,6 +17,9 @@ import { UserMcpKey } from "../mcp/user-mcp-key.entity";
 import { HostMetricSample } from "../metrics/host-metric-sample.entity";
 import { UserHostPref } from "../prefs/user-host-pref.entity";
 import { UserLayout } from "../prefs/user-layout.entity";
+import { HostConnector } from "../integrations/host-connector.entity";
+import { IntegrationConnection } from "../integrations/integration-connection.entity";
+import { ServiceExposure } from "../integrations/service-exposure.entity";
 
 const compiledMigrations = join(process.cwd(), "dist", "migrations");
 const migrations = existsSync(compiledMigrations)
@@ -36,13 +39,16 @@ export const dataSourceOptions: DataSourceOptions = {
     AgentToken,
     FleetSetting,
     Host,
+    HostConnector,
     HostGitRoot,
     HostMcpKey,
     HostMetricSample,
     HostService,
+    IntegrationConnection,
     Repo,
     RepoCommit,
     RepoRef,
+    ServiceExposure,
     UserHostPref,
     UserLayout,
     UserMcpKey,

@@ -255,6 +255,9 @@ function usable(value: string | null | undefined): string | null {
  * `localhost` would open the operator's own machine, which is a different computer.
  */
 export function serviceUrl(host: Pick<HostView, "address" | "label">, service: HostServiceView): string {
+  if (service.exposure?.url && (service.exposure.status === "protected" || service.exposure.status === "public")) {
+    return service.exposure.url;
+  }
   const address = (host.address ?? "").trim();
   const path = service.path && service.path !== "/" ? service.path : "";
   const template = (service.urlTemplate ?? "").trim();

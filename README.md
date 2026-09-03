@@ -61,8 +61,12 @@ every git call carries `GIT_OPTIONAL_LOCKS=0` so even `git status` leaves the in
 disturbing a checkout you are working in is the premise. The trade is that remote branches are as of
 your last fetch, and the panel says so.
 
-**Service shortcuts.** Register the services a host exposes (port, probe type, URL) and open them
-straight from the card. The agent probes them on each heartbeat and shows whether they answered.
+**Services and external access.** Register the services a host exposes (port, probe type, URL) and
+the agent probes them on each heartbeat. Card shortcuts are opt-in per host and start hidden: a
+loopback or LAN URL is usually useful only on the same network. When a service must be reachable
+elsewhere, an administrator can publish its HTTP or HTTPS port through Cloudflare Tunnel, protected
+by a reusable Cloudflare Access policy by default. Public access is an explicit, separately
+confirmed mode. Raw TCP forwarding is not included.
 
 ## How it works
 
@@ -138,6 +142,21 @@ root; a machine with no route out takes a token instead
 
 If the host has tmux, its sessions show up immediately. If not, you can still open a plain shell, and
 the card says so.
+
+### Publishing a host service
+
+Connect Cloudflare from **Fleet settings** with a scoped API token, then open a host's service menu
+and choose **Set up external access**. pdmux suggests a `service-host.base-domain` hostname, but you
+can edit it before saving. It creates one remotely managed tunnel per host and attaches each service
+to that host's ingress configuration.
+
+The host agent downloads the matching official `cloudflared` release into its private state
+directory, verifies the release digest, and keeps the previous executable for rollback. It does not
+install a system package or service. The tunnel token is encrypted in PostgreSQL, sent only in the
+agent configuration, and passed to `cloudflared` through its environment rather than argv.
+
+See [the Cloudflare setup and recovery guide](docs/OPERATIONS.md#2-7-publishing-http-services-with-cloudflare-tunnel)
+for token permissions, cleanup order and failure states.
 
 ### Without any machines
 

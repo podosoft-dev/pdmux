@@ -9,6 +9,8 @@ import type {
   HostServiceView,
   HostView,
   RepoRow,
+  CloudflareIntegrationView,
+  ServiceExposureView,
 } from "#lib/dashboard/types.js";
 
 /**
@@ -36,11 +38,20 @@ export const load: PageServerLoad = async ({ locals, params, url, fetch }) => {
     }
   };
 
-  const [services, gitRoots, repos, tokens, scope, fleet] = await Promise.all([
+  const [services, gitRoots, repos, tokens, exposures, cloudflare, scope, fleet] = await Promise.all([
     readList<HostServiceView>(`/api/hosts/${params.id}/services`),
     readList<HostGitRootView>(`/api/hosts/${params.id}/git-roots`),
     readList<RepoRow>(`/api/hosts/${params.id}/repos`),
     readList<AgentTokenView>(`/api/hosts/${params.id}/tokens`),
+    readList<ServiceExposureView>(`/api/hosts/${params.id}/exposures`),
+    (async (): Promise<CloudflareIntegrationView | null> => {
+      try {
+        const res = await fetch("/api/integrations/cloudflare");
+        return res.ok ? ((await res.json()) as CloudflareIntegrationView | null) : null;
+      } catch {
+        return null;
+      }
+    })(),
     // Same question as the shell asks, and the same fail-closed default: whether this
     // session may change the fleet depends on the active organization, which a loader
     // cannot see. Asking keeps one copy of the rule.
@@ -74,6 +85,8 @@ export const load: PageServerLoad = async ({ locals, params, url, fetch }) => {
     gitRoots,
     repos,
     tokens,
+    exposures,
+    cloudflare,
     fleetGitRoots: fleet.gitRoots,
     gitIntervalSec: fleet.gitIntervalSec,
     canManage: scope.canManage,

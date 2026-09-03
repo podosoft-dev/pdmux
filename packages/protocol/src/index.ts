@@ -162,6 +162,15 @@ export const agentDiagnosticSchema = z.object({
 });
 export type AgentDiagnostic = z.infer<typeof agentDiagnosticSchema>;
 
+/** State of the Cloudflare connector process managed by this agent. */
+export const cloudflaredStatusSchema = z.object({
+	state: z.enum(['off', 'installing', 'connecting', 'connected', 'failed']).default('off'),
+	version: z.string().max(32).nullable().default(null),
+	/** Stable diagnostic code; provider output and credentials never travel here. */
+	errorCode: z.string().max(64).nullable().default(null),
+});
+export type CloudflaredStatus = z.infer<typeof cloudflaredStatusSchema>;
+
 export const heartbeatSchema = z.object({
 	ts: epochSeconds,
 	resource: resourceSchema.default({}),
@@ -188,6 +197,8 @@ export const heartbeatSchema = z.object({
 	listeners: z.array(listenerSchema).max(128).optional(),
 	/** Degraded capabilities on the host — surfaced on the card, not just in logs. */
 	diagnostics: z.array(agentDiagnosticSchema).max(16).default([]),
+	/** Absent from old agents; the default is the fail-closed, inactive state. */
+	cloudflared: cloudflaredStatusSchema.default({ state: 'off', version: null, errorCode: null }),
 });
 export type Heartbeat = z.infer<typeof heartbeatSchema>;
 
@@ -755,6 +766,12 @@ export const agentUpdateAbilitySchema = z.object({
 });
 export type AgentUpdateAbility = z.infer<typeof agentUpdateAbilitySchema>;
 
+export const agentConnectorAbilitySchema = z.object({
+	/** This agent can install, verify, run, and report a Cloudflare tunnel connector. */
+	cloudflared: z.boolean().default(false),
+});
+export type AgentConnectorAbility = z.infer<typeof agentConnectorAbilitySchema>;
+
 export const agentHelloSchema = z.object({
 	protocolVersion: z.number().int().positive(),
 	/**
@@ -789,6 +806,8 @@ export const agentHelloSchema = z.object({
 	capabilities: z.array(agentCapabilitySchema).default([]),
 	/** Absent from every agent built before remote update — the default says "no". */
 	update: agentUpdateAbilitySchema.default({}),
+	/** A growable object, not a closed capability enum, so old servers ignore it safely. */
+	connectors: agentConnectorAbilitySchema.default({ cloudflared: false }),
 });
 export type AgentHello = z.infer<typeof agentHelloSchema>;
 
@@ -928,6 +947,15 @@ export const agentServiceConfigSchema = z.object({
 });
 export type AgentServiceConfig = z.infer<typeof agentServiceConfigSchema>;
 
+export const agentCloudflaredConfigSchema = z.object({
+	enabled: z.boolean().default(false),
+	/** Remote tunnel token. It is encrypted at rest and never returned by browser APIs. */
+	token: z.string().max(4096).default(''),
+	/** Latest-release metadata is refreshed no more often than this. */
+	checkIntervalSec: z.number().int().min(3600).max(604_800).default(86_400),
+});
+export type AgentCloudflaredConfig = z.infer<typeof agentCloudflaredConfigSchema>;
+
 export const agentConfigSchema = z.object({
 	heartbeatSec: z.number().int().min(1).max(3600).default(5),
 	gitIntervalSec: z.number().int().min(10).max(86_400).default(120),
@@ -948,6 +976,12 @@ export const agentConfigSchema = z.object({
 	bodyMaxChars: z.number().int().min(200).max(20_000).default(1200),
 	/** Terminal output the agent may buffer per pane before it drops oldest bytes. */
 	terminalBufferBytes: z.number().int().min(4096).max(4_000_000).default(262_144),
+	/** Dedicated per-host Cloudflare tunnel connector. TCP routes are intentionally unsupported. */
+	cloudflared: agentCloudflaredConfigSchema.default({
+		enabled: false,
+		token: '',
+		checkIntervalSec: 86_400,
+	}),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 

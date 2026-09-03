@@ -16,6 +16,7 @@ import {
 	DIFF_CAPS,
 	PROTOCOL_VERSION,
 	TERMINAL_WS_PATH,
+	agentCapabilitySchema,
 	agentConfigSchema,
 	agentDownstreamSchema,
 	agentHelloSchema,
@@ -185,6 +186,7 @@ describe('[TC-PDPROTO-007] the contract evolves additively', () => {
 		// list has to change, the change must be an ADDITION (and a version bump if
 		// a reader really cannot cope).
 		expect(Object.keys(heartbeatSchema.shape).sort()).toEqual([
+			'cloudflared',
 			'diagnostics',
 			'listeners',
 			'resource',
@@ -201,10 +203,26 @@ describe('[TC-PDPROTO-007] the contract evolves additively', () => {
 			'refs', 'remote', 'tree', 'truncated', 'ts', 'uncommitted', 'workingDiff',
 		]);
 		expect(Object.keys(agentConfigSchema.shape).sort()).toEqual([
-			'bodyMaxChars', 'gitDetailBudget', 'gitIntervalSec', 'gitLimit', 'gitRoots', 'heartbeatSec',
+			'bodyMaxChars', 'cloudflared', 'gitDetailBudget', 'gitIntervalSec', 'gitLimit', 'gitRoots', 'heartbeatSec',
 			'probeTimeoutMs', 'services', 'statusFileCap', 'terminalBufferBytes', 'usageIntervalSec',
 			'usageProviders',
 		]);
+	});
+
+	it('[TC-PDPROTO-015] adds Cloudflare orchestration without extending the closed capability enum', () => {
+		const config = agentConfigSchema.parse({
+			cloudflared: { enabled: true, token: 'tunnel-token' },
+		});
+		expect(config.cloudflared).toEqual({
+			enabled: true,
+			token: 'tunnel-token',
+			checkIntervalSec: 86_400,
+		});
+		const oldHeartbeat = heartbeatSchema.parse({ ts: 1 });
+		expect(oldHeartbeat.cloudflared).toEqual({ state: 'off', version: null, errorCode: null });
+		// Connector support grows in its own object. Adding "cloudflared" to the
+		// enum would make a new agent's entire hello invalid on an old server.
+		expect(agentCapabilitySchema.options).not.toContain('cloudflared');
 	});
 
 	it('[TC-PDPROTO-014] carries swap without requiring an agent to know about it', () => {

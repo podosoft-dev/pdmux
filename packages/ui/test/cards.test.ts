@@ -53,7 +53,7 @@ const SERVICES = serviceOptions([
 ]);
 
 describe('[TC-PDUI-001] a host card renders only the widgets its preferences allow', () => {
-	it('shows every widget by default and calls back for settings', () => {
+	it('hides service links by default and calls back for settings', () => {
 		const onOpenSettings = vi.fn();
 		const { container } = render(HostCard, {
 			props: {
@@ -66,9 +66,10 @@ describe('[TC-PDUI-001] a host card renders only the widgets its preferences all
 			},
 		});
 		expect(container.querySelector('[data-pdmux-name]')?.textContent).toBe('alpha');
-		for (const widget of ['agents', 'resources', 'links']) {
+		for (const widget of ['agents', 'resources']) {
 			expect(container.querySelector(`[data-pdmux-widget="${widget}"]`)).not.toBeNull();
 		}
+		expect(container.querySelector('[data-pdmux-widget="links"]')).toBeNull();
 		// The busy/idle chip is still gone: it only restated the agent count in colour.
 		expect(container.querySelector('.pdmux-badge')).toBeNull();
 		// Reachability is drawn for a running host too — a card with no mark at all cannot be
@@ -85,7 +86,7 @@ describe('[TC-PDUI-001] a host card renders only the widgets its preferences all
 
 
 	it('[TC-PDUI-177] hides a widget the preferences switch off, and marks a stopped host', () => {
-		const prefs = { ...cardPrefs({}, 'h1'), resources: false };
+		const prefs = { ...cardPrefs({}, 'h1'), resources: false, links: true };
 		const { container } = render(HostCard, {
 			props: { host: { id: 'h1', name: 'alpha', state: 'offline' }, agents: AGENTS, prefs, services: SERVICES },
 		});

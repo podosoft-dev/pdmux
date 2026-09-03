@@ -5,6 +5,7 @@ import { HostServicesService } from "../hosts/host-services.service";
 import { HostsService } from "../hosts/hosts.service";
 import { AgentConfigService } from "./agent-config.service";
 import { AgentRegistryService } from "./agent-registry.service";
+import { CloudflareService } from "../integrations/cloudflare.service";
 
 /**
  * Delivers a settings change to the agents that are connected RIGHT NOW.
@@ -39,6 +40,7 @@ export class AgentConfigPushService {
     private readonly hosts: HostsService,
     private readonly config: AgentConfigService,
     private readonly registry: AgentRegistryService,
+    private readonly cloudflare?: CloudflareService,
   ) {}
 
   /**
@@ -55,6 +57,9 @@ export class AgentConfigPushService {
     // Same shape as the services listener: a git root belongs to one machine, so
     // one host's config moved and nobody else's did.
     this.hostGitRoots.setChangeListener((hostId, organizationId) =>
+      this.pushHost(hostId, organizationId),
+    );
+    this.cloudflare?.setChangeListener((hostId, organizationId) =>
       this.pushHost(hostId, organizationId),
     );
   }

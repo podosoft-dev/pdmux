@@ -46,6 +46,7 @@ function heartbeat(ts: number, cpuPct: number): Heartbeat {
     diagnostics: [],
     listeners: [],
     services: [],
+    cloudflared: { state: "off", version: null, errorCode: null },
   };
 }
 

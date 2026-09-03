@@ -56,7 +56,9 @@ const defs = committedSchema.$defs as Record<string, JsonObject>;
  */
 const EXPECTED_DEFS = [
 	'agentCapability',
+	'agentCloudflaredConfig',
 	'agentConfig',
+	'agentConnectorAbility',
 	'agentDiagnostic',
 	'agentDownstream',
 	'agentExec',
@@ -66,6 +68,7 @@ const EXPECTED_DEFS = [
 	'agentUpdateAbility',
 	'agentUpstream',
 	'agentUsage',
+	'cloudflaredStatus',
 	'commitDetail',
 	'diffFile',
 	'epochSeconds',

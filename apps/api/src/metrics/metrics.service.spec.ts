@@ -31,6 +31,7 @@ function heartbeatAt(ts: number, cpuPct: number, swap?: Partial<Heartbeat["resou
     diagnostics: [],
     listeners: [],
     services: [],
+    cloudflared: { state: "off", version: null, errorCode: null },
   };
 }
 

@@ -11,6 +11,7 @@ import { HostGitRoot } from "./host-git-root.entity";
 import { HostService } from "./host-service.entity";
 import { resolveGitRoots } from "./git-roots";
 import { orderAssignments, toHostView, type HostView } from "./host-view";
+import { ServiceExposure } from "../integrations/service-exposure.entity";
 
 /** Set by the gateway so the sidebar can distinguish "beat recently" from
  *  "socket is attached right now" without the hosts module importing it. */
@@ -42,6 +43,8 @@ export type HostEnabledChangeListener = (hostId: string, enabled: boolean) => Pr
  * Same registration seam and the same one-way dependency as the listener above.
  */
 export type HostRemovedListener = (hostId: string) => Promise<void> | void;
+export type HostRemovingListener = (hostId: string, organizationId: string) => Promise<void> | void;
+export type HostMovingListener = (hostId: string, organizationId: string) => Promise<void> | void;
 
 /**
  * The one render of an enrollment code, handed over with the host it belongs to.
@@ -86,6 +89,8 @@ export class HostsService {
   private enrollmentIssuer: EnrollmentIssuer | null = null;
   private enabledChangeListener: HostEnabledChangeListener = () => {};
   private removedListener: HostRemovedListener = () => {};
+  private removingListener: HostRemovingListener = () => {};
+  private movingListener: HostMovingListener = () => {};
 
   constructor(
     private readonly hosts: Repository<Host>,
@@ -98,6 +103,7 @@ export class HostsService {
     private readonly settings: FleetSettingsService,
     private readonly releases: AgentReleaseService,
     private readonly dataSource: DataSource,
+    private readonly exposures?: Repository<ServiceExposure>,
   ) {}
 
   /** Called once by the agent gateway at startup (avoids a circular provider). */
@@ -118,6 +124,16 @@ export class HostsService {
   /** Called once by the agent disconnect service at startup (same reason). */
   setRemovedListener(listener: HostRemovedListener): void {
     this.removedListener = listener;
+  }
+
+  /** External provider cleanup runs before the irreversible database cascade. */
+  setRemovingListener(listener: HostRemovingListener): void {
+    this.removingListener = listener;
+  }
+
+  /** Provider-owned resources are scope-bound and cannot silently follow a row. */
+  setMovingListener(listener: HostMovingListener): void {
+    this.movingListener = listener;
   }
 
   /**
@@ -146,6 +162,13 @@ export class HostsService {
       rootsByHost.set(root.hostId, [...(rootsByHost.get(root.hostId) ?? []), root]);
     }
     const settings = await this.settings.resolve(organizationId);
+    const exposureRows = this.exposures
+      ? await this.exposures.find({ where: { hostId: In(hosts.map((host) => host.id)), provider: "cloudflare" } })
+      : [];
+    const exposuresByHost = new Map<string, ServiceExposure[]>();
+    for (const exposure of exposureRows) {
+      exposuresByHost.set(exposure.hostId, [...(exposuresByHost.get(exposure.hostId) ?? []), exposure]);
+    }
     const { heartbeatSec } = settings;
     const now = Date.now();
     return hosts.map((host) =>
@@ -155,6 +178,7 @@ export class HostsService {
         now,
         connected: this.connectedProbe(host.id),
         latestAgentVersion: this.releases.latestFor(host.os, host.arch),
+        exposures: exposuresByHost.get(host.id) ?? [],
       }),
     );
   }
@@ -164,12 +188,16 @@ export class HostsService {
     const services = await this.services.find({ where: { hostId: host.id }, order: { sortOrder: "ASC" } });
     const roots = await this.gitRoots.find({ where: { hostId: host.id } });
     const settings = await this.settings.resolve(organizationId);
+    const exposures = this.exposures
+      ? await this.exposures.find({ where: { hostId: host.id, provider: "cloudflare" } })
+      : [];
     return toHostView(host, services, {
       gitRootCount: resolveGitRoots(settings, roots).length,
       heartbeatSec: settings.heartbeatSec,
       now: Date.now(),
       connected: this.connectedProbe(host.id),
       latestAgentVersion: this.releases.latestFor(host.os, host.arch),
+      exposures,
     });
   }
 
@@ -224,6 +252,7 @@ export class HostsService {
       sortOrder,
       enabled: dto.enabled ?? true,
       capabilities: [],
+      connectorCapabilities: { cloudflared: false },
     });
     return this.hosts.save(host);
   }
@@ -306,6 +335,7 @@ export class HostsService {
    */
   async remove(organizationId: string, id: string): Promise<{ id: string; label: string }> {
     const host = await this.get(organizationId, id);
+    await this.removingListener(host.id, organizationId);
     await this.hosts.delete({ id: host.id });
     await this.notifyRemoved(host.id);
     return { id: host.id, label: host.label };
@@ -374,6 +404,7 @@ export class HostsService {
         os: hello.os,
         arch: hello.arch,
         capabilities: hello.capabilities,
+        connectorCapabilities: hello.connectors,
         // Empty is what an agent built before this field sends, and it is also a real
         // answer from one that found no routable interface. Either way it is not an
         // address, so it is stored as the absence rather than as "".
@@ -416,14 +447,16 @@ export class HostsService {
    * (`metricStepSec` is applied when the sample is WRITTEN, so there is exactly
    * one stream per host and no per-viewer answer to give).
    *
-   * ⚠ NOTHING ABOUT THE AGENT CHANGES. Tokens, services, repositories and samples
-   * all hang off `hostId`, so they follow the row; the credential stays valid and
-   * the socket is deliberately left open. The scope is re-read
+   * Tokens, services, repositories and samples all hang off `hostId`, so they
+   * follow the row; the credential stays valid and the socket is deliberately
+   * left open. Provider-owned external resources are the exception: a registered
+   * moving listener refuses the move until those resources are removed. The scope is re-read
    * where it is used rather than captured on the socket, so the next heartbeat lands in the
    * new scope's settings.
    */
   async move(organizationId: string, id: string, targetEmail: string): Promise<Host> {
     const host = await this.get(organizationId, id);
+    await this.movingListener(host.id, organizationId);
     const target = await this.resolveUserScope(targetEmail);
     if (target === organizationId) {
       throw new AppException("HOST_ALREADY_IN_SCOPE", "This host is already in that account", 409);

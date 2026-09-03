@@ -87,12 +87,6 @@ const FORBIDDEN = [
 	{ digest: '2b366f5f3dae53d0', mode: 'exact', what: 'a private product name' },
 	{ digest: '838e33f363bbbcea', mode: 'exact', what: 'an unrelated account identity' },
 	{ digest: '1c625f07b9da2759', mode: 'exact', what: 'the original secret store, not a dependency here' },
-	{
-		digest: '6180b699adf1ec6b',
-		mode: 'prefix',
-		length: 10,
-		what: 'the original access gateway; pdmux must not require it',
-	},
 	{ digest: '70d784102340baee', mode: 'exact', what: 'the terminal server pdmux replaced with its own PTY' },
 ];
 
@@ -103,22 +97,21 @@ const FORBIDDEN = [
  * below. Adding one stays a conscious act.
  */
 const ALLOW = [
-	// The architecture record explains what changed and why; naming the thing it
-	// replaced is the point of that document. Same for the operations guide, which
-	// names the gateway an operator may put in front. These live in the WORKSPACE now,
-	// reached with `--extra-root`; the paths stay relative to whichever root the file
-	// came from, so they read the same as before.
-	{ file: 'docs/ARCHITECTURE.md', words: ['70d784102340baee', '6180b699adf1ec6b', '07e25fc255c61660'] },
-	{ file: 'docs/OPERATIONS.md', words: ['6180b699adf1ec6b', '07e25fc255c61660'] },
+	// The architecture record explains what changed and why; naming the terminal
+	// server it replaced is the point of that document. These live in the WORKSPACE
+	// now, reached with `--extra-root`; paths stay relative to whichever root the
+	// file came from, so they read the same as before.
+	{ file: 'docs/ARCHITECTURE.md', words: ['70d784102340baee', '07e25fc255c61660'] },
+	{ file: 'docs/OPERATIONS.md', words: ['07e25fc255c61660'] },
 	// Transitive dependency names the lockfile records. We do not depend on the
 	// service; Bun writes the transitive package name into the lockfile.
-	{ file: 'bun.lock', words: ['6180b699adf1ec6b', 'c253221a80dc86ec'] },
+	{ file: 'bun.lock', words: ['c253221a80dc86ec'] },
 	// PodoKit ships this OAuth guide; it names tunnels as one way to get an https
 	// callback in development. It is a suggestion in a vendored doc, not a
 	// requirement of pdmux.
 	{
 		file: '.claude/skills/podokit-configure-auth/references/google.md',
-		words: ['6180b699adf1ec6b', '07e25fc255c61660'],
+		words: ['07e25fc255c61660'],
 	},
 	/*
 	 * The usage snapshot's LEGACY FILENAME, which is functional rather than descriptive.

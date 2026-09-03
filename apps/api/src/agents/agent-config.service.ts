@@ -1,4 +1,9 @@
-import { agentConfigSchema, type AgentConfig, type AgentServiceConfig } from "@pdmux/protocol";
+import {
+  agentConfigSchema,
+  type AgentCloudflaredConfig,
+  type AgentConfig,
+  type AgentServiceConfig,
+} from "@pdmux/protocol";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import type { FleetSettings } from "../fleet/fleet-settings";
 import { resolveGitRoots } from "../hosts/git-roots";
@@ -6,6 +11,7 @@ import { HostGitRootsService } from "../hosts/host-git-roots.service";
 import type { HostGitRoot } from "../hosts/host-git-root.entity";
 import { HostServicesService } from "../hosts/host-services.service";
 import type { HostService } from "../hosts/host-service.entity";
+import { CloudflareService } from "../integrations/cloudflare.service";
 
 /**
  * Builds the `config` the server pushes to an agent.
@@ -20,13 +26,19 @@ export class AgentConfigService {
     private readonly settings: FleetSettingsService,
     private readonly services: HostServicesService,
     private readonly gitRoots: HostGitRootsService,
+    private readonly cloudflare?: CloudflareService,
   ) {}
 
   async build(hostId: string, organizationId: string): Promise<AgentConfig> {
     const settings = await this.settings.resolve(organizationId);
     const services = await this.services.listForHost(hostId);
     const roots = await this.gitRoots.listForHost(hostId);
-    return buildAgentConfig(settings, services, roots);
+    const cloudflared = await this.cloudflare?.agentConnector(hostId) ?? {
+      enabled: false,
+      token: "",
+      checkIntervalSec: 86_400,
+    };
+    return buildAgentConfig(settings, services, roots, cloudflared);
   }
 }
 
@@ -34,6 +46,7 @@ export function buildAgentConfig(
   settings: FleetSettings,
   services: HostService[],
   gitRoots: HostGitRoot[] = [],
+  cloudflared: AgentCloudflaredConfig = { enabled: false, token: "", checkIntervalSec: 86_400 },
 ): AgentConfig {
   const probes: AgentServiceConfig[] = services
     // ⚠ HALF OF WHAT "off" MEANS, and the half that costs something: a disabled
@@ -72,5 +85,6 @@ export function buildAgentConfig(
     statusFileCap: settings.statusFileCap,
     bodyMaxChars: settings.bodyMaxChars,
     terminalBufferBytes: settings.terminalBufferBytes,
+    cloudflared,
   });
 }

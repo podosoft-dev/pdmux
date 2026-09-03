@@ -31,6 +31,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/podosoft-dev/pdmux/agent/internal/cloudflared"
 	"github.com/podosoft-dev/pdmux/agent/internal/collect"
 	"github.com/podosoft-dev/pdmux/agent/internal/fs"
 	"github.com/podosoft-dev/pdmux/agent/internal/git"
@@ -154,6 +155,8 @@ type Options struct {
 	LinkStore *state.LinkStore
 	// SpawnPTY replaces the real pty, so the terminal path needs no shell.
 	SpawnPTY func(spec term.Spec) (term.Process, error)
+	// Cloudflared replaces the managed connector in specs. nil builds the live manager.
+	Cloudflared *cloudflared.Manager
 }
 
 // Agent owns the one connection and everything that reports over it.
@@ -173,6 +176,7 @@ type Agent struct {
 	logger      *log.Logger
 	version     string
 	update      UpdateHandler
+	cloudflared *cloudflared.Manager
 
 	// The timer loops read these; applyConfig writes them. Buffered so a `config`
 	// frame never waits on a collector — see retune.
@@ -229,16 +233,20 @@ func New(options Options) *Agent {
 	}
 	store := options.LedgerStore
 	links := options.LinkStore
+	stateDir := state.ResolveDir(state.DirInput{Env: environ()})
 	if store == nil || links == nil {
 		// Resolved once for both: it probes the filesystem to work out which unit
 		// this process is running under, and asking twice would answer twice.
-		dir := state.ResolveDir(state.DirInput{Env: environ()})
 		if store == nil {
-			store = git.NewFileStore(dir)
+			store = git.NewFileStore(stateDir)
 		}
 		if links == nil {
-			links = state.NewLinkStore(dir)
+			links = state.NewLinkStore(stateDir)
 		}
+	}
+	connector := options.Cloudflared
+	if connector == nil {
+		connector = cloudflared.New(cloudflared.Options{Dir: stateDir, Logger: logger})
 	}
 
 	a := &Agent{
@@ -248,6 +256,7 @@ func New(options Options) *Agent {
 		logger:         logger,
 		version:        version,
 		update:         updater,
+		cloudflared:    connector,
 		heartbeatReset: make(chan time.Duration, 1),
 		gitReset:       make(chan time.Duration, 1),
 		execSlots:      make(chan struct{}, execSlots),
@@ -350,6 +359,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	timers.Wait()
 	a.passes.Wait()
 	a.terminals.CloseAll()
+	a.cloudflared.Close()
 	return nil
 }
 
@@ -393,8 +403,8 @@ func (a *Agent) Version() string { return a.version }
 // and note that nothing is sent to it here. The capability list is this build's,
 // and it is ⚠ a closed enum in the contract — inventing a member an older server
 // does not know fails the whole `hello`, and that host silently vanishes from
-// the dashboard. Anything that needs to grow on its own goes in `update`
-// instead, which is an object.
+// the dashboard. Anything that needs to grow on its own goes in a separate
+// object (`update`, `connectors`) instead.
 func BuildHello(hostname, version, serverURL string, ability protocol.AgentUpdateAbility) protocol.AgentHello {
 	if hostname == "" {
 		hostname, _ = os.Hostname()
@@ -429,6 +439,7 @@ func BuildHello(hostname, version, serverURL string, ability protocol.AgentUpdat
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles)
 	}
 	hello.Update = ability
+	hello.Connectors.Cloudflared = true
 	return hello
 }
 
@@ -594,6 +605,7 @@ func (a *Agent) applyConfig(config protocol.AgentConfig) {
 	a.usage.SetProviders(usage.NewProviders(config.UsageProviders, usage.RegistryOptions{}))
 	a.usage.SetTTL(config.UsageIntervalSec)
 	a.terminals.SetBufferBytes(config.TerminalBufferBytes)
+	a.cloudflared.Apply(a.ctx, config.Cloudflared)
 	// Observations about the previous roots/providers describe a configuration
 	// that no longer exists; keeping them would report a root nobody asked for.
 	if !slices.Equal(previous.GitRoots, config.GitRoots) ||

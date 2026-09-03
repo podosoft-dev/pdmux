@@ -190,6 +190,7 @@ describe("HostsService", () => {
       diagnostics: [{ level: "warn", code: "git-missing", message: "git is not installed" }],
       services: [{ id: api.id, status: "up", latencyMs: 3 }],
       listeners: [{ port: 5173, process: "node", loopbackOnly: true }],
+      cloudflared: { state: "off", version: null, errorCode: null },
     };
     await ctx.service.applyHeartbeat(host.id, heartbeat);
 
@@ -296,6 +297,7 @@ describe("HostsService", () => {
       arch: "amd64",
       capabilities: [],
       update: { canRestart: true, restartMode: "systemd" },
+      connectors: { cloudflared: true },
     });
     await ctx.service.applyHello(laptop.id, {
       protocolVersion: 1,
@@ -308,6 +310,7 @@ describe("HostsService", () => {
       arch: "arm64",
       capabilities: [],
       update: { canRestart: true, restartMode: "launchd" },
+      connectors: { cloudflared: true },
     });
 
     const views = new Map((await ctx.service.list(ORG_A)).map((view) => [view.id, view]));

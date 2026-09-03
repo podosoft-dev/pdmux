@@ -25,17 +25,23 @@ const invalidFrames: unknown[] = [
 ];
 
 describe('terminal browser parser', () => {
-	it.each(validFrames)('matches the canonical Zod schema for valid frame %#', (frame) => {
-		const canonical = terminalServerFrameSchema.safeParse(frame);
-		const browser = parseTerminalServerFrame(frame);
+	it.each(validFrames.map((frame) => [frame] as const))(
+		'matches the canonical Zod schema for valid frame %#',
+		(frame) => {
+			const canonical = terminalServerFrameSchema.safeParse(frame);
+			const browser = parseTerminalServerFrame(frame);
 
-		expect(canonical.success).toBe(true);
-		expect(browser.ok).toBe(true);
-		if (canonical.success && browser.ok) expect(browser.data).toEqual(canonical.data);
-	});
+			expect(canonical.success).toBe(true);
+			expect(browser.ok).toBe(true);
+			if (canonical.success && browser.ok) expect(browser.data).toEqual(canonical.data);
+		},
+	);
 
-	it.each(invalidFrames)('matches the canonical Zod schema for invalid frame %#', (frame) => {
-		expect(terminalServerFrameSchema.safeParse(frame).success).toBe(false);
-		expect(parseTerminalServerFrame(frame).ok).toBe(false);
-	});
+	it.each(invalidFrames.map((frame) => [frame] as const))(
+		'matches the canonical Zod schema for invalid frame %#',
+		(frame) => {
+			expect(terminalServerFrameSchema.safeParse(frame).success).toBe(false);
+			expect(parseTerminalServerFrame(frame).ok).toBe(false);
+		},
+	);
 });

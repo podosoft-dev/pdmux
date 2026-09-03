@@ -117,6 +117,16 @@ const (
 	ProbeNone ProbeKind = "none"
 )
 
+type CloudflaredState string
+
+const (
+	CloudflaredOff        CloudflaredState = "off"
+	CloudflaredInstalling CloudflaredState = "installing"
+	CloudflaredConnecting CloudflaredState = "connecting"
+	CloudflaredConnected  CloudflaredState = "connected"
+	CloudflaredFailed     CloudflaredState = "failed"
+)
+
 // GitRefKind separates the three namespaces a ref can live in.
 type GitRefKind string
 
@@ -284,6 +294,13 @@ type AgentDiagnostic struct {
 	Message string `json:"message"`
 }
 
+// CloudflaredStatus is the state of the connector process managed by this agent.
+type CloudflaredStatus struct {
+	State     CloudflaredState `json:"state"`
+	Version   *string          `json:"version"`
+	ErrorCode *string          `json:"errorCode"`
+}
+
 // Heartbeat is what a host looks like right now.
 type Heartbeat struct {
 	Ts       int64          `json:"ts"`
@@ -306,6 +323,7 @@ type Heartbeat struct {
 	Listeners *[]Listener `json:"listeners,omitempty"`
 	// Diagnostics are degraded capabilities on the host — surfaced on the card, not just in logs.
 	Diagnostics []AgentDiagnostic `json:"diagnostics"`
+	Cloudflared CloudflaredStatus `json:"cloudflared"`
 }
 
 // ---------------------------------------------------------------------------
@@ -686,6 +704,12 @@ type AgentUpdateAbility struct {
 	RestartMode RestartMode `json:"restartMode"`
 }
 
+// AgentConnectorAbility is a growable feature object. It stays outside the closed
+// capability enum so an older server can ignore a newer connector safely.
+type AgentConnectorAbility struct {
+	Cloudflared bool `json:"cloudflared"`
+}
+
 // AgentHello is the first frame on every connection.
 type AgentHello struct {
 	ProtocolVersion int `json:"protocolVersion"`
@@ -709,7 +733,8 @@ type AgentHello struct {
 	Arch         string            `json:"arch"`
 	Capabilities []AgentCapability `json:"capabilities"`
 	// Update is absent from every agent built before remote update — the default says "no".
-	Update AgentUpdateAbility `json:"update"`
+	Update     AgentUpdateAbility    `json:"update"`
+	Connectors AgentConnectorAbility `json:"connectors"`
 }
 
 // UpdateStatus is progress AND outcome of a remote update, in one type.
@@ -740,6 +765,13 @@ type AgentServiceConfig struct {
 	Path  string    `json:"path"`
 }
 
+// AgentCloudflaredConfig steers the dedicated Cloudflare connector on this host.
+type AgentCloudflaredConfig struct {
+	Enabled          bool   `json:"enabled"`
+	Token            string `json:"token"`
+	CheckIntervalSec int    `json:"checkIntervalSec"`
+}
+
 // AgentConfig is how the server steers an agent that is already installed:
 // intervals, which repos to watch, which ports to probe — none of it requires
 // touching the host again.
@@ -766,7 +798,8 @@ type AgentConfig struct {
 	BodyMaxChars int `json:"bodyMaxChars"`
 	// TerminalBufferBytes is terminal output the agent may buffer per pane before
 	// it drops oldest bytes.
-	TerminalBufferBytes int `json:"terminalBufferBytes"`
+	TerminalBufferBytes int                    `json:"terminalBufferBytes"`
+	Cloudflared         AgentCloudflaredConfig `json:"cloudflared"`
 }
 
 // AgentUpdate is "replace yourself with this build".

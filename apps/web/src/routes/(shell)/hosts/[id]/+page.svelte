@@ -11,6 +11,8 @@
    */
   import { Badge } from "#lib/components/ui/badge/index.js";
   import { Button } from "#lib/components/ui/button/index.js";
+  import { Checkbox } from "#lib/components/ui/checkbox/index.js";
+  import { Switch } from "#lib/components/ui/switch/index.js";
   import { Input } from "#lib/components/ui/input/index.js";
   import { Label } from "#lib/components/ui/label/index.js";
   import * as Card from "#lib/components/ui/card/index.js";
@@ -19,9 +21,11 @@
   import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
   import * as Select from "#lib/components/ui/select/index.js";
   import * as Table from "#lib/components/ui/table/index.js";
+  import * as Alert from "#lib/components/ui/alert/index.js";
   import DataTable, { type DataTableColumn, type SortState } from "#lib/components/data-table.svelte";
   import HostAgentAccess from "#lib/dashboard/components/host-agent-access.svelte";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+  import CloudIcon from "@lucide/svelte/icons/cloud";
   import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import PlusIcon from "@lucide/svelte/icons/plus";
@@ -31,7 +35,7 @@
   import { writeClipboard } from "@pdmux/ui";
   import { discoveredPorts, filterPorts, suggestServiceLabel, type DiscoveredPort } from "@pdmux/core";
   import { fmt, formatDateTime, getI18n } from "#lib/i18n/index.js";
-  import { agentUpdateApi, errorCode, gitApi, hostsApi, servicesApi, tokensApi } from "#lib/dashboard/api.js";
+  import { agentUpdateApi, cloudflareApi, errorCode, gitApi, hostsApi, servicesApi, tokensApi } from "#lib/dashboard/api.js";
   import { offersUpdate, paneSlots, updateInFlight } from "#lib/dashboard/agent-update.js";
   import AgentUpdateDialog from "#lib/dashboard/components/agent-update-dialog.svelte";
   import AgentVersionCell from "#lib/dashboard/components/agent-version-cell.svelte";
@@ -50,6 +54,8 @@
     MintedAgentToken,
     ProbeKind,
     RepoRow,
+    CloudflareIntegrationView,
+    ServiceExposureView,
   } from "#lib/dashboard/types.js";
   import type { PageData } from "./$types";
 
@@ -118,6 +124,8 @@
   );
 
   let services = $state<HostServiceView[]>(untrack(() => data.services));
+  let exposures = $state<ServiceExposureView[]>(untrack(() => data.exposures));
+  let cloudflare = $state<CloudflareIntegrationView | null>(untrack(() => data.cloudflare));
   let gitRoots = $state<HostGitRootView[]>(untrack(() => data.gitRoots));
   /**
    * Collected repositories, kept in state because a git-root edit changes them.
@@ -167,11 +175,112 @@
   const serviceColumns = $derived<DataTableColumn<HostServiceView>[]>([
     { key: "label", label: i18n.t.dash.services.label, sortable: true },
     { key: "port", label: i18n.t.dash.services.port, sortable: true },
-    { key: "probe", label: i18n.t.dash.services.probe },
-    { key: "status", label: i18n.t.dash.services.status },
-    { key: "url", label: i18n.t.dash.services.url, value: (service) => serviceUrl(host, service) },
+    { key: "probe", label: i18n.t.dash.services.probe, hideBelow: "sm" },
+    { key: "status", label: i18n.t.dash.services.status, hideBelow: "md" },
+    {
+      key: "exposure",
+      label: i18n.t.dash.cloudflare.exposure,
+      value: (service) => exposureFor(service)?.status ?? "off",
+    },
+    { key: "url", label: i18n.t.dash.services.url, hideBelow: "md", value: (service) => serviceHref(service) },
     { key: "actions", label: "" },
   ]);
+
+  function exposureFor(service: HostServiceView): ServiceExposureView | null {
+    return exposures.find((candidate) => candidate.serviceId === service.id) ?? null;
+  }
+
+  function serviceHref(service: HostServiceView): string {
+    const exposure = exposureFor(service);
+    if (exposure && (exposure.status === "protected" || exposure.status === "public")) return exposure.url;
+    return serviceUrl(host, service);
+  }
+
+  function exposureStatus(exposure: ServiceExposureView | null): string {
+    if (!exposure) return i18n.t.dash.cloudflare.notExposed;
+    if (exposure.status === "error") return i18n.t.dash.cloudflare.cleanupRequired;
+    if (!exposure.connector || exposure.connector.state === "off") return i18n.t.dash.cloudflare.waitingConnector;
+    if (exposure.connector?.state === "installing") return i18n.t.dash.cloudflare.installing;
+    if (exposure.connector?.state === "connecting") return i18n.t.dash.cloudflare.connectingAgent;
+    if (exposure.connector?.state === "failed") return i18n.t.dash.cloudflare.failed;
+    return exposure.mode === "access" ? i18n.t.dash.cloudflare.protected : i18n.t.dash.cloudflare.public;
+  }
+
+  function hostnameSlug(value: string, fallback: string): string {
+    const clean = value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+    return clean || fallback;
+  }
+
+  let exposureOpen = $state(false);
+  let exposureService = $state<HostServiceView | null>(null);
+  let exposureForm = $state({
+    hostname: "",
+    mode: "access" as "access" | "public",
+    originScheme: "http" as "http" | "https",
+    noTlsVerify: false,
+    confirmPublic: false,
+  });
+  let savingExposure = $state(false);
+  let exposureDeleteOpen = $state(false);
+  const editingExposure = $derived(exposureService ? exposureFor(exposureService) : null);
+
+  function openExposure(service: HostServiceView): void {
+    const current = exposureFor(service);
+    exposureService = service;
+    exposureForm = {
+      hostname: current?.hostname ?? (cloudflare
+        ? `${hostnameSlug(service.label, service.id.slice(0, 8))}-${hostnameSlug(host.label, host.id.slice(0, 8))}.${cloudflare.baseDomain}`
+        : ""),
+      mode: current?.mode ?? "access",
+      originScheme: current?.originScheme ?? "http",
+      noTlsVerify: current?.noTlsVerify ?? false,
+      confirmPublic: false,
+    };
+    exposureOpen = true;
+  }
+
+  async function reloadExposures(): Promise<void> {
+    exposures = await cloudflareApi.exposures(host.id);
+    await shell.feed.refresh();
+  }
+
+  async function submitExposure(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const service = exposureService;
+    if (!service || !cloudflare) return;
+    savingExposure = true;
+    try {
+      const current = exposureFor(service);
+      const input = {
+        hostname: exposureForm.hostname.trim().toLowerCase(),
+        mode: exposureForm.mode,
+        originScheme: exposureForm.originScheme,
+        noTlsVerify: exposureForm.originScheme === "https" && exposureForm.noTlsVerify,
+        confirmPublic: exposureForm.mode === "public" && exposureForm.confirmPublic,
+      };
+      if (current) await cloudflareApi.updateExposure(host.id, service.id, current.id, input);
+      else await cloudflareApi.expose(host.id, service.id, input);
+      await reloadExposures();
+      exposureOpen = false;
+      toast.success(i18n.t.dash.cloudflare.exposureSaved);
+    } catch (cause: unknown) {
+      const code = errorCode(cause);
+      toast.error(code === "PUBLIC_EXPOSURE_CONFIRMATION_REQUIRED"
+        ? i18n.t.dash.cloudflare.publicConfirmation
+        : message(cause));
+    } finally {
+      savingExposure = false;
+    }
+  }
+
+  async function removeExposure(): Promise<void> {
+    const service = exposureService;
+    const current = service ? exposureFor(service) : null;
+    if (!service || !current) return;
+    await cloudflareApi.removeExposure(host.id, service.id, current.id);
+    await reloadExposures();
+    exposureOpen = false;
+  }
 
   function openServiceCreate(): void {
     editingService = null;
@@ -566,7 +675,9 @@
       // It is not ours any more, so there is nothing left to render here.
       await goto("/hosts");
     } catch (cause) {
-      moveError = causeMessage(cause, i18n.t);
+      moveError = errorCode(cause) === "HOST_EXTERNAL_ACCESS_ACTIVE"
+        ? i18n.t.dash.hosts.moveExternalAccess
+        : causeMessage(cause, i18n.t);
     } finally {
       moving = false;
     }
@@ -666,11 +777,11 @@
       perPage={0}
       label={i18n.t.dash.services.title}
     >
-      {#snippet row(service)}
+      {#snippet row(service, { cellClass })}
         <Table.Cell class="font-medium">{service.label}</Table.Cell>
         <Table.Cell class="tabular-nums">{service.port}</Table.Cell>
-        <Table.Cell class="text-muted-foreground">{probeLabel(service.probe)}</Table.Cell>
-        <Table.Cell>
+        <Table.Cell class={cellClass("probe")}>{probeLabel(service.probe)}</Table.Cell>
+        <Table.Cell class={cellClass("status")}>
           <!-- ⚠ "off" WINS OVER EVERY PROBE STATE, and it has to. Nothing is
                probing a disabled service, so its last known status is a memory —
                painting it "down" would send somebody after a service that is
@@ -687,7 +798,18 @@
             <Badge variant="secondary">{i18n.t.dash.services.unknown}</Badge>
           {/if}
         </Table.Cell>
-        <Table.Cell class="text-muted-foreground max-w-[24rem] truncate">{serviceUrl(host, service)}</Table.Cell>
+        {@const exposure = exposureFor(service)}
+        <Table.Cell>
+          <Badge
+            variant={exposure?.mode === "public" || exposure?.status === "error"
+              ? "destructive"
+              : exposure ? "outline" : "secondary"}
+            data-testid={`service-exposure-${service.label}`}
+          >{exposureStatus(exposure)}</Badge>
+        </Table.Cell>
+        <Table.Cell class={`${cellClass("url") ?? ""} text-muted-foreground max-w-[24rem] truncate`}>
+          {serviceHref(service)}
+        </Table.Cell>
         <!-- ⚠ THE WHOLE CELL IS GATED, NOT JUST THE ADD BUTTON. Only `service-add`
              checked this, so a read-only member still saw Edit, Turn off and
              Delete on every row and learned they were forbidden by pressing one
@@ -710,6 +832,9 @@
                 {service.enabled ? i18n.t.dash.services.turnOff : i18n.t.dash.services.turnOn}
               </DropdownMenu.Item>
               <DropdownMenu.Item onSelect={() => openServiceEdit(service)}>{i18n.t.dash.hosts.edit}</DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => openExposure(service)} data-testid={`service-expose-${service.label}`}>
+                {exposure ? i18n.t.dash.cloudflare.editExposure : i18n.t.dash.cloudflare.expose}
+              </DropdownMenu.Item>
               <DropdownMenu.Item onSelect={() => void moveService(service, -1)}>
                 {i18n.t.dash.hosts.moveUp}
               </DropdownMenu.Item>
@@ -937,6 +1062,125 @@
     </Card.Root>
   {/if}
 </div>
+
+<Dialog.Root bind:open={exposureOpen}>
+  <Dialog.Content
+    class="max-h-[100dvh] overflow-y-auto max-sm:h-[100dvh] max-sm:max-w-none max-sm:rounded-none sm:max-w-lg"
+    data-testid="service-exposure-form"
+  >
+    <Dialog.Header>
+      <Dialog.Title>{editingExposure ? i18n.t.dash.cloudflare.editExposure : i18n.t.dash.cloudflare.expose}</Dialog.Title>
+      <Dialog.Description>{i18n.t.dash.cloudflare.exposureIntro}</Dialog.Description>
+    </Dialog.Header>
+    {#if !cloudflare}
+      <Alert.Root>
+        <CloudIcon aria-hidden="true" />
+        <Alert.Description>{i18n.t.dash.cloudflare.notConnected}</Alert.Description>
+      </Alert.Root>
+      <Dialog.Footer>
+        <Button variant="outline" onclick={() => (exposureOpen = false)}>{i18n.t.dash.form.cancel}</Button>
+        <Button onclick={() => void goto("/settings")} data-testid="service-exposure-settings">
+          {i18n.t.dash.cloudflare.openSettings}
+        </Button>
+      </Dialog.Footer>
+    {:else}
+      <form class="grid gap-4" onsubmit={submitExposure}>
+        {#if host.connectorCapabilities?.cloudflared !== true}
+          <Alert.Root variant="destructive" data-testid="service-exposure-agent-required">
+            <TriangleAlertIcon aria-hidden="true" />
+            <Alert.Description>{i18n.t.dash.cloudflare.agentRequired}</Alert.Description>
+          </Alert.Root>
+        {/if}
+        <div class="grid gap-1.5">
+          <Label for="exposure-hostname">{i18n.t.dash.cloudflare.hostname}</Label>
+          <Input
+            id="exposure-hostname"
+            bind:value={exposureForm.hostname}
+            autocomplete="off"
+            data-testid="service-exposure-hostname"
+          />
+          <p class="text-muted-foreground text-xs">{i18n.t.dash.cloudflare.hostnameHint}</p>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-1.5">
+            <Label for="exposure-mode">{i18n.t.dash.cloudflare.mode}</Label>
+            <Select.Root type="single" bind:value={exposureForm.mode}>
+              <Select.Trigger id="exposure-mode" data-testid="service-exposure-mode">
+                {exposureForm.mode === "access" ? i18n.t.dash.cloudflare.accessMode : i18n.t.dash.cloudflare.publicMode}
+              </Select.Trigger>
+              <Select.Content>
+                <Select.Item value="access">{i18n.t.dash.cloudflare.accessMode}</Select.Item>
+                <Select.Item value="public">{i18n.t.dash.cloudflare.publicMode}</Select.Item>
+              </Select.Content>
+            </Select.Root>
+          </div>
+          <div class="grid gap-1.5">
+            <Label for="exposure-origin">{i18n.t.dash.cloudflare.originScheme}</Label>
+            <Select.Root type="single" bind:value={exposureForm.originScheme}>
+              <Select.Trigger id="exposure-origin" data-testid="service-exposure-origin">{exposureForm.originScheme}</Select.Trigger>
+              <Select.Content>
+                <Select.Item value="http">HTTP</Select.Item>
+                <Select.Item value="https">HTTPS</Select.Item>
+              </Select.Content>
+            </Select.Root>
+          </div>
+        </div>
+        <p class="text-muted-foreground text-xs">{i18n.t.dash.cloudflare.httpOnly}</p>
+        {#if exposureForm.originScheme === "https"}
+          <div class="flex items-start justify-between gap-4 rounded-md border p-3">
+            <div>
+              <Label for="exposure-no-tls">{i18n.t.dash.cloudflare.noTlsVerify}</Label>
+              <p class="text-muted-foreground text-xs">{i18n.t.dash.cloudflare.noTlsVerifyHint}</p>
+            </div>
+            <Switch id="exposure-no-tls" bind:checked={exposureForm.noTlsVerify} data-testid="service-exposure-no-tls" />
+          </div>
+        {/if}
+        {#if exposureForm.mode === "access"}
+          <Alert.Root>
+            <CloudIcon aria-hidden="true" />
+            <Alert.Description>
+              {fmt(i18n.t.dash.cloudflare.accessPolicyApplied, { policy: cloudflare.accessPolicyName })}
+            </Alert.Description>
+          </Alert.Root>
+        {:else}
+          <Alert.Root variant="destructive" data-testid="service-exposure-public-warning">
+            <TriangleAlertIcon aria-hidden="true" />
+            <Alert.Description>{i18n.t.dash.cloudflare.publicWarning}</Alert.Description>
+          </Alert.Root>
+          <Label class="flex items-start gap-2 text-sm">
+            <Checkbox bind:checked={exposureForm.confirmPublic} data-testid="service-exposure-public-confirm" />
+            {i18n.t.dash.cloudflare.publicConfirm}
+          </Label>
+        {/if}
+        <Dialog.Footer class="gap-2 max-sm:flex-col-reverse">
+          {#if editingExposure}
+            <Button type="button" variant="destructive" onclick={() => (exposureDeleteOpen = true)} data-testid="service-exposure-remove">
+              {i18n.t.dash.cloudflare.removeExposure}
+            </Button>
+          {/if}
+          <Button type="button" variant="outline" onclick={() => (exposureOpen = false)}>{i18n.t.dash.form.cancel}</Button>
+          <Button
+            type="submit"
+            disabled={host.connectorCapabilities?.cloudflared !== true || savingExposure || !exposureForm.hostname.trim() || (exposureForm.mode === "public" && !exposureForm.confirmPublic)}
+            data-testid="service-exposure-save"
+          >
+            {savingExposure ? i18n.t.dash.cloudflare.savingExposure : i18n.t.dash.form.save}
+          </Button>
+        </Dialog.Footer>
+      </form>
+    {/if}
+  </Dialog.Content>
+</Dialog.Root>
+
+<ConfirmDialog
+  bind:open={exposureDeleteOpen}
+  title={i18n.t.dash.cloudflare.removeExposureTitle}
+  warning={i18n.t.dash.cloudflare.removeExposureWarning}
+  label={editingExposure?.hostname ?? ""}
+  confirmLabel={i18n.t.dash.cloudflare.removeExposure}
+  testId="service-exposure-remove-confirm"
+  onConfirm={removeExposure}
+/>
 
 <Dialog.Root bind:open={serviceOpen}>
   <!--

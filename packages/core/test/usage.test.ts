@@ -98,10 +98,10 @@ describe('[TC-PDCORE-047] a snapshot says how old it is, and dims past two hours
 	});
 });
 
-describe('[TC-PDCORE-030] card widgets are per card, default on, and survive a reload', () => {
+describe('[TC-PDCORE-030] card widgets are per card, use safe defaults, and survive a reload', () => {
 	it('toggles one card without touching another, and cleans junk on hydrate', () => {
 		let cards = {};
-		expect(cardPrefs(cards, 'h1')).toEqual({ agents: true, resources: true, links: true });
+		expect(cardPrefs(cards, 'h1')).toEqual({ agents: true, resources: true, links: false });
 		cards = toggleCardWidget(cards, 'h1', 'resources');
 		expect(cardPrefs(cards, 'h1').resources).toBe(false);
 		expect(cardPrefs(cards, 'h2').resources).toBe(true);
@@ -111,11 +111,14 @@ describe('[TC-PDCORE-030] card widgets are per card, default on, and survive a r
 		const reloaded = sanitizeCardPrefs(JSON.parse(JSON.stringify(cards)));
 		expect(cardPrefs(reloaded, 'h1').resources).toBe(false);
 		const dirty = sanitizeCardPrefs({ h1: { links: 'nope', agents: false }, '': {}, x: 5 });
-		expect(cardPrefs(dirty, 'h1')).toEqual({ agents: false, resources: true, links: true });
+		expect(cardPrefs(dirty, 'h1')).toEqual({ agents: false, resources: true, links: false });
 		// A host that is not in this snapshot keeps its setting: a stopped host still
 		// has a card, and one that comes back should not be reset.
 		expect(cardPrefs(sanitizeCardPrefs({ ghost: { agents: false } }), 'ghost').agents).toBe(false);
-		expect(cardPrefs(undefined, 'h1')).toEqual({ agents: true, resources: true, links: true });
+		expect(cardPrefs(undefined, 'h1')).toEqual({ agents: true, resources: true, links: false });
+		// An existing explicit choice is data, not a default. Upgrading must not hide
+		// a launcher somebody deliberately enabled.
+		expect(cardPrefs({ h1: { links: true } }, 'h1').links).toBe(true);
 	});
 });
 
@@ -133,7 +136,7 @@ describe('[TC-PDCORE-096] a card folds to its header, per host, and stays folded
 
 		// ⚠ FOLDING IS NOT HIDING EVERY WIDGET. A folded card still remembers what it
 		// shows when it opens again, so the two settings must not overwrite each other.
-		expect(cardPrefs(cards, 'h1')).toEqual({ agents: true, resources: true, links: true });
+		expect(cardPrefs(cards, 'h1')).toEqual({ agents: true, resources: true, links: false });
 		cards = toggleCardWidget(cards, 'h1', 'resources');
 		expect(cardPrefs(cards, 'h1').resources).toBe(false);
 		expect(cardCollapsed(cards, 'h1')).toBe(true);

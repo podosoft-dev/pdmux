@@ -30,12 +30,12 @@ export interface CardRecord extends Partial<CardPrefs> {
 
 export type CardPrefsMap = Record<string, CardRecord>;
 
-const ALL_ON = (): CardPrefs => ({ agents: true, resources: true, links: true });
+const DEFAULT_CARDS = (): CardPrefs => ({ agents: true, resources: true, links: false });
 
-/** Resolve one card's widgets. An unknown host or junk resolves to everything on. */
+/** Resolve one card's widgets. Unknown state keeps core widgets on and service links off. */
 export function cardPrefs(map: CardPrefsMap | undefined, hostId: string): CardPrefs {
 	const saved = map && typeof map === 'object' ? map[hostId] : undefined;
-	const out = ALL_ON();
+	const out = DEFAULT_CARDS();
 	if (!saved || typeof saved !== 'object') return out;
 	for (const key of CARD_WIDGETS) {
 		const value = (saved as Record<string, unknown>)[key];

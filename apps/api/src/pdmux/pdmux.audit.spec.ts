@@ -6,6 +6,8 @@ const source = readFileSync(join(process.cwd(), "src", "pdmux", "pdmux.http.ts")
 
 const MUTATION_AUDIT_ACTIONS = [
   "fleet.settings.update",
+  "integration.cloudflare.connect",
+  "integration.cloudflare.disconnect",
   "host.create",
   "host.update",
   "host.delete",
@@ -16,6 +18,9 @@ const MUTATION_AUDIT_ACTIONS = [
   "host.service.reorder",
   "host.service.update",
   "host.service.delete",
+  "host.service.exposure.create",
+  "host.service.exposure.update",
+  "host.service.exposure.delete",
   "host.gitroot.create",
   "host.gitroot.update",
   "host.gitroot.delete",
