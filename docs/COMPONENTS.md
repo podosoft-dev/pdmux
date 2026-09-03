@@ -197,6 +197,8 @@ moment the pointer enters the terminal (measured).
 | `adapter` | `TerminalAdapter` | **required**. See §3 |
 | `createSurface` | `TerminalSurfaceFactory` | defaults to xterm. Injected in tests |
 | `idleTtlMs` (600000), `maxPanes` (12), `sweepMs` (30000) | `number` | the hidden-pane reclamation policy. `sweepMs=0` means no timer |
+| `paneClickAction` | `ClickAction` | optional consumer override for pane clicks; leaves the serialized `layout.clickAction` intact |
+| `paneActions` | `Snippet<[TerminalPaneActionContext]>` | optional app-owned header controls. The context exposes target, output, scrollback, zoom, detach and close operations |
 | **callbacks** | `onAssign(index, anchor)` · `onClose(index)` · `onRemove(index)` · `onZoom(slotId)` · `onFocus(slotId)` · `onDetach(slot)` · `onSwap(from, to)` · `onExit(slotId, code)` | |
 
 Behaviour: an off-page pane stays **mounted and `hidden`** (moving it reconnects the terminal), a pane
@@ -208,22 +210,22 @@ The grid renders these for you. Only needed when using them directly:
 
 | Component | Key props | Callbacks |
 |---|---|---|
-| `TerminalPane` | `slot`, `index`, `hostName`, `adapter`, `visible`, `onScreen`, `order`, `zoomed`, `focused`, `keyBar`, `solo`, `clickAction` | `onAssign` `onZoom` `onFocus` `onClose` `onDetach` `onDragStart/Move/End` `onExit` |
-| `EmptyCell` | `index`, `kind: 'hole'\|'padding'`, `order`, `dropTarget` | `onAssign`, `onRemove` (disabled for padding) |
+| `TerminalPane` | `slot`, `index`, `hostName`, `adapter`, `visible`, `onScreen`, `order`, `zoomed`, `focused`, `keyBar`, `solo`, `clickAction`, `actions` | `onAssign` `onZoom` `onFocus` `onClose` `onDetach` `onDragStart/Move/End` `onExit` |
+| `EmptyCell` | `index`, `kind: 'hole'\|'padding'`, `order`, `dropTarget` | `onAssign`, `onRemove` (not rendered for padding) |
 
 **`onClose` means "I would like to close", not "close"** — the component raises no confirmation of its
-own. The ✕ sits one cell away from zoom and detach so misclicks are common, but putting a confirmation
-dialog inside the component would drag in the consuming app's dialog system, wording and i18n, which
-crosses the boundary. So the pdmux web app receives `onClose`, shows `confirm-dialog` (the two-button
-form with no name-entry gate) and applies `clearSlot` after confirmation. The wording describes **what
-does not happen** — the session stays on the host and reattaches when reopened (which is why no heavy
-gate like retyping a name is used). Contract = TC-PDTERM-123.
+own. Putting a confirmation dialog inside the package would drag in the consuming app's dialog system,
+wording and i18n, which crosses the boundary. The pdmux web app renders package operations through
+`paneActions`, keeps Close behind a shadcn menu, then shows `confirm-dialog` and applies `clearSlot`
+after confirmation. The wording describes **what does not happen** — the session stays on the host and
+reattaches when reopened (which is why no heavy gate like retyping a name is used). Contract =
+TC-PDTERM-123.
 
 ### `ShellViewTabs` (phone-only navigation)
 
 | prop | type | description |
 |---|---|---|
-| `tabs` | `ShellViewTab[]` | `{ id, label, icon?, hint? }` — labels arrive already translated |
+| `tabs` | `ShellViewTab[]` | `{ id, label, iconKind?, icon?, hint? }` — `iconKind` accepts `servers`, `terminal` or `git`; the string `icon` remains compatible |
 | `active` | `string \| null` | the current region. `null` highlights no tab |
 | `onSelect` | `(id: string) => void` | tab selection. **Pushing a history entry is the caller's responsibility** (Android Back) |
 
@@ -322,7 +324,7 @@ engine must not claim the vertical axis and make `touchmove` uncancellable; pinc
 browser's own back gesture stay), and `scrollback: 5000` must stay larger than a pane's rows — on the
 normal buffer that is what keeps case 3 reachable instead of case 2 typing `ESC[A` at a shell prompt.
 
-**The output sheet** (`TerminalHistory`, opened from the pane's ☰) shows the same output as selectable
+**The output sheet** (`TerminalHistory`, opened from the pane's **Show output** action) shows the same output as selectable
 text, and its job is to be honest about what it is holding:
 
 | prop | meaning |

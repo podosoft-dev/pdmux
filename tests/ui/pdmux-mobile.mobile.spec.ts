@@ -2,6 +2,7 @@ import { type Page, expect, test } from "@playwright/test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { e2eAdminState } from "../helpers/accounts";
+import { readLayout, seedSoloPane, writeLayout } from "../helpers/pdmux-layout";
 
 /**
  * The dashboard on a phone.
@@ -111,6 +112,7 @@ test.describe("pdmux on a phone", () => {
     const tabs = page.locator("[data-testid='shell-tabs']");
     await expect(tabs).toBeVisible();
     await expectOnScreen(tabs, "view tabs");
+    await expect(tabs.locator("svg")).toHaveCount(3);
 
     for (const view of ["hosts", "terminal", "git"] as const) {
       await page.locator(`[data-testid='shell-tab-${view}']`).click();
@@ -314,38 +316,78 @@ test.describe("pdmux on a phone", () => {
     await expectViewportBound(page);
   });
 
-  test("[TC-PDUI-158] every control is thumb-sized and no input triggers a zoom", async ({ page }) => {
-    await ready(page, "/");
-    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "not emulating touch").toBe(true);
+  test("[TC-PDUI-158] every control is thumb-sized and no input triggers a zoom", async ({ page, request }) => {
+    const saved = await readLayout(request);
+    const hostsResponse = await request.get("/api/hosts");
+    const hosts = hostsResponse.ok()
+      ? ((await hostsResponse.json()) as { id: string; sessions?: { name: string }[] }[])
+      : [];
+    const host = hosts[0];
+    const session = host?.sessions?.[0]?.name;
+    test.skip(!saved || !host || !session, "no saved layout or terminal fixture available");
+    if (!saved || !host || !session) return;
 
-    // Measured before this rule: 18x20 and 22x20 icon buttons — under half the 44px a
-    // fingertip hits reliably.
-    const targets = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>(".pdmux-ico, .pdmux-btn, .pdmux-chip, .pdmux-cog, .pdmux-tab, .pdmux-key")]
-        .filter((el) => el.getClientRects().length > 0)
-        .map((el) => ({
-          id: el.dataset.testid ?? el.getAttribute("aria-label") ?? el.className,
-          w: Math.round(el.getBoundingClientRect().width),
-          h: Math.round(el.getBoundingClientRect().height),
-        })),
-    );
-    // Count first: a selector that matches nothing would make the size assertion below
-    // pass for the wrong reason, which is how a vacuous test hides a regression.
-    expect(targets.length, "no controls were measured at all").toBeGreaterThan(3);
-    expect(
-      targets.filter((box) => Math.min(box.w, box.h) < 40),
-      "controls smaller than a fingertip",
-    ).toEqual([]);
+    await seedSoloPane(request, saved, {
+      id: "mobile-pane-actions",
+      hostId: host.id,
+      kind: "attach",
+      session,
+    });
 
-    // iOS zooms the whole page when it focuses a control under 16px — and this page is a
-    // 100dvh grid, so the zoom pushes the shell's bottom edge off screen. The one that
-    // matters most is xterm's own hidden textarea, focused on every tap into a terminal.
-    const tiny = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>(".pdmux input, .pdmux select, .pdmux textarea, .pdmux .xterm-helper-textarea")]
-        .map((el) => ({ id: el.className, px: Math.round(parseFloat(getComputedStyle(el).fontSize)) }))
-        .filter((box) => box.px < 16),
-    );
-    expect(tiny, "iOS will zoom the shell when one of these is focused").toEqual([]);
+    try {
+      await ready(page, "/");
+      expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "not emulating touch").toBe(true);
+
+      // Measured before this rule: 18x20 and 22x20 icon buttons — under half the 44px a
+      // fingertip hits reliably.
+      const targets = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>(".pdmux-ico, .pdmux-btn, .pdmux-chip, .pdmux-cog, .pdmux-tab, .pdmux-key, [data-testid='terminal-toolbar'] button, [data-testid='pane-actions'] button")]
+          .filter((el) => el.getClientRects().length > 0)
+          .map((el) => ({
+            id: el.dataset.testid ?? el.getAttribute("aria-label") ?? el.className,
+            w: Math.round(el.getBoundingClientRect().width),
+            h: Math.round(el.getBoundingClientRect().height),
+          })),
+      );
+      // Count first: a selector that matches nothing would make the size assertion below
+      // pass for the wrong reason, which is how a vacuous test hides a regression.
+      expect(targets.length, "no controls were measured at all").toBeGreaterThan(3);
+      expect(
+        targets.filter((box) => Math.min(box.w, box.h) < 40),
+        "controls smaller than a fingertip",
+      ).toEqual([]);
+
+      // iOS zooms the whole page when it focuses a control under 16px — and this page is a
+      // 100dvh grid, so the zoom pushes the shell's bottom edge off screen. The one that
+      // matters most is xterm's own hidden textarea, focused on every tap into a terminal.
+      const tiny = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>(".pdmux input, .pdmux select, .pdmux textarea, .pdmux .xterm-helper-textarea")]
+          .map((el) => ({ id: el.className, px: Math.round(parseFloat(getComputedStyle(el).fontSize)) }))
+          .filter((box) => box.px < 16),
+      );
+      expect(tiny, "iOS will zoom the shell when one of these is focused").toEqual([]);
+
+      // A phone's top row is navigation plus the primary action; pane-specific work sits
+      // with the pane. Split controls and the old click-mode setting are desktop clutter.
+      await expect(page.locator("[data-testid^='mode-']")).toHaveCount(0);
+      await expect(page.locator("[data-testid='toggle-click-action']")).toHaveCount(0);
+      await expect(page.locator("[data-testid='page-prev']")).toBeVisible();
+      await expect(page.locator("[data-testid='page-next']")).toBeVisible();
+      await expect(page.locator("[data-testid='add-terminal']")).toBeVisible();
+
+      const pane = page.locator("[data-pdmux-pane]:not([hidden])").first();
+      await expect(pane.locator("[data-pdmux-retarget]")).toBeVisible();
+      await expect(pane.locator("[data-pdmux-history]")).toBeVisible();
+      await expect(pane.locator("[data-pdmux-pane-more]")).toBeVisible();
+      await expect(pane.locator("[data-pdmux-zoom]")).toHaveCount(0);
+      await pane.locator("[data-pdmux-pane-more]").click();
+      await expect(page.locator("[data-testid='pane-actions-menu'] [data-pdmux-scrollback-menu]")).toBeVisible();
+      await expect(page.locator("[data-testid='pane-actions-menu'] [data-pdmux-detach]")).toBeVisible();
+      await expect(page.locator("[data-testid='pane-actions-menu'] [data-pdmux-close]")).toBeVisible();
+      await page.keyboard.press("Escape");
+    } finally {
+      await writeLayout(request, saved);
+    }
   });
 
   test("[TC-PDUI-159] a popover fits the screen it opens on", async ({ page }) => {
@@ -405,6 +447,15 @@ test.describe("pdmux on a phone", () => {
 
     const grid = await shellGrid(page);
     expect(grid.columns.length).toBe(1);
+
+    const toolbar = page.locator("[data-testid='terminal-toolbar']");
+    const toolbarBox = await toolbar.boundingBox();
+    expect(toolbarBox, "the mobile terminal toolbar is not laid out").not.toBeNull();
+    expect((toolbarBox?.x ?? 0) + (toolbarBox?.width ?? 0)).toBeLessThanOrEqual(320);
+    // The accessible name stays complete while the visible label yields at this width.
+    const add = page.locator("[data-testid='add-terminal']");
+    await expect(add).toHaveAttribute("aria-label", /.+/);
+    await expect(add.locator("span")).toBeHidden();
     await expectViewportBound(page);
   });
 });

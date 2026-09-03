@@ -10,8 +10,10 @@
 	 *     back with the right geometry instead of a wrapped mess.
 	 *
 	 * The header is also the drag handle, and both gestures go through the same
-	 * classifier: a quick still press zooms, anything longer or wider is a drag.
+	 * classifier: a quick still press applies the configured pane click action,
+	 * anything longer or wider is a drag.
 	 */
+	import type { Snippet } from 'svelte';
 	import {
 		type ClickAction,
 		type HelperKeyId,
@@ -24,7 +26,18 @@
 		toProtocolTarget,
 		type HistoryLine,
 	} from '@pdmux/core';
+	import ReplaceIcon from '@lucide/svelte/icons/replace';
+	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
+	import ScrollTextIcon from '@lucide/svelte/icons/scroll-text';
+	import MaximizeIcon from '@lucide/svelte/icons/maximize-2';
+	import MinimizeIcon from '@lucide/svelte/icons/minimize-2';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
+	import XIcon from '@lucide/svelte/icons/x';
+	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
+	import FocusIcon from '@lucide/svelte/icons/focus';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import { type Translate, translator } from '../i18n.js';
+	import type { TerminalPaneActionContext } from '../types.js';
 	import { writeClipboard } from '../adapters/terminal-surface.js';
 	import TerminalComposer from './TerminalComposer.svelte';
 	import TerminalKeyBar from './TerminalKeyBar.svelte';
@@ -76,6 +89,8 @@
 		dragging?: boolean;
 		dropTarget?: boolean;
 		clickAction?: ClickAction;
+		/** App-owned header controls. Absent keeps the package's compatible fallback actions. */
+		actions?: Snippet<[TerminalPaneActionContext]>;
 		t?: Translate;
 		onAssign?: (index: number, anchor: HTMLElement) => void;
 		onZoom?: (slotId: string) => void;
@@ -159,6 +174,7 @@
 		dragging = false,
 		dropTarget = false,
 		clickAction = 'zoom',
+		actions,
 		t,
 		onAssign,
 		onZoom,
@@ -177,6 +193,9 @@
 
 	const tr = $derived(translator(t));
 	const label = $derived(slotLabel(slot, hostName));
+	const targetName = $derived(
+		slot.kind === 'shell' ? tr('pdmux.pane.shell', 'shell') : (slot.session ?? ''),
+	);
 	// A bare shell dies with its connection, so the label warns before you rely on it.
 	const ephemeral = $derived(slot.kind === 'shell');
 	/**
@@ -524,7 +543,10 @@
 			// A gesture that was never classified as a drag cannot end one; one that was
 			// must end it whichever way it finishes (drop, plain release, or cancel).
 			if (!started) {
-				if (guardIntent(start, point) === 'click') onZoom?.(slot.id);
+				if (guardIntent(start, point) === 'click') {
+					if (clickAction === 'zoom') onZoom?.(slot.id);
+					else onFocus?.(slot.id);
+				}
 				return;
 			}
 			onDragEnd?.(index, drop);
@@ -604,6 +626,20 @@
 		if (intent === 'click' && clickAction === 'zoom') onZoom?.(slot.id);
 		else onFocus?.(slot.id);
 	}
+
+	const actionContext = $derived<TerminalPaneActionContext>({
+		slot,
+		index,
+		zoomed,
+		scrollMode,
+		canScrollback: onScrollback !== undefined,
+		retarget: (anchor: HTMLElement) => onAssign?.(index, anchor),
+		toggleScrollback: toggleScrollMode,
+		showOutput: () => void openHistory(),
+		toggleZoom: () => onZoom?.(slot.id),
+		detach: () => onDetach?.(slot),
+		close: () => onClose?.(index),
+	});
 </script>
 
 <div
@@ -616,6 +652,7 @@
 	data-pdmux-cell={index}
 	data-pdmux-stack={stackAnchor ? 'anchor' : 'rest'}
 	data-pdmux-focused={active ? 'true' : 'false'}
+	data-pdmux-zoomed={zoomed ? 'true' : 'false'}
 	hidden={!visible}
 	style="order:{order}"
 >
@@ -625,27 +662,59 @@
 		tabindex="-1"
 		aria-label={label}
 		title={reachable
-			? tr('pdmux.pane.headerHint', 'Click to zoom · drag to move')
+			? clickAction === 'zoom'
+				? tr('pdmux.pane.headerHintZoom', 'Click to zoom · drag to move')
+				: tr('pdmux.pane.headerHintFocus', 'Click to focus · drag to move')
 			: tr('pdmux.pane.unreachable', 'This host is not reachable')}
 		onpointerdown={headerDown}
 	>
-		<span class="pdmux-pane-label">
-			#{index + 1}
-			{label}{#if ephemeral}<span
+		<span class="pdmux-pane-heading">
+			<span class="pdmux-pane-label" title={label}>
+				<SquareTerminalIcon class="pdmux-pane-title-icon" aria-hidden="true" />
+				<span class="pdmux-pane-index">#{index + 1}</span>
+				<span class="pdmux-pane-host">{hostName}</span><span class="pdmux-pane-separator" aria-hidden="true"
+					>·</span
+				><span class="pdmux-pane-target">{targetName}</span>
+				{#if ephemeral}<span
+					class="pdmux-pane-ephemeral"
 					role="img"
 					title={tr('pdmux.pane.ephemeral', 'Not persistent — ends with the connection')}
 					aria-label={tr('pdmux.pane.ephemeral', 'Not persistent — ends with the connection')}
-					>&nbsp;⚠</span
+					><TriangleAlertIcon aria-hidden="true" /></span
 				>{/if}
+			</span>
+			{#if zoomed}
+				<span
+					class="pdmux-pane-state"
+					data-pdmux-pane-state="zoomed"
+					aria-label={tr('pdmux.pane.zoomed', 'Zoomed')}
+				>
+					<MinimizeIcon aria-hidden="true" />
+					<span class="pdmux-pane-state-label">{tr('pdmux.pane.zoomed', 'Zoomed')}</span>
+				</span>
+			{:else if focused}
+				<span
+					class="pdmux-pane-state"
+					data-pdmux-pane-state="focused"
+					aria-label={tr('pdmux.pane.inputTarget', 'Input target')}
+				>
+					<FocusIcon aria-hidden="true" />
+					<span class="pdmux-pane-state-label">{tr('pdmux.pane.inputTarget', 'Input target')}</span>
+				</span>
+			{/if}
 		</span>
-		<span class="pdmux-pane-acts">
+		{#if actions}
+			{@render actions(actionContext)}
+		{:else}
+			<span class="pdmux-pane-acts">
 			<button
 				class="pdmux-ico"
 				type="button"
 				title={tr('pdmux.pane.retarget', 'Change target')}
 				aria-label={tr('pdmux.pane.retarget', 'Change target')}
 				data-pdmux-retarget
-				onclick={(event) => onAssign?.(index, event.currentTarget as HTMLElement)}>▾</button
+				onclick={(event) => actionContext.retarget(event.currentTarget as HTMLElement)}
+				><ReplaceIcon aria-hidden="true" /></button
 			>
 			<!--
 				Scroll mode: hand the wheel back to the multiplexer.
@@ -665,7 +734,8 @@
 					aria-label={tr('pdmux.pane.scrollback', 'Scroll back through this session')}
 					aria-pressed={scrollMode}
 					data-pdmux-scrollback
-					onclick={toggleScrollMode}>⇕</button
+					onclick={actionContext.toggleScrollback}
+					><ChevronsUpDownIcon aria-hidden="true" /></button
 				>
 			{/if}
 			<!--
@@ -679,21 +749,26 @@
 				title={tr('pdmux.pane.history', 'Show output')}
 				aria-label={tr('pdmux.pane.history', 'Show output')}
 				data-pdmux-history
-				onclick={() => void openHistory()}>☰</button
+				onclick={actionContext.showOutput}
+				><ScrollTextIcon aria-hidden="true" /></button
 			>
 			<button
 				class="pdmux-ico"
 				type="button"
 				title={tr('pdmux.pane.zoom', 'Toggle zoom')}
 				aria-label={tr('pdmux.pane.zoom', 'Toggle zoom')}
-				onclick={() => onZoom?.(slot.id)}>{zoomed ? '⤡' : '⤢'}</button
+				data-pdmux-zoom
+				onclick={actionContext.toggleZoom}
+				>{#if zoomed}<MinimizeIcon aria-hidden="true" />{:else}<MaximizeIcon aria-hidden="true" />{/if}</button
 			>
 			<button
 				class="pdmux-ico"
 				type="button"
 				title={tr('pdmux.pane.detach', 'Open in a new window')}
 				aria-label={tr('pdmux.pane.detach', 'Open in a new window')}
-				onclick={() => onDetach?.(slot)}>↗</button
+				data-pdmux-detach
+				onclick={actionContext.detach}
+				><ExternalLinkIcon aria-hidden="true" /></button
 			>
 			<button
 				class="pdmux-ico"
@@ -701,9 +776,11 @@
 				title={tr('pdmux.pane.close', 'Close (this cell stays empty)')}
 				aria-label={tr('pdmux.pane.close', 'Close (this cell stays empty)')}
 				data-pdmux-close
-				onclick={() => onClose?.(index)}>✕</button
+				onclick={actionContext.close}
+				><XIcon aria-hidden="true" /></button
 			>
-		</span>
+			</span>
+		{/if}
 	</div>
 	<!--
 		⚠ SAY WHAT JUST CHANGED, BECAUSE THE PANE LOOKS IDENTICAL. In the multiplexer's

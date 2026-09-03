@@ -16,7 +16,21 @@
  * switching tabs fixes it"; on a phone, the whole split flashed before collapsing to
  * one pane.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+/**
+ * The package test config deliberately resolves Svelte's browser condition for its
+ * jsdom component suite. This one file renders on the server, where Lucide normally
+ * receives the server implementation of `getContext`; without this shim the mixed
+ * harness calls the client implementation outside client component initialisation.
+ * No icon context is the real SSR default, so returning undefined preserves the
+ * production behaviour while keeping this test about first-paint markup.
+ */
+vi.mock('svelte', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('svelte')>();
+	return { ...actual, getContext: () => undefined };
+});
+
 import { render } from 'svelte/server';
 import { type GridHost, type TerminalLayout, buildDefaultSlots, defaultLayout } from '@pdmux/core';
 import { EchoTerminalAdapter } from '../src/adapters/terminal-adapter.js';

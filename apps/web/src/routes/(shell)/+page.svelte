@@ -20,7 +20,7 @@
   import { onMount, untrack } from "svelte";
   import { page as appPage } from "$app/state";
   import { SplitHandle, TerminalGrid, TerminalTargetPicker } from "@pdmux/ui";
-  import type { FsDirView, PickerTarget } from "@pdmux/ui";
+  import type { FsDirView, PickerTarget, TerminalPaneActionContext } from "@pdmux/ui";
   import { MediaQuery } from "svelte/reactivity";
   import {
     SHELL_STACK_MAX_WIDTH,
@@ -36,7 +36,6 @@
     parseAnsiLines,
     pickerApply,
     removeSlot,
-    setClickAction,
     setDockTarget,
     setDockWidth,
     swapSlots,
@@ -60,6 +59,7 @@
   import FilesDockPanel from "#lib/dashboard/components/files-dock.svelte";
   import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
   import TerminalToolbar from "#lib/dashboard/components/terminal-toolbar.svelte";
+  import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
   import { gridHosts, pickerHosts } from "#lib/dashboard/map.js";
   import { dismissOnOutside } from "#lib/dashboard/popover-dismiss.svelte.ts";
   import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
@@ -370,6 +370,10 @@
 
 <svelte:head><title>{i18n.t.dash.title} · pdmux</title></svelte:head>
 
+{#snippet paneActions(actions: TerminalPaneActionContext)}
+  <TerminalPaneActions {actions} compact={stacked.current} />
+{/snippet}
+
 <div class="pdmux pdmux-panel" data-pdmux-region="terminal">
   <TerminalToolbar
     {layout}
@@ -382,7 +386,6 @@
     onToggleSidebar={() => shell.apply(toggleSidebar(layout))}
     onToggleDock={() => shell.apply(toggleDock(layout))}
     onToggleFiles={() => shell.apply(toggleFiles(layout))}
-    onToggleClickAction={() => shell.apply(setClickAction(layout, layout.clickAction === "zoom" ? "focus" : "zoom"))}
     onAdd={(element: HTMLElement) => openPicker(null, element)}
     compact={stacked.current}
   />
@@ -393,6 +396,8 @@
     hosts={grid}
     adapter={shell.relay}
     {t}
+    paneClickAction="focus"
+    {paneActions}
     onAssign={openPicker}
     onClose={askClose}
     onRemove={(index: number) => shell.apply(removeSlot(layout, index))}

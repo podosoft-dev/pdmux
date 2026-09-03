@@ -10,6 +10,7 @@
     "cell": {
       "assign": "Assign a terminal to this cell",
       "close": "Close this cell (the panes after it move forward)",
+      "connect": "Connect a terminal to this cell",
       "empty": "empty",
       "nothingToPull": "No pane after this cell",
       "terminal": "terminal"
@@ -79,10 +80,18 @@
       "ephemeral": "Not persistent — ends with the connection",
       "focus": "Focus this pane",
       "headerHint": "Click to zoom · drag to move",
+      "headerHintFocus": "Click to focus · drag to move",
+      "headerHintZoom": "Click to zoom · drag to move",
+      "inputTarget": "Input target",
+      "more": "More pane actions",
       "retarget": "Change target",
+      "shell": "shell",
       "unreachable": "This host is not reachable",
       "reconnecting": "Reconnecting…",
       "zoom": "Toggle zoom",
+      "zoomIn": "Zoom pane",
+      "zoomOut": "Restore split view",
+      "zoomed": "Zoomed",
       "history": "Show output",
       "scrollback": "Scroll back through this session",
       "scrollbackHint": "Scrolling this session — wheel to move, Esc to leave",
@@ -555,11 +564,11 @@
     },
     "mode": {
       "label": "Split",
-      "tab": "1",
-      "split2": "2",
-      "split4": "4",
-      "split9": "9",
-      "hint": "Press the active mode again for the next page"
+      "tab": "Single pane",
+      "split2": "Two panes",
+      "split4": "Four panes",
+      "split9": "Nine panes",
+      "hint": "Choose a split layout"
     },
     "nextPage": "Next page",
     "page": "Page {page}/{total}",

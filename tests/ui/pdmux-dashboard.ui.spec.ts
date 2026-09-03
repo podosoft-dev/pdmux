@@ -158,6 +158,49 @@ test.describe.serial("pdmux dashboard", () => {
     }
   });
 
+  test("[TC-PDUI-122] the active split stays selected and paging uses only the arrows", async ({ page, request }) => {
+    const [prefsResponse, hostsResponse] = await Promise.all([request.get("/api/prefs"), request.get("/api/hosts")]);
+    const prefs = prefsResponse.ok()
+      ? ((await prefsResponse.json()) as {
+          layouts?: { name: string; payload: Record<string, unknown>; isDefault?: boolean }[];
+        })
+      : null;
+    const hosts = hostsResponse.ok() ? ((await hostsResponse.json()) as { id: string }[]) : [];
+    const saved = prefs?.layouts?.find((entry) => entry.isDefault) ?? prefs?.layouts?.[0];
+    const hostId = hosts[0]?.id;
+    test.skip(!saved || !hostId, "no saved layout or test host available");
+    if (!saved || !hostId) return;
+
+    const slots = Array.from({ length: 5 }, (_, index) => ({
+      id: `toolbar-${index}`,
+      hostId,
+      kind: "attach",
+      session: `toolbar-${index}`,
+    }));
+    await request.put(`/api/prefs/layouts/${encodeURIComponent(saved.name)}`, {
+      data: { payload: { ...saved.payload, mode: "split4", page: 0, slots }, isDefault: saved.isDefault ?? true },
+    });
+
+    try {
+      await ready(page, "/");
+      const mode = page.locator("[data-testid='mode-split4']");
+      const indicator = page.locator("[data-testid='page-indicator']");
+      await expect(indicator).toContainText("1");
+      const before = await indicator.textContent();
+
+      await mode.click();
+      await expect(mode).toHaveAttribute("data-state", "on");
+      await expect(indicator).toHaveText(before ?? "");
+
+      await page.locator("[data-testid='page-next']").click();
+      await expect(indicator).not.toHaveText(before ?? "");
+    } finally {
+      await request.put(`/api/prefs/layouts/${encodeURIComponent(saved.name)}`, {
+        data: { payload: saved.payload, isDefault: saved.isDefault ?? true },
+      });
+    }
+  });
+
   test("[TC-PDUI-123] dragging the splitter resizes the host column", async ({ page }) => {
     await ready(page, "/");
     const shell = page.locator("[data-testid='dashboard-shell']");

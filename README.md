@@ -34,9 +34,10 @@ more card, and that host becomes selectable in the terminal grid.
 
 ## What you see
 
-**Terminals.** Lay them out as tabs, or 2/4/9 splits. Each pane picks its own host and session, so
-one screen can show several different jobs at once. Drag a header to swap two panes, zoom one to
-focus on it for a moment, then come back.
+**Terminals.** Lay them out as a single pane, or 2/4/9 splits. Each pane picks its own host and
+session, so one screen can show several different jobs at once. Click an inactive pane to make it
+the input target, drag a header to swap two panes, or use the header action to zoom one explicitly.
+The focused and zoomed states are labelled in the pane header instead of covering terminal output.
 
 Sessions live in a multiplexer (tmux) on the host. Close the browser and the AI CLI keeps running;
 open it again and you reattach to the same session. The split layout and which pane held which

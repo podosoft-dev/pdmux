@@ -437,6 +437,8 @@
 }
 
 .pdmux-tab-icon {
+	width: 16px;
+	height: 16px;
 	font-size: 16px;
 	line-height: 1;
 }
@@ -1365,6 +1367,7 @@
 	border: 1px solid var(--pdmux-line);
 	border-radius: 8px;
 	background: var(--pdmux-card);
+	container-type: inline-size;
 }
 
 .pdmux-pane[hidden] {
@@ -1427,22 +1430,124 @@
 	outline-offset: -2px;
 }
 
+.pdmux-pane.pdmux-focused > .pdmux-pane-head {
+	background: color-mix(in srgb, var(--pdmux-accent) 8%, var(--pdmux-bg));
+}
+
+.pdmux-pane[data-pdmux-zoomed='true'] > .pdmux-pane-head {
+	background: color-mix(in srgb, var(--pdmux-accent) 14%, var(--pdmux-bg));
+}
+
 /* After focus, so a pane that is both keeps the louder, transient drop marker. */
 .pdmux-pane.pdmux-drop {
 	outline: 2px solid var(--pdmux-accent);
 	outline-offset: -2px;
 }
 
+.pdmux-pane-heading {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 1;
+	min-width: 0;
+}
+
 .pdmux-pane-label {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+.pdmux-pane-title-icon,
+.pdmux-pane-label .pdmux-pane-title-icon {
+	width: 14px;
+	height: 14px;
+	flex: none;
+	color: var(--pdmux-muted);
+}
+
+.pdmux-pane-index {
+	flex: none;
+	color: var(--pdmux-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.pdmux-pane-host {
+	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	white-space: nowrap;
+	font-weight: 600;
+}
+
+.pdmux-pane-separator {
+	flex: none;
+	color: var(--pdmux-muted);
+}
+
+.pdmux-pane-target {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--pdmux-muted);
+}
+
+.pdmux-pane-ephemeral {
+	display: inline-flex;
+	flex: none;
+	color: var(--pdmux-warning, #a16207);
+}
+
+.pdmux-pane-ephemeral svg {
+	width: 13px;
+	height: 13px;
+}
+
+.pdmux-pane-state {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	flex: none;
+	max-width: 96px;
+	padding: 2px 5px;
+	border: 1px solid color-mix(in srgb, var(--pdmux-accent) 45%, var(--pdmux-line));
+	border-radius: 999px;
+	color: var(--pdmux-accent);
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 1;
+}
+
+.pdmux-pane-state svg {
+	width: 12px;
+	height: 12px;
+	flex: none;
+}
+
+@container (max-width: 360px) {
+	.pdmux-pane-state-label {
+		display: none;
+	}
 }
 
 .pdmux-pane-acts {
 	display: flex;
-	gap: 2px;
+	align-items: center;
+	gap: 1px;
 	flex: none;
+}
+
+.pdmux-pane-acts .pdmux-ico {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.pdmux-pane-acts .pdmux-ico svg {
+	width: 14px;
+	height: 14px;
 }
 
 /* This is the colour BEHIND the canvas, and it has to equal the terminal's own
@@ -1655,6 +1760,16 @@
 	font: inherit;
 	font-size: 12px;
 	cursor: pointer;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+}
+
+.pdmux-cell-button svg {
+	width: 26px;
+	height: 26px;
 }
 
 .pdmux-unreachable .pdmux-pane-body::after {
@@ -2373,6 +2488,7 @@
 @media (max-width: 899px) and (pointer: coarse) {
 	.pdmux-pane-head {
 		min-height: 44px;
+		padding-block: 0;
 		font-size: 13px;
 	}
 

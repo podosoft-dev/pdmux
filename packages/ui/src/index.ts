@@ -53,7 +53,7 @@ export { writeClipboard } from './adapters/terminal-surface.js';
 export type { TerminalSurface, TerminalSurfaceFactory } from './adapters/terminal-surface.js';
 export { identityTranslate, translator } from './i18n.js';
 export type { Translate } from './i18n.js';
-export type { ShellViewTab } from './components/ShellViewTabs.svelte';
+export type { ShellViewTab, ShellViewTabIcon } from './components/ShellViewTabs.svelte';
 export type {
 	HostDetail,
 	FsDirView,
@@ -64,6 +64,7 @@ export type {
 	HostSummary,
 	HostUpdateKind,
 	HostUpdateMark,
+	TerminalPaneActionContext,
 	PickerHost,
 	PickerTarget,
 	RepoHead,

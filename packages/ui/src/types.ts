@@ -5,7 +5,27 @@
  * mode does not allow `export` from an instance script, and because a consumer
  * writing its own wrapper needs to name these types.
  */
-import type { GridSession } from '@pdmux/core';
+import type { GridSession, TerminalSlot } from '@pdmux/core';
+
+/**
+ * App-owned controls rendered in a terminal pane header.
+ *
+ * The package owns the terminal state and exposes operations; the consuming app can
+ * render those operations with its own design system without reaching into the pane.
+ */
+export interface TerminalPaneActionContext {
+	slot: TerminalSlot;
+	index: number;
+	zoomed: boolean;
+	scrollMode: boolean;
+	canScrollback: boolean;
+	retarget: (anchor: HTMLElement) => void;
+	toggleScrollback: () => void;
+	showOutput: () => void;
+	toggleZoom: () => void;
+	detach: () => void;
+	close: () => void;
+}
 
 /** Reachability as a card shows it. `unknown` is deliberately distinct from offline. */
 export type HostState = 'online' | 'offline' | 'unknown';

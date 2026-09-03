@@ -10,6 +10,7 @@
     "cell": {
       "assign": "이 칸에 터미널 지정",
       "close": "이 칸 닫기(뒤쪽 패널이 당겨진다)",
+      "connect": "이 칸에 터미널 연결",
       "empty": "빈 칸",
       "nothingToPull": "이 칸 뒤에 패널이 없습니다",
       "terminal": "터미널"
@@ -79,10 +80,18 @@
       "ephemeral": "비영속 — 연결이 끊기면 종료됩니다",
       "focus": "이 패널에 포커스",
       "headerHint": "클릭=확대 · 드래그=이동",
+      "headerHintFocus": "클릭=포커스 · 드래그=이동",
+      "headerHintZoom": "클릭=확대 · 드래그=이동",
+      "inputTarget": "입력 대상",
+      "more": "패널 작업 더 보기",
       "retarget": "대상 변경",
+      "shell": "셸",
       "unreachable": "이 호스트에 연결할 수 없습니다",
       "reconnecting": "다시 연결하는 중…",
       "zoom": "확대 전환",
+      "zoomIn": "패널 확대",
+      "zoomOut": "분할 화면으로 복귀",
+      "zoomed": "확대됨",
       "history": "출력 보기",
       "scrollback": "이 세션의 이전 내용 보기",
       "scrollbackHint": "이전 내용 보는 중 — 휠로 이동, Esc 로 종료",
@@ -555,11 +564,11 @@
     },
     "mode": {
       "label": "분할",
-      "tab": "1",
-      "split2": "2",
-      "split4": "4",
-      "split9": "9",
-      "hint": "활성 모드를 다시 누르면 다음 묶음"
+      "tab": "패널 1개",
+      "split2": "패널 2개",
+      "split4": "패널 4개",
+      "split9": "패널 9개",
+      "hint": "분할 레이아웃 선택"
     },
     "nextPage": "다음 페이지",
     "page": "{page}/{total} 페이지",

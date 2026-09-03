@@ -149,7 +149,7 @@ describe('[TC-PDUI-010] the grid renders exactly one window of cells', () => {
 });
 
 describe('[TC-PDUI-011] an empty cell is a first-class cell', () => {
-	it('keeps the header, and only a hole can be closed', () => {
+	it('keeps the header, and only renders close when a hole can be removed', () => {
 		const onAssign = vi.fn();
 		const onRemove = vi.fn();
 		const hole = render(EmptyCell, {
@@ -157,20 +157,21 @@ describe('[TC-PDUI-011] an empty cell is a first-class cell', () => {
 		});
 		expect(hole.container.querySelector('.pdmux-pane-label')?.textContent).toContain('#3');
 		const [assign, close] = [...hole.container.querySelectorAll('.pdmux-ico')] as HTMLButtonElement[];
-		expect(close!.disabled).toBe(false);
+		expect(close).toBeDefined();
 		close!.click();
 		expect(onRemove).toHaveBeenCalledWith(2);
 		assign!.click();
 		expect(onAssign).toHaveBeenCalledWith(2, expect.anything());
 
-		// Padding has nothing to pull forward, so the button is disabled rather than
-		// dead.
+		// Padding has nothing to pull forward, so it carries no unavailable action.
 		const padding = render(EmptyCell, {
 			props: { index: 5, kind: 'padding', onRemove },
 		});
-		const [, paddingClose] = [...padding.container.querySelectorAll('.pdmux-ico')] as HTMLButtonElement[];
-		expect(paddingClose!.disabled).toBe(true);
-		paddingClose!.click();
+		expect(padding.container.querySelectorAll('.pdmux-ico')).toHaveLength(1);
+		expect(padding.container.querySelector('[data-pdmux-remove-cell]')).toBeNull();
+		expect(padding.container.querySelector('.pdmux-cell-button')?.textContent).toContain(
+			'Connect a terminal to this cell',
+		);
 		expect(onRemove).toHaveBeenCalledTimes(1);
 	});
 });
@@ -624,6 +625,36 @@ describe('[TC-PDUI-012] a pane header offers its actions and classifies its gest
 		expect(focused, 'the surface was never focused, so a phone would show no keyboard').toHaveBeenCalled();
 	});
 
+	it('[TC-PDUI-012] lets an app pin inactive pane clicks to focus without rewriting saved preferences', () => {
+		const onFocus = vi.fn();
+		const onZoom = vi.fn();
+		const { container } = render(TerminalGrid, {
+			props: {
+				layout: layoutWith({ clickAction: 'zoom' }),
+				hosts: HOSTS,
+				adapter: new EchoTerminalAdapter(),
+				createSurface: fakeSurface().factory,
+				sweepMs: 0,
+				paneClickAction: 'focus',
+				onFocus,
+				onZoom,
+			},
+		});
+
+		const pane = container.querySelector('[data-pdmux-pane]') as HTMLElement;
+		const body = pane.querySelector('.pdmux-pane-body') as HTMLElement;
+		body.dispatchEvent(pointer('pointerdown', 40, 40));
+		window.dispatchEvent(pointer('pointerup', 41, 40));
+		expect(onFocus).toHaveBeenCalledTimes(1);
+		expect(onZoom).not.toHaveBeenCalled();
+
+		const header = pane.querySelector('.pdmux-pane-head') as HTMLElement;
+		header.dispatchEvent(pointer('pointerdown', 10, 10));
+		header.dispatchEvent(pointer('pointerup', 11, 10));
+		expect(onFocus).toHaveBeenCalledTimes(2);
+		expect(onZoom).not.toHaveBeenCalled();
+	});
+
 	it('reports a header drag so the grid can hit-test the cells', () => {
 		const onDragStart = vi.fn();
 		const onDragEnd = vi.fn();
@@ -720,6 +751,8 @@ describe('[TC-PDUI-012] a pane header offers its actions and classifies its gest
 		const pane = container.querySelector(`[data-pdmux-pane="${focusId}"]`) as HTMLElement;
 		expect(pane.classList.contains('pdmux-focused')).toBe(true);
 		expect(pane.querySelector('[data-pdmux-guard]'), 'an active pane takes typing directly').toBeNull();
+		expect(pane.querySelector('[data-pdmux-pane-state="focused"]')?.textContent).toContain('Input target');
+		expect(pane.getAttribute('data-pdmux-zoomed')).toBe('false');
 
 		// A zoomed pane reads as active too — it behaves that way already.
 		const zoomed = render(TerminalGrid, {
@@ -731,7 +764,10 @@ describe('[TC-PDUI-012] a pane header offers its actions and classifies its gest
 				sweepMs: 0,
 			},
 		});
-		expect(zoomed.container.querySelector(`[data-pdmux-pane="${focusId}"]`)?.getAttribute('data-pdmux-focused')).toBe('true');
+		const zoomedPane = zoomed.container.querySelector(`[data-pdmux-pane="${focusId}"]`);
+		expect(zoomedPane?.getAttribute('data-pdmux-focused')).toBe('true');
+		expect(zoomedPane?.getAttribute('data-pdmux-zoomed')).toBe('true');
+		expect(zoomedPane?.querySelector('[data-pdmux-pane-state="zoomed"]')?.textContent).toContain('Zoomed');
 	});
 });
 

@@ -157,9 +157,9 @@
   // current route did not render.
   const view = $derived(onDashboard ? shell.view : "page");
   const tabs = $derived([
-    { id: "hosts", label: i18n.t.dash.tabs.hosts, icon: "▤" },
-    { id: "terminal", label: i18n.t.dash.tabs.terminal, icon: "▮" },
-    { id: "git", label: i18n.t.dash.tabs.git, icon: "⑂" },
+    { id: "hosts", label: i18n.t.dash.tabs.hosts, iconKind: "servers" as const },
+    { id: "terminal", label: i18n.t.dash.tabs.terminal, iconKind: "terminal" as const },
+    { id: "git", label: i18n.t.dash.tabs.git, iconKind: "git" as const },
   ]);
 
   /**

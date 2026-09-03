@@ -13,10 +13,11 @@
 	 * released after a TTL, a cell that no longer exists is released at once, and a
 	 * count cap evicts the oldest hidden ones.
 	 */
-	import { untrack } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import {
 		GRID_COLUMNS,
 		type CellRect,
+		type ClickAction,
 		type GridHost,
 		type TerminalLayout,
 		type TerminalSlot,
@@ -31,6 +32,7 @@
 		type HistoryLine,
 	} from '@pdmux/core';
 	import { type Translate, translator } from '../i18n.js';
+	import type { TerminalPaneActionContext } from '../types.js';
 	import type { TerminalAdapter } from '../adapters/terminal-adapter.js';
 	import type { TerminalSurfaceFactory } from '../adapters/terminal-surface.js';
 	import EmptyCell from './EmptyCell.svelte';
@@ -65,6 +67,10 @@
 		onZoom?: (slotId: string) => void;
 		onFocus?: (slotId: string) => void;
 		onDetach?: (slot: TerminalSlot) => void;
+		/** Override the persisted click preference without changing the serialized layout. */
+		paneClickAction?: ClickAction;
+		/** App-owned pane header controls, forwarded without changing package defaults. */
+		paneActions?: Snippet<[TerminalPaneActionContext]>;
 		onSwap?: (from: number, to: number) => void;
 		onExit?: (slotId: string, code: number | null) => void;
 		/** Passed straight to every pane — see `TerminalPane` for why the app owns these. */
@@ -96,6 +102,8 @@
 		onZoom,
 		onFocus,
 		onDetach,
+		paneClickAction,
+		paneActions,
 		onSwap,
 		onExit,
 		onScrollback,
@@ -248,7 +256,8 @@
 			order={Math.max(0, windowPosition(slot.id))}
 			dragging={dragFrom === cellIndexOf(slot.id)}
 			dropTarget={dropIndex === cellIndexOf(slot.id) && dropIndex !== dragFrom}
-			clickAction={layout.clickAction}
+			clickAction={paneClickAction ?? layout.clickAction}
+			actions={paneActions}
 			{onAssign}
 			{onZoom}
 			{onFocus}

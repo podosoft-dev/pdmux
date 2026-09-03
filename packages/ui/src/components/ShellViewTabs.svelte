@@ -13,14 +13,20 @@
 	 * tap (including the browser-history entry that makes Android's Back button return to
 	 * the previous tab instead of leaving the app).
 	 */
+	import ServerIcon from '@lucide/svelte/icons/server';
+	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
+	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
 	import { type Translate, translator } from '../i18n.js';
 
-	/** One destination. `icon` is a short glyph — the label carries the meaning. */
+	export type ShellViewTabIcon = 'servers' | 'terminal' | 'git';
+
+	/** One destination. `icon` remains for source compatibility; `iconKind` is semantic. */
 	export interface ShellViewTab {
 		id: string;
 		/** Already-translated label, or a key the parent's `t` resolves. */
 		label: string;
 		icon?: string;
+		iconKind?: ShellViewTabIcon;
 		/** Extra context for assistive tech, e.g. "3 terminals". */
 		hint?: string;
 	}
@@ -58,7 +64,15 @@
 			aria-label={tab.hint ? `${tab.label} — ${tab.hint}` : tab.label}
 			onclick={() => onSelect?.(tab.id)}
 		>
-			{#if tab.icon}<span class="pdmux-tab-icon" aria-hidden="true">{tab.icon}</span>{/if}
+			{#if tab.iconKind === 'servers'}
+				<ServerIcon class="pdmux-tab-icon" aria-hidden="true" />
+			{:else if tab.iconKind === 'terminal'}
+				<SquareTerminalIcon class="pdmux-tab-icon" aria-hidden="true" />
+			{:else if tab.iconKind === 'git'}
+				<GitBranchIcon class="pdmux-tab-icon" aria-hidden="true" />
+			{:else if tab.icon}
+				<span class="pdmux-tab-icon" aria-hidden="true">{tab.icon}</span>
+			{/if}
 			<span class="pdmux-tab-label">{tab.label}</span>
 		</button>
 	{/each}

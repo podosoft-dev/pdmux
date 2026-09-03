@@ -172,12 +172,15 @@ test.describe("pdmux terminal", () => {
     const slotId = await panes.first().getAttribute("data-pdmux-pane");
     expect(slotId).toBeTruthy();
     const pane = page.locator(`[data-pdmux-pane='${slotId}']`);
-    // The ✕ sits one click away from zoom and detach, so a mis-click must not silently
-    // discard a pane the user was reading.
-    const close = pane.locator("[data-pdmux-close]");
+    // Destructive actions live behind More, away from the target/output/zoom controls.
+    const more = pane.locator("[data-pdmux-pane-more]");
+    const chooseClose = async (): Promise<void> => {
+      await more.click();
+      await page.locator("[data-testid='pane-actions-menu'] [data-pdmux-close]").click();
+    };
     const dialog = page.locator("[data-testid='pane-close-confirm']");
 
-    await close.click();
+    await chooseClose();
     await expect(dialog).toBeVisible();
     // No typing gate here: the session survives on the host, so a second button is the
     // right weight. The wording has to name what is being closed.
@@ -191,7 +194,7 @@ test.describe("pdmux terminal", () => {
     await expect(pane.locator("[data-pdmux-surface] .xterm-rows")).toBeVisible({ timeout: 15_000 });
 
     // Confirming closes that pane, and the cell it leaves behind is assignable again.
-    await close.click();
+    await chooseClose();
     await expect(dialog).toBeVisible();
     await page.locator("[data-testid='pane-close-confirm-confirm']").click();
     await expect(dialog).toBeHidden();
@@ -253,25 +256,28 @@ test.describe("pdmux terminal", () => {
       .poll(async () => panes.count(), { timeout: 20_000, message: "needs a neighbour to be distinguishable from" })
       .toBeGreaterThan(1);
 
-    // Click-to-zoom would hide the neighbours, so switch the pane click to focus.
-    const toggle = page.locator("[data-testid='toggle-click-action']");
-    const focusing = async (): Promise<boolean> => /focus/i.test((await toggle.textContent()) ?? "");
-    if (!(await focusing())) {
-      await expect(async () => {
-        await toggle.click();
-        expect(await focusing()).toBe(true);
-      }).toPass({ timeout: 15_000 });
-    }
+    // Focus is the product default now. The old global mode switch is gone; zoom is an
+    // explicit action in each pane header.
+    await expect(page.locator("[data-testid='toggle-click-action']")).toHaveCount(0);
 
     // Start from a known state: focus the FIRST pane, then move it to the second. Asserting
     // "pane 1 is focused, pane 0 is not" only means something if focus actually moved.
     await focusPane(panes.nth(0));
     await expect(panes.nth(0)).toHaveAttribute("data-pdmux-focused", "true");
+    await expect(panes.nth(0).locator("[data-pdmux-pane-state='focused']")).toBeVisible();
 
     const target = panes.nth(1);
     await focusPane(target);
     await expect(target).toHaveAttribute("data-pdmux-focused", "true");
+    await expect(target).toHaveAttribute("data-pdmux-zoomed", "false");
     await expect(panes.nth(0)).toHaveAttribute("data-pdmux-focused", "false");
+    await expect(target.locator("[data-pdmux-retarget]")).toBeVisible();
+    await expect(target.locator("[data-pdmux-history]")).toBeVisible();
+    await expect(target.locator("[data-pdmux-zoom]")).toBeVisible();
+    await target.locator("[data-pdmux-pane-more]").click();
+    await expect(page.locator("[data-testid='pane-actions-menu'] [data-pdmux-detach]")).toBeVisible();
+    await expect(page.locator("[data-testid='pane-actions-menu'] [data-pdmux-close]")).toBeVisible();
+    await page.keyboard.press("Escape");
 
     const frames = await page.evaluate(() => {
       const nodes = [...document.querySelectorAll("[data-pdmux-pane]:not([hidden])")] as HTMLElement[];
