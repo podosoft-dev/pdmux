@@ -1,6 +1,6 @@
 {
   "name": "pdmux",
-  "version": "0.11.5",
+  "version": "0.12.0",
   "private": true,
   "packageManager": "bun@1.4.0",
   "engines": {
@@ -22,7 +22,7 @@
     "lint": "bun run --workspaces --if-present lint",
     "test": "bun run --workspaces --if-present test",
     "test:web-build": "bun tools/smoke-web-build.mjs",
-    "test:release-workflow": "bun test apps/api/src/release-workflow.spec.ts",
+    "test:release-workflow": "bun test apps/api/src/release-workflow.spec.ts tools/merge-desktop-update-metadata.test.mjs",
     "test:e2e": "bun run --cwd tests test:e2e",
     "test:e2e:ui": "bun run --cwd tests test:e2e:ui",
     "test:e2e:api": "bun run --cwd tests test:e2e:api",

@@ -72,5 +72,8 @@ describe("[TC-PDDESKTOP-009] desktop packaging matrix", () => {
     expect(workflow).toContain("bun run desktop:prepare");
     expect(workflow).toContain("bun run --cwd apps/desktop package");
     expect(workflow).toContain("name: pdmux-${{ matrix.artifact }}");
+    expect(workflow).toContain("workflow_call:");
+    expect(workflow).toContain("latest-mac-${{ matrix.artifact }}.yml");
+    expect(workflow).not.toContain("path: apps/desktop/release/**");
   });
 });

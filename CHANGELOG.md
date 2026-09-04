@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 0.12.0
+
+- **pdmux now ships as a native desktop application for macOS, Windows, and Linux.** The local
+  profile embeds the API, web application, Bun runtime, and current host agents, while SQLite,
+  in-process cache, local jobs and events, and filesystem object storage remove the PostgreSQL,
+  Redis, and S3 service requirements.
+- **Desktop state is managed as one recoverable application unit.** The shell owns service startup
+  and bounded restart, single-instance and close-to-tray behavior, pre-update and manual SQLite
+  backups, localized controls, secure external navigation, and optional remote-server mode with
+  certificate pinning.
+- **Tagged releases carry native installers and working update metadata.** Intel and Apple Silicon
+  macOS builds, Windows x64, and Linux x64 are built on native GitHub runners; their installers,
+  update channel files, and checksums are attached only after the existing image and agent release
+  gates pass.
+
 ## 0.11.5
 
 - **Idle terminal WebSockets now survive the server heartbeat sweep.** Elysia passes Bun's raw

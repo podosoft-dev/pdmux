@@ -1,6 +1,13 @@
 name: desktop
 
 on:
+  workflow_call:
+    inputs:
+      signed:
+        description: Require configured code-signing credentials
+        required: false
+        default: false
+        type: boolean
   pull_request:
     paths:
       - "apps/api/**"
@@ -8,8 +15,10 @@ on:
       - "apps/desktop/**"
       - "packages/**"
       - "tools/prepare-desktop-runtime.mjs"
+      - "tools/merge-desktop-update-metadata.mjs"
       - "bun.lock"
       - ".github/workflows/desktop.yml"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
     inputs:
       signed:
@@ -105,8 +114,20 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
 
+      - name: Preserve architecture-specific macOS update metadata
+        if: runner.os == 'macOS'
+        shell: bash
+        run: mv apps/desktop/release/latest-mac.yml apps/desktop/release/latest-mac-${{ matrix.artifact }}.yml
+
       - uses: actions/upload-artifact@v4
         with:
           name: pdmux-${{ matrix.artifact }}
-          path: apps/desktop/release/**
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.zip
+            apps/desktop/release/latest*.yml
           if-no-files-found: error
