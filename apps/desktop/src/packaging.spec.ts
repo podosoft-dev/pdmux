@@ -1,11 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
-interface BuildTarget {
-  target: string;
-  arch: string[];
-}
-
 interface DesktopManifest {
   version: string;
   author: { name: string; email: string };
@@ -18,9 +13,9 @@ interface DesktopManifest {
     icon: string;
     compression: string;
     electronLanguages: string[];
-    mac: { target: BuildTarget[] };
-    win: { target: BuildTarget[] };
-    linux: { syncDesktopName: boolean; target: BuildTarget[] };
+    mac: { target: string[] };
+    win: { target: string[] };
+    linux: { syncDesktopName: boolean; target: string[] };
     extraResources: Array<{ from: string; to: string; filter?: string[] }>;
   };
 }
@@ -33,7 +28,6 @@ interface RootManifest {
 describe("[TC-PDDESKTOP-009] desktop packaging matrix", () => {
   it("packages the embedded stack for every supported operating system", () => {
     const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as DesktopManifest;
-    const macArchitectures = new Set(manifest.build.mac.target.flatMap((target) => target.arch));
     expect(manifest.build.executableName).toBe("pdmux");
     expect(manifest.build.icon).toBe("../web/static/favicon.svg");
     expect(manifest.build.compression).toBe("maximum");
@@ -43,9 +37,9 @@ describe("[TC-PDDESKTOP-009] desktop packaging matrix", () => {
     expect(manifest.license).toBe("Apache-2.0");
     expect(manifest.desktopName).toBe("dev.podosoft.pdmux");
     expect(manifest.build.linux.syncDesktopName).toBe(true);
-    expect(macArchitectures).toEqual(new Set(["x64", "arm64"]));
-    expect(manifest.build.win.target.some((target) => target.arch.includes("x64"))).toBe(true);
-    expect(manifest.build.linux.target.some((target) => target.arch.includes("x64"))).toBe(true);
+    expect(manifest.build.mac.target).toEqual(["dmg", "zip"]);
+    expect(manifest.build.win.target).toEqual(["nsis"]);
+    expect(manifest.build.linux.target).toEqual(["AppImage", "deb"]);
     expect(manifest.build.extraResources.map((resource) => resource.to)).toEqual(
       expect.arrayContaining(["api", "web", "bin", "runtime/sqlite-backup.mjs"]),
     );
