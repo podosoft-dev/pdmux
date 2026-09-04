@@ -85,7 +85,9 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
     expect(calls[1]?.options.env.HOST).toBe("127.0.0.1");
     expect(calls[1]?.options.env.PDMUX_JOBS_PROVIDER).toBe("local");
     expect(calls[2]?.options.env.BACKEND_INTERNAL_URL).toBe("http://127.0.0.1:51002");
-    expect((await stat(layout.secretPath)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") {
+      expect((await stat(layout.secretPath)).mode & 0o777).toBe(0o600);
+    }
 
     await manager.stop();
     expect(killed).toEqual([layout.webEntry, layout.apiEntry]);

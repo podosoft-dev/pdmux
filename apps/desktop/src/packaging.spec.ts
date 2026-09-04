@@ -63,7 +63,10 @@ describe("[TC-PDDESKTOP-009] desktop packaging matrix", () => {
   });
 
   it("builds each supported target in the desktop CI matrix", () => {
-    const workflow = readFileSync(new URL("../../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+    const workflow = readFileSync(
+      new URL("../../../.github/workflows/desktop.yml", import.meta.url),
+      "utf8",
+    ).replaceAll("\r\n", "\n");
     expect(workflow).toContain("runner: macos-15-intel\n            command: --mac --x64");
     expect(workflow).toContain("runner: macos-15\n            command: --mac --arm64");
     expect(workflow).not.toContain("command: --mac --x64 --arm64");
