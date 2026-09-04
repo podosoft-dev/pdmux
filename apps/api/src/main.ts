@@ -9,8 +9,8 @@ const app = createApp({ env, services });
 async function bootstrap(): Promise<void> {
   try {
     await services.start();
-    app.listen({ hostname: "0.0.0.0", port: env.PORT });
-    process.stdout.write(`API listening on http://0.0.0.0:${env.PORT}\n`);
+    app.listen({ hostname: env.HOST, port: env.PORT });
+    process.stdout.write(`API listening on http://${env.HOST}:${env.PORT}\n`);
   } catch (error) {
     await services.close();
     throw error;

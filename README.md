@@ -73,9 +73,9 @@ confirmed mode. Raw TCP forwarding is not included.
 ```
 browser ──── HTTPS / WebSocket ────▶ pdmux ◀──── WebSocket (outbound) ──── agent (one per host)
                                       │
-                                      ├─ PostgreSQL   hosts, services, layouts, metrics, commit metadata
-                                      ├─ Redis        sessions, pub/sub, rate limits, job queues
-                                      └─ S3 / MinIO   commit patch bodies
+                                      ├─ Database      PostgreSQL on a server, SQLite on desktop
+                                      ├─ Cache/events  Redis on a server, in-process memory on desktop
+                                      └─ Objects/jobs  S3 + BullMQ on a server, local files + jobs on desktop
 ```
 
 Each host runs one agent: a single static Go binary that opens one **outbound** WebSocket and does
@@ -121,6 +121,18 @@ includes Caddy, which obtains and renews the certificate on its own.
 
 Retention, backups, or putting your own gateway in front of this one instead:
 [docs/OPERATIONS.md](docs/OPERATIONS.md) §1.
+
+### Desktop application
+
+pdmux can also run as a self-contained desktop application on macOS, Windows, and Linux. It uses the
+same API and SvelteKit application as the server edition, but selects SQLite, an in-process cache and
+event bus, a local object directory, and an in-process job runner. PostgreSQL, Redis, and S3 are not
+required. The Electron shell owns process startup, loopback-only ports, tray behavior, backups,
+certificate-pinned remote mode, and updates; product screens are not forked.
+
+Desktop installers are produced by the repository's GitHub Actions workflow. Build instructions,
+data locations, backup behavior, and remote-mode configuration are in
+[docs/DESKTOP.md](docs/DESKTOP.md).
 
 For upgrades, pin the new release in `PDMUX_VERSION`, pull the images, and let the one-shot migration
 finish before the application containers roll. Existing installations must skip `0.11.0` and use
@@ -225,6 +237,7 @@ error codes are in [docs/MCP.md](docs/MCP.md).
 |---|---|
 | `apps/api` | Elysia on Bun + TypeORM on PostgreSQL. Host registry, agent gateway, metric retention, git storage, personalisation |
 | `apps/web` | SvelteKit + Tailwind v4 + shadcn-svelte. The dashboard and the admin screens |
+| `apps/desktop` | Electron shell for the same API and web build, with local providers, backups, tray integration, and packaging |
 | `agent` | The Go daemon that runs on each host. PTY, resources, sessions, service probes, read-only git. Not a Bun workspace |
 | `packages/protocol` | The agent↔server contract, as zod. The apps import it; the agent embeds a JSON Schema generated from it |
 | `packages/core` | Logic with no framework: terminal grid state, gauges, sparklines, commit lane placement |

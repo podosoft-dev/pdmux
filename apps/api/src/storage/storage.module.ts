@@ -6,8 +6,12 @@ import {
   type ServiceKey,
 } from "../core/services";
 import { StorageService } from "./storage.service";
+import { LocalObjectStore } from "./local-object.store";
+import type { ObjectStore } from "./object-store";
+import { runtimeProviders } from "../runtime/providers";
+import { resolve } from "node:path";
 
-export const STORAGE = Symbol("storage") as ServiceKey<StorageService>;
+export const STORAGE = Symbol("storage") as ServiceKey<ObjectStore>;
 
 const storagePlugin: AppPlugin = ({ services }) => {
   const storage = services.resolve(STORAGE);
@@ -38,7 +42,9 @@ const storagePlugin: AppPlugin = ({ services }) => {
 export const storageModule: PodokitModule = {
   name: "object-storage-s3",
   configure: (_env, services): void => {
-    const storage = new StorageService(services.resolve(READINESS));
+    const storage: ObjectStore = runtimeProviders().objectStorage === "local"
+      ? new LocalObjectStore(resolve(process.env.PDMUX_FILES_DIR ?? "./data/files"))
+      : new StorageService(services.resolve(READINESS));
     services.register(STORAGE, storage, () => storage.close());
   },
   plugin: storagePlugin,

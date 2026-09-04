@@ -1,0 +1,133 @@
+name: desktop
+
+on:
+  workflow_call:
+    inputs:
+      signed:
+        description: Require configured code-signing credentials
+        required: false
+        default: false
+        type: boolean
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "apps/desktop/**"
+      - "packages/**"
+      - "tools/prepare-desktop-runtime.mjs"
+      - "tools/merge-desktop-update-metadata.mjs"
+      - "bun.lock"
+      - ".github/workflows/desktop.yml"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+    inputs:
+      signed:
+        description: Require configured code-signing credentials
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Intel
+            runner: macos-15-intel
+            command: --mac --x64
+            artifact: macos-intel
+          - name: macOS Apple Silicon
+            runner: macos-15
+            command: --mac --arm64
+            artifact: macos-apple-silicon
+          - name: Windows x64
+            runner: windows-2025
+            command: --win --x64
+            artifact: windows-x64
+          - name: Linux x64
+            runner: ubuntu-24.04
+            command: --linux --x64
+            artifact: linux-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.5"
+
+      - run: bun ci
+
+      - name: Require requested signing credentials
+        if: ${{ inputs.signed }}
+        shell: bash
+        run: |
+          test -n "$CSC_LINK"
+          test -n "$CSC_KEY_PASSWORD"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            test -n "$APPLE_ID"
+            test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+            test -n "$APPLE_TEAM_ID"
+          fi
+        env:
+          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.DESKTOP_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
+
+      - name: Build shared packages
+        run: |
+          bun run --filter @pdmux/protocol build
+          bun run --filter @pdmux/core build
+          bun run --filter @pdmux/ui build
+          bun run --filter @pdmux/mcp build
+
+      - name: Build embedded services and host agent
+        run: |
+          bun run build:agent
+          bun run --filter pdmux-api build
+          bun run --filter pdmux-web build
+          bun run --filter pdmux-desktop build
+          bun run desktop:prepare
+
+      - name: Test desktop runtime
+        run: |
+          bun run --filter pdmux-desktop lint
+          bun run --filter pdmux-desktop test
+
+      - name: Package desktop application
+        run: bun run --cwd apps/desktop package -- ${{ matrix.command }}
+        env:
+          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.DESKTOP_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
+
+      - name: Preserve architecture-specific macOS update metadata
+        if: runner.os == 'macOS'
+        shell: bash
+        run: mv apps/desktop/release/latest-mac.yml apps/desktop/release/latest-mac-${{ matrix.artifact }}.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdmux-${{ matrix.artifact }}
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.zip
+            apps/desktop/release/latest*.yml
+          if-no-files-found: error

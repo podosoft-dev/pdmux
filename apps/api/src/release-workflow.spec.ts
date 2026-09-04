@@ -11,6 +11,7 @@ function repositoryFile(relativePath: string): string {
 }
 
 const workflow = readFileSync(repositoryFile(".github/workflows/release.yml"), "utf8");
+const desktopWorkflow = readFileSync(repositoryFile(".github/workflows/desktop.yml"), "utf8");
 const ciWorkflow = readFileSync(repositoryFile(".github/workflows/ci.yml"), "utf8");
 
 describe("release workflow", () => {
@@ -38,6 +39,12 @@ describe("release workflow", () => {
       "SHA256SUMS",
       "manifest.json",
       "tag_name: ${{ needs.verify.outputs.tag }}",
+      "uses: ./.github/workflows/desktop.yml",
+      "needs: [verify, build, desktop]",
+      "pattern: pdmux-*",
+      "bun tools/merge-desktop-update-metadata.mjs",
+      "DESKTOP-SHA256SUMS",
+      "/tmp/desktop/*",
     ]) {
       expect(workflow).toContain(fragment);
     }
@@ -47,6 +54,24 @@ describe("release workflow", () => {
     expect(workflow).not.toContain("secrets.REGISTRY_USERNAME");
     expect(workflow).not.toContain("secrets.REGISTRY_PASSWORD");
     expect(workflow).not.toContain("npm ci");
+  });
+
+  test("[TC-PDDESKTOP-009] publishes only native desktop distributables", () => {
+    for (const fragment of [
+      "workflow_call:",
+      "runner: macos-15-intel",
+      "runner: macos-15",
+      "runner: windows-2025",
+      "runner: ubuntu-24.04",
+      "latest-mac-${{ matrix.artifact }}.yml",
+      "apps/desktop/release/*.AppImage",
+      "apps/desktop/release/*.dmg",
+      "apps/desktop/release/*.exe",
+      "apps/desktop/release/latest*.yml",
+    ]) {
+      expect(desktopWorkflow).toContain(fragment);
+    }
+    expect(desktopWorkflow).not.toContain("path: apps/desktop/release/**");
   });
 
   test("[TC-PDHOST-024] rejects committed agent metadata that is stale", () => {

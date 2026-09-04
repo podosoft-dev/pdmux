@@ -2,7 +2,7 @@ import { AppException } from "@podosoft/podokit-contracts";
 import type { AccessPolicy } from "../core/services";
 import type { SettingsService } from "../settings/settings.service";
 import { getAuth, refreshIfStale } from "./auth-provider";
-import { pool } from "./db";
+import { closeAuthDatabase } from "./db";
 
 export interface AuthUser extends Record<string, unknown> {
   id: string;
@@ -73,6 +73,6 @@ export class AuthService {
   }
 
   async close(): Promise<void> {
-    await pool.end();
+    await closeAuthDatabase();
   }
 }

@@ -6,14 +6,17 @@ import {
   type ServiceKey,
 } from "../core/services";
 import { RedisService } from "./redis.service";
+import { MemoryCacheStore, type CacheStore } from "../runtime/cache";
+import { runtimeProviders } from "../runtime/providers";
 
 export const REDIS = Symbol("redis") as ServiceKey<RedisService>;
+export const CACHE = Symbol("cache") as ServiceKey<CacheStore>;
 
 const cachePlugin: AppPlugin = ({ services }) => {
-  const redis = services.resolve(REDIS);
+  const cache = services.resolve(CACHE);
   return new Elysia({ name: "podokit.redis" })
     .put("/cache/:key", async ({ params, body }) => {
-      await redis.set(params.key, body.value, body.ttl);
+      await cache.set(params.key, body.value, body.ttl);
       return { key: params.key };
     }, {
       params: t.Object({ key: t.String({ minLength: 1 }) }),
@@ -25,7 +28,7 @@ const cachePlugin: AppPlugin = ({ services }) => {
     })
     .get("/cache/:key", async ({ params }) => ({
       key: params.key,
-      value: await redis.get(params.key),
+      value: await cache.get(params.key),
     }), {
       params: t.Object({ key: t.String({ minLength: 1 }) }),
       detail: { tags: ["cache"], summary: "Read a cache value" },
@@ -35,8 +38,14 @@ const cachePlugin: AppPlugin = ({ services }) => {
 export const redisModule: PodokitModule = {
   name: "redis",
   configure: (_env, services): void => {
+    if (runtimeProviders().cache === "memory") {
+      const cache = new MemoryCacheStore();
+      services.register(CACHE, cache, () => cache.close());
+      return;
+    }
     const redis = new RedisService(services.resolve(READINESS));
     services.register(REDIS, redis, () => redis.close());
+    services.register(CACHE, redis);
     services.onStart(() => redis.connect());
   },
   plugin: cachePlugin,

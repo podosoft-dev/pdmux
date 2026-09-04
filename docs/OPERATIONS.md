@@ -7,6 +7,11 @@ incident response.
 
 ## 1. Deployment shape
 
+This section describes the server deployment profile. The packaged desktop profile embeds the
+same web and API builds and uses SQLite, local files, and in-process providers instead of external
+PostgreSQL, Redis, and S3 services. Desktop data directories, backups, remote mode, and update
+operations are documented in [`DESKTOP.md`](DESKTOP.md).
+
 | Piece | Minimum | Recommended |
 |---|---|---|
 | API + web | two containers | behind a gateway (Caddy/Traefik/Nginx), serving everything on the **same origin** |

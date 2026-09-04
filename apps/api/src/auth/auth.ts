@@ -5,7 +5,7 @@ import { actionEmail, sendMail } from "../mail/mailer";
 import { sendSms } from "../sms/sms";
 import { assertUserCreationAllowed, createFeatureGate, createSignupOpenCheck } from "./feature-gate";
 import { orgAc, orgRoles } from "./org-permissions";
-import { pool } from "./db";
+import { authDatabase, readAppSettings } from "./db";
 import { type AuthConfig, envAuthConfig, sessionIdleOptions, SUPPORTED_PROVIDER_IDS } from "@podosoft/podokit-auth";
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
@@ -49,7 +49,7 @@ function buildSocial(config: AuthConfig): NonNullable<BetterAuthOptions["socialP
 // server-enforced toggles) apply without a restart. Everything below the injection
 // markers is contributed by other PodoKit modules (admin-dashboard, audit-log).
 export function buildAuth(config: AuthConfig) {
-  const isSignupOpen = createSignupOpenCheck(pool);
+  const isSignupOpen = createSignupOpenCheck(readAppSettings);
   const plugins: BetterAuthPlugin[] = [
     twoFactor(),
     magicLink({
@@ -180,7 +180,7 @@ export function buildAuth(config: AuthConfig) {
   // real server boundary (disabled features 404). Other PodoKit modules add their
   // own hooks below the marker.
   const hooks: NonNullable<BetterAuthOptions["hooks"]> = {
-    before: createFeatureGate(pool, isSignupOpen),
+    before: createFeatureGate(readAppSettings, isSignupOpen),
   };
   // podokit:begin:auth-hooks
   hooks.after = auditAfterHook;
@@ -189,7 +189,7 @@ export function buildAuth(config: AuthConfig) {
   const session = sessionIdleOptions(config.sessionIdleTimeoutMinutes);
 
   return betterAuth({
-    database: pool,
+    database: authDatabase,
     emailAndPassword: {
       enabled: true,
       // Pending email/password registrations should complete without creating a

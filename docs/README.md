@@ -15,6 +15,7 @@ to the rules they produced — so a future reader can weigh a rule instead of gu
 | [`VERSIONING.md`](VERSIONING.md) | the two SemVer lines, `PROTOCOL_VERSION`, the CI checks that keep the manifest honest |
 | [`COMPONENTS.md`](COMPONENTS.md) | the `@pdmux/ui` props/events contract and the style boundary (shadcn ↔ the package stylesheet) |
 | [`IME_INPUT.md`](IME_INPUT.md) | the input path for composed characters (Korean, Japanese, Chinese) and **its limits** |
+| [`DESKTOP.md`](DESKTOP.md) | the embedded SQLite/local-provider profile, desktop lifecycle, backups, remote mode, and platform packaging |
 
 Every test title carries a `[TC-AREA-NNN]` tag, and those identifiers appear throughout these
 documents. They point into a requirements matrix that is maintained alongside this repository rather

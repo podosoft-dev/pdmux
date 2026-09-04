@@ -1,6 +1,6 @@
 import { ProductLogger } from "../logging/product-logger";
 import type { CommitDetail, GitTree, WorkingDiff } from "@pdmux/protocol";
-import { StorageService } from "../storage/storage.service";
+import type { ObjectStore } from "../storage/object-store";
 import { commitDetailKey, fileTreeKey, workingDiffKey } from "./git-storage";
 
 /**
@@ -13,7 +13,7 @@ import { commitDetailKey, fileTreeKey, workingDiffKey } from "./git-storage";
 export class GitDetailService {
   private readonly logger = new ProductLogger(GitDetailService.name);
 
-  constructor(private readonly storage: StorageService) {}
+  constructor(private readonly storage: ObjectStore) {}
 
   async putCommitDetail(hostId: string, repoId: string, detail: CommitDetail): Promise<void> {
     await this.storage.put(

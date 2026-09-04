@@ -1,3 +1,5 @@
+import { isDesktopLoopbackUrl } from "../runtime/providers";
+
 export function authSecret(): string {
   const value = process.env.BETTER_AUTH_SECRET?.trim();
   if (
@@ -25,7 +27,11 @@ export function authBaseUrl(): string {
   } catch {
     throw new Error("BETTER_AUTH_URL must be a valid URL");
   }
-  if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
+  if (
+    process.env.NODE_ENV === "production" &&
+    url.protocol !== "https:" &&
+    !isDesktopLoopbackUrl(resolved)
+  ) {
     throw new Error("BETTER_AUTH_URL must use HTTPS in production");
   }
   return resolved;

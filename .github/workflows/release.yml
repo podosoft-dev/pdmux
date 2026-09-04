@@ -1,4 +1,4 @@
-# Build and publish the release images and agent artifacts for a tag.
+# Build and publish release images, agent artifacts, and desktop applications for a tag.
 #
 # `podo deploy` consumes images; it does not build them. Tagging a commit produces
 # the two images that `podo deploy apply` rolls out. The workflow stops at publish,
@@ -9,9 +9,9 @@
 # tag. Publishing a tag from each architecture would let the last writer silently
 # replace the other architecture.
 #
-# The release also attaches the four host-agent binaries, SHA256SUMS, and the agent
-# manifest. Agents still download from the authenticated PDMUX server; the GitHub
-# assets are the public distribution surface for operators.
+# The release also attaches the four host-agent binaries, native desktop installers,
+# checksums, update metadata, and the agent manifest. Agents still download from the
+# authenticated PDMUX server; the GitHub assets are the public distribution surface.
 
 name: release
 
@@ -163,8 +163,17 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  desktop:
+    needs: verify
+    permissions:
+      contents: read
+    uses: ./.github/workflows/desktop.yml
+    with:
+      signed: false
+    secrets: inherit
+
   publish:
-    needs: [verify, build]
+    needs: [verify, build, desktop]
     permissions:
       contents: write
       packages: write
@@ -179,6 +188,12 @@ jobs:
           pattern: digests-*
           merge-multiple: true
           path: /tmp/digests
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pdmux-*
+          merge-multiple: true
+          path: /tmp/desktop
 
       - uses: docker/setup-buildx-action@v3
 
@@ -225,6 +240,19 @@ jobs:
           echo "Agent $version" >> "$GITHUB_STEP_SUMMARY"
           sed 's/^/    /' "$dir/SHA256SUMS" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Prepare desktop release assets
+        run: |
+          bun tools/merge-desktop-update-metadata.mjs \
+            /tmp/desktop/latest-mac.yml \
+            /tmp/desktop/latest-mac-macos-intel.yml \
+            /tmp/desktop/latest-mac-macos-apple-silicon.yml
+          rm /tmp/desktop/latest-mac-macos-intel.yml /tmp/desktop/latest-mac-macos-apple-silicon.yml
+          (
+            cd /tmp/desktop
+            sha256sum -- * > DESKTOP-SHA256SUMS
+          )
+          cat /tmp/desktop/DESKTOP-SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+
       # A version must identify identical bytes whether the web image is amd64,
       # arm64, or the standalone GitHub release asset.
       - name: Check both architectures carry the same agent binaries
@@ -248,7 +276,7 @@ jobs:
           fi
           echo "Agent $version is identical in both images and in the release assets." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Attach agent artifacts to the release
+      - name: Attach release artifacts
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.verify.outputs.tag }}
@@ -256,10 +284,12 @@ jobs:
             ${{ steps.agent.outputs.dir }}/pdmux-agent-*
             ${{ steps.agent.outputs.dir }}/SHA256SUMS
             ${{ steps.agent.outputs.dir }}/manifest.json
+            /tmp/desktop/*
 
       - name: Report what to deploy
         run: |
           echo "Pushed ${{ needs.verify.outputs.api }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
           echo "Pushed ${{ needs.verify.outputs.web }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Attached macOS Intel, macOS Apple Silicon, Windows x64, and Linux x64 desktop artifacts." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo 'Roll out with `podo deploy plan --profile <name> --release ${{ needs.verify.outputs.tag }}`, then apply the printed hash.' >> "$GITHUB_STEP_SUMMARY"

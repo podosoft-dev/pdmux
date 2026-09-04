@@ -20,42 +20,72 @@ import { UserLayout } from "../prefs/user-layout.entity";
 import { HostConnector } from "../integrations/host-connector.entity";
 import { IntegrationConnection } from "../integrations/integration-connection.entity";
 import { ServiceExposure } from "../integrations/service-exposure.entity";
+import { runtimeProviders } from "../runtime/providers";
+import { validateEnv } from "../config/env.validation";
+import { databaseUrl, sqliteDatabasePath } from "./database";
+import { BunSqliteDatabaseAdapter, installPdmuxSqliteDriver } from "./sqlite-driver";
 
 const compiledMigrations = join(process.cwd(), "dist", "migrations");
 const migrations = existsSync(compiledMigrations)
   ? [join(compiledMigrations, "[0-9]*.js")]
   : [join(process.cwd(), "src", "migrations", "[0-9]*.ts")];
 
-export const dataSourceOptions: DataSourceOptions = {
-  type: "postgres",
-  host: process.env.POSTGRES_HOST ?? "localhost",
-  port: Number(process.env.POSTGRES_PORT ?? 5432),
-  username: process.env.POSTGRES_USER ?? "podokit",
-  password: process.env.POSTGRES_PASSWORD ?? "podokit",
-  database: process.env.POSTGRES_DB ?? "podokit",
-  entities: [
-    AgentAuthFailure,
-    AgentEnrollment,
-    AgentToken,
-    FleetSetting,
-    Host,
-    HostConnector,
-    HostGitRoot,
-    HostMcpKey,
-    HostMetricSample,
-    HostService,
-    IntegrationConnection,
-    Repo,
-    RepoCommit,
-    RepoRef,
-    ServiceExposure,
-    UserHostPref,
-    UserLayout,
-    UserMcpKey,
-  ],
-  migrations,
-  synchronize: false,
-};
+const entities = [
+  AgentAuthFailure,
+  AgentEnrollment,
+  AgentToken,
+  FleetSetting,
+  Host,
+  HostConnector,
+  HostGitRoot,
+  HostMcpKey,
+  HostMetricSample,
+  HostService,
+  IntegrationConnection,
+  Repo,
+  RepoCommit,
+  RepoRef,
+  ServiceExposure,
+  UserHostPref,
+  UserLayout,
+  UserMcpKey,
+];
+
+export function createDataSourceOptions(env: NodeJS.ProcessEnv = process.env): DataSourceOptions {
+  const providers = runtimeProviders(env);
+  if (providers.database === "sqlite") {
+    const appEnv = validateEnv(env);
+    return {
+      type: "better-sqlite3",
+      database: sqliteDatabasePath(databaseUrl(appEnv, providers.database)),
+      driver: BunSqliteDatabaseAdapter,
+      enableWAL: true,
+      entities,
+      migrations: [],
+      synchronize: true,
+    };
+  }
+  return {
+    type: "postgres",
+    host: env.POSTGRES_HOST ?? "localhost",
+    port: Number(env.POSTGRES_PORT ?? 5432),
+    username: env.POSTGRES_USER ?? "podokit",
+    password: env.POSTGRES_PASSWORD ?? "podokit",
+    database: env.POSTGRES_DB ?? "podokit",
+    entities,
+    migrations,
+    synchronize: false,
+  };
+}
+
+export const dataSourceOptions: DataSourceOptions = createDataSourceOptions();
+
+export function createAppDataSource(options: DataSourceOptions = dataSourceOptions): DataSource {
+  const source = new DataSource(options);
+  return options.type === "better-sqlite3" ? installPdmuxSqliteDriver(source) : source;
+}
+
+export const entityTypes = entities;
 
 // Used by the TypeORM CLI for migrations (see package.json scripts).
-export default new DataSource(dataSourceOptions);
+export default createAppDataSource();
