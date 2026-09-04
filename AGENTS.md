@@ -8,8 +8,9 @@ Follow it so your changes match the project's conventions.
 
 A Bun 1.4 full-stack TypeScript monorepo (Bun workspaces):
 
-- `apps/api` — **Elysia on Bun** backend (`pdmux-api`), TypeORM + PostgreSQL, OpenAPI at `/api-docs`.
+- `apps/api` — **Elysia on Bun** backend (`pdmux-api`), TypeORM + PostgreSQL or desktop SQLite, OpenAPI at `/api-docs`.
 - `apps/web` — **SvelteKit on Bun** frontend (`pdmux-web`), Tailwind v4 + shadcn-svelte + typesafe-i18n.
+- `apps/desktop` — Electron lifecycle shell that embeds the same API and web builds with local providers.
 - `infra/` — Docker Compose (PostgreSQL/Redis) and example k3s manifests.
 - `.podokit/` — PodoKit's generation lockfile (see "PodoKit tooling" below). Do not edit by hand.
 

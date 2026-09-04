@@ -1,5 +1,5 @@
 import type { SQL } from "bun";
-import type { StorageService } from "../storage/storage.service";
+import type { ObjectStore } from "../storage/object-store";
 
 const PREFIX = "site.";
 const FAVICON_KEY = "site/favicon";
@@ -34,7 +34,7 @@ export interface SiteFavicon {
 export class SiteSettingsService {
   constructor(
     private readonly sql: SQL,
-    private readonly storage: StorageService,
+    private readonly storage: ObjectStore,
   ) {}
 
   async getAll(): Promise<Record<string, string>> {

@@ -1,8 +1,9 @@
 import { S3Client } from "bun";
 import { ReadinessService } from "../health/readiness.service";
 import { storageSettings } from "./storage.config";
+import type { ObjectStore } from "./object-store";
 
-export class StorageService {
+export class StorageService implements ObjectStore {
   private readonly client: S3Client;
   private unregisterReadiness?: () => void;
 

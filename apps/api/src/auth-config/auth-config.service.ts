@@ -78,6 +78,14 @@ interface AuthConfigRow {
   secret: string | null;
 }
 
+interface DatabaseAuthConfigRow extends Omit<AuthConfigRow, "enabled"> {
+  enabled: boolean | number;
+}
+
+function normalizeRow(row: DatabaseAuthConfigRow): AuthConfigRow {
+  return { ...row, enabled: row.enabled === true || row.enabled === 1 };
+}
+
 function object(value: unknown): Record<string, unknown> {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -105,17 +113,18 @@ export class AuthConfigService {
   constructor(private readonly sql: SQL) {}
 
   private async rows(): Promise<AuthConfigRow[]> {
-    return this.sql<AuthConfigRow[]>`
+    const rows = await this.sql<DatabaseAuthConfigRow[]>`
       SELECT "key", "enabled", "config", "secret" FROM "auth_config"
     `;
+    return rows.map(normalizeRow);
   }
 
   private async row(key: string): Promise<AuthConfigRow | null> {
-    const rows = await this.sql<AuthConfigRow[]>`
+    const rows = await this.sql<DatabaseAuthConfigRow[]>`
       SELECT "key", "enabled", "config", "secret"
       FROM "auth_config" WHERE "key" = ${key}
     `;
-    return rows[0] ?? null;
+    return rows[0] ? normalizeRow(rows[0]) : null;
   }
 
   private async upsert(row: AuthConfigRow): Promise<void> {

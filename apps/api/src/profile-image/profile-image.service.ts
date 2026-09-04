@@ -7,7 +7,7 @@ import {
 } from "@podosoft/podokit-contracts";
 import { getAuth } from "../auth/auth-provider";
 import { registerUserDeletedHandler } from "../auth/user-delete-handlers";
-import type { StorageService } from "../storage/storage.service";
+import type { ObjectStore } from "../storage/object-store";
 import { validateProfileImage, type ProfileImageUpload } from "./profile-image.validation";
 
 const FILE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp)$/;
@@ -37,7 +37,7 @@ export class ProfileImageService {
   private unregisterUserDeleted?: () => void;
 
   constructor(
-    private readonly storage: StorageService,
+    private readonly storage: ObjectStore,
     private readonly logger: Logger,
     private readonly updateUser: UpdateAuthUser = updateAuthUser,
   ) {}

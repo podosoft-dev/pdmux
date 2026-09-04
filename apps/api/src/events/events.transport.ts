@@ -1,5 +1,6 @@
 import { RedisClient } from "bun";
 import { redisConnectionUrl } from "../config/redis.connection";
+import { runtimeProviders } from "../runtime/providers";
 
 export type EventHandler = (data: unknown) => void;
 
@@ -104,7 +105,7 @@ export class RedisEventsTransport implements EventsTransport {
 }
 
 export function createEventsTransport(env: NodeJS.ProcessEnv = process.env): EventsTransport {
-  const name = env.SSE_TRANSPORT?.trim().toLowerCase() || "memory";
+  const name = runtimeProviders(env).events;
   if (name === "memory") return new MemoryEventsTransport(env);
   if (name === "redis") return new RedisEventsTransport(env);
   throw new Error('SSE_TRANSPORT must be either "memory" or "redis"');

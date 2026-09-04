@@ -22,6 +22,18 @@ pdmux-api (Bun + Elysia)    Postgres  organisations, users, hosts, services, lay
 pdmux-agent (one per host)  PTY · session enumeration · CPU/MEM/SWAP/DISK · service probes · read-only git · token usage
 ```
 
+The desktop application keeps the same API, web application, protocol, and domain modules. Its
+Electron main process only owns lifecycle and operating-system integration. In local mode it swaps
+the infrastructure adapters at the existing runtime boundaries:
+
+```
+Electron → SvelteKit + API → SQLite · memory cache/events/jobs · local object storage
+```
+
+This is a deployment profile, not a fork of the product. Server deployments retain PostgreSQL,
+Redis, S3-compatible storage, and BullMQ. See [`DESKTOP.md`](DESKTOP.md) for lifecycle, storage,
+backup, remote mode, and packaging details.
+
 - `packages/protocol` — the contract for both arrows above (zod). The API and the web app use
   this file directly; the Go agent reads a **JSON Schema generated from it and committed**, via
   `go:embed` (one contract, two implementations — drift is caught by comparing the generated

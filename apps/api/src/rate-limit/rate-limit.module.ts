@@ -1,4 +1,3 @@
-import type { RedisClient } from "bun";
 import { AppException } from "../common/app-exception";
 import { API_KEY_VERIFIER } from "../api-key/api-key.module";
 import {
@@ -7,7 +6,8 @@ import {
   type RequestGuardContext,
   type ServiceKey,
 } from "../core/services";
-import { REDIS } from "../redis/redis.module";
+import { CACHE } from "../redis/redis.module";
+import type { CacheStore } from "../runtime/cache";
 import { rateLimitConfig, type RateLimitConfig } from "./rate-limit.config";
 import { RateLimitIdentity } from "./rate-limit.identity";
 
@@ -20,39 +20,11 @@ export interface RateLimitStorage {
   increment(key: string, ttlSeconds: number): Promise<RateLimitIncrement>;
 }
 
-const INCREMENT_SCRIPT = `
-local count = redis.call('INCR', KEYS[1])
-if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
-local ttl = redis.call('TTL', KEYS[1])
-return { count, ttl }
-`;
-
-function resultNumber(value: unknown): number | undefined {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
-export class RedisRateLimitStorage implements RateLimitStorage {
-  constructor(private readonly client: RedisClient) {}
+export class CacheRateLimitStorage implements RateLimitStorage {
+  constructor(private readonly cache: CacheStore) {}
 
   async increment(key: string, ttlSeconds: number): Promise<RateLimitIncrement> {
-    const result = await this.client.send("EVAL", [
-      INCREMENT_SCRIPT,
-      "1",
-      key,
-      String(ttlSeconds),
-    ]);
-    if (!Array.isArray(result)) throw new Error("Redis returned an invalid rate-limit result");
-    const count = resultNumber(result[0]);
-    const retryAfterSeconds = resultNumber(result[1]);
-    if (count === undefined || retryAfterSeconds === undefined) {
-      throw new Error("Redis returned an invalid rate-limit counter");
-    }
-    return { count, retryAfterSeconds: Math.max(1, retryAfterSeconds) };
+    return this.cache.incrementFixedWindow(key, ttlSeconds);
   }
 }
 
@@ -152,7 +124,7 @@ export const rateLimitModule: PodokitModule = {
     const limiter = new RateLimiter(
       rateLimitConfig(),
       new RateLimitIdentity(services.resolve(API_KEY_VERIFIER), services),
-      new RedisRateLimitStorage(services.resolve(REDIS).client),
+      new CacheRateLimitStorage(services.resolve(CACHE)),
     );
     services.register(RATE_LIMITER, limiter);
     services.resolve(REQUEST_GUARDS).register((context) => limiter.enforce(context));

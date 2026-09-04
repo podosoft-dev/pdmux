@@ -1,5 +1,4 @@
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import type { Pool } from "pg";
 import { FLAG_DEFAULTS, type FeatureFlag } from "../settings/flag-defaults";
 
 export const PUBLIC_SIGNUP_DISABLED = "PUBLIC_SIGNUP_DISABLED" as const;
@@ -22,22 +21,20 @@ const FEATURE_PATHS: Array<{ flag: FeatureFlag; prefixes: string[] }> = [
 const CACHE_TTL_MS = 3_000;
 
 export type SignupOpenCheck = () => Promise<boolean>;
+export type AppSettingsReader = () => Promise<Array<{ key: string; value: string }>>;
 
 /** Public registration is the default until an administrator explicitly closes
  *  it. The short cache keeps every auth flow on the same live site-setting
  *  policy without rebuilding the Better Auth instance. */
-export function createSignupOpenCheck(pool: Pool): SignupOpenCheck {
+export function createSignupOpenCheck(readSettings: AppSettingsReader): SignupOpenCheck {
   let signupOpen = true;
   let fetchedAt = 0;
 
   return async (): Promise<boolean> => {
     if (Date.now() - fetchedAt < CACHE_TTL_MS) return signupOpen;
     try {
-      const res = await pool.query<{ value: string }>(
-        'SELECT "value" FROM "app_setting" WHERE "key" = $1',
-        ["site.allowSignup"],
-      );
-      signupOpen = res.rows[0]?.value !== "false";
+      const rows = await readSettings();
+      signupOpen = rows.find((row) => row.key === "site.allowSignup")?.value !== "false";
     } catch {
       signupOpen = true;
     }
@@ -67,8 +64,8 @@ export function assertUserCreationAllowed(signupOpen: boolean, requestPath?: str
  *  (a toggle takes effect within ~CACHE_TTL_MS); before the migration has run,
  *  the shipped defaults apply. */
 export function createFeatureGate(
-  pool: Pool,
-  isSignupOpen: SignupOpenCheck = createSignupOpenCheck(pool),
+  readSettings: AppSettingsReader,
+  isSignupOpen: SignupOpenCheck = createSignupOpenCheck(readSettings),
 ) {
   let cache: Record<FeatureFlag, boolean> = { ...FLAG_DEFAULTS };
   let fetchedAt = 0;
@@ -76,12 +73,11 @@ export function createFeatureGate(
   async function flags(): Promise<Record<FeatureFlag, boolean>> {
     if (Date.now() - fetchedAt < CACHE_TTL_MS) return cache;
     try {
-      const res = await pool.query<{ key: string; value: string }>(
-        'SELECT "key", "value" FROM "app_setting" WHERE "key" = ANY($1)',
-        [Object.keys(FLAG_DEFAULTS)],
-      );
+      const rows = await readSettings();
       const next = { ...FLAG_DEFAULTS };
-      for (const row of res.rows) next[row.key as FeatureFlag] = row.value === "true";
+      for (const row of rows) {
+        if (row.key in FLAG_DEFAULTS) next[row.key as FeatureFlag] = row.value === "true";
+      }
       cache = next;
     } catch {
       cache = { ...FLAG_DEFAULTS };

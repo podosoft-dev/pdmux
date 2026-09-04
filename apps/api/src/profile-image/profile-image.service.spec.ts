@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
 import type { Logger } from "pino";
 import { runUserDeletedHandlers } from "../auth/user-delete-handlers";
-import { StorageService } from "../storage/storage.service";
+import type { ObjectStore } from "../storage/object-store";
 import { ProfileImageService } from "./profile-image.service";
 
 describe("ProfileImageService account deletion cleanup", () => {
@@ -12,7 +12,7 @@ describe("ProfileImageService account deletion cleanup", () => {
     delete: mock(async () => undefined),
   };
   const logger = { warn: mock(() => undefined) } as unknown as Logger;
-  const service = new ProfileImageService(storage as unknown as StorageService, logger);
+  const service = new ProfileImageService(storage as unknown as ObjectStore, logger);
 
   service.connect();
 

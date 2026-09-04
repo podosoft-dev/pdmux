@@ -1,5 +1,4 @@
-import { Queue } from "bullmq";
-import { DataSource } from "typeorm";
+import type { DataSource } from "typeorm";
 import { AgentAckService } from "../agents/agent-ack.service";
 import { AgentAuthFailure } from "../agents/agent-auth-failure.entity";
 import { AgentAuthFailuresService } from "../agents/agent-auth-failures.service";
@@ -25,7 +24,7 @@ import type { AuditService } from "../audit/audit.service";
 import type { AuthService } from "../auth/auth.service";
 import { AUTH } from "../auth/auth.module";
 import type { ServiceKey, ServiceRegistry } from "../core/services";
-import { dataSourceOptions } from "../database/data-source";
+import { createAppDataSource, dataSourceOptions } from "../database/data-source";
 import { EVENTS } from "../events/events.module";
 import type { EventsService } from "../events/events.service";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
@@ -49,7 +48,8 @@ import {
   STALE_HOSTS_JOB,
   STALE_HOSTS_QUEUE,
 } from "../hosts/stale-hosts.queue";
-import { redisConnection } from "../jobs/queue";
+import { JOBS } from "../jobs/jobs.module";
+import type { JobProvider } from "../runtime/jobs";
 import { HostMcpKey } from "../mcp/host-mcp-key.entity";
 import { HostMcpKeysService } from "../mcp/host-mcp-keys.service";
 import { AgentKitController } from "../mcp/agent-kit.controller";
@@ -74,7 +74,7 @@ import { IntegrationConnection } from "../integrations/integration-connection.en
 import { ServiceExposure } from "../integrations/service-exposure.entity";
 import { PrefsService } from "../prefs/prefs.service";
 import { STORAGE } from "../storage/storage.module";
-import type { StorageService } from "../storage/storage.service";
+import type { ObjectStore } from "../storage/object-store";
 import { TerminalRelayService } from "../terminal/terminal-relay.service";
 import { TerminalMuxController } from "../terminal/terminal-mux.controller";
 
@@ -115,29 +115,28 @@ export interface PdmuxServices {
 export const PDMUX = Symbol("pdmux") as ServiceKey<PdmuxServices>;
 const PDMUX_LIFECYCLE = Symbol("pdmux-lifecycle") as ServiceKey<DataSource>;
 
-async function scheduleMaintenance(staleQueue: Queue, metricsQueue: Queue): Promise<void> {
+async function scheduleMaintenance(jobs: JobProvider): Promise<void> {
   await Promise.allSettled([
-    staleQueue.add(STALE_HOSTS_JOB, {}, {
-      repeat: { pattern: STALE_HOSTS_CRON },
-      jobId: STALE_HOSTS_JOB,
-      removeOnComplete: true,
-      removeOnFail: 20,
+    jobs.repeat(STALE_HOSTS_QUEUE, STALE_HOSTS_JOB, {}, {
+      id: STALE_HOSTS_JOB,
+      cron: STALE_HOSTS_CRON,
+      intervalMs: 24 * 60 * 60 * 1_000,
     }),
-    metricsQueue.add(METRICS_PRUNE_JOB, {}, {
-      repeat: { pattern: METRICS_PRUNE_CRON },
-      jobId: METRICS_PRUNE_JOB,
-      removeOnComplete: true,
-      removeOnFail: 20,
+    jobs.repeat(METRICS_QUEUE, METRICS_PRUNE_JOB, {}, {
+      id: METRICS_PRUNE_JOB,
+      cron: METRICS_PRUNE_CRON,
+      intervalMs: 60 * 60 * 1_000,
     }),
   ]);
 }
 
 export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
-  const dataSource = new DataSource(dataSourceOptions);
-  const storage: StorageService = services.resolve(STORAGE);
+  const dataSource = createAppDataSource(dataSourceOptions);
+  const storage: ObjectStore = services.resolve(STORAGE);
   const events: EventsService = services.resolve(EVENTS);
   const auth = services.resolve(AUTH);
   const audit = services.resolve(AUDIT);
+  const jobs = services.resolve(JOBS);
 
   const fleetSettings = new FleetSettingsService(dataSource.getRepository(FleetSetting));
   const releases = new AgentReleaseService(fileSystemAgentReleases);
@@ -247,8 +246,8 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
     metrics,
   );
 
-  const staleQueue = new Queue(STALE_HOSTS_QUEUE, { connection: redisConnection() });
-  const metricsQueue = new Queue(METRICS_QUEUE, { connection: redisConnection() });
+  jobs.register(STALE_HOSTS_QUEUE, STALE_HOSTS_JOB, () => staleHosts.runOnce());
+  jobs.register(METRICS_QUEUE, METRICS_PRUNE_JOB, () => metricsRetention.runOnce());
   services.onStart(async () => {
     await dataSource.initialize();
     hosts.setConnectedProbe((hostId) => agentRegistry.isConnected(hostId));
@@ -258,14 +257,13 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
     configPush.connect();
     detailRequests.connect();
     terminalRelay.attach();
-    await scheduleMaintenance(staleQueue, metricsQueue);
+    await scheduleMaintenance(jobs);
   });
   services.register(
     PDMUX_LIFECYCLE,
     dataSource,
     async () => {
       terminalRelay.detach();
-      await Promise.all([staleQueue.close(), metricsQueue.close()]);
       if (dataSource.isInitialized) await dataSource.destroy();
     },
   );

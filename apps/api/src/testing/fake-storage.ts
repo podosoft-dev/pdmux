@@ -1,4 +1,4 @@
-import type { StorageService } from "../storage/storage.service";
+import type { ObjectStore } from "../storage/object-store";
 
 /**
  * In-memory object storage for unit tests, with counters.
@@ -28,11 +28,21 @@ export class FakeStorage {
     this.objects.delete(key);
   }
 
+  exists(key: string): Promise<boolean> {
+    return Promise.resolve(this.objects.has(key));
+  }
+
+  presignedGetUrl(key: string): Promise<string> {
+    return Promise.resolve(`/storage/${encodeURIComponent(key)}`);
+  }
+
+  close(): void {}
+
   putCount(key: string): number {
     return this.puts.filter((candidate) => candidate === key).length;
   }
 
-  asStorage(): StorageService {
-    return this as unknown as StorageService;
+  asStorage(): ObjectStore {
+    return this;
   }
 }

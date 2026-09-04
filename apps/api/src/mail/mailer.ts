@@ -1,5 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
-import { pool } from "./db";
+import { authConfigQueryClient } from "../auth/db";
 import { createConfigStore, type SmtpConfig } from "@podosoft/podokit-auth";
 
 // Reusable email sending. SMTP is resolved in priority order, applied live (short
@@ -10,7 +10,7 @@ import { createConfigStore, type SmtpConfig } from "@podosoft/podokit-auth";
 //   3. none → a JSON transport that logs the message so dev links are grabbable.
 // The whole transport can also be overridden from app code (setMailTransport),
 // e.g. from apps/api/src/app.extensions.ts, to plug in a provider SDK.
-const store = createConfigStore(pool);
+const store = createConfigStore(authConfigQueryClient);
 const TTL_MS = 3_000;
 
 function envSmtp(): SmtpConfig | null {

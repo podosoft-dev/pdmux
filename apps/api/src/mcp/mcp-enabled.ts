@@ -1,4 +1,4 @@
-import { pool } from "../auth/db";
+import { readAppSettings } from "../auth/db";
 
 /**
  * Is this pdmux server an MCP server at all?
@@ -34,12 +34,10 @@ let fetchedAt = 0;
 export async function mcpEnabled(): Promise<boolean> {
   if (Date.now() - fetchedAt < TTL_MS) return cached;
   try {
-    const result = await pool.query<{ value: string }>(
-      'SELECT "value" FROM "app_setting" WHERE "key" = $1',
-      ["mcpEnabled"],
-    );
+    const rows = await readAppSettings();
+    const row = rows.find((candidate) => candidate.key === "mcpEnabled");
     // A missing row is a fresh install that predates the seed, not "off".
-    cached = result.rows[0] === undefined ? FALLBACK : result.rows[0].value === "true";
+    cached = row === undefined ? FALLBACK : row.value === "true";
   } catch {
     cached = FALLBACK;
   }

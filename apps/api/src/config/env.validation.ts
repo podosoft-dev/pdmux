@@ -3,8 +3,10 @@ import { z } from "zod";
 // Schema-validated environment. Fails fast at boot if something is wrong.
 const schema = z.object({
   NODE_ENV: z.string().default("development"),
+  HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().default(5002),
   CORS_ORIGIN: z.string().optional(),
+  DATABASE_URL: z.string().optional(),
   POSTGRES_HOST: z.string().default("localhost"),
   POSTGRES_PORT: z.coerce.number().default(5432),
   POSTGRES_USER: z.string().default("podokit"),

@@ -1,5 +1,10 @@
 import "dotenv/config";
 import { startWorkers } from "./jobs/worker.module";
+import { runtimeProviders } from "./runtime/providers";
+
+if (runtimeProviders().jobs === "local") {
+  throw new Error("The local jobs provider runs processors in the API process; do not start a worker");
+}
 
 const runtime = awaitRuntime();
 

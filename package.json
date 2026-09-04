@@ -28,6 +28,8 @@
     "test:e2e:api": "bun run --cwd tests test:e2e:api",
     "build:agent": "bun tools/build-agent-binaries.mjs",
     "build:icons": "bun tools/build-file-icons.mjs",
+    "desktop:prepare": "bun tools/prepare-desktop-runtime.mjs",
+    "desktop:package": "bun run build:agent && bun run build && bun run desktop:prepare && bun run --cwd apps/desktop package",
     "audit:generic": "bun tools/generalization-audit.mjs",
     "e2e:reset": "bun tools/reset-e2e-data.mjs"
   },
