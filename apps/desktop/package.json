@@ -47,23 +47,17 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] },
-        { "target": "zip", "arch": ["x64", "arm64"] }
-      ],
+      "target": ["dmg", "zip"],
       "hardenedRuntime": true,
       "gatekeeperAssess": false
     },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": ["nsis"]
     },
     "linux": {
       "category": "Development",
       "syncDesktopName": true,
-      "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] }
-      ]
+      "target": ["AppImage", "deb"]
     },
     "nsis": {
       "oneClick": false,
