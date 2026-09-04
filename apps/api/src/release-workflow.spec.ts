@@ -40,6 +40,7 @@ describe("release workflow", () => {
       "manifest.json",
       "tag_name: ${{ needs.verify.outputs.tag }}",
       "uses: ./.github/workflows/desktop.yml",
+      "source_ref: ${{ needs.verify.outputs.tag }}",
       "needs: [verify, build, desktop]",
       "pattern: pdmux-*",
       "bun tools/merge-desktop-update-metadata.mjs",

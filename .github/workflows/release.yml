@@ -170,6 +170,7 @@ jobs:
     uses: ./.github/workflows/desktop.yml
     with:
       signed: false
+      source_ref: ${{ needs.verify.outputs.tag }}
     secrets: inherit
 
   publish:
