@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { createRequire } from "node:module";
+import { randomBytes } from "node:crypto";
 
 const require = createRequire(import.meta.url);
 
@@ -14,7 +15,7 @@ export function probeEnvironment(source) {
   for (const key of Object.keys(env)) {
     if (/^(CSC_|WIN_CSC_|APPLE_)/.test(key)) delete env[key];
   }
-  // Only this credential-free, explicit identity="-" fixture may sign in a PR.
+  // Only disposable fixtures may sign in a PR; never forward real credentials.
   return { ...env, CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_FOR_PULL_REQUEST: "true" };
 }
 
@@ -25,7 +26,7 @@ export function designatedRequirement(output) {
   return match[1];
 }
 
-export function fixtureManifest(version, electronVersion, output) {
+export function fixtureManifest(version, electronVersion, output, identity = "-") {
   return {
     name: "pdmux-update-probe", version, main: "main.cjs", packageManager: "bun@1.4.0",
     description: "Disposable native update compatibility probe", author: "PDMUX", license: "Apache-2.0",
@@ -33,10 +34,69 @@ export function fixtureManifest(version, electronVersion, output) {
       appId: "dev.podosoft.pdmux.updateprobe", productName: "PdmuxUpdateProbe",
       electronVersion, npmRebuild: false, directories: { output }, files: ["main.cjs", "package.json"],
       artifactName: "probe-${version}-${arch}.${ext}",
-      mac: { target: ["zip"], identity: "-", hardenedRuntime: true, notarize: false },
+      mac: { target: ["zip"], identity, hardenedRuntime: true, notarize: false },
       publish: [{ provider: "generic", url: "http://localhost/" }],
     },
   };
+}
+
+export function requireRejected(result, label) {
+  assert.equal(result.error, undefined, `${label}: verification must execute`);
+  assert.equal(result.signal, null, `${label}: verification must not crash`);
+  assert.ok(result.status === 1 || result.status === 3, `${label}: expected signature rejection`);
+  assert.match(result.stderr, /code failed to satisfy|invalid signature|sealed resource|modified|not signed/i);
+  console.log(JSON.stringify({ stage: label, result: "rejected" }));
+}
+
+async function disposableSigning(root) {
+  assert.equal(process.env.GITHUB_ACTIONS, "true", "Disposable signing is restricted to GitHub CI");
+  const directory = join(root, "signing");
+  await mkdir(directory, { mode: 0o700 });
+  const keychain = join(directory, "probe.keychain-db");
+  const password = randomBytes(32).toString("hex");
+  const certificates = [];
+  // Never emit command arguments: keychain operations include disposable passwords.
+  const run = (command, args, env = process.env) => {
+    const result = spawnSync(command, args, { env, encoding: "utf8", timeout: 60_000 });
+    if (result.status !== 0) throw new Error(`Disposable signing ${command}/${args[0]} failed (status ${result.status})`);
+    return result.stdout;
+  };
+  const previous = run("security", ["list-keychains", "-d", "user"]).split("\n").map(line => line.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  let created = false;
+  const cleanup = async () => {
+    for (const certificate of [...certificates]) {
+      run("security", ["remove-trusted-cert", certificate]);
+      certificates.splice(certificates.indexOf(certificate), 1);
+    }
+    if (created) {
+      run("security", ["list-keychains", "-d", "user", "-s", ...previous]);
+      run("security", ["delete-keychain", keychain]);
+      created = false;
+    }
+    await rm(directory, { recursive: true, force: true });
+  };
+  try {
+    run("security", ["create-keychain", "-p", password, keychain]);
+    created = true;
+    run("security", ["unlock-keychain", "-p", password, keychain]);
+    run("security", ["list-keychains", "-d", "user", "-s", ...previous, keychain]);
+    const identities = [];
+    for (const name of ["Pdmux Probe A", "Pdmux Probe C"]) {
+      const stem = join(directory, name.endsWith("A") ? "a" : "c");
+      const certificate = `${stem}.crt`;
+      run("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", `/CN=${name}/O=Pdmux Update Probe`, "-addext", "keyUsage=critical,digitalSignature", "-addext", "extendedKeyUsage=codeSigning", "-keyout", `${stem}.key`, "-out", certificate]);
+      run("openssl", ["pkcs12", "-export", "-inkey", `${stem}.key`, "-in", certificate, "-out", `${stem}.p12`, "-keypbe", "PBE-SHA1-3DES", "-certpbe", "PBE-SHA1-3DES", "-macalg", "sha1", "-passout", "env:PDMUX_PROBE_PASSWORD"], { ...process.env, PDMUX_PROBE_PASSWORD: password });
+      run("security", ["import", `${stem}.p12`, "-k", keychain, "-P", password, "-T", "/usr/bin/codesign"]);
+      run("security", ["add-trusted-cert", "-r", "trustRoot", "-p", "codeSign", "-k", keychain, certificate]);
+      certificates.push(certificate);
+      identities.push(name);
+    }
+    run("security", ["set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", password, keychain]);
+    return { identities, cleanup };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
 }
 
 export function fixtureSource(version) {
@@ -68,7 +128,7 @@ app.whenReady().then(async () => {
 `;
 }
 
-export async function probe() {
+export async function probe(selfSigned = false) {
   if (process.platform !== "darwin") throw new Error("Native macOS is required; this probe cannot be validated on Linux");
   const root = await mkdtemp(join(tmpdir(), "pdmux-update-probe-"));
   const builder = require.resolve("electron-builder/cli.js");
@@ -76,16 +136,25 @@ export async function probe() {
   const env = probeEnvironment(process.env);
   let server;
   let child;
+  let signing;
   try {
-    for (const version of ["0.0.1", "0.0.2"]) {
+    if (selfSigned) signing = await disposableSigning(root);
+    const versions = selfSigned ? ["0.0.1", "0.0.2", "0.0.3"] : ["0.0.1", "0.0.2"];
+    for (const version of versions) {
       const source = join(root, version);
       await mkdir(source);
-      await writeFile(join(source, "package.json"), JSON.stringify(fixtureManifest(version, desktop.devDependencies.electron, join(root, `out-${version}`))));
+      const identity = signing?.identities[version === "0.0.3" ? 1 : 0] ?? "-";
+      await writeFile(join(source, "package.json"), JSON.stringify(fixtureManifest(version, desktop.devDependencies.electron, join(root, `out-${version}`), identity)));
       await writeFile(join(source, "main.cjs"), fixtureSource(version));
       execFileSync(process.execPath, [builder, "--projectDir", source, "--mac", `--${process.arch}`, "--publish", "never"], { env, stdio: "inherit", timeout: 300_000 });
     }
+    if (signing) {
+      await signing.cleanup();
+      signing = undefined;
+      console.log(JSON.stringify({ stage: "remove-signing-keychain-and-trust", result: "complete" }));
+    }
     const apps = [];
-    for (const version of ["0.0.1", "0.0.2"]) {
+    for (const version of versions) {
       const output = join(root, `out-${version}`);
       const zip = (await readdir(output)).find(name => name.endsWith(".zip"));
       assert.ok(zip, "A real update ZIP must be produced");
@@ -103,6 +172,15 @@ export async function probe() {
     const requirement = designatedRequirement(signature.stdout + signature.stderr);
     console.log(JSON.stringify({ stage: "old-app-requirement", requirement }));
     execFileSync("codesign", ["--verify", "--deep", "--strict", "-R", `=${requirement}`, apps[1]], { stdio: "inherit" });
+    console.log(JSON.stringify({ stage: "same-key-update", result: "accepted" }));
+    if (selfSigned) {
+      const args = ["--verify", "--deep", "--strict", "-R", `=${requirement}`];
+      requireRejected(spawnSync("codesign", [...args, apps[2]], { encoding: "utf8", timeout: 30_000 }), "different-key-update");
+      const tampered = join(root, "tampered.app");
+      execFileSync("ditto", [apps[1], tampered]);
+      await writeFile(join(tampered, "Contents/Resources/app.asar"), "tampered fixture");
+      requireRejected(spawnSync("codesign", [...args, tampered], { encoding: "utf8", timeout: 30_000 }), "tampered-update");
+    }
 
     const feedRoot = join(root, "out-0.0.2");
     const allowed = new Set((await readdir(feedRoot)).filter(name => /\.(yml|zip|blockmap)$/.test(name)));
@@ -137,6 +215,7 @@ export async function probe() {
     }
     throw new Error("Native updater did not relaunch the new version within 120 seconds");
   } finally {
+    if (signing) await signing.cleanup();
     child?.kill("SIGTERM");
     server?.closeAllConnections();
     if (server) await new Promise(resolve => server.close(resolve));
@@ -146,4 +225,4 @@ export async function probe() {
   }
 }
 
-if (import.meta.main) await probe();
+if (import.meta.main) await probe(process.argv.includes("--self-signed"));

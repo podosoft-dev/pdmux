@@ -1,8 +1,24 @@
 import { describe, expect, it } from "bun:test";
 import { Script } from "node:vm";
-import { designatedRequirement, fixtureManifest, fixtureSource, probeEnvironment } from "./probe-macos-adhoc-update.mjs";
+import { designatedRequirement, fixtureManifest, fixtureSource, probeEnvironment, requireRejected } from "./probe-macos-adhoc-update.mjs";
 
 describe("[TC-PDDESKTOP-009] native ad-hoc update preflight", () => {
+  it("requires actual negative verification, not a crashed or missing tool", () => {
+    const result = { status: 3, signal: null, stderr: "code failed to satisfy specified code requirement(s)" };
+    expect(() => requireRejected(result, "fixture")).not.toThrow();
+    expect(() => requireRejected({ ...result, status: 0 }, "fixture")).toThrow();
+    expect(() => requireRejected({ ...result, error: new Error("ENOENT") }, "fixture")).toThrow();
+    expect(() => requireRejected({ ...result, signal: "SIGKILL" }, "fixture")).toThrow();
+    expect(() => requireRejected({ ...result, stderr: "syntax error" }, "fixture")).toThrow();
+  });
+  it("uses a stable signing identity only for disposable same-key versions", () => {
+    const first = fixtureManifest("0.0.1", "44.2.0", "/tmp/a", "Pdmux Probe A");
+    const second = fixtureManifest("0.0.2", "44.2.0", "/tmp/b", "Pdmux Probe A");
+    const other = fixtureManifest("0.0.3", "44.2.0", "/tmp/c", "Pdmux Probe C");
+    expect(first.build.mac.identity).toBe(second.build.mac.identity);
+    expect(first.build.mac.identity).not.toBe(other.build.mac.identity);
+    expect(first.build.appId).toBe(other.build.appId);
+  });
   it("allows ad-hoc PR signing without passing certificate credentials", () => {
     const source = { PATH: "/bin", CSC_LINK: "fixture", APPLE_API_KEY: "fixture", WIN_CSC_LINK: "fixture", CSC_NAME: "fixture" };
     expect(probeEnvironment(source)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_FOR_PULL_REQUEST: "true" });

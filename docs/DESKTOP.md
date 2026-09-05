@@ -106,11 +106,15 @@ a GitHub Release remains a separate release action.
 
 ## Desktop development
 
-### macOS ad-hoc update feasibility gate
+### macOS signing and update feasibility gate
 
 `bun tools/probe-macos-adhoc-update.mjs` requires native macOS and runs only against disposable
 Electron fixtures. The dedicated `macos-update-probe.yml` workflow uses a Tahoe ARM runner with
 read-only repository permissions; it does not publish artifacts or alter existing releases.
+The workflow passes `--self-signed` to test temporary non-Apple signing identities. This mode is
+restricted to disposable GitHub CI: it creates two short-lived certificates in a temporary keychain,
+temporarily trusts them for signing, then removes their trust entries, keychain, and private files
+before verification or app execution. It does not use production signing credentials.
 
 The probe packages two different versions with ad-hoc signatures, extracts and strictly verifies
 their ZIP archives, and checks the new app against the old app's exact designated requirement
@@ -119,6 +123,10 @@ must relaunch the new version and preserve a sentinel in an isolated user-data d
 Signature incompatibility is a hard failure, not a reason to weaken requirements or disable
 verification. Fixture success alone does not validate the full embedded stack, backups, or a
 browser-downloaded app's Gatekeeper behavior. Those remain separate release acceptance checks.
+The self-signed variant builds two versions with one identity and a third with a different identity.
+The same-key update must satisfy the unchanged old-app requirement; the different-key app and a
+modified copy must be rejected. Only then may the real update and relaunch run. Without the flag,
+the original ad-hoc experiment remains available and fails on cross-version code-hash identity.
 
 The published `0.12.1` macOS packages skipped signing. This probe is preparation for a corrected
 distribution, not evidence that those existing packages have been repaired. Free ad-hoc signing
