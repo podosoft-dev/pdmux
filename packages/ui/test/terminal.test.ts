@@ -625,7 +625,7 @@ describe('[TC-PDUI-012] a pane header offers its actions and classifies its gest
 		expect(focused, 'the surface was never focused, so a phone would show no keyboard').toHaveBeenCalled();
 	});
 
-	it('[TC-PDUI-012] lets an app pin inactive pane clicks to focus without rewriting saved preferences', () => {
+	it('[TC-PDUI-012] pins body clicks to focus while keeping header clicks as zoom toggles', () => {
 		const onFocus = vi.fn();
 		const onZoom = vi.fn();
 		const { container } = render(TerminalGrid, {
@@ -651,8 +651,45 @@ describe('[TC-PDUI-012] a pane header offers its actions and classifies its gest
 		const header = pane.querySelector('.pdmux-pane-head') as HTMLElement;
 		header.dispatchEvent(pointer('pointerdown', 10, 10));
 		header.dispatchEvent(pointer('pointerup', 11, 10));
-		expect(onFocus).toHaveBeenCalledTimes(2);
+		expect(onFocus).toHaveBeenCalledTimes(1);
+		expect(onZoom).toHaveBeenCalledTimes(1);
+		expect(onZoom).toHaveBeenCalledWith(pane.dataset.pdmuxPane);
+		expect(header.title).toBe('Click to zoom or restore · drag to move');
+	});
+
+	it('[TC-PDUI-229] ignores cancelled clicks, secondary clicks, and header buttons', () => {
+		const onZoom = vi.fn();
+		const onAssign = vi.fn();
+		const { container } = render(TerminalPane, {
+			props: {
+				slot: { id: 's1', hostId: 'h1', kind: 'attach', session: 'main' },
+				index: 0,
+				hostName: 'alpha',
+				adapter: new EchoTerminalAdapter(),
+				createSurface: fakeSurface().factory,
+				clickAction: 'focus',
+				onZoom,
+				onAssign,
+			},
+		});
+		const header = container.querySelector('.pdmux-pane-head') as HTMLElement;
+		header.dispatchEvent(pointer('pointerdown', 10, 10));
+		header.dispatchEvent(pointer('pointercancel', 10, 10));
 		expect(onZoom).not.toHaveBeenCalled();
+		for (const type of ['pointerdown', 'pointerup']) {
+			header.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 2, clientX: 10, clientY: 10 }));
+		}
+		expect(onZoom).not.toHaveBeenCalled();
+		const retarget = header.querySelector('[data-pdmux-retarget]') as HTMLButtonElement;
+		retarget.dispatchEvent(pointer('pointerdown', 10, 10));
+		retarget.dispatchEvent(pointer('pointerup', 10, 10));
+		retarget.click();
+		expect(onAssign).toHaveBeenCalledTimes(1);
+		expect(onZoom).not.toHaveBeenCalled();
+		header.dispatchEvent(pointer('pointerdown', 10, 10));
+		header.dispatchEvent(pointer('pointerup', 10, 10));
+		expect(onZoom).toHaveBeenCalledTimes(1);
+		expect(onZoom).toHaveBeenCalledWith('s1');
 	});
 
 	it('reports a header drag so the grid can hit-test the cells', () => {

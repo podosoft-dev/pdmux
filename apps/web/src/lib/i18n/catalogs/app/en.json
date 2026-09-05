@@ -81,7 +81,7 @@
       "focus": "Focus this pane",
       "headerHint": "Click to zoom · drag to move",
       "headerHintFocus": "Click to focus · drag to move",
-      "headerHintZoom": "Click to zoom · drag to move",
+      "headerHintZoom": "Click to zoom or restore · drag to move",
       "inputTarget": "Input target",
       "more": "More pane actions",
       "retarget": "Change target",

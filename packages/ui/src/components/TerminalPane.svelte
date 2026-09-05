@@ -513,7 +513,7 @@
 	 * Every exit path below therefore ends what it started, including a cancelled gesture.
 	 */
 	function headerDown(event: PointerEvent): void {
-		if ((event.target as HTMLElement).closest('button')) return;
+		if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
 		down = { x: event.clientX, y: event.clientY, t: event.timeStamp };
 		const handle = event.currentTarget as HTMLElement;
 		try {
@@ -543,9 +543,9 @@
 			// A gesture that was never classified as a drag cannot end one; one that was
 			// must end it whichever way it finishes (drop, plain release, or cancel).
 			if (!started) {
-				if (guardIntent(start, point) === 'click') {
-					if (clickAction === 'zoom') onZoom?.(slot.id);
-					else onFocus?.(slot.id);
+				if (ev.type === 'pointerup' && guardIntent(start, point) === 'click') {
+					// The body may focus without zooming; the header always toggles zoom.
+					onZoom?.(slot.id);
 				}
 				return;
 			}
@@ -662,9 +662,7 @@
 		tabindex="-1"
 		aria-label={label}
 		title={reachable
-			? clickAction === 'zoom'
-				? tr('pdmux.pane.headerHintZoom', 'Click to zoom · drag to move')
-				: tr('pdmux.pane.headerHintFocus', 'Click to focus · drag to move')
+			? tr('pdmux.pane.headerHintZoom', 'Click to zoom or restore · drag to move')
 			: tr('pdmux.pane.unreachable', 'This host is not reachable')}
 		onpointerdown={headerDown}
 	>

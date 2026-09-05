@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
 /**
@@ -31,8 +32,9 @@ export default defineConfig({
 	...(enabled
 		? {
 				webServer: {
-					// Paths are resolved from the package root, which is where Bun runs the
-					// script from.
+					// Playwright defaults to this config's directory, not Bun's working
+					// directory. Pin the package root for the command's relative paths.
+					cwd: fileURLToPath(new URL('../', import.meta.url)),
 					//
 					// ⚠ `--host 127.0.0.1` IS NOT OPTIONAL, AND ITS ABSENCE FAILED AS A
 					// TIMEOUT RATHER THAN AS AN ERROR. On this Mac vite's default bind

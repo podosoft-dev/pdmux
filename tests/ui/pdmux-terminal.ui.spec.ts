@@ -256,8 +256,8 @@ test.describe("pdmux terminal", () => {
       .poll(async () => panes.count(), { timeout: 20_000, message: "needs a neighbour to be distinguishable from" })
       .toBeGreaterThan(1);
 
-    // Focus is the product default now. The old global mode switch is gone; zoom is an
-    // explicit action in each pane header.
+    // Body clicks focus by default. Header clicks and the zoom button toggle zoom;
+    // the old global body-click mode switch stays gone.
     await expect(page.locator("[data-testid='toggle-click-action']")).toHaveCount(0);
 
     // Start from a known state: focus the FIRST pane, then move it to the second. Asserting

@@ -67,7 +67,7 @@
 		onZoom?: (slotId: string) => void;
 		onFocus?: (slotId: string) => void;
 		onDetach?: (slot: TerminalSlot) => void;
-		/** Override the persisted click preference without changing the serialized layout. */
+		/** Override body clicks only; header clicks still toggle zoom. Leaves saved preferences intact. */
 		paneClickAction?: ClickAction;
 		/** App-owned pane header controls, forwarded without changing package defaults. */
 		paneActions?: Snippet<[TerminalPaneActionContext]>;
