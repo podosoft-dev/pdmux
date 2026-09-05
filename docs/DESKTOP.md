@@ -106,6 +106,24 @@ a GitHub Release remains a separate release action.
 
 ## Desktop development
 
+### macOS ad-hoc update feasibility gate
+
+`bun tools/probe-macos-adhoc-update.mjs` requires native macOS and runs only against disposable
+Electron fixtures. The dedicated `macos-update-probe.yml` workflow uses a Tahoe ARM runner with
+read-only repository permissions; it does not publish artifacts or alter existing releases.
+
+The probe packages two different versions with ad-hoc signatures, extracts and strictly verifies
+their ZIP archives, and checks the new app against the old app's exact designated requirement
+before exercising `electron-updater` and Squirrel.Mac over a loopback feed. A successful update
+must relaunch the new version and preserve a sentinel in an isolated user-data directory.
+Signature incompatibility is a hard failure, not a reason to weaken requirements or disable
+verification. Fixture success alone does not validate the full embedded stack, backups, or a
+browser-downloaded app's Gatekeeper behavior. Those remain separate release acceptance checks.
+
+The published `0.12.1` macOS packages skipped signing. This probe is preparation for a corrected
+distribution, not evidence that those existing packages have been repaired. Free ad-hoc signing
+does not provide Developer ID authentication or Apple notarization.
+
 Build the API and web app first, then compile the shell:
 
 ```bash

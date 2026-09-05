@@ -1,0 +1,29 @@
+name: macOS ad-hoc update probe
+
+on:
+  pull_request:
+    paths:
+      - "tools/probe-macos-adhoc-update*"
+      - ".github/workflows/macos-update-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun ci
+      - run: bun test tools/probe-macos-adhoc-update.test.mjs
+      - name: Verify native Tahoe architecture
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 26
+      - name: Verify signatures and real version-to-version update
+        run: bun tools/probe-macos-adhoc-update.mjs
