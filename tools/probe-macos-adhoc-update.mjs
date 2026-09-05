@@ -65,7 +65,7 @@ async function disposableSigning(root) {
   let created = false;
   const cleanup = async () => {
     for (const certificate of [...certificates]) {
-      run("security", ["remove-trusted-cert", certificate]);
+      run("sudo", ["-n", "security", "remove-trusted-cert", "-d", certificate]);
       certificates.splice(certificates.indexOf(certificate), 1);
     }
     if (created) {
@@ -87,7 +87,8 @@ async function disposableSigning(root) {
       run("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", `/CN=${name}/O=Pdmux Update Probe`, "-addext", "keyUsage=critical,digitalSignature", "-addext", "extendedKeyUsage=codeSigning", "-keyout", `${stem}.key`, "-out", certificate]);
       run("openssl", ["pkcs12", "-export", "-inkey", `${stem}.key`, "-in", certificate, "-out", `${stem}.p12`, "-keypbe", "PBE-SHA1-3DES", "-certpbe", "PBE-SHA1-3DES", "-macalg", "sha1", "-passout", "env:PDMUX_PROBE_PASSWORD"], { ...process.env, PDMUX_PROBE_PASSWORD: password });
       run("security", ["import", `${stem}.p12`, "-k", keychain, "-P", password, "-T", "/usr/bin/codesign"]);
-      run("security", ["add-trusted-cert", "-r", "trustRoot", "-p", "codeSign", "-k", keychain, certificate]);
+      // Match osx-sign's CI trust domain; user-domain trust can wait for a GUI prompt.
+      run("sudo", ["-n", "security", "add-trusted-cert", "-d", "-r", "trustRoot", "-p", "codeSign", "-k", keychain, certificate]);
       certificates.push(certificate);
       identities.push(name);
     }
