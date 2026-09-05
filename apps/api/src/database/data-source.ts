@@ -1,6 +1,4 @@
 import "dotenv/config";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { DataSource, type DataSourceOptions } from "typeorm";
 import { AgentAuthFailure } from "../agents/agent-auth-failure.entity";
 import { AgentEnrollment } from "../agents/agent-enrollment.entity";
@@ -24,11 +22,7 @@ import { runtimeProviders } from "../runtime/providers";
 import { validateEnv } from "../config/env.validation";
 import { databaseUrl, sqliteDatabasePath } from "./database";
 import { BunSqliteDatabaseAdapter, installPdmuxSqliteDriver } from "./sqlite-driver";
-
-const compiledMigrations = join(process.cwd(), "dist", "migrations");
-const migrations = existsSync(compiledMigrations)
-  ? [join(compiledMigrations, "[0-9]*.js")]
-  : [join(process.cwd(), "src", "migrations", "[0-9]*.ts")];
+import { POSTGRES_MIGRATIONS } from "./migrations";
 
 const entities = [
   AgentAuthFailure,
@@ -73,7 +67,7 @@ export function createDataSourceOptions(env: NodeJS.ProcessEnv = process.env): D
     password: env.POSTGRES_PASSWORD ?? "podokit",
     database: env.POSTGRES_DB ?? "podokit",
     entities,
-    migrations,
+    migrations: POSTGRES_MIGRATIONS,
     synchronize: false,
   };
 }

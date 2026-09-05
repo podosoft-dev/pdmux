@@ -1,10 +1,8 @@
 name: ci
 
-# Everything here runs without a database, a browser or a network: the unit
-# suites use fakes and fixtures on purpose, so a pull request gets an answer in
-# a couple of minutes. The parts that genuinely need a live stack (Playwright
-# e2e, the opt-in browser geometry specs) are separate jobs you can enable once
-# the repository has runners with the resources for them.
+# Unit suites use fakes and fixtures. Migration checks create disposable PostgreSQL
+# containers; native image jobs also exercise the final published-image layout.
+# Nothing connects to a deployed application or publishes a release from this workflow.
 on:
   push:
     branches: [main]
@@ -58,6 +56,9 @@ jobs:
       - name: release workflow
         run: bun run test:release-workflow
 
+      - name: migration upgrade compatibility
+        run: bun run test:migrations
+
       # ⚠ A COMMITTED GENERATED FILE GOING STALE IS SILENT, AND THIS JOB IS WHERE IT
       # STOPS. `AGENT_GO.md` used to say these two ran here; they did not, and the
       # conformance corpus was stale from the moment `fsPut`/`fsDelete`/`fsGet` were
@@ -93,6 +94,66 @@ jobs:
       # hostname would be an information disclosure, so the check is a gate.
       - name: generalization audit
         run: bun run audit:generic
+
+  migration-images:
+    name: migration image (${{ matrix.arch }})
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            machine: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            machine: aarch64
+    runs-on: ${{ matrix.runner }}
+    env:
+      API_IMAGE: pdmux-migration-ci:${{ github.sha }}-${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Verify native runner architecture
+        env:
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+        run: test "$(uname -m)" = "$EXPECTED_MACHINE"
+
+      - run: bun ci
+      - name: Build packages for the migration fixture
+        run: |
+          bun run --filter @pdmux/protocol build
+          bun run --filter @pdmux/core build
+          bun run --filter @pdmux/ui build
+          bun run --filter @pdmux/mcp build
+      - run: bun run --cwd apps/api build
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the final API image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          tags: ${{ env.API_IMAGE }}
+          provenance: false
+          cache-from: type=gha,scope=migration-api-${{ matrix.arch }}
+          cache-to: type=gha,scope=migration-api-${{ matrix.arch }},mode=max
+
+      - name: Verify migrations in the final API image
+        run: bun tools/check-api-image-migrations.mjs "$API_IMAGE"
+
+      - name: Verify fresh install and populated legacy upgrades
+        run: bun tools/test-migration-upgrade.mjs "$API_IMAGE"
 
   # The agent ships as a binary a host downloads and runs, so its version is not a
   # label — it is what a host compares itself against to decide whether it is out of

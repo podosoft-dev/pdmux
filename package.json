@@ -22,6 +22,7 @@
     "lint": "bun run --workspaces --if-present lint",
     "test": "bun run --workspaces --if-present test",
     "test:web-build": "bun tools/smoke-web-build.mjs",
+    "test:migrations": "bun run --cwd apps/api build && bun tools/test-migration-upgrade.mjs",
     "test:release-workflow": "bun test apps/api/src/release-workflow.spec.ts tools/merge-desktop-update-metadata.test.mjs",
     "test:e2e": "bun run --cwd tests test:e2e",
     "test:e2e:ui": "bun run --cwd tests test:e2e:ui",

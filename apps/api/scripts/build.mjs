@@ -1,4 +1,7 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { checkMigrations } from "./check-migrations.mjs";
+
+checkMigrations();
 
 const targets = [
   { entrypoint: "src/main.ts", outdir: "dist" },
@@ -16,23 +19,5 @@ for (const target of targets) {
   if (!result.success) {
     for (const log of result.logs) process.stderr.write(`${log}\n`);
     process.exit(1);
-  }
-}
-
-if (existsSync("src/migrations")) {
-  const migrations = readdirSync("src/migrations")
-    .filter((file) => /^\d+-.+\.ts$/.test(file))
-    .map((file) => `src/migrations/${file}`);
-  if (migrations.length > 0) {
-    const result = await Bun.build({
-      entrypoints: migrations,
-      outdir: "dist/migrations",
-      target: "bun",
-      external: ["typeorm"],
-    });
-    if (!result.success) {
-      for (const log of result.logs) process.stderr.write(`${log}\n`);
-      process.exit(1);
-    }
   }
 }

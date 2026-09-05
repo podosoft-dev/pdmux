@@ -73,6 +73,37 @@ containers and data in place; do not bypass the dependency or start a new API im
 unmigrated database. Database migrations are forward-only, so recover with a corrected newer release
 rather than trying to reverse the schema under an older image.
 
+**Do not upgrade a PostgreSQL installation to the uncorrected `0.12.0` images.** Their application
+migration files are emitted below `dist/migrations/src/migrations`, while the migrator searches only
+`dist/migrations`. TypeORM can therefore report success without applying any application migration.
+An HTTP 200 from the old readiness endpoint proves database connectivity, not schema compatibility;
+host requests and agent reconnects can still fail. Use a subsequent release containing the fix
+described in the `Unreleased` changelog, not a retagged or overwritten `0.12.0` image.
+
+The corrected source embeds migration classes through `apps/api/src/database/migrations.ts` in every
+API bundle. Builds compare this registry with all historical source migrations and fail on omissions.
+API and worker startup refuse a pending schema, and readiness includes `pdmux-schema`. No automatic
+schema synchronization or credential rotation is enabled for PostgreSQL. Existing migration names,
+timestamps, ledgers, and application data are preserved; SQLite keeps its separate desktop path.
+
+For an installation already affected by `0.12.0`, inspect the migration ledger before doing anything
+destructive. The missing `AddServiceExposures1731600000000` migration adds one defaulted host column,
+three tables, and indexes; it does not require deleting hosts or re-enrolling agents. Recover through
+the corrected release's normal migration command, or an operator-reviewed transaction running the
+same migration from the affected image's actual path. Never mark it applied manually, drop the
+database, or bypass the migration dependency to silence the error.
+
+Before publishing migration changes, run `bun run test:migrations`. This uses disposable PostgreSQL 16,
+never an existing deployment, and exercises the actual compiled `migrate:all` entry point against both
+a fresh database and a populated `0.11.5` application schema. It checks transaction rollback, repeat
+execution, and compatibility with old writes omitting the new column. To repeat the same test with
+a locally built final API image, run `bun tools/test-migration-upgrade.mjs <image>` after building the
+API. `bun tools/check-api-image-migrations.mjs <image>` inspects its embedded registry without a
+database or network; the release workflow runs this for each native image before publishing its tag.
+Pull requests and main pushes also build the final API image on native AMD64 and ARM64 runners and
+run both checks against disposable PostgreSQL. These CI jobs neither publish images nor create tags
+or releases, so upgrade compatibility can be verified before a release is approved.
+
 **Installations with accounts must skip `0.11.0` and upgrade to `0.11.1` or later.** Better Auth 1.7
 made account identity the pair `(issuer, accountId)`. Release `0.11.0` delegated directly to the
 generated schema migration, which cannot choose a trusted issuer for existing rows. PostgreSQL fails

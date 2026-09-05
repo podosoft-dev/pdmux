@@ -24,7 +24,9 @@ import type { AuditService } from "../audit/audit.service";
 import type { AuthService } from "../auth/auth.service";
 import { AUTH } from "../auth/auth.module";
 import type { ServiceKey, ServiceRegistry } from "../core/services";
+import { READINESS } from "../core/services";
 import { createAppDataSource, dataSourceOptions } from "../database/data-source";
+import { assertMigrationsApplied, initializeApplicationDataSource } from "../database/schema-readiness";
 import { EVENTS } from "../events/events.module";
 import type { EventsService } from "../events/events.service";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
@@ -132,6 +134,7 @@ async function scheduleMaintenance(jobs: JobProvider): Promise<void> {
 
 export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
   const dataSource = createAppDataSource(dataSourceOptions);
+  services.resolve(READINESS).register("pdmux-schema", () => assertMigrationsApplied(dataSource));
   const storage: ObjectStore = services.resolve(STORAGE);
   const events: EventsService = services.resolve(EVENTS);
   const auth = services.resolve(AUTH);
@@ -249,7 +252,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
   jobs.register(STALE_HOSTS_QUEUE, STALE_HOSTS_JOB, () => staleHosts.runOnce());
   jobs.register(METRICS_QUEUE, METRICS_PRUNE_JOB, () => metricsRetention.runOnce());
   services.onStart(async () => {
-    await dataSource.initialize();
+    await initializeApplicationDataSource(dataSource);
     hosts.setConnectedProbe((hostId) => agentRegistry.isConnected(hostId));
     cloudflare.connect();
     agentEnrollments.connect();
