@@ -33,6 +33,7 @@ describe("[TC-PDDESKTOP-009] native ad-hoc update preflight", () => {
   });
   it("preserves the exact old-app requirement including its code hash", () => {
     expect(designatedRequirement('Executable=/tmp/probe\ndesignated => cdhash H"1234"\n')).toBe('cdhash H"1234"');
+    expect(designatedRequirement('# designated => cdhash H"abcd"\n')).toBe('cdhash H"abcd"');
     expect(() => designatedRequirement("no requirement")).toThrow("Missing designated requirement");
   });
   it("creates different disposable packages without changing product identity", () => {

@@ -19,7 +19,8 @@ export function probeEnvironment(source) {
 }
 
 export function designatedRequirement(output) {
-  const match = /^designated => (.+)$/m.exec(output);
+  // codesign prints an implicit designated requirement as a comment.
+  const match = /^(?:#\s*)?designated => (.+)$/m.exec(output);
   if (!match) throw new Error("Missing designated requirement; refusing to weaken signature verification");
   return match[1];
 }
@@ -98,9 +99,10 @@ export async function probe() {
     // This is the same old-app designated requirement used by Squirrel.Mac.
     const signature = spawnSync("codesign", ["-d", "-r-", apps[0]], { encoding: "utf8", timeout: 30_000 });
     assert.equal(signature.status, 0, "Read old-app code identity");
+    console.log(signature.stdout + signature.stderr);
     const requirement = designatedRequirement(signature.stdout + signature.stderr);
     console.log(JSON.stringify({ stage: "old-app-requirement", requirement }));
-    execFileSync("codesign", ["--verify", "--deep", "--strict", "-R", requirement, apps[1]], { stdio: "inherit" });
+    execFileSync("codesign", ["--verify", "--deep", "--strict", "-R", `=${requirement}`, apps[1]], { stdio: "inherit" });
 
     const feedRoot = join(root, "out-0.0.2");
     const allowed = new Set((await readdir(feedRoot)).filter(name => /\.(yml|zip|blockmap)$/.test(name)));
