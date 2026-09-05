@@ -9,6 +9,15 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
+export function probeEnvironment(source) {
+  const env = { ...source };
+  for (const key of Object.keys(env)) {
+    if (/^(CSC_|WIN_CSC_|APPLE_)/.test(key)) delete env[key];
+  }
+  // Only this credential-free, explicit identity="-" fixture may sign in a PR.
+  return { ...env, CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_FOR_PULL_REQUEST: "true" };
+}
+
 export function designatedRequirement(output) {
   const match = /^designated => (.+)$/m.exec(output);
   if (!match) throw new Error("Missing designated requirement; refusing to weaken signature verification");
@@ -17,11 +26,11 @@ export function designatedRequirement(output) {
 
 export function fixtureManifest(version, electronVersion, output) {
   return {
-    name: "pdmux-update-probe", version, main: "main.cjs",
+    name: "pdmux-update-probe", version, main: "main.cjs", packageManager: "bun@1.4.0",
     description: "Disposable native update compatibility probe", author: "PDMUX", license: "Apache-2.0",
     build: {
       appId: "dev.podosoft.pdmux.updateprobe", productName: "PdmuxUpdateProbe",
-      electronVersion, directories: { output }, files: ["main.cjs", "package.json"],
+      electronVersion, npmRebuild: false, directories: { output }, files: ["main.cjs", "package.json"],
       artifactName: "probe-${version}-${arch}.${ext}",
       mac: { target: ["zip"], identity: "-", hardenedRuntime: true, notarize: false },
       publish: [{ provider: "generic", url: "http://localhost/" }],
@@ -63,8 +72,7 @@ export async function probe() {
   const root = await mkdtemp(join(tmpdir(), "pdmux-update-probe-"));
   const builder = require.resolve("electron-builder/cli.js");
   const desktop = JSON.parse(await readFile(new URL("../apps/desktop/package.json", import.meta.url), "utf8"));
-  const env = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" };
-  for (const key of ["CSC_LINK", "CSC_KEY_PASSWORD", "CSC_NAME", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"]) delete env[key];
+  const env = probeEnvironment(process.env);
   let server;
   let child;
   try {

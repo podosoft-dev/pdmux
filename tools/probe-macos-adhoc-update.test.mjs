@@ -1,8 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { Script } from "node:vm";
-import { designatedRequirement, fixtureManifest, fixtureSource } from "./probe-macos-adhoc-update.mjs";
+import { designatedRequirement, fixtureManifest, fixtureSource, probeEnvironment } from "./probe-macos-adhoc-update.mjs";
 
 describe("[TC-PDDESKTOP-009] native ad-hoc update preflight", () => {
+  it("allows ad-hoc PR signing without passing certificate credentials", () => {
+    const source = { PATH: "/bin", CSC_LINK: "fixture", APPLE_API_KEY: "fixture", WIN_CSC_LINK: "fixture", CSC_NAME: "fixture" };
+    expect(probeEnvironment(source)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_FOR_PULL_REQUEST: "true" });
+    expect(source.CSC_LINK).toBe("fixture");
+  });
   it("emits parseable relaunch events from the generated Electron entry point", async () => {
     let output = "";
     let quit = false;
