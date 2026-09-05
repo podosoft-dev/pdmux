@@ -38,14 +38,18 @@ describe("[TC-PDDESKTOP-009] native ad-hoc update preflight", () => {
       quit: () => { quit = true; }, exit: () => { throw new Error("Unexpected fixture failure"); },
     };
     const fs = {
-      appendFileSync: (_path, data) => { output += data; }, readFileSync: () => "preserve-me",
+      appendFileSync: (_path, data) => { output += data; },
+      readFileSync: (path) => path.endsWith("probe-runtime.json") ? '{"root":"/tmp/probe"}' : "preserve-me",
     };
     new Script(fixtureSource("0.0.2")).runInNewContext({
-      process: { env: { PDMUX_PROBE_ROOT: "/tmp/probe" } },
+      process: { env: {}, execPath: "/tmp/probe/extracted/app/Contents/MacOS/probe" },
       require: (name) => {
         if (name === "electron") return { app };
         if (name === "node:fs") return fs;
-        if (name === "node:path") return { join: (...parts) => parts.join("/") };
+        if (name === "node:path") return {
+          join: (...parts) => parts.join("/"), dirname: (path) => path.slice(0, path.lastIndexOf("/")),
+          resolve: (...parts) => parts.join("/"),
+        };
         return { autoUpdater: {} };
       },
     });

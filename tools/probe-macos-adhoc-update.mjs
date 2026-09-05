@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, copyFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { tmpdir, homedir } from "node:os";
+import { join, basename, dirname } from "node:path";
 import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
 
@@ -101,7 +101,9 @@ export function fixtureSource(version) {
 const { autoUpdater } = require(${JSON.stringify(require.resolve("electron-updater"))});
 const fs = require('node:fs');
 const path = require('node:path');
-const root = process.env.PDMUX_PROBE_ROOT;
+// LaunchServices relaunches must not depend on the invoking shell environment.
+const config = JSON.parse(fs.readFileSync(path.resolve(path.dirname(process.execPath), '../../../probe-runtime.json'), 'utf8'));
+const root = config.root;
 if (!root) throw new Error('Missing isolated probe root');
 app.setPath('userData', path.join(root, 'user-data'));
 const report = (event, detail) => fs.appendFileSync(path.join(root, 'events.jsonl'), JSON.stringify({event, detail, version: ${JSON.stringify(version)}}) + String.fromCharCode(10));
@@ -119,7 +121,7 @@ app.whenReady().then(async () => {
     report('downloaded', app.getVersion());
     autoUpdater.quitAndInstall(false, true);
   });
-  autoUpdater.setFeedURL({provider: 'generic', url: process.env.PDMUX_PROBE_FEED});
+  autoUpdater.setFeedURL({provider: 'generic', url: config.feed});
   await autoUpdater.checkForUpdates();
 }).catch(error => { report('error', error.message); app.exit(1); });
 `;
@@ -213,8 +215,9 @@ export async function probe(mode = "adhoc") {
     const address = server.address();
     assert.ok(address && typeof address === "object");
     await mkdir(join(root, "user-data"));
+    await writeFile(join(dirname(apps[0]), "probe-runtime.json"), JSON.stringify({ root, feed: `http://127.0.0.1:${address.port}` }), { mode: 0o600 });
     child = spawn(join(apps[0], "Contents/MacOS/PdmuxUpdateProbe"), [], {
-      env: { ...env, PDMUX_PROBE_ROOT: root, PDMUX_PROBE_FEED: `http://127.0.0.1:${address.port}` }, stdio: "inherit",
+      env, stdio: "inherit",
     });
     child.on("error", error => console.error(error));
     const deadline = Date.now() + 120_000;
@@ -233,6 +236,13 @@ export async function probe(mode = "adhoc") {
     throw new Error("Native updater did not relaunch the new version within 120 seconds");
   } finally {
     if (signing) await signing.cleanup();
+    if (child) {
+      console.log(await readFile(join(root, "events.jsonl"), "utf8").catch(() => "No fixture events"));
+      const installed = spawnSync("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleShortVersionString", join(root, "extracted-0.0.1/PdmuxUpdateProbe.app/Contents/Info.plist")], { encoding: "utf8", timeout: 10_000 });
+      console.log(JSON.stringify({ stage: "installed-version", version: installed.stdout?.trim(), status: installed.status }));
+      const shipIt = join(homedir(), "Library/Caches/dev.podosoft.pdmux.updateprobe.ShipIt/ShipIt_stderr.log");
+      console.log(await readFile(shipIt, "utf8").catch(() => "No fixture ShipIt log"));
+    }
     child?.kill("SIGTERM");
     server?.closeAllConnections();
     if (server) await new Promise(resolve => server.close(resolve));
