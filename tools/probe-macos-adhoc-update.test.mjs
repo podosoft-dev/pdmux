@@ -1,0 +1,75 @@
+import { describe, expect, it } from "bun:test";
+import { Script } from "node:vm";
+import { designatedRequirement, fixtureManifest, fixtureSource, probeEnvironment, requireRejected, probeMode } from "./probe-macos-adhoc-update.mjs";
+
+describe("[TC-PDDESKTOP-009] native ad-hoc update preflight", () => {
+  it("separates signing preparation from clean-runner verification", () => {
+    expect(probeMode(["--prepare-self-signed"])).toBe("prepare");
+    expect(probeMode(["--verify-self-signed"])).toBe("verify");
+    expect(probeMode([])).toBe("adhoc");
+    expect(() => probeMode(["--self-signed"])).toThrow("separate clean runner");
+  });
+  it("requires actual negative verification, not a crashed or missing tool", () => {
+    const result = { status: 3, signal: null, stderr: "code failed to satisfy specified code requirement(s)" };
+    expect(() => requireRejected(result, "fixture")).not.toThrow();
+    expect(() => requireRejected({ ...result, status: 0 }, "fixture")).toThrow();
+    expect(() => requireRejected({ ...result, error: new Error("ENOENT") }, "fixture")).toThrow();
+    expect(() => requireRejected({ ...result, signal: "SIGKILL" }, "fixture")).toThrow();
+    expect(() => requireRejected({ ...result, stderr: "syntax error" }, "fixture")).toThrow();
+  });
+  it("uses a stable signing identity only for disposable same-key versions", () => {
+    const first = fixtureManifest("0.0.1", "44.2.0", "/tmp/a", "Pdmux Probe A");
+    const second = fixtureManifest("0.0.2", "44.2.0", "/tmp/b", "Pdmux Probe A");
+    const other = fixtureManifest("0.0.3", "44.2.0", "/tmp/c", "Pdmux Probe C");
+    expect(first.build.mac.identity).toBe(second.build.mac.identity);
+    expect(first.build.mac.identity).not.toBe(other.build.mac.identity);
+    expect(first.build.appId).toBe(other.build.appId);
+  });
+  it("allows ad-hoc PR signing without passing certificate credentials", () => {
+    const source = { PATH: "/bin", CSC_LINK: "fixture", APPLE_API_KEY: "fixture", WIN_CSC_LINK: "fixture", CSC_NAME: "fixture" };
+    expect(probeEnvironment(source)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_FOR_PULL_REQUEST: "true" });
+    expect(source.CSC_LINK).toBe("fixture");
+  });
+  it("emits parseable relaunch events from the generated Electron entry point", async () => {
+    let output = "";
+    let quit = false;
+    const app = {
+      setPath: () => {}, whenReady: () => Promise.resolve(), getVersion: () => "0.0.2",
+      quit: () => { quit = true; }, exit: () => { throw new Error("Unexpected fixture failure"); },
+    };
+    const fs = {
+      appendFileSync: (_path, data) => { output += data; },
+      readFileSync: (path) => path.endsWith("probe-runtime.json") ? '{"root":"/tmp/probe"}' : "preserve-me",
+    };
+    new Script(fixtureSource("0.0.2")).runInNewContext({
+      process: { env: {}, execPath: "/tmp/probe/extracted/app/Contents/MacOS/probe" },
+      require: (name) => {
+        if (name === "electron") return { app };
+        if (name === "node:fs") return fs;
+        if (name === "node:path") return {
+          join: (...parts) => parts.join("/"), dirname: (path) => path.slice(0, path.lastIndexOf("/")),
+          resolve: (...parts) => parts.join("/"),
+        };
+        return { autoUpdater: {} };
+      },
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(output.trim().split("\n").map(line => JSON.parse(line).event)).toEqual(["ready", "updated"]);
+    expect(quit).toBe(true);
+  });
+  it("preserves the exact old-app requirement including its code hash", () => {
+    expect(designatedRequirement('Executable=/tmp/probe\ndesignated => cdhash H"1234"\n')).toBe('cdhash H"1234"');
+    expect(designatedRequirement('# designated => cdhash H"abcd"\n')).toBe('cdhash H"abcd"');
+    expect(() => designatedRequirement("no requirement")).toThrow("Missing designated requirement");
+  });
+  it("creates different disposable packages without changing product identity", () => {
+    const first = fixtureManifest("0.0.1", "44.2.0", "/tmp/probe-a");
+    const second = fixtureManifest("0.0.2", "44.2.0", "/tmp/probe-b");
+    expect(first.version).not.toBe(second.version);
+    expect(first.build.appId).toBe(second.build.appId);
+    expect(first.build.appId).not.toBe("dev.podosoft.pdmux");
+    expect(first.build.mac.identity).toBe("-");
+    expect(first.build.mac.hardenedRuntime).toBe(true);
+    expect(first.build.mac.notarize).toBe(false);
+  });
+});

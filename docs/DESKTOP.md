@@ -106,6 +106,36 @@ a GitHub Release remains a separate release action.
 
 ## Desktop development
 
+### macOS signing and update feasibility gate
+
+`bun tools/probe-macos-adhoc-update.mjs` requires native macOS and runs only against disposable
+Electron fixtures. The dedicated `macos-update-probe.yml` workflow uses a Tahoe ARM runner with
+read-only repository permissions; it does not publish releases or alter existing releases.
+The workflow uses separate `--prepare-self-signed` and `--verify-self-signed` jobs to test temporary
+non-Apple signing identities. Preparation is restricted to disposable GitHub CI: it creates two
+short-lived certificates in a temporary keychain and trusts them for signing. Private files and the
+keychain are removed; the build VM and its temporary trust settings are discarded by GitHub.
+Only signed ZIPs and update metadata are handed to a fresh verification VM through a one-day CI
+artifact. The verification VM never imports certificates or receives private keys. This avoids
+interactive trust-removal commands and prevents build-machine trust from influencing the result.
+No production signing credentials are used.
+
+The probe packages two different versions with ad-hoc signatures, extracts and strictly verifies
+their ZIP archives, and checks the new app against the old app's exact designated requirement
+before exercising `electron-updater` and Squirrel.Mac over a loopback feed. A successful update
+must relaunch the new version and preserve a sentinel in an isolated user-data directory.
+Signature incompatibility is a hard failure, not a reason to weaken requirements or disable
+verification. Fixture success alone does not validate the full embedded stack, backups, or a
+browser-downloaded app's Gatekeeper behavior. Those remain separate release acceptance checks.
+The self-signed variant builds two versions with one identity and a third with a different identity.
+The same-key update must satisfy the unchanged old-app requirement; the different-key app and a
+modified copy must be rejected. Only then may the real update and relaunch run. Without mode flags,
+the original ad-hoc experiment remains available and fails on cross-version code-hash identity.
+
+The published `0.12.1` macOS packages skipped signing. This probe is preparation for a corrected
+distribution, not evidence that those existing packages have been repaired. Free ad-hoc signing
+does not provide Developer ID authentication or Apple notarization.
+
 Build the API and web app first, then compile the shell:
 
 ```bash
