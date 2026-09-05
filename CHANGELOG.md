@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## Unreleased
+
+- Embed every PostgreSQL migration directly in the API bundles. This fixes the `0.12.0` image's
+  silent migration-discovery failure when upgrading existing server installations.
+- Refuse API and worker startup with pending migrations and include the application schema in
+  readiness checks. Preserve historical migration identities and keep SQLite migration behavior unchanged.
+- Gate builds on complete migration registration and releases on final-image discovery plus
+  PostgreSQL fresh-install, legacy-upgrade, rollback, data-preservation, and idempotency tests.
+- Test final API images on native AMD64 and ARM64 runners before merging, without publishing a release.
+
 ## 0.12.0
 
 - **pdmux now ships as a native desktop application for macOS, Windows, and Linux.** The local

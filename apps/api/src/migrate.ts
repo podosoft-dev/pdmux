@@ -10,6 +10,7 @@ import { Database } from "./database/database";
 import { validateEnv } from "./config/env.validation";
 import { initializeDesktopSchema } from "./database/desktop-schema";
 import { runtimeProviders } from "./runtime/providers";
+import { assertMigrationsApplied } from "./database/schema-readiness";
 
 async function runMigrations(): Promise<void> {
   const providers = runtimeProviders(process.env);
@@ -27,7 +28,8 @@ async function runMigrations(): Promise<void> {
     await authMigrations.runMigrations();
 
     await dataSource.initialize();
-    if (dataSource.options.type === "postgres") await dataSource.runMigrations();
+    if (dataSource.options.type === "postgres") await dataSource.runMigrations({ transaction: "all" });
+    await assertMigrationsApplied(dataSource);
   } finally {
     await database.close();
   }

@@ -54,6 +54,7 @@ web_smoke() { bun run test:web-build; }
 lint() { bun run --workspaces --if-present lint; }
 unit() { bun run --workspaces --if-present test; }
 release_workflow() { bun run test:release-workflow; }
+migration_upgrade() { bun run test:migrations; }
 audit() { bun run audit:generic; }
 
 # ⚠ A GENERATED FILE THAT IS COMMITTED CAN GO STALE, AND ITS STALENESS IS SILENT.
@@ -135,6 +136,7 @@ step "web production smoke" web_smoke
 step "lint" lint
 step "unit tests" unit
 step "release workflow" release_workflow
+step "migration upgrade compatibility" migration_upgrade
 step "generated artifacts" generated
 step "generalization audit" audit
 step "agent version bump" agent_version
@@ -148,6 +150,7 @@ if [ ${#failures[@]} -eq 0 ]; then
 	cat <<-'NOTE'
 
 	  Not covered here, and still able to fail:
+	    · native amd64/arm64 final-image migration jobs — CI builds and tests both
 	    · the agent BINARIES job (`bun run build:agent`, checksum and version match)
 	      — minutes of cross-compilation, so run it when `agent/**` changed
 	    · traceability (`./check.sh` in the workspace) — the matrices live there, and

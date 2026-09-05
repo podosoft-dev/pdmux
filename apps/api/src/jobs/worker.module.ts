@@ -4,6 +4,7 @@ import { AuditService } from "../audit/audit.service";
 import { validateEnv } from "../config/env.validation";
 import { Database } from "../database/database";
 import { dataSourceOptions } from "../database/data-source";
+import { initializeApplicationDataSource } from "../database/schema-readiness";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { Host } from "../hosts/host.entity";
@@ -32,7 +33,7 @@ export interface WorkerRuntime {
 
 export async function startWorkers(): Promise<WorkerRuntime> {
   const dataSource = new DataSource(dataSourceOptions);
-  await dataSource.initialize();
+  await initializeApplicationDataSource(dataSource);
   const settings = new FleetSettingsService(dataSource.getRepository(FleetSetting));
   const metrics = new MetricsService(dataSource.getRepository(HostMetricSample));
   const stale = new StaleHostsProcessor(

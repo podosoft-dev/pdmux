@@ -137,6 +137,9 @@ data locations, backup behavior, and remote-mode configuration are in
 For upgrades, pin the new release in `PDMUX_VERSION`, pull the images, and let the one-shot migration
 finish before the application containers roll. Existing installations must skip `0.11.0` and use
 `0.11.1` or later; see [the upgrade procedure](docs/OPERATIONS.md#1-2-upgrading-published-images).
+**Do not upgrade PostgreSQL servers to the uncorrected `0.12.0` images:** their migration discovery
+can silently skip required schema changes. Use a subsequent release containing the migration fix;
+the current source fix is listed under `Unreleased` in [CHANGELOG.md](CHANGELOG.md).
 
 ## Adding a host
 
@@ -270,6 +273,7 @@ them in `.env` if they collide. Why this is a development path and not a way to 
 ```bash
 bun run lint                # type-check both apps and the packages
 bun run test                # unit tests for every workspace
+bun run test:migrations     # isolated PostgreSQL upgrade and rollback checks; requires Docker
 cd agent && go test ./...   # the agent is a Go module, not part of the Bun workspaces
 bun run test:e2e            # Playwright, against a running stack
 bun run build:agent         # linux/darwin × amd64/arm64 — needs a Go toolchain, and is

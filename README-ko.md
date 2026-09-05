@@ -121,6 +121,10 @@ HTTPS는 취향이 아닙니다. 세션 쿠키와 에이전트 토큰이 그 위
 `0.11.0`을 건너뛰고 `0.11.1` 이상을 사용하세요. 자세한 절차는
 [업그레이드 안내](docs/OPERATIONS.md#1-2-upgrading-published-images)에 있습니다.
 
+**수정되지 않은 `0.12.0` 이미지로 PostgreSQL 서버를 업그레이드하지 마세요.** 마이그레이션 검색
+경로 결함으로 필수 스키마 변경을 건너뛸 수 있습니다. 수정이 포함된 후속 릴리스를 사용해야 하며,
+현재 소스의 수정 내용은 [CHANGELOG.md](CHANGELOG.md)의 `Unreleased`에 기록돼 있습니다.
+
 ## 호스트 추가하기
 
 UI에서 호스트를 추가하면 등록 코드가 박힌 설치 명령이 그대로 나옵니다.
@@ -247,6 +251,7 @@ web `5001`, api `5002`, Postgres `5440`, Redis `6390`, MinIO `9010`(콘솔 `9011
 ```bash
 bun run lint                # 두 앱과 패키지 타입 체크
 bun run test                # 워크스페이스 단위 테스트
+bun run test:migrations     # Test upgrades and rollback with isolated PostgreSQL; requires Docker
 cd agent && go test ./...   # 에이전트는 Go 모듈이라 Bun 워크스페이스에 들어가지 않습니다
 bun run test:e2e            # Playwright. 스택이 떠 있어야 합니다
 bun run build:agent         # linux·darwin × amd64·arm64. Go 툴체인이 필요해서

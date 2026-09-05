@@ -15,6 +15,37 @@ const desktopWorkflow = readFileSync(repositoryFile(".github/workflows/desktop.y
 const ciWorkflow = readFileSync(repositoryFile(".github/workflows/ci.yml"), "utf8");
 
 describe("release workflow", () => {
+  test("[TC-PDHOST-024] verifies native migration images without publishing from CI", () => {
+    const job = ciWorkflow.match(/\n  migration-images:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:|$)/)?.[1] ?? "";
+    for (const fragment of [
+      "contents: read",
+      "arch: amd64",
+      "runner: ubuntu-latest",
+      "machine: x86_64",
+      "arch: arm64",
+      "runner: ubuntu-24.04-arm",
+      "machine: aarch64",
+      'test "$(uname -m)" = "$EXPECTED_MACHINE"',
+      "platforms: linux/${{ matrix.arch }}",
+      "load: true",
+      "push: false",
+      'bun tools/check-api-image-migrations.mjs "$API_IMAGE"',
+      'bun tools/test-migration-upgrade.mjs "$API_IMAGE"',
+    ]) expect(job).toContain(fragment);
+    expect(job).not.toContain("packages: write");
+    expect(job).not.toContain("secrets.");
+    expect(job).not.toContain("setup-qemu");
+  });
+  test("[TC-PDHOST-024] gates releases on upgrades and final-image migration discovery", () => {
+    expect(ciWorkflow).toContain("bun run test:migrations");
+    expect(workflow).toContain("bun run test:migrations");
+    expect(workflow).toContain('bun tools/check-api-image-migrations.mjs "$API_IMAGE"');
+    expect(workflow.indexOf("Verify migrations in the final API image"))
+      .toBeLessThan(workflow.indexOf("Hand the digests to the publish job"));
+    const buildScript = readFileSync(repositoryFile("apps/api/scripts/build.mjs"), "utf8");
+    expect(buildScript).toContain("checkMigrations()");
+    expect(buildScript).not.toContain('outdir: "dist/migrations"');
+  });
   test("[TC-PDHOST-024] preserves multi-architecture images and agent assets", () => {
     for (const fragment of [
       "bun-version: 1.4.0",
@@ -50,7 +81,7 @@ describe("release workflow", () => {
       expect(workflow).toContain(fragment);
     }
 
-    expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(2);
+    expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(3);
 
     expect(workflow).not.toContain("secrets.REGISTRY_USERNAME");
     expect(workflow).not.toContain("secrets.REGISTRY_PASSWORD");

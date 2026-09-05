@@ -28,6 +28,14 @@ bun run dev        # api on http://localhost:5002, web on http://localhost:5001
 - Build: `bun run build` · Type-check/lint: `bun run lint` · Unit tests: `bun run test`
 - Per workspace: `bun run --cwd apps/api build` / `bun run --cwd apps/web build`.
 - Better Auth and application migrations: `bun run --cwd apps/api migrate:all`.
+- PostgreSQL migrations are statically registered in `apps/api/src/database/migrations.ts` and
+  embedded in the API bundles. Register every new migration there without renaming or editing
+  historical migrations. The build rejects a missing registration; do not restore runtime globs.
+- Run `bun run test:migrations` for database or migration-build changes. It builds the API and tests
+  fresh install, populated legacy-schema upgrade, rollback, and rerun against disposable PostgreSQL.
+  API and worker startup must refuse pending migrations; never bypass this gate to make a rollout pass.
+- CI also builds and tests final API images on native AMD64 and ARM64 runners without publishing them.
+  Both migration-image jobs must pass before merging migration or packaging changes.
 - e2e (Playwright, ships in `tests/`): `bun run test:e2e`.
 - Playwright officially runs on Node, so `bunx playwright` respects its Node
   shebang. Node LTS is a test-tool dependency only; product runtimes and builds use Bun.
