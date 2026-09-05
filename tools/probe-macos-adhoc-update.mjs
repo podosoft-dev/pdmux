@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { createRequire } from "node:module";
@@ -54,7 +54,6 @@ async function disposableSigning(root) {
   await mkdir(directory, { mode: 0o700 });
   const keychain = join(directory, "probe.keychain-db");
   const password = randomBytes(32).toString("hex");
-  const certificates = [];
   // Never emit command arguments: keychain operations include disposable passwords.
   const run = (command, args, env = process.env) => {
     const result = spawnSync(command, args, { env, encoding: "utf8", timeout: 60_000 });
@@ -64,10 +63,8 @@ async function disposableSigning(root) {
   const previous = run("security", ["list-keychains", "-d", "user"]).split("\n").map(line => line.trim().replace(/^"|"$/g, "")).filter(Boolean);
   let created = false;
   const cleanup = async () => {
-    for (const certificate of [...certificates]) {
-      run("sudo", ["-n", "security", "remove-trusted-cert", "-d", certificate]);
-      certificates.splice(certificates.indexOf(certificate), 1);
-    }
+    // This build-only VM is discarded by GitHub. Verification runs on a fresh VM,
+    // because removing admin trust can hang on current macOS runners.
     if (created) {
       run("security", ["list-keychains", "-d", "user", "-s", ...previous]);
       run("security", ["delete-keychain", keychain]);
@@ -89,7 +86,6 @@ async function disposableSigning(root) {
       run("security", ["import", `${stem}.p12`, "-k", keychain, "-P", password, "-T", "/usr/bin/codesign"]);
       // Match osx-sign's CI trust domain; user-domain trust can wait for a GUI prompt.
       run("sudo", ["-n", "security", "add-trusted-cert", "-d", "-r", "trustRoot", "-p", "codeSign", "-k", keychain, certificate]);
-      certificates.push(certificate);
       identities.push(name);
     }
     run("security", ["set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", password, keychain]);
@@ -129,8 +125,18 @@ app.whenReady().then(async () => {
 `;
 }
 
-export async function probe(selfSigned = false) {
+export function probeMode(args) {
+  if (args.includes("--prepare-self-signed")) return "prepare";
+  if (args.includes("--verify-self-signed")) return "verify";
+  assert.ok(!args.includes("--self-signed"), "Self-signed verification requires a separate clean runner");
+  return "adhoc";
+}
+
+export async function probe(mode = "adhoc") {
   if (process.platform !== "darwin") throw new Error("Native macOS is required; this probe cannot be validated on Linux");
+  const selfSigned = mode !== "adhoc";
+  const archives = process.env.PDMUX_PROBE_ARCHIVES;
+  if (selfSigned) assert.ok(archives, "Missing isolated archive handoff directory");
   const root = await mkdtemp(join(tmpdir(), "pdmux-update-probe-"));
   const builder = require.resolve("electron-builder/cli.js");
   const desktop = JSON.parse(await readFile(new URL("../apps/desktop/package.json", import.meta.url), "utf8"));
@@ -139,24 +145,34 @@ export async function probe(selfSigned = false) {
   let child;
   let signing;
   try {
-    if (selfSigned) signing = await disposableSigning(root);
+    if (mode === "prepare") signing = await disposableSigning(root);
     const versions = selfSigned ? ["0.0.1", "0.0.2", "0.0.3"] : ["0.0.1", "0.0.2"];
-    for (const version of versions) {
+    for (const version of mode === "verify" ? [] : versions) {
       const source = join(root, version);
       await mkdir(source);
       const identity = signing?.identities[version === "0.0.3" ? 1 : 0] ?? "-";
       await writeFile(join(source, "package.json"), JSON.stringify(fixtureManifest(version, desktop.devDependencies.electron, join(root, `out-${version}`), identity)));
       await writeFile(join(source, "main.cjs"), fixtureSource(version));
       execFileSync(process.execPath, [builder, "--projectDir", source, "--mac", `--${process.arch}`, "--publish", "never"], { env, stdio: "inherit", timeout: 300_000 });
+      if (mode === "prepare") {
+        const output = join(root, `out-${version}`);
+        const destination = join(archives, `out-${version}`);
+        await mkdir(destination, { recursive: true });
+        for (const file of (await readdir(output)).filter(name => /\.(zip|yml|blockmap)$/.test(name))) {
+          await copyFile(join(output, file), join(destination, file));
+        }
+      }
     }
     if (signing) {
       await signing.cleanup();
       signing = undefined;
-      console.log(JSON.stringify({ stage: "remove-signing-keychain-and-trust", result: "complete" }));
+      console.log(JSON.stringify({ stage: "remove-private-signing-material", result: "complete" }));
     }
+    if (mode === "prepare") return;
+    const outputRoot = mode === "verify" ? archives : root;
     const apps = [];
     for (const version of versions) {
-      const output = join(root, `out-${version}`);
+      const output = join(outputRoot, `out-${version}`);
       const zip = (await readdir(output)).find(name => name.endsWith(".zip"));
       assert.ok(zip, "A real update ZIP must be produced");
       const extracted = join(root, `extracted-${version}`);
@@ -183,7 +199,7 @@ export async function probe(selfSigned = false) {
       requireRejected(spawnSync("codesign", [...args, tampered], { encoding: "utf8", timeout: 30_000 }), "tampered-update");
     }
 
-    const feedRoot = join(root, "out-0.0.2");
+    const feedRoot = join(outputRoot, "out-0.0.2");
     const allowed = new Set((await readdir(feedRoot)).filter(name => /\.(yml|zip|blockmap)$/.test(name)));
     server = createServer(async (request, response) => {
       try {
@@ -226,4 +242,4 @@ export async function probe(selfSigned = false) {
   }
 }
 
-if (import.meta.main) await probe(process.argv.includes("--self-signed"));
+if (import.meta.main) await probe(probeMode(process.argv));

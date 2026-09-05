@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  probe:
+  prepare:
     runs-on: macos-26
     timeout-minutes: 20
     steps:
@@ -25,5 +25,38 @@ jobs:
         run: |
           test "$(uname -m)" = arm64
           test "$(sw_vers -productVersion | cut -d. -f1)" = 26
+      - name: Build disposable signed archives
+        env:
+          PDMUX_PROBE_ARCHIVES: ${{ runner.temp }}/probe-archives
+        run: bun tools/probe-macos-adhoc-update.mjs --prepare-self-signed
+      - uses: actions/upload-artifact@v4
+        with:
+          name: disposable-update-archives
+          path: ${{ runner.temp }}/probe-archives
+          retention-days: 1
+          if-no-files-found: error
+
+  probe:
+    needs: prepare
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: disposable-update-archives
+          path: ${{ runner.temp }}/probe-archives
+      - name: Verify clean native Tahoe runner
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 26
+          if security find-certificate -c 'Pdmux Probe A'; then exit 1; fi
+          if security find-certificate -c 'Pdmux Probe C'; then exit 1; fi
       - name: Verify signatures and real version-to-version update
-        run: bun tools/probe-macos-adhoc-update.mjs --self-signed
+        env:
+          PDMUX_PROBE_ARCHIVES: ${{ runner.temp }}/probe-archives
+        run: bun tools/probe-macos-adhoc-update.mjs --verify-self-signed

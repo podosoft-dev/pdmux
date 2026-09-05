@@ -1,8 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { Script } from "node:vm";
-import { designatedRequirement, fixtureManifest, fixtureSource, probeEnvironment, requireRejected } from "./probe-macos-adhoc-update.mjs";
+import { designatedRequirement, fixtureManifest, fixtureSource, probeEnvironment, requireRejected, probeMode } from "./probe-macos-adhoc-update.mjs";
 
 describe("[TC-PDDESKTOP-009] native ad-hoc update preflight", () => {
+  it("separates signing preparation from clean-runner verification", () => {
+    expect(probeMode(["--prepare-self-signed"])).toBe("prepare");
+    expect(probeMode(["--verify-self-signed"])).toBe("verify");
+    expect(probeMode([])).toBe("adhoc");
+    expect(() => probeMode(["--self-signed"])).toThrow("separate clean runner");
+  });
   it("requires actual negative verification, not a crashed or missing tool", () => {
     const result = { status: 3, signal: null, stderr: "code failed to satisfy specified code requirement(s)" };
     expect(() => requireRejected(result, "fixture")).not.toThrow();
