@@ -197,12 +197,15 @@ moment the pointer enters the terminal (measured).
 | `adapter` | `TerminalAdapter` | **required**. See §3 |
 | `createSurface` | `TerminalSurfaceFactory` | defaults to xterm. Injected in tests |
 | `idleTtlMs` (600000), `maxPanes` (12), `sweepMs` (30000) | `number` | the hidden-pane reclamation policy. `sweepMs=0` means no timer |
-| `paneClickAction` | `ClickAction` | optional consumer override for pane clicks; leaves the serialized `layout.clickAction` intact |
+| `paneClickAction` | `ClickAction` | optional consumer override for inactive body clicks only; header clicks still toggle zoom, and the serialized `layout.clickAction` stays intact |
 | `paneActions` | `Snippet<[TerminalPaneActionContext]>` | optional app-owned header controls. The context exposes target, output, scrollback, zoom, detach and close operations |
 | **callbacks** | `onAssign(index, anchor)` · `onClose(index)` · `onRemove(index)` · `onZoom(slotId)` · `onFocus(slotId)` · `onDetach(slot)` · `onSwap(from, to)` · `onExit(slotId, code)` | |
 
 Behaviour: an off-page pane stays **mounted and `hidden`** (moving it reconnects the terminal), a pane
 whose cell disappeared is released immediately, and hidden panes are reclaimed by TTL and count cap.
+Clicking a pane header toggles `onZoom` independently of the body click preference. The core
+`toggleZoom` reducer restores the previous split, slot order, and page on the second click without
+remounting terminals. Header drags, cancelled presses, and embedded action buttons do not toggle zoom.
 
 ### `TerminalPane` / `EmptyCell`
 

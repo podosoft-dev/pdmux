@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Restore pane-header click-to-zoom and click-again-to-restore while keeping terminal body clicks
+  focused on input. Preserve the original split, pane positions, and mounted terminals.
 - Embed every PostgreSQL migration directly in the API bundles. This fixes the `0.12.0` image's
   silent migration-discovery failure when upgrading existing server installations.
 - Refuse API and worker startup with pending migrations and include the application schema in

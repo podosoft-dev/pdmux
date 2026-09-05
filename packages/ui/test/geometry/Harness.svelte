@@ -12,6 +12,7 @@
 		buildDefaultSlots,
 		cardPrefs,
 		defaultLayout,
+		focusSlot,
 		historySeries,
 		serviceOptions,
 		setSidebarWidth,
@@ -49,7 +50,10 @@
 		},
 	];
 
-	let layout = $state<TerminalLayout>({ ...defaultLayout(), slots: buildDefaultSlots(hosts, { pad: 2 }) });
+	const query = new URLSearchParams(globalThis.location?.search ?? '');
+	const split = query.get('split');
+	const mode = split === 'split2' || split === 'split4' || split === 'split9' ? split : defaultLayout().mode;
+	let layout = $state<TerminalLayout>({ ...defaultLayout(), mode, slots: buildDefaultSlots(hosts, { pad: 2 }) });
 	/**
 	 * ⚠ THE SHEET'S NOTES ONLY EXIST ON AN ALTERNATE-BUFFER PANE, so `?history=` puts the
 	 * terminal there the way the real thing does: `ESC[?1049h` is the switch a multiplexer sends
@@ -335,6 +339,7 @@
 {:else}
 	<div
 		class="pdmux pdmux-shell"
+		data-harness-layout={JSON.stringify(layout)}
 		data-sidebar={layout.sidebarOpen ? 'open' : 'hidden'}
 		data-dock="open"
 		style="--pdmux-left:{layout.sidebarWidth}px;--pdmux-right:{layout.dockWidth}px"
@@ -355,6 +360,8 @@
 				{hosts}
 				{adapter}
 				sweepMs={0}
+				paneClickAction={query.has('body-focus') ? 'focus' : undefined}
+				onFocus={(slotId) => (layout = focusSlot(layout, slotId))}
 				onReadHistory={historyAnswer}
 				onZoom={(slotId) => (layout = toggleZoom(layout, slotId))}
 			/>

@@ -81,7 +81,7 @@
       "focus": "이 패널에 포커스",
       "headerHint": "클릭=확대 · 드래그=이동",
       "headerHintFocus": "클릭=포커스 · 드래그=이동",
-      "headerHintZoom": "클릭=확대 · 드래그=이동",
+      "headerHintZoom": "클릭=확대/원래 분할 복원 · 드래그=이동",
       "inputTarget": "입력 대상",
       "more": "패널 작업 더 보기",
       "retarget": "대상 변경",
