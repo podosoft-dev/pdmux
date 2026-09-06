@@ -180,7 +180,7 @@ jobs:
       contents: read
     uses: ./.github/workflows/desktop.yml
     with:
-      signed: false
+      signed: true
       source_ref: ${{ needs.verify.outputs.tag }}
     secrets: inherit
 
@@ -292,6 +292,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.verify.outputs.tag }}
+          generate_release_notes: true
+          body: |
+            macOS packages use a stable, free self-signed certificate, not Apple Developer ID or notarization.
+            Verify the DMG against DESKTOP-SHA256SUMS before installation. First launch may require
+            System Settings → Privacy & Security → Open Anyway.
+            See [macOS installation and security guidance](https://github.com/podosoft-dev/pdmux/blob/main/docs/DESKTOP.md#installing-on-macos).
+
+            Users of unsigned 0.12.1 or earlier macOS packages should quit pdmux and install the new DMG once,
+            preserving their user-data directory. Future signed updates retain signature verification and
+            backup-before-install. Windows and Linux installers are also attached below.
           files: |
             ${{ steps.agent.outputs.dir }}/pdmux-agent-*
             ${{ steps.agent.outputs.dir }}/SHA256SUMS

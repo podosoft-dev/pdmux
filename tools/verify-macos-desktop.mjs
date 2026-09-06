@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseAgentVersion } from "../apps/desktop/src/staging.ts";
+import { assertCertificate } from "./release-macos-signing.mjs";
 
 const repository = resolve(import.meta.dirname, "..");
 const agentNames = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"].map(arch => `pdmux-agent-${arch}`);
@@ -40,7 +41,7 @@ async function verifyApp(app) {
   await verifyAgentResources(join(resources, "web/client/agent", version), join(repository, "apps/web/static/agent", version));
 }
 
-export async function verifyMacArtifacts(directory) {
+export async function verifyMacArtifacts(directory, runtime = false) {
   assert.equal(process.platform, "darwin", "Native macOS artifact verification is required");
   const files = await readdir(directory);
   const temporary = await mkdtemp(join(tmpdir(), "pdmux-mac-verify-"));
@@ -66,7 +67,22 @@ export async function verifyMacArtifacts(directory) {
           mounted = false;
         }
       }
-      await verifyApp(join(extracted, "pdmux.app"));
+      const app = join(extracted, "pdmux.app");
+      await verifyApp(app);
+      if (process.env.PDMUX_VERIFY_RELEASE_IDENTITY === "1") {
+        const prefix = join(extracted, "signer-");
+        execFileSync("codesign", ["--display", "--extract-certificates", prefix, app], { stdio: "inherit" });
+        assertCertificate(await readFile(`${prefix}0`), await readFile(join(repository, "apps/desktop/signing-certificate.pem")));
+      }
+      if (runtime) {
+        await new Promise((resolve, reject) => {
+          const child = spawn("node", [join(repository, "tools/smoke-macos-desktop.mjs"), app,
+            join(directory, `desktop-${extension}.png`), ...(extension === "dmg" ? ["--expect-preserved"] : [])],
+          { stdio: "inherit", timeout: 180_000 });
+          child.once("error", reject);
+          child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`Packaged runtime failed (${code})`)));
+        });
+      }
       console.log(JSON.stringify({ stage: "verify-final-mac-package", format: extension, arch: process.arch, result: "passed" }));
     }
   } finally {
@@ -77,5 +93,5 @@ export async function verifyMacArtifacts(directory) {
 
 if (import.meta.main) {
   assert.ok(process.argv[2], "Pass the directory containing one native DMG and ZIP");
-  await verifyMacArtifacts(resolve(process.argv[2]));
+  await verifyMacArtifacts(resolve(process.argv[2]), process.argv.includes("--runtime"));
 }

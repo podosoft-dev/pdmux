@@ -134,6 +134,8 @@ certificate-pinned remote mode, and updates; product screens are not forked.
 Desktop installers are produced by the repository's GitHub Actions workflow. Build instructions,
 data locations, backup behavior, and remote-mode configuration are in
 [docs/DESKTOP.md](docs/DESKTOP.md).
+macOS releases use free self-signing, not Apple notarization; follow the
+[first-launch and legacy-upgrade instructions](docs/DESKTOP.md#installing-on-macos).
 
 For upgrades, pin the new release in `PDMUX_VERSION`, pull the images, and let the one-shot migration
 finish before the application containers roll. Existing installations must skip `0.11.0` and use
