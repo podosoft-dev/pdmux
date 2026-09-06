@@ -4,6 +4,8 @@
 
 ## 0.12.2
 
+- Fix the desktop startup import of the CommonJS updater under Electron's Node ESM loader.
+- Emit a CommonJS preload so the desktop bridge works without disabling renderer sandboxing.
 - Sign macOS Intel and Apple Silicon packages with a stable app-specific self-signed certificate,
   including the embedded Bun executable, while preserving immutable downloadable host-agent bytes.
 - Restrict the production identity to release-tag jobs and verify final DMG/ZIP artifacts on separate

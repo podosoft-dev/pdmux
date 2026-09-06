@@ -14,6 +14,7 @@ try {
   const window = await application.firstWindow({ timeout: 120_000 });
   await window.waitForURL(/http:\/\/127\.0\.0\.1:\d+\//, { timeout: 60_000 });
   await window.locator('input[type="email"]').waitFor({ timeout: 60_000 });
+  assert.deepEqual(await window.evaluate(() => window.pdmuxDesktop), { isDesktop: true, platform: "darwin" });
   assert.ok((await window.locator("body").innerText()).length > 30, "Render the real login page");
   await window.screenshot({ path: screenshot });
   const result = await application.evaluate(async ({ app }) => {

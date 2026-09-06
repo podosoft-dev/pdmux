@@ -8,7 +8,7 @@ import {
   shell,
   Tray,
 } from "electron";
-import { autoUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BackupService } from "./backup.js";
@@ -19,6 +19,7 @@ import { StackManager, type RuntimeLayout } from "./stack-manager.js";
 import { UpdateCoordinator } from "./updater.js";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+const { autoUpdater } = electronUpdater;
 let mainWindow: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let stack: StackManager | undefined;
@@ -73,7 +74,7 @@ function secureWindow(appUrl: string): BrowserWindow {
     minHeight: 640,
     show: false,
     webPreferences: {
-      preload: join(moduleDirectory, "preload.js"),
+      preload: join(moduleDirectory, "preload.cjs"),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
