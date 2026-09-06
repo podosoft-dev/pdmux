@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       signed:
-        description: Require configured code-signing credentials
+        description: Use the stable self-signed macOS release identity (release tags only)
         required: false
         default: false
         type: boolean
@@ -21,13 +21,14 @@ on:
       - "packages/**"
       - "tools/prepare-desktop-runtime.mjs"
       - "tools/merge-desktop-update-metadata.mjs"
+      - "tools/*macos*"
       - "bun.lock"
       - ".github/workflows/desktop.yml"
       - ".github/workflows/release.yml"
   workflow_dispatch:
     inputs:
       signed:
-        description: Require configured code-signing credentials
+        description: Use the stable self-signed macOS release identity (release tags only)
         required: true
         default: false
         type: boolean
@@ -47,7 +48,7 @@ jobs:
             command: --mac --x64
             artifact: macos-intel
           - name: macOS Apple Silicon
-            runner: macos-15
+            runner: macos-26
             command: --mac --arm64
             artifact: macos-apple-silicon
           - name: Windows x64
@@ -59,10 +60,13 @@ jobs:
             command: --linux --x64
             artifact: linux-x64
     runs-on: ${{ matrix.runner }}
+    environment: ${{ inputs.signed && startsWith(matrix.artifact, 'macos-') && 'desktop-signing' || 'desktop-build' }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -73,24 +77,6 @@ jobs:
           go-version: "1.26.5"
 
       - run: bun ci
-
-      - name: Require requested signing credentials
-        if: ${{ inputs.signed }}
-        shell: bash
-        run: |
-          test -n "$CSC_LINK"
-          test -n "$CSC_KEY_PASSWORD"
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            test -n "$APPLE_ID"
-            test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-            test -n "$APPLE_TEAM_ID"
-          fi
-        env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.DESKTOP_APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APP_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
 
       - name: Build shared packages
         run: |
@@ -113,18 +99,20 @@ jobs:
           bun run --filter pdmux-desktop test
 
       - name: Package unsigned desktop application
-        if: ${{ !inputs.signed }}
+        if: runner.os != 'macOS'
         run: bun run --cwd apps/desktop package -- ${{ matrix.command }} --publish never
 
-      - name: Package signed desktop application
-        if: ${{ inputs.signed }}
-        run: bun run --cwd apps/desktop package -- ${{ matrix.command }} --publish never
+      - name: Package macOS validation application with a disposable identity
+        if: ${{ runner.os == 'macOS' && !inputs.signed }}
+        run: bun tools/package-macos-desktop.mjs --ci-probe
+
+      - name: Package macOS release with the stable signing identity
+        if: ${{ runner.os == 'macOS' && inputs.signed }}
+        run: bun tools/release-macos-signing.mjs
         env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.DESKTOP_APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.DESKTOP_APP_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
+          DESKTOP_MAC_P12: ${{ secrets.DESKTOP_MAC_P12 }}
+          DESKTOP_MAC_PASSWORD: ${{ secrets.DESKTOP_MAC_PASSWORD }}
+          PDMUX_SIGNING_SOURCE_REF: ${{ inputs.source_ref || github.ref_name }}
 
       - name: Preserve architecture-specific macOS update metadata
         if: runner.os == 'macOS'
@@ -143,3 +131,41 @@ jobs:
             apps/desktop/release/*.zip
             apps/desktop/release/latest*.yml
           if-no-files-found: error
+
+  verify-macos:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            artifact: macos-intel
+          - runner: macos-26
+            artifact: macos-apple-silicon
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: pdmux-${{ matrix.artifact }}
+          path: ${{ runner.temp }}/desktop-verify
+      - name: Verify final macOS packages on a clean runner
+        env:
+          PACKAGE_DIRECTORY: ${{ runner.temp }}/desktop-verify
+          PDMUX_VERIFY_RELEASE_IDENTITY: ${{ inputs.signed && '1' || '0' }}
+        run: bun tools/verify-macos-desktop.mjs "$PACKAGE_DIRECTORY" --runtime
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-smoke-${{ matrix.artifact }}
+          path: ${{ runner.temp }}/desktop-verify/*.png
+          if-no-files-found: ignore
+          retention-days: 3

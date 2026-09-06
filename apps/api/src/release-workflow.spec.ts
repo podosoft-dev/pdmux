@@ -92,7 +92,7 @@ describe("release workflow", () => {
     for (const fragment of [
       "workflow_call:",
       "runner: macos-15-intel",
-      "runner: macos-15",
+      "runner: macos-26",
       "runner: windows-2025",
       "runner: ubuntu-24.04",
       "latest-mac-${{ matrix.artifact }}.yml",
@@ -104,6 +104,19 @@ describe("release workflow", () => {
       expect(desktopWorkflow).toContain(fragment);
     }
     expect(desktopWorkflow).not.toContain("path: apps/desktop/release/**");
+  });
+
+  test("[TC-PDDESKTOP-009] restricts stable signing to macOS releases and independently verifies artifacts", () => {
+    expect(workflow).toContain("signed: true");
+    expect(desktopWorkflow).toContain("'desktop-signing' || 'desktop-build'");
+    expect(desktopWorkflow).toContain("runner.os == 'macOS' && inputs.signed");
+    expect(desktopWorkflow).toContain("bun tools/release-macos-signing.mjs");
+    expect(desktopWorkflow).toContain("bun tools/package-macos-desktop.mjs --ci-probe");
+    expect(desktopWorkflow).not.toContain("DESKTOP_APPLE_");
+    const verify = desktopWorkflow.split("\n  verify-macos:\n")[1] ?? "";
+    expect(verify).toContain('bun tools/verify-macos-desktop.mjs "$PACKAGE_DIRECTORY" --runtime');
+    expect(verify).not.toContain("secrets.");
+    expect(verify).not.toContain("add-trusted-cert");
   });
 
   test("[TC-PDHOST-024] rejects committed agent metadata that is stale", () => {

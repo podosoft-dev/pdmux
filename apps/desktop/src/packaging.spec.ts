@@ -62,14 +62,14 @@ describe("[TC-PDDESKTOP-009] desktop packaging matrix", () => {
       "utf8",
     ).replaceAll("\r\n", "\n");
     expect(workflow).toContain("runner: macos-15-intel\n            command: --mac --x64");
-    expect(workflow).toContain("runner: macos-15\n            command: --mac --arm64");
+    expect(workflow).toContain("runner: macos-26\n            command: --mac --arm64");
     expect(workflow).not.toContain("command: --mac --x64 --arm64");
     expect(workflow).toContain("windows-2025");
     expect(workflow).toContain("ubuntu-24.04");
     expect(workflow).toContain("bun run desktop:prepare");
     expect(workflow).toContain("bun run --cwd apps/desktop package");
     expect(workflow).toContain("${{ matrix.command }} --publish never");
-    expect(workflow).toContain("if: ${{ !inputs.signed }}");
+    expect(workflow).toContain("if: ${{ runner.os == 'macOS' && !inputs.signed }}");
     expect(workflow).toContain("ref: ${{ inputs.source_ref || github.ref }}");
     expect(workflow).toContain("name: pdmux-${{ matrix.artifact }}");
     expect(workflow).toContain("workflow_call:");

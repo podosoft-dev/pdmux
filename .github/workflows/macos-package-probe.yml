@@ -78,6 +78,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+      - run: bun ci
       - uses: actions/download-artifact@v4
         with:
           name: disposable-product-${{ matrix.arch }}
@@ -85,4 +86,4 @@ jobs:
       - name: Verify final DMG and ZIP without signing credentials
         env:
           PACKAGE_DIRECTORY: ${{ runner.temp }}/product-packages
-        run: bun tools/verify-macos-desktop.mjs "$PACKAGE_DIRECTORY"
+        run: bun tools/verify-macos-desktop.mjs "$PACKAGE_DIRECTORY" --runtime
