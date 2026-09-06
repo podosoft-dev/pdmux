@@ -106,6 +106,81 @@ a GitHub Release remains a separate release action.
 
 ## Desktop development
 
+### macOS signing and update feasibility gate
+
+`bun tools/probe-macos-adhoc-update.mjs` requires native macOS and runs only against disposable
+Electron fixtures. The dedicated `macos-update-probe.yml` workflow uses a Tahoe ARM runner with
+read-only repository permissions; it does not publish releases or alter existing releases.
+The workflow uses separate `--prepare-self-signed` and `--verify-self-signed` jobs to test temporary
+non-Apple signing identities. Preparation is restricted to disposable GitHub CI: it creates two
+short-lived certificates in a temporary keychain and trusts them for signing. Private files and the
+keychain are removed; the build VM and its temporary trust settings are discarded by GitHub.
+Only signed ZIPs and update metadata are handed to a fresh verification VM through a one-day CI
+artifact. The verification VM never imports certificates or receives private keys. This avoids
+interactive trust-removal commands and prevents build-machine trust from influencing the result.
+No production signing credentials are used.
+
+The probe packages two different versions with ad-hoc signatures, extracts and strictly verifies
+their ZIP archives, and checks the new app against the old app's exact designated requirement
+before exercising `electron-updater` and Squirrel.Mac over a loopback feed. A successful update
+must relaunch the new version and preserve a sentinel in an isolated user-data directory.
+Signature incompatibility is a hard failure, not a reason to weaken requirements or disable
+verification. Fixture success alone does not validate the full embedded stack, backups, or a
+browser-downloaded app's Gatekeeper behavior. Those remain separate release acceptance checks.
+The self-signed variant builds two versions with one identity and a third with a different identity.
+The same-key update must satisfy the unchanged old-app requirement; the different-key app and a
+modified copy must be rejected. Only then may the real update and relaunch run. Without mode flags,
+the original ad-hoc experiment remains available and fails on cross-version code-hash identity.
+
+The published `0.12.1` macOS packages skipped signing. This probe is preparation for a corrected
+distribution, not evidence that those existing packages have been repaired. Free ad-hoc signing
+does not provide Developer ID authentication or Apple notarization.
+
+### Self-signed product packaging (pending native acceptance)
+
+After building and staging the shared runtime, `bun tools/package-macos-desktop.mjs` packages the
+actual product with an explicitly provisioned `CSC_KEYCHAIN` and `PDMUX_MAC_SIGNING_IDENTITY`.
+The command does not create a production identity, import credentials, or publish a release.
+It invokes the existing Bun package script, honoring electron-builder's Node CLI shebang. Node is
+required for that packaging tool (including its WASM icon converter), not for the embedded services.
+It rejects missing/ad-hoc identities, requires signing to succeed, keeps hardened runtime and
+strict verification enabled, and does not request Apple notarization. Production credentials are
+not enabled for pull-request signing.
+
+The signing overlay preserves the existing packaging configuration and explicitly includes Bun.
+Only the four downloadable host-agent binaries are excluded from re-signing: their published
+checksums must remain identical across desktop, web, and standalone downloads. They remain sealed
+resources of the outer app; they are not excluded from app integrity verification.
+
+`bun tools/verify-macos-desktop.mjs <artifact-directory>` requires one native DMG and ZIP. It verifies
+the DMG, copies its app off the read-only mount, extracts the ZIP independently, strictly verifies
+both app signatures and Bun, executes an in-memory SQLite query using the packaged Bun, and checks
+all four packaged agents against repository-owned checksums. It does not launch the desktop UI or
+the API/web services, and is not a substitute for full-stack, backup, or Gatekeeper testing.
+
+The separate `macos-package-probe.yml` workflow builds the real product with disposable certificates
+(`--ci-probe`) on Intel and Tahoe ARM64. Separate fresh runners verify the artifacts without importing
+the signing identity. Artifacts expire after one day and must not be published as product releases:
+their signing keys are deliberately destroyed and cannot sign future updates.
+
+### Proposed production signing-key lifecycle
+
+Before enabling self-signed releases, designate a maintainer responsible for a stable, app-specific
+certificate/private key. Keep the encrypted key in an access-controlled secret store and maintain
+an independently encrypted recovery backup; never commit it or attach it to CI artifacts. Verify
+backup restoration and the certificate fingerprint before the first release. Record only the
+public certificate fingerprint and ownership/rotation policy in release operations documentation.
+
+Only an explicitly approved release job may receive the key through a temporary keychain. PR jobs
+must use disposable keys and must never receive production credentials. Do not regenerate the key
+per build: existing installations must recognize the same signing identity. A replacement certificate
+can change that identity even if its display name is unchanged. Key loss or compromise requires an
+explicit recovery/transition plan; never weaken signature checks or silently switch to manual updates.
+
+This is not Developer ID signing or notarization. Browser-download Gatekeeper handling and transition
+from the unsigned `0.12.1` installation need separate acceptance tests. No production key has been
+provisioned by these tools, and the existing release workflow has not switched to this signing path.
+
 Build the API and web app first, then compile the shell:
 
 ```bash
