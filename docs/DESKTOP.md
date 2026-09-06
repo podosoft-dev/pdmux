@@ -136,6 +136,49 @@ The published `0.12.1` macOS packages skipped signing. This probe is preparation
 distribution, not evidence that those existing packages have been repaired. Free ad-hoc signing
 does not provide Developer ID authentication or Apple notarization.
 
+### Self-signed product packaging (pending native acceptance)
+
+After building and staging the shared runtime, `bun tools/package-macos-desktop.mjs` packages the
+actual product with an explicitly provisioned `CSC_KEYCHAIN` and `PDMUX_MAC_SIGNING_IDENTITY`.
+The command does not create a production identity, import credentials, or publish a release.
+It rejects missing/ad-hoc identities, requires signing to succeed, keeps hardened runtime and
+strict verification enabled, and does not request Apple notarization. Production credentials are
+not enabled for pull-request signing.
+
+The signing overlay preserves the existing packaging configuration and explicitly includes Bun.
+Only the four downloadable host-agent binaries are excluded from re-signing: their published
+checksums must remain identical across desktop, web, and standalone downloads. They remain sealed
+resources of the outer app; they are not excluded from app integrity verification.
+
+`bun tools/verify-macos-desktop.mjs <artifact-directory>` requires one native DMG and ZIP. It verifies
+the DMG, copies its app off the read-only mount, extracts the ZIP independently, strictly verifies
+both app signatures and Bun, executes an in-memory SQLite query using the packaged Bun, and checks
+all four packaged agents against repository-owned checksums. It does not launch the desktop UI or
+the API/web services, and is not a substitute for full-stack, backup, or Gatekeeper testing.
+
+The separate `macos-package-probe.yml` workflow builds the real product with disposable certificates
+(`--ci-probe`) on Intel and Tahoe ARM64. Separate fresh runners verify the artifacts without importing
+the signing identity. Artifacts expire after one day and must not be published as product releases:
+their signing keys are deliberately destroyed and cannot sign future updates.
+
+### Proposed production signing-key lifecycle
+
+Before enabling self-signed releases, designate a maintainer responsible for a stable, app-specific
+certificate/private key. Keep the encrypted key in an access-controlled secret store and maintain
+an independently encrypted recovery backup; never commit it or attach it to CI artifacts. Verify
+backup restoration and the certificate fingerprint before the first release. Record only the
+public certificate fingerprint and ownership/rotation policy in release operations documentation.
+
+Only an explicitly approved release job may receive the key through a temporary keychain. PR jobs
+must use disposable keys and must never receive production credentials. Do not regenerate the key
+per build: existing installations must recognize the same signing identity. A replacement certificate
+can change that identity even if its display name is unchanged. Key loss or compromise requires an
+explicit recovery/transition plan; never weaken signature checks or silently switch to manual updates.
+
+This is not Developer ID signing or notarization. Browser-download Gatekeeper handling and transition
+from the unsigned `0.12.1` installation need separate acceptance tests. No production key has been
+provisioned by these tools, and the existing release workflow has not switched to this signing path.
+
 Build the API and web app first, then compile the shell:
 
 ```bash

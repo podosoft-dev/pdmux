@@ -1,0 +1,88 @@
+name: macOS product package probe
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "tools/package-macos-desktop*"
+      - "tools/verify-macos-desktop.mjs"
+      - "tools/probe-macos-adhoc-update.mjs"
+      - "apps/desktop/**"
+      - ".github/workflows/macos-package-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.5"
+      - run: bun ci
+      - run: bun test tools/package-macos-desktop.test.mjs tools/probe-macos-adhoc-update.test.mjs
+      - name: Build shared application and embedded runtime
+        run: |
+          bun run --filter @pdmux/protocol build
+          bun run --filter @pdmux/core build
+          bun run --filter @pdmux/ui build
+          bun run --filter @pdmux/mcp build
+          bun run build:agent
+          bun run --filter pdmux-api build
+          bun run --filter pdmux-web build
+          bun run --filter pdmux-desktop build
+          bun run desktop:prepare
+      - name: Package with disposable signing identity
+        run: bun tools/package-macos-desktop.mjs --ci-probe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: disposable-product-${{ matrix.arch }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+
+  verify:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: disposable-product-${{ matrix.arch }}
+          path: ${{ runner.temp }}/product-packages
+      - name: Verify final DMG and ZIP without signing credentials
+        env:
+          PACKAGE_DIRECTORY: ${{ runner.temp }}/product-packages
+        run: bun tools/verify-macos-desktop.mjs "$PACKAGE_DIRECTORY"

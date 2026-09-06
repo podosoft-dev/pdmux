@@ -48,7 +48,7 @@ export function requireRejected(result, label) {
   console.log(JSON.stringify({ stage: label, result: "rejected" }));
 }
 
-async function disposableSigning(root) {
+export async function disposableSigning(root) {
   assert.equal(process.env.GITHUB_ACTIONS, "true", "Disposable signing is restricted to GitHub CI");
   const directory = join(root, "signing");
   await mkdir(directory, { mode: 0o700 });
@@ -89,7 +89,7 @@ async function disposableSigning(root) {
       identities.push(name);
     }
     run("security", ["set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", password, keychain]);
-    return { identities, cleanup };
+    return { identities, keychain, cleanup };
   } catch (error) {
     await cleanup();
     throw error;
