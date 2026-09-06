@@ -10,13 +10,14 @@ assert.equal(process.platform, "darwin");
 const bundle = resolve(process.argv[2]);
 const screenshot = resolve(process.argv[3]);
 const application = await electron.launch({ executablePath: join(bundle, "Contents/MacOS/pdmux"), timeout: 120_000 });
+let window;
 try {
-  const window = await application.firstWindow({ timeout: 120_000 });
+  window = await application.firstWindow({ timeout: 120_000 });
   await window.waitForURL(/http:\/\/127\.0\.0\.1:\d+\//, { timeout: 60_000 });
-  await window.locator('input[type="email"]').waitFor({ timeout: 60_000 });
+  // Username sign-in uses type=text for the same email/username field.
+  await window.locator('input#email[autocomplete="username"]').waitFor({ timeout: 60_000 });
   assert.deepEqual(await window.evaluate(() => window.pdmuxDesktop), { isDesktop: true, platform: "darwin" });
   assert.ok((await window.locator("body").innerText()).length > 30, "Render the real login page");
-  await window.screenshot({ path: screenshot });
   const result = await application.evaluate(async ({ app }) => {
     const { join } = await import("node:path");
     const { pathToFileURL } = await import("node:url");
@@ -49,4 +50,10 @@ try {
   assert.equal(result.version, expected);
   if (process.argv.includes("--expect-preserved")) assert.ok(result.prior, "Preserve data across package replacement and restart");
   console.log(JSON.stringify({ stage: "packaged-desktop-runtime", version: result.version, dataPreserved: result.prior, database, result: "passed" }));
-} finally { await application.close(); }
+} finally {
+  if (window && !window.isClosed()) {
+    console.log(JSON.stringify({ stage: "desktop-window", url: window.url(), title: await window.title() }));
+    await window.screenshot({ path: screenshot });
+  }
+  await application.close();
+}
