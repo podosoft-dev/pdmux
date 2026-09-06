@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, X509Certificate } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,6 +10,10 @@ import { assertCertificate } from "./release-macos-signing.mjs";
 
 const repository = resolve(import.meta.dirname, "..");
 const agentNames = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"].map(arch => `pdmux-agent-${arch}`);
+
+export function certificateExtractionArguments(prefix, app) {
+  return ["--display", `--extract-certificates=${prefix}`, app];
+}
 
 export function parseAgentChecksums(text) {
   const entries = text.trim().split(/\r?\n/).map(line => {
@@ -69,11 +73,16 @@ export async function verifyMacArtifacts(directory, runtime = false) {
       }
       const app = join(extracted, "pdmux.app");
       await verifyApp(app);
+      // Exercise certificate extraction for disposable PR builds too, so the
+      // native argument contract cannot fail for the first time after tagging.
+      const prefix = join(extracted, "signer-");
+      execFileSync("codesign", certificateExtractionArguments(prefix, app), { stdio: "inherit", timeout: 30_000 });
+      const certificate = new X509Certificate(await readFile(`${prefix}0`));
+      assert.ok(Date.parse(certificate.validTo) > Date.now(), "Package signing certificate has expired");
       if (process.env.PDMUX_VERIFY_RELEASE_IDENTITY === "1") {
-        const prefix = join(extracted, "signer-");
-        execFileSync("codesign", ["--display", "--extract-certificates", prefix, app], { stdio: "inherit" });
-        assertCertificate(await readFile(`${prefix}0`), await readFile(join(repository, "apps/desktop/signing-certificate.pem")));
+        assertCertificate(certificate.raw, await readFile(join(repository, "apps/desktop/signing-certificate.pem")));
       }
+      console.log(JSON.stringify({ stage: "package-certificate", fingerprint: certificate.fingerprint256, result: "passed" }));
       if (runtime) {
         await new Promise((resolve, reject) => {
           const child = spawn("node", [join(repository, "tools/smoke-macos-desktop.mjs"), app,
