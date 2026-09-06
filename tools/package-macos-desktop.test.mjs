@@ -4,9 +4,14 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { macSigningConfiguration, macPackagingArguments } from "./package-macos-desktop.mjs";
-import { parseAgentChecksums, verifyAgentResources } from "./verify-macos-desktop.mjs";
+import { certificateExtractionArguments, parseAgentChecksums, verifyAgentResources } from "./verify-macos-desktop.mjs";
 
 describe("[TC-PDDESKTOP-009] signed product package integrity", () => {
+  it("attaches the optional certificate prefix to its codesign option", () => {
+    expect(certificateExtractionArguments("/tmp/with spaces/signer-", "/tmp/pdmux.app")).toEqual([
+      "--display", "--extract-certificates=/tmp/with spaces/signer-", "/tmp/pdmux.app",
+    ]);
+  });
   it("uses the existing package script without overriding the CLI runtime", () => {
     expect(macPackagingArguments("/tmp/desktop", "/tmp/config.json", "arm64")).toEqual([
       "run", "--cwd", "/tmp/desktop", "package", "--", "--config", "/tmp/config.json", "--mac", "--arm64", "--publish", "never",

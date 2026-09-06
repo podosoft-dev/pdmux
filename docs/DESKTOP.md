@@ -100,7 +100,7 @@ match that tag. Missing credentials, a changed certificate, or failed signing st
 
 ## Installing on macOS
 
-Starting with **0.12.2**, official macOS packages use a stable, app-specific self-signed certificate.
+Starting with **0.12.3**, official macOS packages use a stable, app-specific self-signed certificate.
 This is free signing, **not Apple Developer ID signing or notarization**. macOS may still block the
 first launch because Apple has not identified the developer or checked the app for malware.
 
@@ -192,7 +192,8 @@ both app signatures and Bun, executes an in-memory SQLite query using the packag
 all four packaged agents against repository-owned checksums. In a disposable GitHub verification VM,
 `--runtime` additionally launches the actual packaged application using Playwright, checks its login
 page, exercises the packaged backup implementation against its migrated SQLite database and files,
-then checks data preservation when restarting from the other artifact. Release verification also
+then checks data preservation when restarting from the other artifact. Certificate extraction and
+expiry checks run on both PR and release packages. Release verification also
 pins the package certificate to `apps/desktop/signing-certificate.pem`. No signing key or certificate
 trust is installed on these verification VMs. This is not an interactive browser-download Gatekeeper test.
 

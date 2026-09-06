@@ -2,7 +2,15 @@
 
 ## Unreleased
 
-## 0.12.2
+## 0.12.3
+
+- Fix certificate extraction arguments in the macOS release verifier and exercise the same native
+  extraction path before merging pull requests. Keep certificate pinning mandatory for releases.
+- Include the desktop startup and stable signing improvements prepared for 0.12.2 below.
+
+## 0.12.2 (not published)
+
+Publication was blocked by the certificate-verification gate; the tag is retained unchanged.
 
 - Fix the desktop startup import of the CommonJS updater under Electron's Node ESM loader.
 - Emit a CommonJS preload so the desktop bridge works without disabling renderer sandboxing.
