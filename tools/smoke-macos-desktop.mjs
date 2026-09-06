@@ -19,10 +19,12 @@ try {
   assert.deepEqual(await window.evaluate(() => window.pdmuxDesktop), { isDesktop: true, platform: "darwin" });
   assert.ok((await window.locator("body").innerText()).length > 30, "Render the real login page");
   const result = await application.evaluate(async ({ app }) => {
-    const { join } = await import("node:path");
-    const { pathToFileURL } = await import("node:url");
-    const { readFile, writeFile } = await import("node:fs/promises");
-    const { createHash } = await import("node:crypto");
+    // Inspector evaluation has no dynamic-import callback. Use Node's supported
+    // builtin lookup and a package-scoped require for the synchronous ESM module.
+    const { join } = process.getBuiltinModule("node:path");
+    const { readFile, writeFile } = process.getBuiltinModule("node:fs/promises");
+    const { createHash } = process.getBuiltinModule("node:crypto");
+    const require = process.getBuiltinModule("node:module").createRequire(join(app.getAppPath(), "package.json"));
     const data = app.getPath("userData");
     const runtime = join(data, "runtime");
     const sentinel = join(runtime, "files", "release-verification.txt");
@@ -31,7 +33,7 @@ try {
     catch (error) { if (error.code !== "ENOENT") throw error; }
     await writeFile(sentinel, "preserve-release-data");
     // Exercise the packaged backup module and helper against the running SQLite DB.
-    const { BackupService } = await import(pathToFileURL(join(app.getAppPath(), "dist/backup.js")).href);
+    const { BackupService } = require("./dist/backup.js");
     const backup = new BackupService({
       databasePath: join(runtime, "pdmux.sqlite"), filesDirectory: join(runtime, "files"),
       backupsDirectory: join(data, "backups"), bunExecutable: join(process.resourcesPath, "bin/bun"),
