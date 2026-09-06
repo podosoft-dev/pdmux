@@ -3,10 +3,17 @@ import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { macSigningConfiguration } from "./package-macos-desktop.mjs";
+import { macSigningConfiguration, macPackagingArguments } from "./package-macos-desktop.mjs";
 import { parseAgentChecksums, verifyAgentResources } from "./verify-macos-desktop.mjs";
 
 describe("[TC-PDDESKTOP-009] signed product package integrity", () => {
+  it("uses the existing package script without overriding the CLI runtime", () => {
+    expect(macPackagingArguments("/tmp/desktop", "/tmp/config.json", "arm64")).toEqual([
+      "run", "--cwd", "/tmp/desktop", "package", "--", "--config", "/tmp/config.json", "--mac", "--arm64", "--publish", "never",
+    ]);
+    expect(macPackagingArguments("/tmp/desktop", "/tmp/config.json", "x64")).toContain("--x64");
+    expect(() => macPackagingArguments("/tmp/desktop", "/tmp/config.json", "ia32")).toThrow();
+  });
   it("requires a stable identity and preserves shared packaging settings", () => {
     const base = { appId: "fixture", mac: { target: ["dmg", "zip"] }, files: ["dist/**"] };
     const config = macSigningConfiguration(base, "Fixture Certificate");

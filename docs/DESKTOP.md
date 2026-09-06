@@ -141,6 +141,8 @@ does not provide Developer ID authentication or Apple notarization.
 After building and staging the shared runtime, `bun tools/package-macos-desktop.mjs` packages the
 actual product with an explicitly provisioned `CSC_KEYCHAIN` and `PDMUX_MAC_SIGNING_IDENTITY`.
 The command does not create a production identity, import credentials, or publish a release.
+It invokes the existing Bun package script, honoring electron-builder's Node CLI shebang. Node is
+required for that packaging tool (including its WASM icon converter), not for the embedded services.
 It rejects missing/ad-hoc identities, requires signing to succeed, keeps hardened runtime and
 strict verification enabled, and does not request Apple notarization. Production credentials are
 not enabled for pull-request signing.

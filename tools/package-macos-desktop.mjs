@@ -4,10 +4,8 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createRequire } from "node:module";
 import { disposableSigning, probeEnvironment } from "./probe-macos-adhoc-update.mjs";
 
-const require = createRequire(import.meta.url);
 const repository = resolve(import.meta.dirname, "..");
 
 export function macSigningConfiguration(base, identity) {
@@ -22,6 +20,14 @@ export function macSigningConfiguration(base, identity) {
       signIgnore: ["/Contents/Resources/web/client/agent/[^/]+/pdmux-agent-(linux|darwin)-(amd64|arm64)$"],
     },
   };
+}
+
+export function macPackagingArguments(desktop, configurationPath, arch) {
+  assert.ok(arch === "arm64" || arch === "x64", "Unsupported macOS architecture");
+  // Let the existing package script honor electron-builder's Node shebang.
+  // Direct Bun execution hangs in its portable WASM icon converter.
+  return ["run", "--cwd", desktop, "package", "--", "--config", configurationPath,
+    "--mac", `--${arch}`, "--publish", "never"];
 }
 
 export async function packageMac(ciProbe = false) {
@@ -42,8 +48,7 @@ export async function packageMac(ciProbe = false) {
       ...probeEnvironment(process.env), CSC_KEYCHAIN: keychain,
       CSC_FOR_PULL_REQUEST: ciProbe ? "true" : "false",
     };
-    execFileSync(process.execPath, [require.resolve("electron-builder/cli.js"), "--projectDir", desktop,
-      "--config", configurationPath, "--mac", `--${process.arch}`, "--publish", "never"],
+    execFileSync(process.execPath, macPackagingArguments(desktop, configurationPath, process.arch),
     { env, stdio: "inherit", timeout: 600_000 });
   } finally {
     if (signing) await signing.cleanup();
