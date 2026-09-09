@@ -10,9 +10,8 @@
  * THE CLICK IS ALSO WHAT ASKS FOR IT. The server answers a miss by requesting the
  * patch from the host agent, and it lands through ingest a second or two later. So a
  * miss with `pending > 0` is not an end state — `CommitDetailWatch` polls until it
- * arrives — and this class is only the `$state` mapping of that watch. The timing
- * rules live there because they have to be unit-testable, and vitest here runs without
- * the Svelte compiler.
+ * arrives. Snapshot refresh is separate: it never reopens an immutable detail or
+ * fetches a file the person has not asked to read.
  *
  * Nothing in this module can write to a repository: the API exposes no such route,
  * and the dock has no button for one.
@@ -41,6 +40,34 @@ export interface GitDockOptions {
  */
 export const FILE_POLL_ATTEMPTS = 8;
 export const FILE_POLL_DELAY_MS = 600;
+export const GIT_REFRESH_MS = 5_000;
+export const GIT_COLLECT_POLL_MS = 1_000;
+export const GIT_COLLECT_TIMEOUT_MS = 60_000;
+
+type CollectionKind = "repos" | "remote";
+interface DockSnapshot {
+  repos: RepoRow[];
+  graph: RepoGraphResponse | null;
+  working: DetailResponse<WorkingDiff> | null;
+}
+interface CollectionWait {
+  what: CollectionKind;
+  repoId: string | null;
+  baseline: string | null;
+  accepted: boolean;
+}
+
+/** Compare content too: agent timestamps have second precision. */
+function snapshotKey(snapshot: DockSnapshot, what: CollectionKind, repoId: string | null): string {
+  const rows = repoId ? snapshot.repos.filter((row) => row.id === repoId) : snapshot.repos;
+  if (what === "remote") {
+    return JSON.stringify(rows.map((row) => [row.id, row.remoteCheckedAt, row.remoteRefs, row.remoteError]));
+  }
+  return JSON.stringify([
+    rows.map((row) => ({ ...row, remoteCheckedAt: undefined, remoteRefs: undefined, remoteError: undefined })),
+    snapshot.graph?.refs, snapshot.graph?.commits, snapshot.working,
+  ]);
+}
 
 export class GitDock {
   hostId = $state<string | null>(null);
@@ -53,6 +80,10 @@ export class GitDock {
   pending = $state<PendingNote | null>(null);
   loading = $state(false);
   error = $state<string | null>(null);
+  refreshError = $state<string | null>(null);
+  collectionError = $state<string | null>(null);
+  collecting = $state<CollectionKind | null>(null);
+  now = $state(Date.now());
   /**
    * Has a repository list actually come back for the host now selected?
    *
@@ -88,6 +119,16 @@ export class GitDock {
   private readonly files = new GitFileCache();
   /** Injected so a spec does not wait real seconds between polls. */
   private readonly scheduleFn: (fn: () => void, ms: number) => unknown;
+  private readonly cancelFn: (handle: unknown) => void;
+  private refreshGeneration = 0;
+  private selectionGeneration = 0;
+  private workingGeneration = 0;
+  private refreshActive = false;
+  private chooseFirstRepo = false;
+  private refreshTimer: unknown = null;
+  private collectionTimer: unknown = null;
+  private collection: CollectionWait | null = null;
+  private inFlight: { generation: number; promise: Promise<DockSnapshot | null> } | null = null;
   /** Bumped by anything that makes an in-flight tree or file answer irrelevant. */
   private fileGeneration = 0;
   /** The sha whose listing we already gave up on — so we do not start over. */
@@ -96,6 +137,7 @@ export class GitDock {
   constructor(options: GitDockOptions = {}) {
     this.api = { ...gitApi, ...(options.api ?? {}) };
     this.scheduleFn = options.schedule ?? ((fn, ms) => setTimeout(fn, ms));
+    this.cancelFn = options.cancel ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
     this.watch = new CommitDetailWatch({
       // The host/repo are read at call time on purpose: a poll must dial the pair the
       // dock is pointed at now, and switching either one cancels the watch anyway.
@@ -117,44 +159,175 @@ export class GitDock {
 
   /** Point the dock at a host, keeping `preferredRepoId` when that repo still exists. */
   async openHost(hostId: string | null, preferredRepoId?: string | null): Promise<void> {
+    this.invalidateRefresh();
     this.hostId = hostId;
     this.repos = [];
     // A new host has been asked about, so nothing is known about its repositories yet.
     this.reposLoaded = false;
     this.clearSelection();
     this.graph = null;
-    this.repoId = null;
+    this.repoId = preferredRepoId ?? null;
+    this.chooseFirstRepo = true;
+    this.error = null;
+    this.refreshError = null;
     if (!hostId) return;
-    try {
-      this.repos = await this.api.repos(hostId);
-      this.error = null;
-    } catch (cause: unknown) {
-      this.error = errorCode(cause);
-      return;
-    } finally {
-      // Answered either way: an empty list is now a fact, and a failure has its own
-      // message. Only the window before this point is "we do not know".
-      this.reposLoaded = true;
-    }
-    const wanted = this.repos.find((row) => row.id === preferredRepoId) ?? this.repos[0];
-    if (wanted) await this.openRepo(wanted.id);
+    await this.refresh();
   }
 
   async openRepo(repoId: string): Promise<void> {
     const hostId = this.hostId;
     if (!hostId) return;
+    this.invalidateRefresh();
     this.repoId = repoId;
+    this.chooseFirstRepo = false;
     this.clearSelection();
-    this.loading = true;
-    try {
-      this.graph = await this.api.graph(hostId, repoId);
-      this.error = null;
-    } catch (cause: unknown) {
-      this.graph = null;
-      this.error = errorCode(cause);
-    } finally {
-      this.loading = false;
+    this.graph = null;
+    this.error = null;
+    this.refreshError = null;
+    await this.refresh();
+  }
+
+  /** Resume only the snapshot feed; visibility changes must not close an open file. */
+  resume(): void {
+    if (this.refreshActive) return;
+    this.refreshActive = true;
+    void this.refresh();
+  }
+
+  pause(): void {
+    this.refreshActive = false;
+    this.invalidateRefresh();
+  }
+
+  /** Coalesce reads, including a navigation waiting for an obsolete read to drain. */
+  refresh(): Promise<DockSnapshot | null> {
+    const generation = this.refreshGeneration;
+    if (!this.hostId) return Promise.resolve(null);
+    if (this.inFlight) {
+      if (this.inFlight.generation === generation) return this.inFlight.promise;
+      return this.inFlight.promise.then(() => generation === this.refreshGeneration ? this.refresh() : null);
     }
+    this.cancelRefreshTimer();
+    const promise = this.readSnapshot(generation).finally(() => {
+      if (this.inFlight?.promise === promise) this.inFlight = null;
+      if (generation === this.refreshGeneration) this.scheduleRefresh();
+    });
+    this.inFlight = { generation, promise };
+    return promise;
+  }
+
+  private async readSnapshot(generation: number): Promise<DockSnapshot | null> {
+    const hostId = this.hostId;
+    if (!hostId) return null;
+    const selection = this.selectionGeneration;
+    const readWorking = this.selected === UNCOMMITTED;
+    this.now = Date.now();
+    try {
+      let repos = await this.api.repos(hostId);
+      if (generation !== this.refreshGeneration) return null;
+      const target = repos.find((row) => row.id === this.repoId) ?? (this.chooseFirstRepo ? repos[0] : null);
+      // Always read the graph: lastSnapshotAt can advance before ingest finishes,
+      // or because an unrelated partial detail arrived. It is not a revision token.
+      const graph = target ? await this.api.graph(hostId, target.id) : null;
+      if (generation !== this.refreshGeneration) return null;
+      const wantsWorking = readWorking && selection === this.selectionGeneration;
+      const workingGeneration = wantsWorking ? ++this.workingGeneration : this.workingGeneration;
+      const working = target && wantsWorking ? await this.api.workingDiff(hostId, target.id) : null;
+      if (generation !== this.refreshGeneration) return null;
+      if (graph) repos = repos.map((row) => row.id === graph.repo.id ? graph.repo : row);
+      const snapshot = { repos, graph, working };
+      if (JSON.stringify(this.repos) !== JSON.stringify(repos)) this.repos = repos;
+      if (JSON.stringify(this.graph) !== JSON.stringify(graph)) this.graph = graph;
+      this.repoId = target?.id ?? null;
+      if (target) this.chooseFirstRepo = false;
+      if (!target || (this.selected && this.selected !== UNCOMMITTED &&
+          !graph?.commits.some((row) => row.sha === this.selected))) {
+        this.clearSelection();
+      } else if (working && selection === this.selectionGeneration && workingGeneration === this.workingGeneration) {
+        this.working = working.available ? working.detail : null;
+        this.pending = working.available ? null : pendingNote({ pending: 0 }, UNCOMMITTED);
+      }
+      this.error = !target && repos.length > 0 ? "GIT_REPO_NOT_FOUND" : null;
+      this.refreshError = null;
+      const wait = this.collection;
+      if (wait?.accepted && wait.baseline !== snapshotKey(snapshot, wait.what, wait.repoId)) {
+        this.finishCollection();
+      }
+      return snapshot;
+    } catch (cause: unknown) {
+      if (generation !== this.refreshGeneration) return null;
+      this.refreshError = errorCode(cause);
+      if (!this.graph) this.error = this.refreshError;
+      return null;
+    } finally {
+      if (generation === this.refreshGeneration) this.reposLoaded = true;
+    }
+  }
+
+  /** A POST accepts work; only subsequent GETs can show its result. */
+  async collect(what: CollectionKind): Promise<void> {
+    const hostId = this.hostId;
+    if (!hostId || this.collection) return;
+    this.cancelRefreshTimer();
+    this.collectionError = null;
+    this.collecting = what;
+    const wait: CollectionWait = { what, repoId: this.repoId, baseline: null, accepted: false };
+    this.collection = wait;
+    // Independent of request completion: even a stalled transport cannot spin forever.
+    this.collectionTimer = this.scheduleFn(() => {
+      this.collectionTimer = null;
+      if (this.collection !== wait) return;
+      this.finishCollection("GIT_REFRESH_TIMEOUT");
+      this.scheduleRefresh();
+    }, GIT_COLLECT_TIMEOUT_MS);
+    const baseline = await this.refresh();
+    if (this.collection !== wait) return;
+    if (!baseline) {
+      this.finishCollection(this.refreshError ?? "NETWORK_ERROR");
+      this.scheduleRefresh();
+      return;
+    }
+    wait.repoId = this.repoId;
+    wait.baseline = snapshotKey(baseline, what, wait.repoId);
+    try {
+      await this.api.collect(hostId, what);
+      if (this.collection !== wait) return;
+      wait.accepted = true;
+      await this.refresh();
+    } catch (cause: unknown) {
+      if (this.collection !== wait) return;
+      this.finishCollection(errorCode(cause));
+      this.scheduleRefresh();
+    }
+  }
+
+  private scheduleRefresh(): void {
+    this.cancelRefreshTimer();
+    if (!this.refreshActive || !this.hostId || this.inFlight) return;
+    if (this.collection && !this.collection.accepted) return;
+    this.refreshTimer = this.scheduleFn(() => {
+      this.refreshTimer = null;
+      void this.refresh();
+    }, this.collection ? GIT_COLLECT_POLL_MS : GIT_REFRESH_MS);
+  }
+
+  private cancelRefreshTimer(): void {
+    if (this.refreshTimer !== null) this.cancelFn(this.refreshTimer);
+    this.refreshTimer = null;
+  }
+
+  private finishCollection(error: string | null = null): void {
+    if (this.collectionTimer !== null) this.cancelFn(this.collectionTimer);
+    this.collectionTimer = null;
+    this.collection = null;
+    this.collecting = null;
+    this.collectionError = error;
+  }
+
+  private invalidateRefresh(): void {
+    this.refreshGeneration += 1;
+    this.cancelRefreshTimer();
+    this.finishCollection();
   }
 
   /**
@@ -176,6 +349,9 @@ export class GitDock {
     // A commit's patch may still be in flight from the previous selection; the watch
     // invalidates it here so a late answer cannot land on the row we are opening now.
     this.watch.stop();
+    const selection = ++this.selectionGeneration;
+    const generation = this.refreshGeneration;
+    this.clearFileState();
     this.selected = sha;
     this.detail = null;
     this.working = null;
@@ -188,17 +364,22 @@ export class GitDock {
       return;
     }
 
+    const workingGeneration = ++this.workingGeneration;
     this.loading = true;
     try {
       const response = await this.api.workingDiff(hostId, repoId);
+      if (selection !== this.selectionGeneration || generation !== this.refreshGeneration ||
+          workingGeneration !== this.workingGeneration) return;
       this.working = response.detail;
       if (!response.available) this.pending = pendingNote({ pending: 0 }, sha);
       this.error = null;
     } catch (cause: unknown) {
+      if (selection !== this.selectionGeneration || generation !== this.refreshGeneration ||
+          workingGeneration !== this.workingGeneration) return;
       this.error = errorCode(cause);
       this.pending = pendingNote({ pending: 0 }, sha);
     } finally {
-      this.loading = false;
+      if (selection === this.selectionGeneration) this.loading = false;
     }
   }
 
@@ -209,6 +390,7 @@ export class GitDock {
   }
 
   clearSelection(): void {
+    this.selectionGeneration += 1;
     this.watch.stop();
     this.selected = null;
     this.detail = null;
@@ -368,6 +550,7 @@ export class GitDock {
    * the leak to avoid, so the wait ends here and the user gets a retry to press.
    */
   suspend(): void {
+    this.pause();
     this.watch.suspend();
     // ⚠ THE CACHE GOES WITH THE PANEL. The dock's selection deliberately outlives
     // the view so returning finds the same commit — file CONTENTS must not, or a

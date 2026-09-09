@@ -6,7 +6,7 @@
  * Keeping the paths here (rather than inline in components) means a route rename is
  * one edit, and every caller gets the same typed answer.
  */
-import { ApiError } from "@podosoft/podokit-api-client";
+import { ApiError, createApiClient } from "@podosoft/podokit-api-client";
 import type { CommitDetail, GitBlob, GitTree, WorkingDiff } from "@pdmux/protocol";
 import { api } from "#lib/api.js";
 import type { FsDirView } from "@pdmux/ui";
@@ -241,8 +241,18 @@ export const metricsApi = {
     api.get<MetricsResponse>(`/hosts/${hostId}/metrics?window=${windowSec}`),
 };
 
+// Bound each snapshot request so a stalled connection cannot block every later
+// refresh or target change. The ordinary same-origin client still owns the wire.
+const gitSnapshotApi = createApiClient({
+  fetch: Object.assign(
+    (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> =>
+      globalThis.fetch(input, { ...init, signal: AbortSignal.timeout(15_000) }),
+    { preconnect: globalThis.fetch.preconnect },
+  ),
+});
+
 export const gitApi = {
-  repos: (hostId: string): Promise<RepoRow[]> => api.get<RepoRow[]>(`/hosts/${hostId}/repos`),
+  repos: (hostId: string): Promise<RepoRow[]> => gitSnapshotApi.get<RepoRow[]>(`/hosts/${hostId}/repos`),
   /**
    * "Do a pass now" — the endpoint that already existed for the host card's refresh.
    *
@@ -251,15 +261,15 @@ export const gitApi = {
    * timer, so this call is the only way it ever happens.
    */
   collect: (hostId: string, what: "repos" | "remote"): Promise<{ hostId: string; what: string }> =>
-    api.post<{ hostId: string; what: string }>(`/hosts/${hostId}/collect`, { what }),
+    gitSnapshotApi.post<{ hostId: string; what: string }>(`/hosts/${hostId}/collect`, { what }),
   graph: (hostId: string, repoId: string): Promise<RepoGraphResponse> =>
-    api.get<RepoGraphResponse>(`/hosts/${hostId}/repos/${repoId}`),
+    gitSnapshotApi.get<RepoGraphResponse>(`/hosts/${hostId}/repos/${repoId}`),
   // Fetched on a click and never with the graph: bodies and patches were 58% of a
   // feed nobody had asked to see (ARCHITECTURE §4).
   commitDetail: (hostId: string, repoId: string, sha: string): Promise<DetailResponse<CommitDetail>> =>
     api.get<DetailResponse<CommitDetail>>(`/hosts/${hostId}/repos/${repoId}/commits/${sha}/detail`),
   workingDiff: (hostId: string, repoId: string): Promise<DetailResponse<WorkingDiff>> =>
-    api.get<DetailResponse<WorkingDiff>>(`/hosts/${hostId}/repos/${repoId}/working-diff`),
+    gitSnapshotApi.get<DetailResponse<WorkingDiff>>(`/hosts/${hostId}/repos/${repoId}/working-diff`),
   /**
    * The paths that existed at a commit — metadata only.
    *

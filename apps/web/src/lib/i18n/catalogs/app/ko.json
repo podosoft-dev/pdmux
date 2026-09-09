@@ -378,6 +378,8 @@
       "rescan": "다시 읽기",
       "checkRemote": "원격 확인",
       "collecting": "수집 중…",
+      "refreshTimeout": "1분 안에 새 수집 결과가 도착하지 않았습니다. 자동 갱신은 계속되며 다시 요청할 수 있습니다.",
+      "repoMissing": "선택한 저장소가 더 이상 존재하지 않습니다. 다른 저장소를 선택해 주세요.",
       "neverCollected": "아직 수집 안 됨",
       "agoNow": "방금 수집",
       "agoMinutes": "{count}분 전 수집",

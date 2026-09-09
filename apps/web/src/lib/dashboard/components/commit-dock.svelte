@@ -7,7 +7,7 @@
    * `/git/...` window must be the SAME view — a detached window that drifts from the
    * docked one is two features to maintain and two ways to be wrong.
    */
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { CommitDetail, GitGraph, GitRefPanel, SplitHandle, type Translate } from "@pdmux/ui";
   import { UNCOMMITTED, feedAge, remoteComparison } from "@pdmux/core";
   import * as Select from "#lib/components/ui/select/index.js";
@@ -15,7 +15,6 @@
   import { Button } from "#lib/components/ui/button/index.js";
   import { SHELL_STACK_MAX_WIDTH } from "@pdmux/core";
   import { IsMobile } from "#lib/hooks/is-mobile.svelte.ts";
-  import { toast } from "svelte-sonner";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import ArrowDownUpIcon from "@lucide/svelte/icons/arrow-down-up";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
@@ -24,8 +23,7 @@
   import FileDiffIcon from "@lucide/svelte/icons/file-diff";
   import FolderTreeIcon from "@lucide/svelte/icons/folder-tree";
   import { fmt, getI18n } from "#lib/i18n/index.js";
-  import { gitApi } from "../api";
-  import { causeMessage } from "../wording";
+  import { codeMessage } from "../wording";
   import type { GitDock } from "../git-dock.svelte";
   import { dockEmptyReason } from "../git-roots";
   import { graphCommits, refInputs, repoHead, uncommittedFor, workingDiffFiles } from "../map";
@@ -34,6 +32,7 @@
   let {
     dock,
     hosts = [],
+    onScreen = true,
     t,
     refsOpen = false,
     detailHeight = null,
@@ -45,6 +44,8 @@
   }: {
     dock: GitDock;
     hosts?: readonly HostView[];
+    /** A stacked shell can hide this panel without unmounting it. */
+    onScreen?: boolean;
     t?: Translate;
     /**
      * Whether the refs panel shares the column. On by default — a panel that needs a
@@ -69,6 +70,18 @@
   } = $props();
 
   const i18n = getI18n();
+  let pageVisible = $state(false);
+  onMount(() => {
+    const update = (): void => { pageVisible = document.visibilityState === "visible"; };
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  });
+  $effect(() => {
+    const active = onScreen && pageVisible;
+    const target = dock;
+    untrack(() => active ? target.resume() : target.pause());
+  });
   const commits = $derived(graphCommits(dock.graph?.commits ?? []));
   const refs = $derived(refInputs(dock.graph?.refs ?? []));
   const repo = $derived(dock.repo);
@@ -89,7 +102,14 @@
    * at all, and rendering that as 0 would read as "just now" — the most misleading
    * possible value for the one thing this line exists to tell.
    */
-  let busy = $state<"repos" | "remote" | null>(null);
+  const busy = $derived(dock.collecting);
+  const refreshMessage = $derived.by(() => {
+    const code = dock.collectionError ?? dock.refreshError;
+    if (!code) return null;
+    if (code === "GIT_REFRESH_TIMEOUT") return i18n.t.dash.git.refreshTimeout;
+    if (code === "HOST_OFFLINE") return i18n.t.dash.agent.offline;
+    return codeMessage(code, i18n.t);
+  });
 
   /**
    * Which face of the commit detail is showing.
@@ -163,7 +183,7 @@
   // (rounding first made a 30-second-old snapshot claim to be a minute behind) and it
   // already decides that an unknown timestamp is a warning rather than a zero.
   const age = $derived(
-    feedAge(repo?.lastSnapshotAt ? Date.parse(repo.lastSnapshotAt) / 1000 : null, Date.now()),
+    feedAge(repo?.lastSnapshotAt ? Date.parse(repo.lastSnapshotAt) / 1000 : null, dock.now),
   );
   const freshText = $derived.by(() => {
     if (busy) return i18n.t.dash.git.collecting;
@@ -197,26 +217,6 @@
     return i18n.t.dash.git.remoteSame;
   }
 
-  /**
-   * Ask the agent for a pass now.
-   *
-   * The answer arrives as a snapshot on the host feed rather than as this call's
-   * response, so the button reports "collecting" until the repo's timestamp moves
-   * rather than pretending to be done when the request was merely accepted.
-   */
-  async function collect(what: "repos" | "remote"): Promise<void> {
-    if (!dock.hostId || busy) return;
-    busy = what;
-    try {
-      await gitApi.collect(dock.hostId, what);
-    } catch (cause) {
-      toast.error(causeMessage(cause, i18n.t));
-    } finally {
-      // A fixed window rather than polling: the feed pushes the new snapshot, and a
-      // button that spun until it arrived would spin forever on an offline host.
-      setTimeout(() => (busy = null), 2_000);
-    }
-  }
   const selectedHost = $derived(hosts.find((host) => host.id === dock.hostId));
   const hostName = $derived(selectedHost?.label ?? i18n.t.dash.git.noHost);
   /**
@@ -350,11 +350,11 @@
       variant="ghost"
       size="sm"
       class="h-7 px-2"
-      disabled={busy !== null}
+      disabled={!dock.hostId || busy !== null}
       title={i18n.t.dash.git.rescan}
       aria-label={i18n.t.dash.git.rescan}
       data-testid="dock-rescan"
-      onclick={() => collect("repos")}><RefreshCwIcon class="size-4" /></Button
+      onclick={() => void dock.collect("repos")}><RefreshCwIcon class="size-4" /></Button
     >
     <!-- The only control here that reaches a network. It runs `ls-remote`, which
          reads the remote's refs and writes nothing to the checkout — pdmux never
@@ -363,11 +363,11 @@
       variant="ghost"
       size="sm"
       class="h-7 px-2"
-      disabled={busy !== null}
+      disabled={!dock.hostId || busy !== null}
       title={i18n.t.dash.git.checkRemote}
       aria-label={i18n.t.dash.git.checkRemote}
       data-testid="dock-remote"
-      onclick={() => collect("remote")}><ArrowDownUpIcon class="size-4" /></Button
+      onclick={() => void dock.collect("remote")}><ArrowDownUpIcon class="size-4" /></Button
     >
     {#if onToggleRefs}
       <Button
@@ -394,8 +394,16 @@
     {/if}
   </header>
 
+  {#if refreshMessage}
+    <p role="status" class="text-destructive shrink-0 px-2 py-1 text-xs" data-testid="dock-refresh-error">
+      {refreshMessage}
+    </p>
+  {/if}
+
   {#if dock.error}
-    <p class="text-destructive px-2 py-1 text-xs" data-testid="dock-error">{i18n.t.dash.git.loadFailed}</p>
+    <p class="text-destructive px-2 py-1 text-xs" data-testid="dock-error">
+      {dock.error === "GIT_REPO_NOT_FOUND" ? i18n.t.dash.git.repoMissing : i18n.t.dash.git.loadFailed}
+    </p>
   {:else if dock.hostId && dock.reposLoaded && !dock.repos.length}
     <!-- Three conditions, all load-bearing: a host must be chosen (otherwise the message
          is about nothing), the list must have come back (otherwise it is a guess), and it

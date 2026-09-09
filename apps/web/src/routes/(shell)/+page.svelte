@@ -440,6 +440,7 @@
     <div class="pdmux-dock-slot" style:flex-basis={`${layout.filesOpen ? 100 - layout.filesShare : 100}%`}>
       <CommitDock
         dock={shell.dock}
+        onScreen={!stacked.current || shell.view === "git"}
         hosts={shell.feed.hosts}
         {t}
         refsOpen={!layout.dockRefsHidden}

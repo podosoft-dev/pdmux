@@ -243,6 +243,19 @@ It costs a network round trip per repository, so it never rides the periodic pas
 person presses the button, as its own pass, and a host with one unreachable remote cannot slow the
 collector that has nothing to do with it.
 
+The shared Git dock owns a separate browser snapshot loop: it rereads the current host's repository
+list and selected graph every five seconds while visible, including in a detached window. It pauses
+when the document or panel is hidden and invalidates obsolete responses on target changes. Refresh
+does not reopen commit details or fetch trees/blobs; only an already-open mutable working diff is reread.
+
+`POST /hosts/:hostId/collect` acknowledges dispatch, not completion. A manual request first reads a
+baseline, then observes results every second for up to one minute. Remote checks compare the remote
+timestamp and payload, independently of local graph changes. Content comparisons also cover agent
+timestamps with second precision. Each snapshot HTTP request has a fifteen-second transport limit.
+`lastSnapshotAt` is not an atomic ingestion revision: partial detail frames update it too, and full
+ingestion can publish it before graph rows. Therefore an unchanged timestamp never suppresses later
+graph reads. Timeouts preserve the last view, allow retry, and leave ordinary visible-panel polling on.
+
 **What it cannot answer** is how far behind you are. Counting commits needs the objects, and those
 only arrive with a fetch — so a moved branch is reported as *moved*, with a number only when the
 local checkout happens to already hold that object. Turning "the shas differ" into "3 commits
