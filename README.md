@@ -57,6 +57,11 @@ it. The right-hand panel groups local, remote and tags, and marks each branch wi
 far it has diverged. Diverged branches sort to the top, and a branch whose upstream has disappeared
 gets its own badge.
 
+The dock and detached Git window refresh automatically every five seconds while visible, preserving
+the selected commit and open file. **Read again** requests an immediate collection; **Check the remote**
+reads current remote refs without fetching objects. Both wait for updated results, with a one-minute
+limit and a retryable notice if nothing arrives. Background tabs and hidden panels pause automatic reads.
+
 The collector is **read-only**. `fetch`, `gc` and `checkout` do not appear in the code at all, and
 every git call carries `GIT_OPTIONAL_LOCKS=0` so even `git status` leaves the index alone — not
 disturbing a checkout you are working in is the premise. The trade is that remote branches are as of
