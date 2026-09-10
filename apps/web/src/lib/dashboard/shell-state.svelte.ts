@@ -258,6 +258,7 @@ export class ShellState {
     this.saver.flush();
     this.saver.dispose();
     this.relay.dispose();
+    this.files.transfers.dispose();
   }
 }
 

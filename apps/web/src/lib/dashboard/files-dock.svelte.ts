@@ -27,6 +27,7 @@ import {
 import type { FsDirView } from "@pdmux/ui";
 import type { FsFileView } from "./types";
 import { errorCode, filesApi } from "./api";
+import { FileTransferController } from "./file-transfers/controller.svelte";
 
 export interface FilesDockOptions {
   /** Overrides for the API calls, so a test needs no HTTP client. */
@@ -37,6 +38,9 @@ export interface FilesDockOptions {
 export type SelectMode = "single" | "toggle" | "range";
 
 export class FilesDock {
+  readonly transfers = new FileTransferController(undefined, (job): void => {
+    if (job.hostId === this.hostId && job.basePath === this.path) void this.refresh();
+  });
   hostId = $state<string | null>(null);
   /** Relative to the home directory; `''` is the home directory itself. */
   path = $state("");
@@ -218,7 +222,7 @@ export class FilesDock {
       this.selected = [name];
     }
 
-    const only = this.selected.length === 1 && this.selected[0] === name;
+    const only = this.selected.length === 1 && this.selected[0] === name && !this.shown?.entries.find((entry) => entry.name === name)?.dir;
     const shape = only ? previewableAs(name) : null;
     this.file = null;
     this.fileLoading = false;
@@ -276,11 +280,12 @@ export class FilesDock {
    */
   async uploadFiles(files: readonly File[], onDone: () => void): Promise<void> {
     const hostId = this.hostId;
+    const basePath = this.path;
     if (!hostId || files.length === 0) return;
     for (const [index, file] of files.entries()) {
       this.upload = { name: file.name, sent: 0, total: file.size, queued: files.length - index - 1, error: null };
       try {
-        await this.#api.upload(hostId, this.join(file.name), file, (sent, total) => {
+        await this.#api.upload(hostId, basePath ? `${basePath}/${file.name}` : file.name, file, (sent, total) => {
           if (this.upload) this.upload = { ...this.upload, sent, total };
         });
       } catch (cause) {

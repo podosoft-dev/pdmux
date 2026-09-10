@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { FS_CHUNK_BYTES } from "@pdmux/protocol";
+import { FS_CHUNK_BYTES, FILE_TRANSFER_CHUNK_BYTES } from "@pdmux/protocol";
 import { AppException } from "@podosoft/podokit-contracts";
 import { Elysia } from "elysia";
 import type { AuthSession } from "../auth/auth.service";
@@ -41,6 +41,56 @@ function application(overrides: Partial<PdmuxServices>): TestApplication {
 }
 
 describe("PDMUX HTTP boundary", () => {
+  it("[TC-PDFILE-004] keeps a slow commit alive beyond the server idle timeout", async (): Promise<void> => {
+    const commit = mock(async (): Promise<{ id: string }> => { await Bun.sleep(2100); return { id: "entry" }; });
+    const app = application({ fileTransfers: { commit } as unknown as PdmuxServices["fileTransfers"] }) as Elysia;
+    app.listen({ hostname: "127.0.0.1", port: 0, idleTimeout: 1 });
+    try {
+      const response = await fetch(`http://127.0.0.1:${app.server?.port}/hosts/host-1/file-transfers/job/entries/entry/commit`, { method: "POST" });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ id: "entry" });
+    } finally { await app.stop(true); }
+  });
+  it("[TC-PDFILE-004] authorizes transfer chunks before reading and enforces the binary cap", async (): Promise<void> => {
+    const owner = { userId: "user-1", organizationId: "personal:user-1", hostId: "host-1" };
+    const get = mock(async (): Promise<unknown> => ({}));
+    const chunk = mock(async (): Promise<unknown> => ({ offset: FILE_TRANSFER_CHUNK_BYTES }));
+    const app = application({ fileTransfers: { get, chunk } as unknown as PdmuxServices["fileTransfers"] });
+    const url = "http://localhost/hosts/host-1/file-transfers/job/entries/entry/chunk";
+    const request = (size: number): Request => new Request(url, {
+      method: "PUT", headers: { "content-type": "application/octet-stream", "x-transfer-offset": "1048576", "x-transfer-sha256": "digest" },
+      body: new Uint8Array(size).fill(255),
+    });
+    const response = await app.handle(request(FILE_TRANSFER_CHUNK_BYTES));
+    expect(response.status).toBe(200);
+    expect(get).toHaveBeenCalledWith(owner, "job");
+    expect(chunk).toHaveBeenCalledWith(owner, "job", "entry", 1048576, "digest", expect.any(Uint8Array));
+    const large = await app.handle(request(FILE_TRANSFER_CHUNK_BYTES + 1));
+    expect(large.status).toBe(413);
+    expect(chunk).toHaveBeenCalledTimes(1);
+    const denied = application({
+      auth: { requireSession: async (): Promise<never> => { throw new AppException("UNAUTHORIZED", "Unauthorized", 401); } } as unknown as PdmuxServices["auth"],
+      fileTransfers: { get, chunk } as unknown as PdmuxServices["fileTransfers"],
+    });
+    expect((await denied.handle(request(7))).status).toBe(401);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("[TC-PDFILE-004] validates transfer manifests and scopes creation from the session", async (): Promise<void> => {
+    const create = mock(async (_owner: unknown, input: unknown): Promise<unknown> => input);
+    const app = application({ fileTransfers: { create } as unknown as PdmuxServices["fileTransfers"] });
+    const input = { id: "11111111-1111-4111-8111-111111111111", direction: "upload", basePath: "folder", selection: [] };
+    const response = await app.handle(new Request("http://localhost/hosts/host-1/file-transfers", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input),
+    }));
+    expect(response.status).toBe(200);
+    expect(create).toHaveBeenCalledWith({ userId: "user-1", organizationId: "personal:user-1", hostId: "host-1" }, input);
+    const malformed = await app.handle(new Request("http://localhost/hosts/host-1/file-transfers/job/manifest", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entries: [{ kind: "link" }] }),
+    }));
+    expect(malformed.status).toBe(422);
+  });
+
   it("resolves the authenticated personal scope for host lists", async () => {
     const list = mock(async (scopeId: string) => [{ id: "host-1", scopeId }]);
     const response = await application({

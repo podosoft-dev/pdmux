@@ -12,6 +12,9 @@ spec:
     metadata:
       labels: { app: api }
     spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: api
           # Placeholder. Use one immutable, stable SemVer tag for api and web.
@@ -21,9 +24,19 @@ spec:
           envFrom:
             - configMapRef: { name: app-config }
             - secretRef: { name: app-secrets }
+          env:
+            - name: FILE_TRANSFER_DIR
+              value: /data/file-transfers
+          volumeMounts:
+            - name: file-transfers
+              mountPath: /data/file-transfers
           readinessProbe:
             httpGet: { path: /health/ready, port: 3000 }
             initialDelaySeconds: 5
           livenessProbe:
             httpGet: { path: /health, port: 3000 }
             initialDelaySeconds: 15
+      volumes:
+        - name: file-transfers
+          persistentVolumeClaim:
+            claimName: file-transfers

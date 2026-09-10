@@ -148,6 +148,7 @@ services:
       CORS_ORIGIN: https://${PDMUX_DOMAIN}
       ADMIN_EMAILS: ${ADMIN_EMAILS:?set ADMIN_EMAILS in .env}
       AUDIT_LOG_ENABLED: "true"
+      FILE_TRANSFER_DIR: /data/file-transfers
     restart: "no"
 
   api:
@@ -157,6 +158,8 @@ services:
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     environment: *api-env
+    volumes:
+      - file-transfers:/data/file-transfers
     restart: unless-stopped
 
   # Caddy routes the two WebSocket paths directly to the API. All HTTP traffic
@@ -187,6 +190,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  file-transfers:
   postgres:
   redis:
   minio:

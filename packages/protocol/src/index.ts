@@ -12,6 +12,8 @@
  * breaking change bumps PROTOCOL_VERSION and the server keeps the old reader.
  */
 import { z } from 'zod';
+import { fsTransferRequestSchema, fsTransferResultSchema } from './file-transfer.js';
+export * from './file-transfer.js';
 
 export const PROTOCOL_VERSION = 1;
 
@@ -743,6 +745,7 @@ export const agentCapabilitySchema = z.enum([
 	 * browse, and that is a fact about the host rather than an error to report.
 	 */
 	'files',
+	'files-transfer-v1',
 ]);
 export type AgentCapability = z.infer<typeof agentCapabilitySchema>;
 
@@ -913,6 +916,7 @@ export type ExecResult = z.infer<typeof execResultSchema>;
 
 /** Agent -> server. */
 export const agentUpstreamSchema = z.discriminatedUnion('type', [
+	z.object({ type: z.literal('fsTransferResult'), result: fsTransferResultSchema }),
 	z.object({ type: z.literal('hello'), hello: agentHelloSchema }),
 	z.object({ type: z.literal('heartbeat'), heartbeat: heartbeatSchema }),
 	z.object({ type: z.literal('repos'), ts: epochSeconds, repos: z.array(repoSnapshotSchema).max(64) }),
@@ -1051,6 +1055,7 @@ export const agentUpdateSchema = z.object({
 export type AgentUpdate = z.infer<typeof agentUpdateSchema>;
 
 export const agentDownstreamSchema = z.discriminatedUnion('type', [
+	z.object({ type: z.literal('fsTransfer'), transfer: fsTransferRequestSchema }),
 	z.object({
 		type: z.literal('welcome'),
 		hostId: z.string().uuid(),

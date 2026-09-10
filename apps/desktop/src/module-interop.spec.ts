@@ -25,7 +25,10 @@ describe("[TC-PDDESKTOP-009] desktop Node module interoperability", () => {
         return { contextBridge: { exposeInMainWorld: (key: string, value: unknown): void => { exposed[key] = value; } } };
       },
     });
-    expect(exposed).toEqual({ pdmuxDesktop: { isDesktop: true, platform: "darwin" } });
+    expect(exposed.pdmuxDesktop).toMatchObject({ isDesktop: true, platform: "darwin" });
+    const bridge = exposed.pdmuxDesktop as { transfers: Record<string, unknown> };
+    expect(Object.keys(bridge.transfers).sort()).toEqual(["cancelDownload", "download", "pauseDownload", "pickFolder", "read", "release", "status"]);
+    expect(Object.values(bridge.transfers).every((value) => typeof value === "function")).toBe(true);
     expect(main).toContain("sandbox: true");
     expect(main).toContain("contextIsolation: true");
   });

@@ -341,6 +341,15 @@ overruling a type that was itself guessed from a name.
 
 ---
 
+## 4-2. Folder transfers are durable jobs
+
+Folder transfer state lives in the API database, not in the currently displayed directory. The
+shared web controller handles manifests, fingerprints, conflicts and progress; desktop adapters
+provide user-selected file reads and native download persistence. Agent staging is published
+atomically per file. Ready ZIP64 archives use a private, persistent spool and stable range ETags.
+No renderer materializes an entire archive in memory. The additive `files-transfer-v1` capability
+keeps old agents on their single-file path. See [`FILE-TRANSFERS.md`](FILE-TRANSFERS.md).
+
 ## 5. Why the components are separate packages
 
 The dashboard UI is not only this app's. Another project should be able to take just the "host card"

@@ -76,7 +76,8 @@ const (
 	// ⚠ IT ALSO MEANS THE HOME EXISTS. It is announced only when `$HOME` resolved
 	// to a real directory — a service account with no home has nothing to browse,
 	// and that is a fact about the host rather than an error to report.
-	CapabilityFiles AgentCapability = "files"
+	CapabilityFiles         AgentCapability = "files"
+	CapabilityFilesTransfer AgentCapability = "files-transfer-v1"
 )
 
 // RestartMode names what would start the agent again after it replaces its own
@@ -517,6 +518,40 @@ type GitBlob struct {
 // that cannot leave the home directory, so a link pointing outside it simply
 // fails to open — and a reader who was not told it was a link reads that refusal
 // as a bug. Saying so up front turns it into a fact about the file.
+type FsTransferEntry struct {
+	Path     string `json:"path"`
+	Kind     string `json:"kind"`
+	Size     int    `json:"size"`
+	Modified string `json:"modified"`
+}
+
+type FsTransferRequest struct {
+	RequestID  string `json:"requestId"`
+	TransferID string `json:"transferId"`
+	EntryID    string `json:"entryId"`
+	Action     string `json:"action"`
+	Path       string `json:"path"`
+	Offset     int    `json:"offset"`
+	Size       int    `json:"size"`
+	Data       string `json:"data"`
+	Digest     string `json:"digest"`
+	Modified   string `json:"modified"`
+	Replace    bool   `json:"replace"`
+}
+
+type FsTransferResult struct {
+	RequestID  string            `json:"requestId"`
+	TransferID string            `json:"transferId"`
+	EntryID    string            `json:"entryId"`
+	Entries    []FsTransferEntry `json:"entries"`
+	Next       *int              `json:"next"`
+	Offset     int               `json:"offset"`
+	Committed  bool              `json:"committed"`
+	Data       string            `json:"data"`
+	Digest     string            `json:"digest"`
+	Error      *string           `json:"error"`
+}
+
 type FsEntry struct {
 	Name    string `json:"name"`
 	Dir     bool   `json:"dir"`

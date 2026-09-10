@@ -2,6 +2,11 @@
 
 These are **illustrative**. `podo deploy` does not read or apply them.
 
+For hand-managed deployments, apply `file-transfers-pvc.yaml` before the API Deployment. It mounts a
+private 25 GiB ZIP spool with filesystem group 1000 for the non-root API user. Keep one API replica,
+retain the claim across rollouts, and adjust storage class/capacity as needed. Rendered deployments
+need an equivalent volume configured explicitly; see `docs/FILE-TRANSFERS.md`.
+
 For a real deployment, initialize a profile and let PodoKit render the manifests it
 will actually apply — with image digests, probes, disruption budgets, a migration
 Job, and a confirmation hash:

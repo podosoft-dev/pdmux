@@ -30,8 +30,10 @@ describe("[TC-PDWEB-030] the proxy carries a file download end to end", () => {
     // ⚠ DROPPED HERE, THE FAILURE IS SILENT AND EXPENSIVE: the API answers 200
     // from byte zero, the browser starts the file again, and the only symptom is
     // that a big download never finishes.
-    const { sent } = await roundTrip({ range: "bytes=1024-" }, {});
+    const { sent, response } = await roundTrip({ range: "bytes=1024-", "if-range": '"immutable"' }, { etag: '"immutable"' });
     expect(sent?.get("range")).toBe("bytes=1024-");
+    expect(sent?.get("if-range")).toBe('"immutable"');
+    expect(response.headers.get("etag")).toBe('"immutable"');
   });
 
   it("relays the headers that make it a file rather than a page", async () => {
@@ -54,5 +56,26 @@ describe("[TC-PDWEB-030] the proxy carries a file download end to end", () => {
     expect(response.headers.get("accept-ranges")).toBe("bytes");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.status).toBe(206);
+  });
+});
+
+describe("[TC-PDFILE-007] bounded transfer proxy", (): void => {
+  afterEach((): void => vi.unstubAllGlobals());
+  it("preserves binary chunks and refuses an oversized body before forwarding", async (): Promise<void> => {
+    const fetch = vi.fn(async (_url: string, init: RequestInit): Promise<Response> => {
+      expect(new Headers(init.headers).get("x-transfer-offset")).toBe("1048576");
+      expect(new Headers(init.headers).get("x-transfer-sha256")).toBe("digest");
+      expect(init.body).toEqual(new Uint8Array(1_048_576).fill(255));
+      return Response.json({ offset: 2097152 });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const url = "http://localhost/api/hosts/host/file-transfers/job/entries/entry/chunk";
+    const request = (size: number): Request => new Request(url, { method: "PUT", body: new Uint8Array(size).fill(255),
+      headers: { "x-transfer-offset": "1048576", "x-transfer-sha256": "digest" } });
+    const server = { timeout: vi.fn() };
+    expect((await proxyRequest(request(1_048_576), "http://localhost/chunk", undefined, server)).status).toBe(200);
+    expect(server.timeout.mock.calls.map((call) => call[1])).toEqual([60, 0]);
+    expect((await proxyRequest(request(1_048_577), "http://localhost/chunk")).status).toBe(413);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

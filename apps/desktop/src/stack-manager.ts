@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface RuntimeLayout {
   bunExecutable: string;
@@ -146,6 +146,8 @@ export class StackManager {
       DATABASE_URL: `sqlite://${this.layout.databasePath}`,
       PDMUX_DATA_DIR: this.layout.dataDirectory,
       PDMUX_FILES_DIR: this.layout.filesDirectory,
+      FILE_TRANSFER_DIR: join(this.layout.dataDirectory, "file-transfers"),
+      BODY_SIZE_LIMIT: "3M",
       AGENT_RELEASE_DIR: this.layout.agentReleaseDirectory,
       BETTER_AUTH_SECRET: secret,
       BETTER_AUTH_URL: apiUrl,

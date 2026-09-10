@@ -4,6 +4,8 @@ import { AppException } from "@podosoft/podokit-contracts";
 import { plainToInstance } from "class-transformer";
 import { validateSync } from "class-validator";
 import { Elysia } from "elysia";
+import { controlBody, createTransferBody, decisionBody, manifestBody, transferChunkBody } from "../file-transfers/http-schema";
+import type { TransferOwner } from "../file-transfers/file-transfers.service";
 import { CreateAgentEnrollmentDto } from "../agents/dto/create-agent-enrollment.dto";
 import { CreateAgentTokenDto } from "../agents/dto/create-agent-token.dto";
 import { EnrollAgentDto } from "../agents/dto/enroll-agent.dto";
@@ -76,6 +78,10 @@ function userId(session: AuthSession): string {
     throw new AppException("AUTH_REQUIRED", "No user is attached to the session", 401);
   }
   return session.user.id;
+}
+
+function transferOwner(session: AuthSession, hostId: string): TransferOwner {
+  return { userId: userId(session), organizationId: resolveScopeId(session), hostId };
 }
 
 function assertFilePath(path: string): string {
@@ -639,6 +645,65 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
           summary: result.summary,
         },
       }));
+    })
+    .get("/hosts/:hostId/file-transfers", async ({ request, params }) => {
+      const session = await sessionFor(services, request);
+      return services.fileTransfers.list(transferOwner(session, params.hostId));
+    })
+    .post("/hosts/:hostId/file-transfers", async ({ request, params, body }) => {
+      const session = await sessionFor(services, request);
+      return audit(services, request, session, "host.files.transfer.create",
+        () => services.fileTransfers.create(transferOwner(session, params.hostId), body),
+        (result) => ({ type: "host", id: params.hostId, metadata: { transferId: result.id, direction: result.direction } }));
+    }, { body: createTransferBody })
+    .get("/hosts/:hostId/file-transfers/:id", async ({ request, params }) => {
+      const session = await sessionFor(services, request);
+      return { ...await services.fileTransfers.get(transferOwner(session, params.hostId), params.id) };
+    })
+    .get("/hosts/:hostId/file-transfers/:id/entries", async ({ request, params }) => {
+      const session = await sessionFor(services, request);
+      return services.fileTransfers.entries(transferOwner(session, params.hostId), params.id);
+    })
+    .post("/hosts/:hostId/file-transfers/:id/manifest", async ({ request, params, body }) => {
+      const session = await sessionFor(services, request);
+      return { ...await services.fileTransfers.manifest(transferOwner(session, params.hostId), params.id, body.entries) };
+    }, { body: manifestBody })
+    .post("/hosts/:hostId/file-transfers/:id/control", async ({ request, params, body }) => {
+      const session = await sessionFor(services, request);
+      return audit(services, request, session, "host.files.transfer.control",
+        () => services.fileTransfers.control(transferOwner(session, params.hostId), params.id, body.action),
+        (result) => ({ type: "host", id: params.hostId, metadata: { transferId: result.id, action: body.action } }));
+    }, { body: controlBody })
+    .post("/hosts/:hostId/file-transfers/:id/entries/:entryId/reconcile", async ({ request, params, server }) => {
+      const session = await sessionFor(services, request);
+      server?.timeout(request, 0);
+      return { ...await services.fileTransfers.reconcile(transferOwner(session, params.hostId), params.id, params.entryId) };
+    })
+    .post("/hosts/:hostId/file-transfers/:id/entries/:entryId/decision", async ({ request, params, body, server }) => {
+      const session = await sessionFor(services, request);
+      server?.timeout(request, 0);
+      return { ...await services.fileTransfers.decide(transferOwner(session, params.hostId), params.id, params.entryId, body.action) };
+    }, { body: decisionBody })
+    .put("/hosts/:hostId/file-transfers/:id/entries/:entryId/chunk", async ({ request, params, server }) => {
+      const session = await sessionFor(services, request);
+      server?.timeout(request, 60);
+      const owner = transferOwner(session, params.hostId);
+      await services.fileTransfers.get(owner, params.id);
+      const bytes = await transferChunkBody(request);
+      server?.timeout(request, 0);
+      return { ...await services.fileTransfers.chunk(owner, params.id, params.entryId,
+        Number(request.headers.get("x-transfer-offset") ?? "NaN"), request.headers.get("x-transfer-sha256") ?? "", bytes) };
+    }, { parse: "none" })
+    .post("/hosts/:hostId/file-transfers/:id/entries/:entryId/commit", async ({ request, params, server }) => {
+      const session = await sessionFor(services, request);
+      server?.timeout(request, 0);
+      return audit(services, request, session, "host.files.transfer.commit",
+        () => services.fileTransfers.commit(transferOwner(session, params.hostId), params.id, params.entryId),
+        (result) => ({ type: "host", id: params.hostId, metadata: { transferId: params.id, entryId: result.id } }));
+    })
+    .get("/hosts/:hostId/file-transfers/:id/download", async ({ request, params }) => {
+      const session = await sessionFor(services, request);
+      return services.fileTransfers.download(transferOwner(session, params.hostId), params.id, request);
     })
     .get("/hosts/:hostId/files", async ({ request, params, query }) => {
       const session = await sessionFor(services, request);

@@ -271,6 +271,36 @@ func (a *Agent) fsGetPass(_ context.Context, id string, path string, offset int,
 // the surface most likely to carry a secret — the same argument the MCP gateway
 // makes for command arguments — so what is recorded is that a write happened and
 // where, and the answer frame carries no content either.
+func (a *Agent) transferCleanup(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		if root, err := fs.Open(term.HomeDir()); err == nil {
+			_ = fs.CleanupTransfers(root, time.Now())
+			root.Close()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (a *Agent) fsTransferPass(_ context.Context, request protocol.FsTransferRequest) {
+	root, err := fs.Open(term.HomeDir())
+	result := protocol.NewFsTransferResult()
+	result.RequestID, result.TransferID, result.EntryID = request.RequestID, request.TransferID, request.EntryID
+	if err != nil {
+		code := "FILES_TRANSFER_HOME"
+		result.Error = &code
+	} else {
+		defer root.Close()
+		result = fs.Transfer(root, request)
+	}
+	a.client.Send(&protocol.FsTransferResultFrame{Result: result})
+}
+
 func (a *Agent) fsPutPass(_ context.Context, id string, path string, offset int, data string, create bool) {
 	wrote := protocol.NewFsWrote()
 	wrote.RequestID = id

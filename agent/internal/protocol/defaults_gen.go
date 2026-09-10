@@ -604,6 +604,102 @@ func (x *FsRemoved) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, (*plain)(x))
 }
 
+// NewFsTransferEntry returns a new FsTransferEntry, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewFsTransferEntry() FsTransferEntry {
+	var value FsTransferEntry
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero FsTransferEntry.
+func (x *FsTransferEntry) applyDefaults() {
+	x.Modified = ""
+	x.Size = 0
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so FsTransferEntry inside a list is defaulted exactly like one at the root.
+func (x *FsTransferEntry) UnmarshalJSON(data []byte) error {
+	*x = FsTransferEntry{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain FsTransferEntry
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewFsTransferRequest returns a new FsTransferRequest, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewFsTransferRequest() FsTransferRequest {
+	var value FsTransferRequest
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero FsTransferRequest.
+func (x *FsTransferRequest) applyDefaults() {
+	x.Data = ""
+	x.Digest = ""
+	x.Modified = ""
+	x.Offset = 0
+	x.Replace = false
+	x.Size = 0
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so FsTransferRequest inside a list is defaulted exactly like one at the root.
+func (x *FsTransferRequest) UnmarshalJSON(data []byte) error {
+	*x = FsTransferRequest{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain FsTransferRequest
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewFsTransferResult returns a new FsTransferResult, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewFsTransferResult() FsTransferResult {
+	var value FsTransferResult
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero FsTransferResult.
+func (x *FsTransferResult) applyDefaults() {
+	x.Committed = false
+	x.Data = ""
+	x.Digest = ""
+	x.Entries = []FsTransferEntry{}
+	x.Error = nil
+	x.Next = nil
+	x.Offset = 0
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so FsTransferResult inside a list is defaulted exactly like one at the root.
+func (x *FsTransferResult) UnmarshalJSON(data []byte) error {
+	*x = FsTransferResult{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain FsTransferResult
+	return json.Unmarshal(data, (*plain)(x))
+}
+
 // NewFsWrote returns a new FsWrote, seeded with every default the contract declares.
 // Build values this way rather than as a struct literal: a literal leaves
 // slices nil (they marshal to null, which the server rejects) and non-zero

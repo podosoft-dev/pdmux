@@ -1,4 +1,5 @@
 import type { MigrationInterface } from "typeorm";
+import { AddFileTransfers1731700000000 } from "../migrations/1731700000000-AddFileTransfers";
 import { InitAuditLogs1720300000000 } from "../migrations/1720300000000-InitAuditLogs";
 import { InitAppSettings1720400000000 } from "../migrations/1720400000000-InitAppSettings";
 import { InitAuthConfig1720500000000 } from "../migrations/1720500000000-InitAuthConfig";
@@ -42,4 +43,5 @@ export const POSTGRES_MIGRATIONS: Array<new () => MigrationInterface> = [
   AddRepoRemoteCheck1731400000000,
   AddHostMetricSwap1731500000000,
   AddServiceExposures1731600000000,
+  AddFileTransfers1731700000000,
 ];

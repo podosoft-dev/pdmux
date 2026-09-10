@@ -1,4 +1,5 @@
 import type { DataSource } from "typeorm";
+import { FileTransfersService } from "../file-transfers/file-transfers.service";
 import { AgentAckService } from "../agents/agent-ack.service";
 import { AgentAuthFailure } from "../agents/agent-auth-failure.entity";
 import { AgentAuthFailuresService } from "../agents/agent-auth-failures.service";
@@ -100,6 +101,7 @@ export interface PdmuxServices {
   agentIngest: AgentIngestService;
   agentExec: AgentExecService;
   agentFiles: AgentFilesService;
+  fileTransfers: FileTransfersService;
   agentUpdates: AgentUpdateService;
   terminalRelay: TerminalRelayService;
   terminalMux: TerminalMuxController;
@@ -184,6 +186,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
   const agentAck = new AgentAckService(git, agentRegistry);
   const agentExec = new AgentExecService(agentRegistry, hosts);
   const agentFiles = new AgentFilesService(agentRegistry, hosts);
+  const fileTransfers = new FileTransfersService(dataSource, agentFiles, hosts);
   const agentConfig = new AgentConfigService(fleetSettings, hostServices, hostGitRoots, cloudflare);
   const disconnect = new AgentDisconnectService(hosts, agentRegistry);
   const agentTokens = new AgentTokensService(dataSource.getRepository(AgentToken), hosts, disconnect);
@@ -253,6 +256,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
   jobs.register(METRICS_QUEUE, METRICS_PRUNE_JOB, () => metricsRetention.runOnce());
   services.onStart(async () => {
     await initializeApplicationDataSource(dataSource);
+    await fileTransfers.initialize();
     hosts.setConnectedProbe((hostId) => agentRegistry.isConnected(hostId));
     cloudflare.connect();
     agentEnrollments.connect();
@@ -267,6 +271,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
     dataSource,
     async () => {
       terminalRelay.detach();
+      await fileTransfers.close();
       if (dataSource.isInitialized) await dataSource.destroy();
     },
   );
@@ -292,6 +297,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
     agentExec,
     agentFiles,
     agentUpdates,
+    fileTransfers,
     terminalRelay,
     terminalMux,
     prefs,

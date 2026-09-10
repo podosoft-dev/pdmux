@@ -17,12 +17,14 @@ import { desktopMessages } from "./i18n.js";
 import { certificateMatches, isAllowedAppNavigation, isAllowedExternalUrl } from "./security.js";
 import { StackManager, type RuntimeLayout } from "./stack-manager.js";
 import { UpdateCoordinator } from "./updater.js";
+import { DesktopFileTransfers } from "./file-transfers.js";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
 let mainWindow: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let stack: StackManager | undefined;
+let fileTransfers: DesktopFileTransfers | undefined;
 let quitting = false;
 let restartAttempts = 0;
 
@@ -129,7 +131,10 @@ async function initialize(): Promise<void> {
       const delay = 1_000 * 2 ** restartAttempts;
       restartAttempts += 1;
       setTimeout(() => {
-        void stack?.restart().then(({ webUrl }) => mainWindow?.loadURL(webUrl)).catch((error: unknown) => {
+        void stack?.restart().then(({ webUrl }) => {
+          fileTransfers?.setAppUrl(webUrl);
+          return mainWindow?.loadURL(webUrl);
+        }).catch((error: unknown) => {
           logError("Restart desktop runtime", error);
         });
       }, delay);
@@ -143,6 +148,8 @@ async function initialize(): Promise<void> {
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   const window = secureWindow(appUrl);
   mainWindow = window;
+  fileTransfers = new DesktopFileTransfers(window, session.defaultSession, appUrl, userData);
+  await fileTransfers.initialize();
   window.on("close", (event) => {
     if (quitting || !config.closeToTray) return;
     event.preventDefault();
@@ -201,11 +208,13 @@ if (!app.requestSingleInstanceLock()) {
   app.on("activate", () => mainWindow?.show());
   app.on("before-quit", () => { quitting = true; });
   app.on("will-quit", (event) => {
-    if (!stack) return;
+    if (!stack && !fileTransfers) return;
     event.preventDefault();
     const running = stack;
+    const transfers = fileTransfers;
     stack = undefined;
-    void running.stop().finally(() => app.exit(0));
+    fileTransfers = undefined;
+    void Promise.resolve(transfers?.close()).finally(() => running?.stop()).finally(() => app.exit(0));
   });
   void app.whenReady().then(initialize).catch((error: unknown) => {
     logError("Initialize desktop application", error);

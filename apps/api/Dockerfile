@@ -50,6 +50,8 @@ COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/scripts ./apps/api/scripts
 COPY --from=agent /src/apps/web/static/agent ./agent-releases
 ENV AGENT_RELEASE_DIR=/app/agent-releases
+ENV FILE_TRANSFER_DIR=/data/file-transfers
+RUN mkdir -p /data/file-transfers && chown bun:bun /data/file-transfers && chmod 700 /data/file-transfers
 WORKDIR /app/apps/api
 USER bun
 EXPOSE 3000

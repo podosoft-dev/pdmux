@@ -489,6 +489,19 @@ contract.
 
 ---
 
+## C6-5. Durable folder transfers
+
+`files-transfer-v1` adds `fsTransfer` / `fsTransferResult` without changing legacy file frames.
+Requests and replies pair by request ID, transfer ID, entry ID and authenticated host. Actions cover
+paged listing, metadata, directory creation, chunk reads/writes, commit, discard and touch. Binary
+chunks are capped at 1 MiB before base64 encoding; list pages at 250 entries. Results acknowledge
+durable offsets and return stable error codes. `packages/protocol/src/file-transfer.ts` is the
+schema source for TypeScript and generated Go validation.
+
+Deploy the API before upgrading agents to advertise the new capability. Older agents continue to
+use existing frames against the new API. See [`FILE-TRANSFERS.md`](FILE-TRANSFERS.md) for fingerprints,
+HTTP state transitions, resumable ZIP responses and ownership boundaries.
+
 ## C7. HTTP response conventions
 
 - Errors follow the **error envelope**:

@@ -3,6 +3,10 @@
 What you need to actually run pdmux — deployment, agent onboarding, retention, backups and
 incident response.
 
+Folder transfers need a private persistent API spool and the additive database migration before
+agents are upgraded. The API image uses `/data/file-transfers`; retain its volume across rollouts.
+See [folder transfer deployment and compatibility](FILE-TRANSFERS.md#limits-and-deployment).
+
 ---
 
 ## 1. Deployment shape
