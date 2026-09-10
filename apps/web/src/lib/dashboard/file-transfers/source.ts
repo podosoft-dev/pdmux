@@ -1,4 +1,4 @@
-import { FILE_TRANSFER_CHUNK_BYTES, FILE_TRANSFER_MAX_BYTES, FILE_TRANSFER_MAX_ENTRIES, type FileTransferManifestEntry } from "@pdmux/protocol";
+import { FILE_TRANSFER_CHUNK_BYTES, FILE_TRANSFER_MAX_BYTES, FILE_TRANSFER_MAX_ENTRIES, type FileTransferManifestEntry } from "@pdmux/protocol/transfer-limits";
 
 export interface UploadSource {
   entries: FileTransferManifestEntry[];

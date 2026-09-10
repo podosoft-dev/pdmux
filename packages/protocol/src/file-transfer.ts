@@ -1,10 +1,6 @@
 import { z } from 'zod';
-
-export const FILE_TRANSFER_CAPABILITY = 'files-transfer-v1';
-export const FILE_TRANSFER_CHUNK_BYTES = 1_048_576;
-export const FILE_TRANSFER_MAX_ENTRIES = 10_000;
-export const FILE_TRANSFER_MAX_BYTES = 10 * 1024 ** 3;
-export const FILE_TRANSFER_TTL_MS = 24 * 60 * 60 * 1000;
+import { FILE_TRANSFER_CHUNK_BYTES, FILE_TRANSFER_MAX_BYTES } from './transfer-limits.js';
+export * from './transfer-limits.js';
 
 export const fsTransferEntrySchema = z.object({
 	path: z.string().max(1024),

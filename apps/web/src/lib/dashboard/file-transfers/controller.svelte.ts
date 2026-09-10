@@ -1,4 +1,4 @@
-import { FILE_TRANSFER_CHUNK_BYTES, type FileTransferEntryView, type FileTransferView } from "@pdmux/protocol";
+import { FILE_TRANSFER_CHUNK_BYTES, type FileTransferEntryView, type FileTransferView } from "@pdmux/protocol/transfer-limits";
 import { transferApi } from "./api";
 import { chunkDigest, desktopTransfers, fingerprintSource, type NativeDownload, type ScanProgress, type UploadSource } from "./source";
 

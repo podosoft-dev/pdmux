@@ -4,6 +4,10 @@ The file explorer transfers folder trees, including empty directories, with a sh
 controller. The destination is captured at upload start; navigating to another directory or host
 does not redirect it. The remote boundary remains the agent account's home directory.
 
+Browser runtime imports use `@pdmux/protocol/transfer-limits`, a schema-free entry point sharing
+the server's constants. Agent validation remains in the canonical protocol schemas. The production
+smoke test imports the emitted transfer controller as well as the terminal relay before serving a route.
+
 ## Using the explorer
 
 - **Upload folder** includes the selected directory itself. You can also drop files and folders

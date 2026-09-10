@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import * as browserLimits from '../src/transfer-limits.js';
+import * as canonical from '../src/index.js';
 import { agentDownstreamSchema, agentUpstreamSchema, fsTransferRequestSchema, fsTransferResultSchema } from '../src/index.js';
 
 const ids = {
@@ -8,6 +11,14 @@ const ids = {
 };
 
 describe('[TC-PDFILE-003] bounded transfer contract', (): void => {
+	it('shares browser limits without loading the schema runtime', (): void => {
+		for (const [key, value] of Object.entries(browserLimits)) {
+			expect(value).toBe(canonical[key as keyof typeof canonical]);
+		}
+		const source = readFileSync(new URL('../src/transfer-limits.ts', import.meta.url), 'utf8');
+		expect(source).not.toMatch(/\bimport\s+(?!type\b)/);
+		expect(source).not.toMatch(/export\s+(?!type\b)[^;]*\bfrom\s/);
+	});
 	it('defaults optional request and result fields', (): void => {
 		const transfer = fsTransferRequestSchema.parse({ ...ids, action: 'stat', path: 'folder/file' });
 		expect(transfer.offset).toBe(0);

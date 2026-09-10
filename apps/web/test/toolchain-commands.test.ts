@@ -39,7 +39,8 @@ describe("Bun toolchain commands", () => {
     }
   });
 
-  it("loads the final terminal relay chunk during production smoke", () => {
+  it("loads the final terminal and transfer chunks during production smoke", () => {
     expect(read("tools/smoke-web-build.mjs")).toContain("src/lib/dashboard/terminal-relay.ts");
+    expect(read("tools/smoke-web-build.mjs")).toContain("src/lib/dashboard/file-transfers/controller.svelte.ts");
   });
 });

@@ -15,7 +15,7 @@
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import UploadIcon from "@lucide/svelte/icons/upload";
   import FolderUpIcon from "@lucide/svelte/icons/folder-up";
-  import { FILE_TRANSFER_CAPABILITY } from "@pdmux/protocol";
+  import { FILE_TRANSFER_CAPABILITY } from "@pdmux/protocol/transfer-limits";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import { Button } from "#lib/components/ui/button/index.js";

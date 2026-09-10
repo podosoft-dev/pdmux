@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const buildRoot = new URL("../apps/web/build/", import.meta.url).pathname;
+const requiredSources = ["src/lib/dashboard/terminal-relay.ts", "src/lib/dashboard/file-transfers/controller.svelte.ts"];
+const importedSources = new Set();
 
 async function importLazyRelayChunks(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -20,8 +22,10 @@ async function importLazyRelayChunks(directory) {
       imported += await importLazyRelayChunks(path);
     } else if (entry.name.endsWith(".js.map")) {
       const sourceMap = await readFile(path, "utf8");
-      if (sourceMap.includes("src/lib/dashboard/terminal-relay.ts")) {
+      const matched = requiredSources.filter((source) => sourceMap.includes(source));
+      if (matched.length) {
         await import(pathToFileURL(path.slice(0, -4)).href);
+        for (const source of matched) importedSources.add(source);
         imported += 1;
       }
     }
@@ -31,6 +35,9 @@ async function importLazyRelayChunks(directory) {
 
 const relayChunks = await importLazyRelayChunks(buildRoot);
 if (relayChunks === 0) throw new Error("web build did not contain the terminal relay chunk");
+for (const source of requiredSources) {
+  if (!importedSources.has(source)) throw new Error(`web build did not contain ${source}`);
+}
 
 const cwd = new URL("../apps/web/", import.meta.url).pathname;
 const child = Bun.spawn(["bun", "./build"], {
