@@ -7,6 +7,7 @@ import { createAppDataSource, createDataSourceOptions } from "../src/database/da
 import { POSTGRES_MIGRATIONS } from "../src/database/migrations";
 import { assertMigrationsApplied, initializeApplicationDataSource } from "../src/database/schema-readiness";
 import { Host } from "../src/hosts/host.entity";
+import { FileTransfer, FileTransferEntry } from "../src/file-transfers/file-transfer.entity";
 
 if (process.env.PDMUX_MIGRATION_TEST_ISOLATED !== "1" || process.env.POSTGRES_HOST !== "127.0.0.1") {
   throw new Error("Run this destructive fixture only through bun run test:migrations");
@@ -62,7 +63,9 @@ describe("[TC-PDHOST-030] published migration upgrade path", () => {
       expect(await source.showMigrations()).toBe(false);
 
       // Recreate the application schema shipped by 0.11.5, retaining its migration ledger.
-      await source.undoLastMigration({ transaction: "all" });
+      while (await count("SELECT count(*) FROM migrations") > 19) {
+        await source.undoLastMigration({ transaction: "all" });
+      }
       expect(await count("SELECT count(*) FROM migrations")).toBe(19);
       await expect(initializeApplicationDataSource(runtime)).rejects.toThrow("pending migrations");
       expect(runtime.isInitialized).toBe(false);
@@ -101,6 +104,17 @@ describe("[TC-PDHOST-030] published migration upgrade path", () => {
       const host = await runtime.getRepository(Host).findOneByOrFail({ id: "00000000-0000-4000-8000-000000000001" });
       expect(host.connectorCapabilities).toEqual({ cloudflared: false });
       expect(host.agentVersion).toBe("0.1.23");
+      // Transfer counters must retain values beyond PostgreSQL's 32-bit integer range.
+      const transfer = await runtime.getRepository(FileTransfer).save({
+        id: "00000000-0000-4000-8000-000000000002", userId: "podokit", organizationId: "podokit",
+        hostId: host.id, direction: "upload", basePath: "", selection: [], state: "paused",
+        bytes: 4 * 1024 ** 3, totalBytes: 5 * 1024 ** 3, totalEntries: 1,
+        exclusions: [], updated: Date.now(), created: Date.now(),
+      });
+      await runtime.getRepository(FileTransferEntry).save({
+        id: "00000000-0000-4000-8000-000000000003", transferId: transfer.id, path: "file",
+        kind: "file", size: 5 * 1024 ** 3, offset: 4 * 1024 ** 3,
+      });
 
       // An old API can still INSERT without the new column and update its existing fields.
       await source.query(`INSERT INTO hosts ("organizationId", label) VALUES ('podokit', 'localhost')`);
@@ -112,6 +126,8 @@ describe("[TC-PDHOST-030] published migration upgrade path", () => {
       expect(await migrate()).toEqual({ code: 0, stderr: "" });
       expect(await snapshot()).toEqual(after);
       expect(await source.showMigrations()).toBe(false);
+      expect((await runtime.getRepository(FileTransfer).findOneByOrFail({ id: transfer.id })).bytes).toBe(4 * 1024 ** 3);
+      expect((await runtime.getRepository(FileTransferEntry).findOneByOrFail({ transferId: transfer.id })).offset).toBe(4 * 1024 ** 3);
     } finally {
       if (runtime.isInitialized) await runtime.destroy();
       if (source.isInitialized) await source.destroy();

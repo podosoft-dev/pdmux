@@ -14,6 +14,8 @@
   import DownloadIcon from "@lucide/svelte/icons/download";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import UploadIcon from "@lucide/svelte/icons/upload";
+  import FolderUpIcon from "@lucide/svelte/icons/folder-up";
+  import { FILE_TRANSFER_CAPABILITY } from "@pdmux/protocol/transfer-limits";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import { Button } from "#lib/components/ui/button/index.js";
@@ -24,6 +26,8 @@
   import type { FilesDock } from "../files-dock.svelte";
   import type { HostView } from "../types";
   import ConfirmDialog from "./confirm-dialog.svelte";
+  import FileTransferPanel from "./file-transfer-panel.svelte";
+  import { canPickFolder, captureDrop, pickFolder, sourceFromDroppedEntries, sourceFromFiles } from "../file-transfers/source";
 
   interface Props {
     files: FilesDock;
@@ -39,13 +43,18 @@
 
   // `files` is the panel's data; naming it twice keeps the callbacks readable.
   const filesDock = $derived(files);
-  const downloadable = $derived(files.selectedEntries.filter((entry) => !entry.dir).length);
+  const folderTransfers = $derived(hosts.find((host) => host.id === files.hostId)?.capabilities.includes(FILE_TRANSFER_CAPABILITY) ?? false);
+  const downloadable = $derived(folderTransfers ? files.selectedEntries.length : files.selectedEntries.filter((entry) => !entry.dir).length);
   const selectedDirs = $derived(files.selectedEntries.filter((entry) => entry.dir).length);
   const selectedCount = $derived(files.selectedEntries.length);
   const uploading = $derived(files.upload);
   const percent = $derived(
     uploading && uploading.total > 0 ? Math.min(100, Math.round((uploading.sent / uploading.total) * 100)) : 0,
   );
+  $effect(() => {
+    if (!folderTransfers) selecting = false;
+    if (files.hostId && folderTransfers) void files.transfers.load(files.hostId);
+  });
 
   /**
    * A column edge being dragged.
@@ -65,6 +74,7 @@
   let picker = $state<HTMLInputElement | null>(null);
   let dragging = $state(false);
   let confirmOpen = $state(false);
+  let selecting = $state(false);
   const names = $derived(
     files.selectedEntries
       .slice(0, 5)
@@ -74,7 +84,18 @@
 
   function send(list: FileList | null): void {
     const chosen = [...(list ?? [])];
-    if (chosen.length) void files.uploadFiles(chosen, () => onOpenDir(files.path));
+    if (!chosen.length || !files.hostId) return;
+    if (folderTransfers) void files.transfers.prepare(files.hostId, files.path, (progress) => sourceFromFiles(chosen, progress));
+    else void files.uploadFiles(chosen, () => onOpenDir(files.path));
+  }
+
+  function uploadFolder(): void {
+    if (files.hostId && folderTransfers) void files.transfers.prepare(files.hostId, files.path, pickFolder);
+  }
+  function openDirectory(path: string): void {
+    const entry = files.shown?.entries.find((entry) => (files.path ? files.path + "/" : "") + entry.name === path);
+    if (selecting && entry) files.select(entry.name, "toggle");
+    else onOpenDir(path);
   }
 
   /**
@@ -92,11 +113,17 @@
     event.preventDefault();
     dragging = false;
     if (!files.hostId) return;
-    // ⚠ ONLY FILES. A folder dropped from Finder or Explorer arrives as an entry
-    // with no contents here, and uploading it as a zero-byte file of the same
-    // name would be worse than refusing.
-    const dropped = [...(event.dataTransfer?.files ?? [])];
-    if (dropped.length) void files.uploadFiles(dropped, () => onOpenDir(files.path));
+    if (!event.dataTransfer) return;
+    const dropped = captureDrop(event.dataTransfer);
+    if (folderTransfers) {
+      void files.transfers.prepare(files.hostId, files.path, (progress) => dropped.entries.length
+        ? sourceFromDroppedEntries(dropped.entries, progress)
+        : sourceFromFiles(dropped.files, progress));
+    } else if (dropped.entries.some((entry) => entry.isDirectory)) {
+      toast.error(i18n.t.dash.files.transfers.upgrade);
+    } else if (dropped.files.length) {
+      void files.uploadFiles(dropped.files, () => onOpenDir(files.path));
+    }
   }
 
   function confirmDelete(): void {
@@ -168,18 +195,12 @@
     onNavigate(draft);
   }
 
-  /**
-   * Hand each selected file to the browser as a download.
-   *
-   * ⚠ ONE ANCHOR CLICK PER FILE, NOT AN ARCHIVE. Zipping would mean the server
-   * buffering a whole selection to produce one stream, and the moment it does
-   * that, progress and resume — the two things the offset transfer bought — are
-   * gone. Several downloads is what the browser is good at.
-   *
-   * ⚠ AND THEY ARE SPACED OUT. Fired in one tick, Chrome treats the burst as a
-   * pop-up flood and silently drops all but the first.
-   */
+  /** Single files retain their original format; folders and mixed selections use ZIP. */
   function downloadSelected(): void {
+    if (folderTransfers && filesDock.hostId && (selectedDirs > 0 || selectedCount > 1)) {
+      void filesDock.transfers.download(filesDock.hostId, filesDock.path, [...filesDock.selected]);
+      return;
+    }
     const files = filesDock.downloadUrls();
     files.forEach((file, index) => {
       setTimeout(() => {
@@ -222,7 +243,7 @@
       value={files.hostId ?? ""}
       onValueChange={(value: string) => onHostChange(value)}
     >
-      <Select.Trigger class="h-7 flex-1 text-xs" data-testid="files-host">{hostName}</Select.Trigger>
+      <Select.Trigger class="h-7 min-w-0 flex-1 text-xs" data-testid="files-host"><span class="truncate">{hostName}</span></Select.Trigger>
       <Select.Content>
         {#each hosts as host (host.id)}
           <Select.Item value={host.id}>{host.label}</Select.Item>
@@ -232,11 +253,17 @@
     <!-- The toolbar. Actions sit beside the host picker, and each is disabled
          rather than hidden when the selection cannot answer it — a control that
          appears and disappears as rows are clicked is harder to aim at. -->
+    {#if folderTransfers}
+      <Button variant={selecting ? "secondary" : "ghost"} size="sm" class="h-7 px-2"
+        aria-pressed={selecting} aria-label={i18n.t.dash.files.transfers.selectMode}
+        title={i18n.t.dash.files.transfers.selectMode} data-testid="files-select-mode"
+        onclick={() => (selecting = !selecting)}><CheckIcon class="size-4" /></Button>
+    {/if}
     <Button
       variant="ghost"
       size="sm"
       class="h-7 px-2"
-      disabled={!files.hostId || uploading !== null}
+      disabled={!files.hostId || uploading !== null || files.transfers.preparing !== null}
       title={i18n.t.dash.files.upload}
       aria-label={i18n.t.dash.files.upload}
       data-testid="files-upload"
@@ -246,7 +273,17 @@
       variant="ghost"
       size="sm"
       class="h-7 px-2"
-      disabled={downloadable === 0}
+      disabled={!folderTransfers || !canPickFolder() || files.transfers.preparing !== null}
+      title={!folderTransfers ? i18n.t.dash.files.transfers.upgrade : i18n.t.dash.files.transfers.folderUnavailable}
+      aria-label={i18n.t.dash.files.transfers.uploadFolder}
+      data-testid="files-upload-folder"
+      onclick={uploadFolder}><FolderUpIcon class="size-4" /></Button
+    >
+    <Button
+      variant="ghost"
+      size="sm"
+      class="h-7 px-2"
+      disabled={downloadable === 0 || (!folderTransfers && selectedDirs > 0)}
       title={fmt(i18n.t.dash.files.download, { count: String(downloadable) })}
       aria-label={i18n.t.dash.files.downloadLabel}
       data-testid="files-download"
@@ -274,8 +311,8 @@
       data-testid="files-delete"
       onclick={() => (confirmOpen = true)}><Trash2Icon class="size-4" /></Button
     >
-    <input
-      bind:this={picker}
+    <Input
+      bind:ref={picker}
       class="hidden"
       type="file"
       multiple
@@ -344,6 +381,11 @@
     </div>
   {/if}
 
+  {#if files.hostId && (!folderTransfers || !canPickFolder())}
+    <p class="text-muted-foreground shrink-0 border-b px-2 py-1 text-xs">
+      {!folderTransfers ? i18n.t.dash.files.transfers.upgrade : i18n.t.dash.files.transfers.folderUnavailable}
+    </p>
+  {/if}
   <FileExplorer
     dir={files.shown}
     path={files.path}
@@ -359,8 +401,8 @@
     scheme={colourScheme.current === "dark" ? "dark" : "light"}
     formatDate={listingDate}
     {t}
-    onOpenDir={(path: string) => onOpenDir(path)}
-    onSelect={(name: string, mode: SelectMode) => files.select(name, mode)}
+    onOpenDir={openDirectory}
+    onSelect={(name: string, mode: SelectMode) => files.select(name, selecting ? "toggle" : mode)}
     onClosePreview={() => files.closePreview()}
     onSort={(key: FsSortKey) => files.sortBy(key)}
     onColumnResize={dragColumn}
@@ -384,6 +426,7 @@
       {/if}
     </div>
   {/if}
+  <FileTransferPanel transfers={files.transfers} hostLabel={(id) => hosts.find((host) => host.id === id)?.label ?? id} />
 </div>
 
 <!--

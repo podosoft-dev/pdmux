@@ -138,7 +138,11 @@ export class AgentIngestService {
         // true for an instant, so the answer belongs to the request waiting on it
         // rather than to the host's row. A byte slice is the same — it is one
         // answer to one question a response stream is blocked on.
-        this.files.settle(fsAnswerOf(frame));
+        this.files.settle(fsAnswerOf(frame), hostId);
+        return { ok: true, type: frame.type };
+
+      case "fsTransferResult":
+        this.files.settle(frame.result, hostId);
         return { ok: true, type: frame.type };
 
       default:

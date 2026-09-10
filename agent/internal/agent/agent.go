@@ -336,7 +336,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	// collector wait behind the expensive one — and the heartbeat is the frame
 	// that decides whether the dashboard thinks this host is alive.
 	var timers sync.WaitGroup
-	timers.Add(3)
+	timers.Add(4)
 	go func() { defer timers.Done(); a.tick(ctx, "heartbeat", a.heartbeatReset, a.heartbeatPass) }()
 	go func() { defer timers.Done(); a.tick(ctx, "git", a.gitReset, a.gitPass) }()
 	// A third loop rather than a job on one of the two above: this one must report
@@ -344,6 +344,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	// thing it is measuring — a summary emitted from inside the git pass would
 	// always be read at the same phase of that pass and would never see the rest.
 	go func() { defer timers.Done(); a.transportStats(ctx) }()
+	go func() { defer timers.Done(); a.transferCleanup(ctx) }()
 
 	// Blocks until ctx ends, reconnecting on its own in between. Downstream
 	// frames are dispatched on THIS goroutine.
@@ -437,6 +438,7 @@ func BuildHello(hostname, version, serverURL string, ability protocol.AgentUpdat
 	if fsRoot, err := fs.Open(term.HomeDir()); err == nil {
 		fsRoot.Close()
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles)
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFilesTransfer)
 	}
 	hello.Update = ability
 	hello.Connectors.Cloudflared = true
@@ -485,6 +487,7 @@ func (a *Agent) onDownstream(frame protocol.DownstreamFrame) {
 		repoPath, sha, path := f.RepoPath, f.SHA, f.Path
 		a.spawnPass("blob", func(ctx context.Context) { a.blobPass(ctx, repoPath, sha, path) })
 	case *protocol.FsListFrame:
+		// Legacy operations remain available to older servers.
 		// Off the read loop like every other pass: a directory on a cold disk can
 		// take longer than the socket may be left unread.
 		id, path := f.RequestID, f.Path
@@ -501,6 +504,9 @@ func (a *Agent) onDownstream(frame protocol.DownstreamFrame) {
 	case *protocol.FsDeleteFrame:
 		id, path, recursive := f.RequestID, f.Path, f.Recursive
 		a.spawnPass("fsDelete", func(ctx context.Context) { a.fsDeletePass(ctx, id, path, recursive) })
+	case *protocol.FsTransferFrame:
+		request := f.Transfer
+		a.spawnPass("fsTransfer", func(ctx context.Context) { a.fsTransferPass(ctx, request) })
 	case *protocol.DetailAckFrame:
 		// The server HAS these, so they are never rebuilt again — across restarts.
 		a.ledger.Ack(f.RepoPath, f.Shas)

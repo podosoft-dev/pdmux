@@ -16,7 +16,17 @@ try {
   await window.waitForURL(/http:\/\/127\.0\.0\.1:\d+\//, { timeout: 60_000 });
   // Username sign-in uses type=text for the same email/username field.
   await window.locator('input#email[autocomplete="username"]').waitFor({ timeout: 60_000 });
-  assert.deepEqual(await window.evaluate(() => window.pdmuxDesktop), { isDesktop: true, platform: "darwin" });
+  // Functions cannot cross Playwright's serialization boundary. Inspect them
+  // inside the renderer and return only their names and types.
+  assert.deepEqual(await window.evaluate(() => ({
+    isDesktop: window.pdmuxDesktop?.isDesktop,
+    platform: window.pdmuxDesktop?.platform,
+    transfers: Object.fromEntries(Object.entries(window.pdmuxDesktop?.transfers ?? {}).map(([name, method]) => [name, typeof method])),
+  })), {
+    isDesktop: true, platform: "darwin",
+    transfers: { pickFolder: "function", read: "function", release: "function", download: "function",
+      status: "function", pauseDownload: "function", cancelDownload: "function" },
+  });
   assert.ok((await window.locator("body").innerText()).length > 30, "Render the real login page");
   const result = await application.evaluate(async ({ app }) => {
     // Inspector evaluation has no dynamic-import callback. Use Node's supported

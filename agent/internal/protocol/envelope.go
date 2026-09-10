@@ -36,18 +36,19 @@ import (
 type UpstreamType string
 
 const (
-	UpstreamHello        UpstreamType = "hello"
-	UpstreamHeartbeat    UpstreamType = "heartbeat"
-	UpstreamRepos        UpstreamType = "repos"
-	UpstreamTerminal     UpstreamType = "terminal"
-	UpstreamPong         UpstreamType = "pong"
-	UpstreamUpdateStatus UpstreamType = "updateStatus"
-	UpstreamExecResult   UpstreamType = "execResult"
-	UpstreamFsDir        UpstreamType = "fsDir"
-	UpstreamFsFile       UpstreamType = "fsFile"
-	UpstreamFsChunk      UpstreamType = "fsChunk"
-	UpstreamFsWrote      UpstreamType = "fsWrote"
-	UpstreamFsRemoved    UpstreamType = "fsRemoved"
+	UpstreamHello            UpstreamType = "hello"
+	UpstreamHeartbeat        UpstreamType = "heartbeat"
+	UpstreamRepos            UpstreamType = "repos"
+	UpstreamTerminal         UpstreamType = "terminal"
+	UpstreamPong             UpstreamType = "pong"
+	UpstreamUpdateStatus     UpstreamType = "updateStatus"
+	UpstreamExecResult       UpstreamType = "execResult"
+	UpstreamFsDir            UpstreamType = "fsDir"
+	UpstreamFsFile           UpstreamType = "fsFile"
+	UpstreamFsChunk          UpstreamType = "fsChunk"
+	UpstreamFsWrote          UpstreamType = "fsWrote"
+	UpstreamFsRemoved        UpstreamType = "fsRemoved"
+	UpstreamFsTransferResult UpstreamType = "fsTransferResult"
 )
 
 // DownstreamType discriminates server -> agent frames.
@@ -70,6 +71,7 @@ const (
 	DownstreamFsGet        DownstreamType = "fsGet"
 	DownstreamFsPut        DownstreamType = "fsPut"
 	DownstreamFsDelete     DownstreamType = "fsDelete"
+	DownstreamFsTransfer   DownstreamType = "fsTransfer"
 )
 
 // TerminalServerType discriminates agent -> server -> browser terminal frames.
@@ -126,6 +128,26 @@ type TerminalClientFrame interface {
 type HelloFrame struct {
 	Type  UpstreamType `json:"type"`
 	Hello AgentHello   `json:"hello"`
+}
+
+type FsTransferFrame struct {
+	Type     DownstreamType    `json:"type"`
+	Transfer FsTransferRequest `json:"transfer"`
+}
+
+type FsTransferResultFrame struct {
+	Type   UpstreamType     `json:"type"`
+	Result FsTransferResult `json:"result"`
+}
+
+func (f *FsTransferFrame) stampDownstream() DownstreamType {
+	f.Type = DownstreamFsTransfer
+	return f.Type
+}
+
+func (f *FsTransferResultFrame) stampUpstream() UpstreamType {
+	f.Type = UpstreamFsTransferResult
+	return f.Type
 }
 
 // HeartbeatFrame carries every value a host card draws, in one pass.
@@ -680,6 +702,8 @@ func decodeUpstream(raw []byte) (UpstreamFrame, error) {
 	}
 	var frame UpstreamFrame
 	switch UpstreamType(kind) {
+	case UpstreamFsTransferResult:
+		frame = new(FsTransferResultFrame)
 	case UpstreamHello:
 		frame = new(HelloFrame)
 	case UpstreamHeartbeat:
@@ -711,6 +735,8 @@ func decodeDownstream(raw []byte) (DownstreamFrame, error) {
 	}
 	var frame DownstreamFrame
 	switch DownstreamType(kind) {
+	case DownstreamFsTransfer:
+		frame = new(FsTransferFrame)
 	case DownstreamWelcome:
 		frame = new(WelcomeFrame)
 	case DownstreamConfig:

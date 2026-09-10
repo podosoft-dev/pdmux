@@ -10,7 +10,8 @@
         "usage",
         "services",
         "exec",
-        "files"
+        "files",
+        "files-transfer-v1"
       ],
       "type": "string"
     },
@@ -169,6 +170,23 @@
     },
     "agentDownstream": {
       "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "transfer": {
+              "$ref": "#/$defs/fsTransferRequest"
+            },
+            "type": {
+              "const": "fsTransfer",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "transfer"
+          ],
+          "type": "object"
+        },
         {
           "additionalProperties": true,
           "properties": {
@@ -774,6 +792,23 @@
     },
     "agentUpstream": {
       "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/fsTransferResult"
+            },
+            "type": {
+              "const": "fsTransferResult",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "result"
+          ],
+          "type": "object"
+        },
         {
           "additionalProperties": true,
           "properties": {
@@ -1478,6 +1513,186 @@
       "required": [
         "requestId",
         "path"
+      ],
+      "type": "object"
+    },
+    "fsTransferEntry": {
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "enum": [
+            "file",
+            "directory",
+            "link",
+            "special",
+            "missing"
+          ],
+          "type": "string"
+        },
+        "modified": {
+          "default": "",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "size": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "fsTransferRequest": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "enum": [
+            "list",
+            "stat",
+            "mkdir",
+            "read",
+            "write",
+            "commit",
+            "discard",
+            "touch"
+          ],
+          "type": "string"
+        },
+        "data": {
+          "default": "",
+          "maxLength": 2097152,
+          "type": "string"
+        },
+        "digest": {
+          "default": "",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "entryId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "modified": {
+          "default": "",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "replace": {
+          "default": false,
+          "type": "boolean"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "size": {
+          "default": 0,
+          "maximum": 10737418240,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "transferId": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "transferId",
+        "entryId",
+        "action",
+        "path"
+      ],
+      "type": "object"
+    },
+    "fsTransferResult": {
+      "additionalProperties": true,
+      "properties": {
+        "committed": {
+          "default": false,
+          "type": "boolean"
+        },
+        "data": {
+          "default": "",
+          "maxLength": 2097152,
+          "type": "string"
+        },
+        "digest": {
+          "default": "",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "entries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/fsTransferEntry"
+          },
+          "maxItems": 250,
+          "type": "array"
+        },
+        "entryId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "next": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "offset": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "requestId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "transferId": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "transferId",
+        "entryId"
       ],
       "type": "object"
     },

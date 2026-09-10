@@ -35,6 +35,10 @@ Builds, versions and reproducibility live in [`VERSIONING.md`](VERSIONING.md).
 
 ## 2. Layout
 
+Folder transfers advertise `files-transfer-v1` and keep private per-entry journals in the agent
+account's home. Startup/hourly cleanup runs even offline and removes only owned temporary files;
+committed destinations survive cancel/expiry. See [`FILE-TRANSFERS.md`](FILE-TRANSFERS.md).
+
 ```
 agent/
 ├── cmd/pdmux-agent/        wiring only — main.go (signals, dependencies), daemon.go (the CLI↔runtime seam)
@@ -48,6 +52,7 @@ agent/
     ├── collect/            heartbeat: CPU/memory/swap/disk · sessions · service probes · diagnostics
     ├── usage/              coding-CLI usage — the provider plugin seam
     ├── git/                read-only snapshots · commits · diffs · the detail ledger
+    ├── fs/                 home-confined access · durable staged transfers · expiry cleanup
     ├── term/               PTY ownership · target resolution · output coalescing and caps
     ├── update/             remote update: verify→commit, the probation marker, self-refusal
     ├── state/              resolving the state directory (system=/var/lib, user=~/.local/state)

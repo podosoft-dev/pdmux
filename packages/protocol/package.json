@@ -19,6 +19,11 @@
       "types": "./dist/terminal.d.ts",
       "import": "./dist/terminal.js",
       "default": "./dist/terminal.js"
+    },
+    "./transfer-limits": {
+      "types": "./dist/transfer-limits.d.ts",
+      "import": "./dist/transfer-limits.js",
+      "default": "./dist/transfer-limits.js"
     }
   },
   "main": "./dist/index.js",

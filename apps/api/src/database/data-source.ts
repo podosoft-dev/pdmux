@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { FileTransfer, FileTransferEntry } from "../file-transfers/file-transfer.entity";
 import { DataSource, type DataSourceOptions } from "typeorm";
 import { AgentAuthFailure } from "../agents/agent-auth-failure.entity";
 import { AgentEnrollment } from "../agents/agent-enrollment.entity";
@@ -25,6 +26,8 @@ import { BunSqliteDatabaseAdapter, installPdmuxSqliteDriver } from "./sqlite-dri
 import { POSTGRES_MIGRATIONS } from "./migrations";
 
 const entities = [
+  FileTransfer,
+  FileTransferEntry,
   AgentAuthFailure,
   AgentEnrollment,
   AgentToken,

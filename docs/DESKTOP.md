@@ -39,6 +39,7 @@ runtime/
   auth.secret
   pdmux.sqlite
   files/
+  file-transfers/
 backups/
   <UTC timestamp>/
     manifest.json
@@ -51,6 +52,17 @@ database copy with `VACUUM INTO`, copies the atomically-written object tree, wri
 only then publishes the timestamped generation. Incomplete temporary generations are not treated as
 backups. Five generations are retained by default; set `backupRetention` in `desktop.json` to a value
 from 1 to 100. A downloaded update uses the same backup gate before installation.
+
+## Folder transfers
+
+The file explorer shares its transfer controller with the web app. Electron only grants bounded
+reads inside a natively selected folder and manages resumable downloads. IPC checks the main-frame
+origin; selection tokens do not grant arbitrary path access. Download records live in
+`file-transfers/downloads.json` under application data; the embedded API spool is
+`runtime/file-transfers`. Temporary transfers are not included in object-storage backups.
+The download manager rechecks the authenticated job and immutable ETag before resuming, including
+when an embedded loopback port changes, and verifies the archive before publishing the selected
+output. See [`FILE-TRANSFERS.md`](FILE-TRANSFERS.md) for limits and expiry.
 
 ## Remote mode
 

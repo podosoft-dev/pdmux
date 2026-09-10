@@ -78,6 +78,9 @@ const EXPECTED_DEFS = [
 	'fsEntry',
 	'fsFile',
 	'fsRemoved',
+	'fsTransferEntry',
+	'fsTransferRequest',
+	'fsTransferResult',
 	'fsWrote',
 	'gitBlob',
 	'gitCommit',
@@ -320,6 +323,7 @@ describe('[TC-PDPROTO-013] what the Go side reads out of the artefact', () => {
 			(branch) => ((branch.properties as JsonObject).type as JsonObject).const,
 		);
 		expect(upstream).toEqual([
+			'fsTransferResult',
 			'hello',
 			'heartbeat',
 			'repos',

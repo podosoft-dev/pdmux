@@ -4,9 +4,30 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rootCertificates } from "node:tls";
+import { Script } from "node:vm";
+import assert from "node:assert/strict";
 import { assertReleaseContext, assertCertificate } from "./release-macos-signing.mjs";
 
 describe("[TC-PDDESKTOP-009] production signing boundary", () => {
+  it("checks callable transfer methods before serializing the packaged bridge", async () => {
+    const source = readFileSync(new URL("./smoke-macos-desktop.mjs", import.meta.url), "utf8");
+    const start = source.indexOf("  assert.deepEqual(await window.evaluate(");
+    const end = source.indexOf('\n  assert.ok(', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const assertion = source.slice(start, end);
+    const run = (mutation = "") => new Script(`(async () => {
+      const transfers = Object.fromEntries(["pickFolder", "read", "release", "download", "status", "pauseDownload", "cancelDownload"].map(name => [name, () => {}]));
+      ${mutation}
+      const window = { pdmuxDesktop: { isDesktop: true, platform: "darwin", transfers },
+        evaluate: async callback => JSON.parse(JSON.stringify(callback())) };
+      ${assertion}
+    })()`).runInNewContext({ assert });
+    await expect(run()).resolves.toBeUndefined();
+    await expect(run("delete transfers.read;")).rejects.toThrow();
+    await expect(run('transfers.read = "not callable";')).rejects.toThrow();
+    await expect(run("transfers.unrestrictedRead = () => {};")).rejects.toThrow();
+  });
   it("loads the backup probe through Node inspector-compatible evaluation", () => {
     const root = mkdtempSync(join(tmpdir(), "pdmux-inspector-test-"));
     try {

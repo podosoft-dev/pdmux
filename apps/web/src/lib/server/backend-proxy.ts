@@ -26,6 +26,9 @@ const FORWARDED_HEADERS = [
   // the offset-addressed file transfer exists to avoid.
   "range",
   "if-range",
+  "content-range",
+  "x-transfer-offset",
+  "x-transfer-sha256",
 ];
 const RELAYED_RESPONSE_HEADERS = [
   "content-type",
@@ -44,6 +47,7 @@ const RELAYED_RESPONSE_HEADERS = [
   "content-range",
   "accept-ranges",
   "x-content-type-options",
+  "etag",
 ];
 
 // Re-export the API target and client-IP spelling so server routes share one boundary.
@@ -63,6 +67,7 @@ export async function proxyRequest(
   request: Request,
   targetUrl: string,
   clientAddress?: string,
+  server?: { timeout(request: Request, seconds: number): void },
 ): Promise<Response> {
   const headers = new Headers();
   for (const name of FORWARDED_HEADERS) {
@@ -86,12 +91,37 @@ export async function proxyRequest(
   }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
+  const transfer = /\/file-transfers(?:\/|$)/.test(new URL(request.url).pathname);
+  if (transfer) server?.timeout(request, 60);
+  let body: ArrayBuffer | Uint8Array<ArrayBuffer> | undefined;
+  if (hasBody && /\/file-transfers\/[^/]+\/entries\/[^/]+\/chunk$/.test(new URL(request.url).pathname)) {
+    const reader = request.body?.getReader();
+    const bytes = new Uint8Array(1_048_576);
+    let offset = 0;
+    if (reader) try {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        if (offset + next.value.byteLength > bytes.length) {
+          await reader.cancel();
+          return Response.json({ success: false, error: { code: "FILES_TRANSFER_CHUNK", message: "Chunk exceeds the limit", statusCode: 413,
+            path: new URL(request.url).pathname, timestamp: new Date().toISOString() } }, { status: 413 });
+        }
+        bytes.set(next.value, offset);
+        offset += next.value.byteLength;
+      }
+    } finally { reader.releaseLock(); }
+    body = bytes.subarray(0, offset);
+  } else if (hasBody) body = await request.arrayBuffer();
+  // The API's agent deadline owns this wait. Bun's default ten-second idle
+  // timeout must not reset a request that is verifying a large staged file.
+  if (transfer) server?.timeout(request, 0);
   const upstream = await fetch(targetUrl, {
     method: request.method,
     headers,
     // Preserve multipart uploads and other binary bodies byte-for-byte. Reading
     // them as text corrupts bytes that are not valid UTF-8 before forwarding.
-    body: hasBody ? await request.arrayBuffer() : undefined,
+    body,
     redirect: "manual",
   });
 

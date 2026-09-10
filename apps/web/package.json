@@ -11,7 +11,8 @@
     "build": "bunx --bun vite build",
     "preview": "bunx --bun vite preview",
     "lint": "bunx --bun svelte-kit sync && bunx --bun svelte-check --tsconfig ./tsconfig.json",
-    "test": "bunx --bun vitest run"
+    "test": "bunx --bun vitest run",
+    "test:file-transfers-ui": "bunx playwright test --config test/file-transfers-ui/playwright.config.ts"
   },
   "dependencies": {
     "@internationalized/date": "^3.12.2",

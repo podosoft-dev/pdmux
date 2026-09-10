@@ -1,0 +1,11 @@
+# Private, persistent ZIP spool. Keep one API replica: its agent registry owns transfers.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: file-transfers
+  namespace: podokit
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 25Gi

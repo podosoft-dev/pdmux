@@ -9,6 +9,11 @@ import {
   type FsFile,
   type FsRemoved,
   type FsWrote,
+  type FsTransferRequest,
+  type FsTransferResult,
+  fsTransferRequestSchema,
+  fsTransferResultSchema,
+  FILE_TRANSFER_CAPABILITY,
 } from "@pdmux/protocol";
 
 import { AppException } from "../common/app-exception";
@@ -51,7 +56,7 @@ const CHUNK_TIMEOUT_MS = 30_000;
 const MAX_IN_FLIGHT_PER_HOST = 16;
 
 /** Everything an agent can answer a file request with. */
-export type FsAnswer = FsDir | FsFile | FsChunk | FsWrote | FsRemoved;
+export type FsAnswer = FsDir | FsFile | FsChunk | FsWrote | FsRemoved | FsTransferResult;
 
 interface Pending<T> {
   resolve: (value: T) => void;
@@ -74,12 +79,31 @@ export class AgentFilesService {
    * An id we are not waiting for is dropped without ceremony: that is what a
    * retry after a timeout looks like, and it is not an error.
    */
-  settle(answer: FsAnswer): void {
+  settle(answer: FsAnswer, hostId?: string): void {
     const waiter = this.pending.get(answer.requestId);
     if (!waiter) return;
+    if (hostId !== undefined && waiter.hostId !== hostId) return;
     this.pending.delete(answer.requestId);
     clearTimeout(waiter.timer);
     waiter.resolve(answer);
+  }
+
+  async transfer(organizationId: string, hostId: string, input: Omit<Partial<FsTransferRequest>, "requestId"> & Pick<FsTransferRequest, "transferId" | "entryId" | "action" | "path">): Promise<FsTransferResult> {
+    const host = await this.hosts.get(organizationId, hostId);
+    if (!host.capabilities?.includes(FILE_TRANSFER_CAPABILITY)) {
+      throw new AppException("HOST_FILES_TRANSFER_UNSUPPORTED", "Update the agent to transfer folders", 409);
+    }
+    const result = await this.ask<FsTransferResult>(
+      organizationId, hostId,
+      (requestId) => ({ type: "fsTransfer", transfer: fsTransferRequestSchema.parse({ ...input, requestId }) }),
+      (requestId) => fsTransferResultSchema.parse({ ...input, requestId, error: "FILES_TRANSFER_TIMEOUT" }),
+      input.action === "commit" ? 300_000 : CHUNK_TIMEOUT_MS,
+    );
+    if (result.transferId !== input.transferId || result.entryId !== input.entryId) {
+      throw new AppException("FILES_TRANSFER_RESPONSE", "Invalid transfer response", 502);
+    }
+    if (result.error) throw new AppException(result.error, "The file transfer operation failed", 409);
+    return result;
   }
 
   list(organizationId: string, hostId: string, path: string): Promise<FsDir> {

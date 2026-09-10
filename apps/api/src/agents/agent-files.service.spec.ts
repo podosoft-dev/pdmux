@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import type { AgentDownstream, FsDir } from "@pdmux/protocol";
+import { fsTransferResultSchema, type AgentDownstream, type FsDir } from "@pdmux/protocol";
 
 import { AgentFilesService } from "./agent-files.service";
 import { AgentRegistryService } from "./agent-registry.service";
@@ -130,5 +130,27 @@ describe("[TC-PDTERM-141] a directory answer belongs to the request that asked f
       ctx.service.settle({ requestId: frame.requestId, path: `d${index}`, home: "/home/pdmux", entries: [], dropped: 0, truncated: false, error: null });
       await promise;
     }
+  });
+});
+
+describe("[TC-PDFILE-004] transfer response ownership", (): void => {
+  it("gates old agents and matches responses to the authenticated host", async (): Promise<void> => {
+    const input = { transferId: "11111111-1111-4111-8111-111111111111", entryId: "22222222-2222-4222-8222-222222222222", action: "stat" as const, path: "file" };
+    const old = build();
+    await expect(old.service.transfer(ORG, HOST, input)).rejects.toMatchObject({ code: "HOST_FILES_TRANSFER_UNSUPPORTED" });
+    expect(old.sent).toHaveLength(0);
+    const ctx = build({ capabilities: ["files", "files-transfer-v1"] });
+    let settled = false;
+    const pending = ctx.service.transfer(ORG, HOST, input).then((result) => { settled = true; return result; });
+    await flush();
+    await flush();
+    const frame = ctx.sent[0];
+    if (frame?.type !== "fsTransfer") throw new Error("Missing transfer frame");
+    const answer = fsTransferResultSchema.parse(frame.transfer);
+    ctx.service.settle(answer, "another-host");
+    await flush();
+    expect(settled).toBe(false);
+    ctx.service.settle(answer, HOST);
+    await expect(pending).resolves.toMatchObject({ transferId: input.transferId, entryId: input.entryId });
   });
 });

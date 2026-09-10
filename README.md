@@ -34,6 +34,11 @@ more card, and that host becomes selectable in the terminal grid.
 
 ## What you see
 
+**File explorer.** Upload folder trees (including empty folders), or download folders and mixed
+selections as ZIP64. Transfers show progress, handle overwrite/skip conflicts, and can resume after
+a reload or desktop restart. See [folder transfers](docs/FILE-TRANSFERS.md) for browser support,
+24-hour retention, and upgrade requirements.
+
 **Terminals.** Lay them out as a single pane, or 2/4/9 splits. Each pane picks its own host and
 session, so one screen can show several different jobs at once. Click an inactive pane to make it
 the input target. Click a pane header to zoom it, then click the same header again to restore the

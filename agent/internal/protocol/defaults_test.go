@@ -32,6 +32,9 @@ type objectUnderTest struct {
 }
 
 var objectDefs = map[string]objectUnderTest{
+	"fsTransferEntry":        {func() any { return new(FsTransferEntry) }, func() any { v := NewFsTransferEntry(); return &v }},
+	"fsTransferRequest":      {func() any { return new(FsTransferRequest) }, func() any { v := NewFsTransferRequest(); return &v }},
+	"fsTransferResult":       {func() any { return new(FsTransferResult) }, func() any { v := NewFsTransferResult(); return &v }},
 	"agentCloudflaredConfig": {func() any { return new(AgentCloudflaredConfig) }, func() any { v := NewAgentCloudflaredConfig(); return &v }},
 	"agentConfig":            {func() any { return new(AgentConfig) }, func() any { v := NewAgentConfig(); return &v }},
 	"agentConnectorAbility":  {func() any { return new(AgentConnectorAbility) }, func() any { v := NewAgentConnectorAbility(); return &v }},
