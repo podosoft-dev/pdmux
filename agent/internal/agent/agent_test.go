@@ -12,6 +12,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1160,6 +1161,65 @@ func framesOf[T protocol.UpstreamFrame](h *harness) []T {
 // the specs are about the promises around it rather than about `sys.Run`, which
 // has its own.
 func TestExec(t *testing.T) {
+	t.Run("[TC-PDMCP-004] refuses excess commands and releases slots after completion", func(t *testing.T) {
+		h := start(t, nil)
+		h.welcome(nil)
+		waitUntil(t, "the welcome to be adopted", func() bool { return h.agent.HostID() == testHostID })
+		directory := t.TempDir()
+		release := filepath.Join(directory, "release")
+		for i := 0; i < execSlots; i++ {
+			command := protocol.NewAgentExec()
+			command.CommandID = fmt.Sprintf("00000000-0000-4000-8000-%012d", i+1)
+			command.Command = "sh"
+			command.Args = []string{"-c", `touch "$1"; while [ ! -f "$2" ]; do sleep 0.05; done`, "pdmux-test", filepath.Join(directory, fmt.Sprintf("started-%d", i)), release}
+			command.TimeoutMs = 15_000
+			h.session.send(&protocol.ExecFrame{Exec: command})
+		}
+		waitUntil(t, "all allowed commands to start", func() bool {
+			for i := 0; i < execSlots; i++ {
+				if _, err := os.Stat(filepath.Join(directory, fmt.Sprintf("started-%d", i))); err != nil {
+					return false
+				}
+			}
+			return true
+		})
+		marker := filepath.Join(directory, "refused-command-ran")
+		overflow := protocol.NewAgentExec()
+		overflow.CommandID = "00000000-0000-4000-8000-000000000099"
+		overflow.Command = "touch"
+		overflow.Args = []string{marker}
+		h.session.send(&protocol.ExecFrame{Exec: overflow})
+		waitUntil(t, "the excess command to be refused while all slots are occupied", func() bool {
+			return len(framesOf[*protocol.ExecResultFrame](h)) == 1
+		})
+		refused := framesOf[*protocol.ExecResultFrame](h)[0].Result
+		if refused.CommandID != overflow.CommandID || refused.Code == nil || *refused.Code != "EXEC_BUSY" || refused.ExitCode != -1 {
+			t.Fatalf("unexpected refusal: %+v", refused)
+		}
+		if err := os.WriteFile(release, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		waitUntil(t, "all allowed commands to complete", func() bool {
+			return len(framesOf[*protocol.ExecResultFrame](h)) == execSlots+1
+		})
+		// A refusal must never become a queued command once capacity returns.
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Fatal("the refused command wrote a file")
+		}
+		overflow.CommandID = "00000000-0000-4000-8000-000000000100"
+		h.session.send(&protocol.ExecFrame{Exec: overflow})
+		waitUntil(t, "a new command to use the released capacity", func() bool {
+			return len(framesOf[*protocol.ExecResultFrame](h)) == execSlots+2
+		})
+		last := framesOf[*protocol.ExecResultFrame](h)[execSlots+1].Result
+		if last.CommandID != overflow.CommandID || last.ExitCode != 0 || last.Code != nil {
+			t.Fatalf("capacity did not recover: %+v", last)
+		}
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatalf("the accepted command did not run: %v", err)
+		}
+	})
+
 	t.Run("[TC-PDMCP-003] runs the command and reports the exit code, not just the output", func(t *testing.T) {
 		h := start(t, nil)
 		h.welcome(nil)

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 interface DesktopManifest {
   version: string;
+  scripts: { package: string };
   author: { name: string; email: string };
   homepage: string;
   desktopName: string;
@@ -28,6 +29,7 @@ interface RootManifest {
 describe("[TC-PDDESKTOP-009] desktop packaging matrix", () => {
   it("packages the embedded stack for every supported operating system", () => {
     const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as DesktopManifest;
+    expect(manifest.scripts.package).toBe("node ../../tools/package-desktop.mjs");
     expect(manifest.build.executableName).toBe("pdmux");
     expect(manifest.build.icon).toBe("../web/static/favicon.svg");
     expect(manifest.build.compression).toBe("maximum");
@@ -41,7 +43,7 @@ describe("[TC-PDDESKTOP-009] desktop packaging matrix", () => {
     expect(manifest.build.win.target).toEqual(["nsis"]);
     expect(manifest.build.linux.target).toEqual(["AppImage", "deb"]);
     expect(manifest.build.extraResources.map((resource) => resource.to)).toEqual(
-      expect.arrayContaining(["api", "web", "bin", "runtime/sqlite-backup.mjs"]),
+      expect.arrayContaining(["api", "web", "bin", "runtime/sqlite-backup.mjs", "tray.png"]),
     );
     expect(manifest.build.extraResources.find((resource) => resource.to === "web")?.filter).toContain(
       "!**/*.map",

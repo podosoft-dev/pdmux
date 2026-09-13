@@ -447,7 +447,9 @@ The agent owns the connector process, but not as a system package:
 
 The binary, cached release metadata and rollback copy live below the agent's private state directory
 in `cloudflared/`. Removing the last exposure removes DNS first, then ingress and Access, then the
-dedicated tunnel. Local exposure and connector rows are deleted only after provider cleanup, so a
+dedicated tunnel's registered connections and the tunnel itself. Connection cleanup uses Cloudflare's
+separate `DELETE /accounts/:account/cfd_tunnel/:tunnel/connections` endpoint; a query flag on tunnel
+deletion does not clear active connectors. Local exposure and connector rows are deleted only after provider cleanup, so a
 failed Cloudflare request leaves the identifiers available for an idempotent retry. A host or service
 delete uses the same cleanup path and fails closed instead of orphaning an externally reachable
 resource.

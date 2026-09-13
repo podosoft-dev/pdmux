@@ -17,12 +17,18 @@ The server and desktop editions share capability boundaries while selecting diff
 
 The desktop process starts a bundled Bun runtime three times in order: database migration, API, and
 SvelteKit server. API and web ports are dynamically allocated on `127.0.0.1`; they are never bound to
-the LAN. The API receives explicit provider settings, so it does not probe or connect to Redis, S3,
+the LAN. A third loopback port is the window's single origin: the shell forwards HTTP to SvelteKit
+and only `/agent/ws` and `/terminal/ws` upgrades to the API. It validates the incoming Host and
+replaces forwarded authority headers. This keeps installer URLs, MCP, cookies and terminal
+connections on the same HTTP origin even with SvelteKit adapters that no longer accept `ORIGIN`.
+The API receives explicit provider settings, so it does not probe or connect to Redis, S3,
 or PostgreSQL. A persistent random authentication secret is stored with user-only file permissions.
 
 SQLite stores PodoKit authentication tables, module settings and audit entries alongside pdmux's
 TypeORM entities. PostgreSQL JSON, timestamp, and array entity metadata is translated by one SQLite
-driver adapter, keeping repository and service code shared. Desktop startup is idempotent: Better
+driver adapter, keeping repository and service code shared. Raw SQL writes bind JSON strings and
+ISO timestamps explicitly, including audit metadata and runtime authentication settings.
+Desktop startup is idempotent: Better
 Auth migrations and application schema synchronization can run again after an interrupted update.
 
 Provider selection changes configuration and future reads/writes only. It never moves or deletes
@@ -31,7 +37,10 @@ must therefore be an explicit operation.
 
 ## Data and backups
 
-The Electron user-data directory contains:
+The Electron user-data directory uses the application name `pdmux-desktop`: by default,
+`~/Library/Application Support/pdmux-desktop` on macOS, `%APPDATA%\pdmux-desktop` on Windows,
+and `~/.config/pdmux-desktop` on Linux (or `$XDG_CONFIG_HOME/pdmux-desktop`). The tray's
+**Open data folder** action opens the actual directory. It contains:
 
 ```text
 desktop.json
@@ -81,7 +90,8 @@ services. Quit pdmux, edit `desktop.json` in the user-data directory, and restar
 ```
 
 Only HTTPS URLs are accepted. Each pin is the server certificate's SHA-256 fingerprint, with or
-without colons. The configured hostname and one of the pins must both match. Navigation remains on
+without colons. Electron's `sha256/base64` runtime representation is converted to the same SHA-256
+bytes before comparison. The configured hostname and one of the pins must both match. Navigation remains on
 the application origin; other HTTPS links open in the operating-system browser, while plaintext and
 custom-scheme navigation is denied. Changing a certificate requires updating the pin deliberately.
 
@@ -112,6 +122,9 @@ match that tag. Missing credentials, a changed certificate, or failed signing st
 
 ## Installing on macOS
 
+Step-by-step guides: [macOS](install/macos.md), [Windows](install/windows.md),
+[Linux](install/linux.md), and [native builds](install/README.md#build-without-publishing).
+
 Starting with **0.12.3**, official macOS packages use a stable, app-specific self-signed certificate.
 This is free signing, **not Apple Developer ID signing or notarization**. macOS may still block the
 first launch because Apple has not identified the developer or checked the app for malware.
@@ -125,8 +138,8 @@ first launch because Apple has not identified the developer or checked the app f
    installed app before removing only its quarantine attribute:
 
    ```bash
-   codesign --verify --deep --strict /Applications/pdmux.app
-   xattr -dr com.apple.quarantine /Applications/pdmux.app
+   codesign --verify --deep --strict "/Applications/pdmux.app"
+   xattr -dr com.apple.quarantine "/Applications/pdmux.app"
    ```
 
    Run the second command only if checksum and signature verification succeeded and you trust the
@@ -136,7 +149,7 @@ first launch because Apple has not identified the developer or checked the app f
 
 The unsigned **0.12.1 and earlier** macOS installations cannot be relied on to perform a signed
 automatic update. Use the new DMG once to replace the application; keep the existing user-data
-directory (`~/Library/Application Support/pdmux`) and back it up first. Do not delete that directory
+directory (`~/Library/Application Support/pdmux-desktop`) and back it up first. Do not delete that directory
 or the runtime database. Subsequent releases retain the same certificate for automatic updates;
 the existing backup-before-install gate and signature verification remain enabled.
 
@@ -255,3 +268,21 @@ Desktop unit tests do not start application services:
 bun run --filter pdmux-desktop lint
 bun run --filter pdmux-desktop test
 ```
+
+Native installer validation runs on fresh GitHub-hosted machines. Windows installs the actual NSIS
+package. Linux checks the DEB installation and extracted AppImage with one data directory. Both
+launch the packaged login screen, exercise real folder-selection IPC with the OS chooser automated,
+verify SQLite backup integrity, and preserve the authentication key and uploaded files across restart.
+macOS runs the same runtime checks after its separate signing and package checks.
+
+Linux also runs `tools/smoke-desktop-downloads.mjs` against the packaged AppImage. A temporary,
+certificate-pinned HTTPS fixture serves an authenticated, throttled 8 MiB body. The real Electron
+downloader pauses, the application quits, and a new process resumes only the remaining range with
+the same ETag. The check verifies authorization denial before resumption, SHA-256 integrity,
+destination preservation, and partial-file cleanup. Only the save dialog's selected path is automated.
+Chromium sandboxing stays enabled in these native smoke tests. The fixture isolates native download
+semantics from the separate real API/agent suite; it does not prove the full product updater cycle.
+
+For isolated end-to-end validation on Linux with Docker, see
+[`READINESS.md`](READINESS.md). It uses disposable accounts, real agent installation, and production
+API/web builds; it does not connect to an existing user's dashboard.

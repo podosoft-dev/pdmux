@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - ".gitattributes"
       - "tools/package-macos-desktop*"
       - "tools/verify-macos-desktop.mjs"
       - "tools/probe-macos-adhoc-update.mjs"

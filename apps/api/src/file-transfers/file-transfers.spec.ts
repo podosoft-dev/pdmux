@@ -11,6 +11,7 @@ import { createAppDataSource } from "../database/data-source";
 import { BunSqliteDatabaseAdapter } from "../database/sqlite-driver";
 import { Host } from "../hosts/host.entity";
 import { AppException } from "../common/app-exception";
+import { Elysia } from "elysia";
 
 const hash = (text: string): string => createHash("sha256").update(text).digest("hex");
 const owner: TransferOwner = { userId: "user", organizationId: "personal:user", hostId: "11111111-1111-4111-8111-111111111111" };
@@ -131,6 +132,25 @@ describe("[TC-PDFILE-004] durable scoped transfers", (): void => {
 });
 
 describe("[TC-PDFILE-005] immutable ZIP downloads", (): void => {
+  it("preserves partial bytes after production response headers are merged", async (): Promise<void> => {
+    const { service } = await fixture();
+    const id = randomUUID();
+    await service.create(owner, { id, direction: "download", basePath: "", selection: ["folder"] });
+    await service.control(owner, id, "start");
+    await waitState(service, id, "ready");
+    const app = new Elysia().onRequest(({ set }): void => { set.headers["x-request-id"] = "range-test"; })
+      .get("/download", ({ request }) => service.download(owner, id, request)).listen({ hostname: "127.0.0.1", port: 0 });
+    try {
+      const url = new URL("/download", app.server!.url);
+      const full = await fetch(url);
+      const bytes = new Uint8Array(await full.arrayBuffer());
+      const partial = await fetch(url, { headers: { range: "bytes=10-99", "if-range": full.headers.get("etag")! } });
+      expect(partial.status).toBe(206);
+      expect(partial.headers.get("x-request-id")).toBe("range-test");
+      expect(new Uint8Array(await partial.arrayBuffer())).toEqual(bytes.subarray(10, 100));
+    } finally { await app.stop(true); }
+  });
+
   it("queues another job promptly during a slow ZIP and discards cancelled partial output", async (): Promise<void> => {
     let release: () => void = (): void => {};
     let reading: () => void = (): void => {};

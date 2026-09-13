@@ -56,7 +56,16 @@ on resume; a ready ZIP is immutable with a stable SHA-256 ETag.
 not mean it has been saved to your disk. Browser progress/resume depend on the browser; the endpoint
 supports `Range` and `If-Range` without rebuilding. Desktop saves persist partial-download offsets,
 revalidate the authenticated job/ETag, and reconstruct interrupted Electron downloads after restart.
+Before normal application shutdown, desktop preserves the unfinished file beside the selected output
+as `.part.resume`, using a hard link or a native copy when hard links are unavailable. This happens
+before closing the window, because Chromium removes its own incomplete download on exit. Startup
+restores the preserved bytes; completion, cancellation, and expiry clean up the sidecar. On filesystems
+without hard links, shutdown may require additional free space for the copy.
 Desktop reports completion only after archive verification and publication to the selected output.
+
+Partial ZIP responses use an explicitly bounded file stream. This preserves the requested byte
+interval when API middleware merges response headers; the regression test compares actual HTTP
+bytes, including through the production web proxy. See [runtime verification](READINESS.md).
 
 Temporary transfer data expires after **24 hours without activity**. API cleanup runs every minute;
 the agent cleans owned staging files at startup and hourly, including when disconnected. Ready ZIPs
@@ -165,7 +174,10 @@ transfer_tools=$(mktemp -d)
 Tests create/remove their own temporary directories. The large case validates a ZIP beyond 4 GiB
 with `unzip`, checks suffix ranges, and samples API memory. The bridge exercises real Go operations
 and generated wire validation over stdin/stdout, not a deployed WebSocket. macOS/Windows dialogs and
-packaged Electron download restart still require native acceptance checks before release.
+download restart still require native acceptance checks before release. Linux packaged-app restart,
+authenticated range resumption, and final hash verification run separately through
+[`smoke-desktop-downloads.mjs`](../tools/smoke-desktop-downloads.mjs), as described in
+[desktop verification](DESKTOP.md#desktop-development).
 
 For actual HTTP routes, WebSocket gateway/registry/ingest and the full Go daemon together,
 run the runtime spec on Linux with a local Docker engine and `unzip`:

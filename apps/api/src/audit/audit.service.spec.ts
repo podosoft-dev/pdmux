@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { SQL } from "bun";
+import { SQL } from "bun";
+import { initializeDesktopSchema } from "../database/desktop-schema";
 import { recordAudit } from "./audit-events";
 import { AuditService } from "./audit.service";
 
@@ -13,6 +14,18 @@ function sqlRecorder(rows: unknown[] = []): { sql: SQL; values: unknown[][] } {
 }
 
 describe("AuditService", () => {
+  test("[TC-PDDESKTOP-002] persists dates and nested metadata through SQLite", async () => {
+    const sql = new SQL("sqlite://:memory:");
+    try {
+      await initializeDesktopSchema(sql);
+      const service = new AuditService(sql);
+      await service.record({ action: "host.create", targetLabel: "example", metadata: { labels: ["one"], nested: { enabled: true } } });
+      const entries = await service.recent();
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.metadata).toEqual({ labels: ["one"], nested: { enabled: true } });
+      expect(Date.parse(entries[0]?.createdAt ?? "")).not.toBeNaN();
+    } finally { await sql.close(); }
+  });
   test("writes global audit events through one recorder", async () => {
     const recorder = sqlRecorder();
     const service = new AuditService(recorder.sql);

@@ -1,5 +1,7 @@
 # pdmux
 
+Desktop installers: [macOS](docs/install/macos.md) · [Windows](docs/install/windows.md) · [Linux](docs/install/linux.md). See the [build and installation guide](docs/install/README.md).
+
 A self-hosted dashboard for running several AI CLIs — Codex, Claude and friends — side by side in
 one browser tab.
 

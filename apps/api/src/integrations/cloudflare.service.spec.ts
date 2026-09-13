@@ -186,7 +186,7 @@ describe("CloudflareService", () => {
     });
 
     await ctx.cloudflare.removeExposure(ORG, host.id, service.id, exposure.id);
-    const teardown = ctx.calls.slice(-4).map((call) => `${call.method} ${call.path}`);
+    const teardown = ctx.calls.slice(-5).map((call) => `${call.method} ${call.path}`);
     expect(teardown[0]).toContain("DELETE /client/v4/zones/zone-1/dns_records/dns-1");
     expect(teardown.at(-1)).toContain("DELETE /client/v4/accounts/account-1/cfd_tunnel/tunnel-1");
   });

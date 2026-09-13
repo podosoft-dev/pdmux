@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "bun test src",
-    "package": "electron-builder"
+    "package": "node ../../tools/package-desktop.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",
@@ -43,7 +43,7 @@
       { "from": "resources/services/web", "to": "web", "filter": ["**/*", "!**/*.map"] },
       { "from": "resources/bin", "to": "bin" },
       { "from": "resources/sqlite-backup.mjs", "to": "runtime/sqlite-backup.mjs" },
-      { "from": "../web/static/favicon.svg", "to": "icon.svg" }
+      { "from": "resources/tray.png", "to": "tray.png" }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

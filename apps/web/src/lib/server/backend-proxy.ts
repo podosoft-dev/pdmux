@@ -34,6 +34,11 @@ const RELAYED_RESPONSE_HEADERS = [
   "content-type",
   "location",
   "cache-control",
+  "x-accel-buffering",
+  "retry-after",
+  "ratelimit-limit",
+  "ratelimit-remaining",
+  "ratelimit-reset",
   // Same argument in the other direction — plus `www-authenticate`, which is how
   // an MCP client learns it needs to present a key at all.
   "mcp-protocol-version",

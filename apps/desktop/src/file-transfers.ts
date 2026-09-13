@@ -1,7 +1,7 @@
 import { dialog, ipcMain, type BrowserWindow, type DownloadItem, type IpcMainInvokeEvent, type Session } from "electron";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { constants, createReadStream } from "node:fs";
+import { copyFile, link, lstat, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { TransferSources } from "./transfer-source.js";
 
@@ -40,7 +40,12 @@ function integer(value: unknown): number {
   return value;
 }
 function temporary(record: DownloadRecord): string { return record.path + ".pdmux-download-" + record.id + ".part"; }
+function checkpoint(record: DownloadRecord): string { return temporary(record) + ".resume"; }
 function cancelled(record: DownloadRecord): boolean { return record.state === "cancelled"; }
+async function removePartial(record: DownloadRecord): Promise<void> {
+  await Promise.all([temporary(record), checkpoint(record), checkpoint(record) + ".next"]
+    .map(path => unlink(path).catch(() => undefined)));
+}
 
 /** Native privileges are confined to user-selected roots and fixed transfer URLs. */
 export class DesktopFileTransfers {
@@ -78,10 +83,19 @@ export class DesktopFileTransfers {
           typeof record.updated !== "number" || !Number.isFinite(record.updated) || typeof record.startTime !== "number") continue;
         try { new URL(record.origin); } catch { continue; }
         if (Date.now() - record.updated > TTL) {
-          await unlink(temporary(record as DownloadRecord)).catch(() => undefined);
+          await removePartial(record as DownloadRecord);
           continue;
         }
-        if (record.state === "completed" || record.state === "cancelled") continue;
+        if (record.state === "completed" || record.state === "cancelled") {
+          await unlink(checkpoint(record as DownloadRecord)).catch(() => undefined);
+          continue;
+        }
+        const saved = await lstat(checkpoint(record as DownloadRecord)).catch(() => null);
+        if (saved?.isFile()) {
+          await unlink(temporary(record as DownloadRecord)).catch(() => undefined);
+          await rename(checkpoint(record as DownloadRecord), temporary(record as DownloadRecord));
+          record.received = Math.min(record.received!, saved.size);
+        }
         this.records.set(record.id, { ...record, state: "interrupted" } as DownloadRecord);
       }
     } catch (error: unknown) {
@@ -119,13 +133,13 @@ export class DesktopFileTransfers {
       const key = id(transferId);
       const record = await this.authorizedRecord(key);
       this.active.get(key)?.cancel();
-      if (record) { record.state = "cancelled"; await unlink(temporary(record)).catch(() => undefined); await this.persist(); }
+      if (record) { record.state = "cancelled"; await removePartial(record); await this.persist(); }
     });
   }
   private async expire(): Promise<void> {
     for (const [key, record] of this.records) {
       if (Date.now() - record.updated <= TTL || this.active.has(key) || this.publishing.has(key)) continue;
-      await unlink(temporary(record)).catch(() => undefined);
+      await removePartial(record);
       this.records.delete(key);
     }
     await this.persist();
@@ -184,7 +198,7 @@ export class DesktopFileTransfers {
     }
     const selected = await dialog.showSaveDialog(this.window, { defaultPath: "files.zip" });
     if (selected.canceled || !selected.filePath) return;
-    if (record) await unlink(temporary(record)).catch(() => undefined);
+    if (record) await removePartial(record);
     record = { id: transferId, hostId, origin, path: selected.filePath, received: 0, total: job.archiveBytes,
       etag: job.etag, state: "progressing", updated: Date.now(), startTime: Date.now() / 1000 };
     this.records.set(transferId, record);
@@ -212,6 +226,7 @@ export class DesktopFileTransfers {
         }
         if (cancelled(record)) return;
         await rename(temporary(record), record.path);
+        await unlink(checkpoint(record)).catch(() => undefined);
         record.state = "completed";
       } catch {
         if (!cancelled(record)) record.state = "interrupted";
@@ -262,6 +277,20 @@ export class DesktopFileTransfers {
       if (record) { record.received = item.getReceivedBytes(); record.state = "interrupted"; record.updated = Date.now(); }
     }
     await Promise.allSettled(this.publishing.values());
+    for (const record of this.records.values()) {
+      if (record.state === "completed" || record.state === "cancelled" || record.received <= 0) continue;
+      const saved = await lstat(temporary(record)).catch(() => null);
+      if (!saved?.isFile()) continue;
+      // Chromium deletes its partial file on normal shutdown. Preserve an
+      // independent directory entry before closing the window/session. Filesystems
+      // without hard links use a bounded native copy (reflink when available).
+      const staged = checkpoint(record) + ".next";
+      await unlink(staged).catch(() => undefined);
+      try { await link(temporary(record), staged); }
+      catch { await copyFile(temporary(record), staged, constants.COPYFILE_FICLONE); }
+      await rename(staged, checkpoint(record));
+      record.received = Math.min(record.received, saved.size);
+    }
     await this.persist();
     this.session.off("will-download", this.onDownload);
     for (const channel of channels) ipcMain.removeHandler("pdmux:transfers:" + channel);

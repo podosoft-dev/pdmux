@@ -81,7 +81,10 @@ const NO_RELEASE =
 export const fileSystemReleaseSource: AgentReleaseSource = {
   list(): readonly PublishedVersion[] {
     const found = new Map<string, PublishedVersion>();
-    for (const root of AGENT_ROOTS) {
+    // Desktop resources have a different working directory. Use the same explicit
+    // agent root as the embedded API, without discovering an older checkout tree.
+    const roots = process.env.AGENT_RELEASE_DIR ? [process.env.AGENT_RELEASE_DIR] : AGENT_ROOTS;
+    for (const root of roots) {
       const dir = resolve(process.cwd(), root);
       let entries;
       try {

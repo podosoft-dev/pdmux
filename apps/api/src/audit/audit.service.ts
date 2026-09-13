@@ -45,11 +45,11 @@ export class AuditService {
           "action", "actorId", "actorName", "actorEmail",
           "targetType", "targetId", "targetLabel", "ip", "metadata"
         ) VALUES (
-          ${crypto.randomUUID()}, ${new Date()},
+          ${crypto.randomUUID()}, ${new Date().toISOString()},
           ${entry.action}, ${entry.actorId ?? null}, ${entry.actorName ?? null},
           ${entry.actorEmail ?? null}, ${entry.targetType ?? null},
           ${entry.targetId ?? null}, ${entry.targetLabel ?? null}, ${entry.ip ?? null},
-          CAST(${metadata} AS JSON)
+          ${metadata}
         )
       `;
     } catch {

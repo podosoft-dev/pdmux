@@ -477,7 +477,13 @@ export class FileTransfersService {
       "Accept-Ranges": "bytes", ETag: job.etag, "Cache-Control": "private, no-store",
     });
     if (partial) headers.set("Content-Range", `bytes ${start}-${end}/${file.size}`);
-    return new Response(file.slice(start, end + 1), { status: partial ? 206 : 200, headers });
+    // Bun 1.4 loses a sliced BunFile's offset when Elysia merges response headers
+    // by reconstructing Response(body). A bounded stream preserves the requested
+    // bytes through those layers without buffering the archive in memory.
+    const body = partial
+      ? Readable.toWeb(createReadStream(join(this.spool, job.id + ".zip"), { start, end, highWaterMark: 65_536 })) as unknown as ReadableStream<Uint8Array>
+      : file;
+    return new Response(body, { status: partial ? 206 : 200, headers });
   }
   private async discard(job: FileTransfer): Promise<void> {
     for (const suffix of [".zip", ".partial"]) await unlink(join(this.spool, job.id + suffix)).catch((error: unknown) => {

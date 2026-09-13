@@ -151,6 +151,12 @@ different binary, and the update path compares sha256.
 - `-buildvcs=false` — this stamps not only the commit id but **the whole repository's dirty
   flag**. With it on, **editing one line of the README changes the agent's sha256** and
   every host re-downloads the same bytes.
+- `.gitattributes` keeps text build inputs at LF on every host, including Windows checkouts
+  with `core.autocrlf=true`. Go embeds the protocol schema's exact bytes; CRLF conversion
+  changes all four agents and breaks their published checksums. The release workflow tests
+  exercise a real Git checkout under that configuration and also preserve binary assets.
+  Use a fresh checkout when validating an older Windows clone that already contains CRLF
+  source files; do not replace the committed checksums to accommodate changed inputs.
 
 Output goes to `apps/web/static/agent/<version>/` and the web image serves it verbatim at
 `/agent/<version>/…`. No object store, no second hostname, no credentials — that is why

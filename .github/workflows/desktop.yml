@@ -15,6 +15,7 @@ on:
         type: string
   pull_request:
     paths:
+      - ".gitattributes"
       - "apps/api/**"
       - "apps/web/**"
       - "apps/desktop/**"
@@ -22,6 +23,7 @@ on:
       - "tools/prepare-desktop-runtime.mjs"
       - "tools/merge-desktop-update-metadata.mjs"
       - "tools/*macos*"
+      - "tools/*desktop*"
       - "bun.lock"
       - ".github/workflows/desktop.yml"
       - ".github/workflows/release.yml"
@@ -162,6 +164,49 @@ jobs:
           PACKAGE_DIRECTORY: ${{ runner.temp }}/desktop-verify
           PDMUX_VERIFY_RELEASE_IDENTITY: ${{ inputs.signed && '1' || '0' }}
         run: bun tools/verify-macos-desktop.mjs "$PACKAGE_DIRECTORY" --runtime
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-smoke-${{ matrix.artifact }}
+          path: ${{ runner.temp }}/desktop-verify/*.png
+          if-no-files-found: ignore
+          retention-days: 3
+
+  verify-platforms:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            artifact: windows-x64
+          - runner: ubuntu-24.04
+            artifact: linux-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: pdmux-${{ matrix.artifact }}
+          path: ${{ runner.temp }}/desktop-verify
+      - name: Install Linux display dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb openssl
+      - name: Verify Windows installation and runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: bun tools/verify-desktop-artifacts.mjs "$env:RUNNER_TEMP/desktop-verify"
+      - name: Verify Debian and AppImage runtimes
+        if: runner.os == 'Linux'
+        run: xvfb-run -a bun tools/verify-desktop-artifacts.mjs "$RUNNER_TEMP/desktop-verify"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -46,6 +46,8 @@ import {
 } from "../integrations/dto/cloudflare.dto";
 import { MuxCopyModeDto, MuxHistoryDto } from "../terminal/dto/terminal-mux.dto";
 import { PDMUX, type PdmuxServices } from "./pdmux.services";
+import { EVENTS } from "../events/events.module";
+import { fleetEventResponse } from "./fleet-events";
 
 type DtoConstructor<T extends object> = new () => T;
 
@@ -230,6 +232,10 @@ async function fileUpload(
 export const pdmuxHttpPlugin: AppPlugin = (context) => {
   const services = context.services.resolve(PDMUX);
   return new Elysia({ name: "pdmux.http" })
+    .get("/fleet/events", ({ request, server }) => {
+      server?.timeout(request, 0);
+      return fleetEventResponse(request, { auth: services.auth, hosts: services.hosts, events: context.services.resolve(EVENTS) });
+    })
     .get("/fleet/scope", async ({ request }) => {
       const session = await sessionFor(services, request);
       let canManage = true;

@@ -47,6 +47,12 @@ backup, remote mode, and packaging details.
 
 ## 2. Why push rather than pull
 
+Visible fleet cards subscribe to same-origin `/api/fleet/events`. The API sends bounded
+`ready`, `hosts.changed`, and `heartbeat` invalidations; host payloads continue through authorized
+REST reads. Changes are coalesced, filtered to the current scope, and the session is rechecked during
+the connection. Hidden pages close the stream. Reconnection refreshes the snapshot, while existing
+polling continues to recover when streaming is unavailable. See [`READINESS.md`](READINESS.md).
+
 An earlier tool had the hub **SSH into each machine** and scrape its state. That makes all of
 the following prerequisites: the same network, distributed SSH keys, open inbound ports, and a
 list of machines the hub knows about. A laptop, an on-premises box or another cloud stops being

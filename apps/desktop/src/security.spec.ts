@@ -25,4 +25,15 @@ describe("[TC-PDDESKTOP-006] desktop navigation and certificate policy", () => {
     expect(certificateMatches("other.example.com", pin, "https://example.com", [pin])).toBe(false);
     expect(certificateMatches("example.com", "CD".repeat(32), "https://example.com", [pin])).toBe(false);
   });
+
+  it("matches Electron's base64 SHA-256 certificate fingerprint against configured hex pins", () => {
+    const pin = "AB".repeat(32);
+    const fingerprint = "sha256/" + Buffer.from(pin, "hex").toString("base64");
+    expect(certificateMatches("example.com", fingerprint, "https://example.com", [pin])).toBe(true);
+    expect(certificateMatches("example.com", fingerprint, "https://example.com", ["CD".repeat(32)])).toBe(false);
+    for (const malformed of ["", "sha256/", "sha256/invalid", "AB", fingerprint + "=", "sha1/" + fingerprint.slice(7)]) {
+      expect(certificateMatches("example.com", malformed, "https://example.com", [pin])).toBe(false);
+      expect(certificateMatches("example.com", malformed, "https://example.com", [malformed])).toBe(false);
+    }
+  });
 });

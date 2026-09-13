@@ -10,7 +10,7 @@ import { assertReleaseContext, assertCertificate } from "./release-macos-signing
 
 describe("[TC-PDDESKTOP-009] production signing boundary", () => {
   it("checks callable transfer methods before serializing the packaged bridge", async () => {
-    const source = readFileSync(new URL("./smoke-macos-desktop.mjs", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./smoke-desktop.mjs", import.meta.url), "utf8");
     const start = source.indexOf("  assert.deepEqual(await window.evaluate(");
     const end = source.indexOf('\n  assert.ok(', start);
     expect(start).toBeGreaterThan(-1);
@@ -22,7 +22,7 @@ describe("[TC-PDDESKTOP-009] production signing boundary", () => {
       const window = { pdmuxDesktop: { isDesktop: true, platform: "darwin", transfers },
         evaluate: async callback => JSON.parse(JSON.stringify(callback())) };
       ${assertion}
-    })()`).runInNewContext({ assert });
+    })()`).runInNewContext({ assert, process: { platform: "darwin" } });
     await expect(run()).resolves.toBeUndefined();
     await expect(run("delete transfers.read;")).rejects.toThrow();
     await expect(run('transfers.read = "not callable";')).rejects.toThrow();
@@ -34,8 +34,8 @@ describe("[TC-PDDESKTOP-009] production signing boundary", () => {
       mkdirSync(join(root, "dist"));
       writeFileSync(join(root, "package.json"), '{"type":"module"}');
       writeFileSync(join(root, "dist/backup.js"), "export class BackupService {}");
-      const source = readFileSync(new URL("./smoke-macos-desktop.mjs", import.meta.url), "utf8");
-      const prefix = source.split("application.evaluate(")[1].split("    const data =")[0];
+      const source = readFileSync(new URL("./smoke-desktop.mjs", import.meta.url), "utf8");
+      const prefix = source.split("const result = await application.evaluate(")[1].split("    const data =")[0];
       const expression = `(${prefix}\nreturn typeof require("./dist/backup.js").BackupService;})({app:{getAppPath:()=>${JSON.stringify(root)}}})`;
       const script = `const {Script}=require("node:vm"); new Script(${JSON.stringify(expression)}).runInNewContext({process}).then(value=>console.log(value)).catch(error=>{console.error(error);process.exitCode=1;});`;
       const result = spawnSync("node", ["-e", script], { encoding: "utf8", timeout: 10_000 });

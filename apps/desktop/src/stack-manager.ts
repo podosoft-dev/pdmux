@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
+import { startDesktopGateway, type DesktopGateway } from "./gateway.js";
 
 export interface RuntimeLayout {
   bunExecutable: string;
@@ -38,6 +39,7 @@ export interface StackDependencies {
   spawn: SpawnRuntime;
   allocatePort: () => Promise<number>;
   waitForUrl: (url: string) => Promise<void>;
+  startGateway: typeof startDesktopGateway;
 }
 
 export interface StackAddresses {
@@ -49,6 +51,7 @@ const defaultDependencies: StackDependencies = {
   spawn: (command, args, options) => spawn(command, [...args], options),
   allocatePort: () => reserveLoopbackPort(),
   waitForUrl: (url) => waitForHealthyUrl(url),
+  startGateway: startDesktopGateway,
 };
 
 export async function reserveLoopbackPort(): Promise<number> {
@@ -111,6 +114,7 @@ export class StackManager {
   private children: NamedProcess[] = [];
   private stopping = false;
   private addresses?: StackAddresses;
+  private gateway?: DesktopGateway;
 
   constructor(
     private readonly layout: RuntimeLayout,
@@ -128,12 +132,14 @@ export class StackManager {
       mkdir(this.layout.filesDirectory, { recursive: true, mode: 0o700 }),
     ]);
     const secret = await persistentSecret(this.layout.secretPath);
-    const [apiPort, webPort] = await Promise.all([
+    const [apiPort, webPort, gatewayPort] = await Promise.all([
+      this.dependencies.allocatePort(),
       this.dependencies.allocatePort(),
       this.dependencies.allocatePort(),
     ]);
     const apiUrl = `http://127.0.0.1:${apiPort}`;
-    const webUrl = `http://127.0.0.1:${webPort}`;
+    const internalWebUrl = `http://127.0.0.1:${webPort}`;
+    const webUrl = `http://127.0.0.1:${gatewayPort}`;
     const common: NodeJS.ProcessEnv = {
       ...process.env,
       NODE_ENV: "production",
@@ -176,7 +182,8 @@ export class StackManager {
         env: {
           ...common,
           PORT: String(webPort),
-          ORIGIN: webUrl,
+          PROTOCOL_HEADER: "x-forwarded-proto",
+          HOST_HEADER: "x-forwarded-host",
           BACKEND_INTERNAL_URL: apiUrl,
         },
         stdio: "inherit",
@@ -189,6 +196,7 @@ export class StackManager {
       });
     }
     try {
+      this.gateway = await this.dependencies.startGateway(apiUrl, internalWebUrl, gatewayPort);
       await this.dependencies.waitForUrl(`${apiUrl}/health/ready`);
       await this.dependencies.waitForUrl(webUrl);
     } catch (error) {
@@ -209,6 +217,8 @@ export class StackManager {
     const children = [...this.children].reverse();
     this.children = [];
     this.addresses = undefined;
+    await this.gateway?.close();
+    this.gateway = undefined;
     for (const child of children) await this.terminate(child.process);
   }
 
