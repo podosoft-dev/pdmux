@@ -240,7 +240,7 @@ The installer writes a systemd unit (Linux) or a launchd plist (macOS) with `Res
 makes the agent fetch a new binary, verify it, swap it and **`exit(0)`**, and the service manager does
 the rest. So the agent needs neither extra privileges nor a service-manager client.
 
-Three operational consequences follow:
+Four operational consequences follow:
 
 - **With no supervisor the update is refused** (`NO_RESTART_SOURCE`). For an agent installed with
   `--no-service` or started by hand in a terminal, exiting is a hole it cannot come back out of, so
@@ -248,8 +248,37 @@ Three operational consequences follow:
 - **The unit carries `StartLimitIntervalSec=0`.** With the default rate limit, a few minutes of server
   downtime lets restarts exceed the limit, the unit collapses into `failed`, and even after the server
   returns that host stays offline forever until somebody goes and runs `systemctl reset-failed`.
+- **The unit carries `KillMode=process`.** A `session` terminal runs `tmux new -A`; when no tmux server
+  is running yet, that command starts one **inside the agent's cgroup**. tmux detaches into its own
+  process group, but systemd stops a unit by cgroup, so under the default `KillMode=control-group`
+  every restart of the agent — a remote update, a plain `systemctl restart`, or a package manager
+  restarting services after a library upgrade — ends the tmux server and everything running in it.
+  The new agent then recreates an **empty** session under the same name, so the loss looks like
+  "the session is there but the work is gone". With `process`, only the agent is signalled.
+  launchd needs no equivalent: it cleans up by process group, and the tmux server leads its own.
 - **A restart kills shell panes.** Multiplexer sessions survive and reattach; `shell`-target panes and
   whatever was running in them end. That is why the confirmation dialog shows both numbers up front.
+  ⚠ The first half holds only where the tmux server is outside the agent's cgroup or the unit has
+  `KillMode=process`.
+
+⚠ **An update does not rewrite the unit.** Hosts installed before the unit carried
+`KillMode=process` keep the old unit until the installer is run again. To fix one in place without
+restarting anything:
+
+```bash
+sudo mkdir -p /etc/systemd/system/pdmux-agent.service.d
+printf '[Service]\nKillMode=process\n' | sudo tee /etc/systemd/system/pdmux-agent.service.d/keep-sessions.conf
+sudo systemctl daemon-reload        # takes effect for the next stop; the agent keeps running
+systemctl show pdmux-agent -p KillMode
+```
+
+For a `--user` install, use `~/.config/systemd/user/pdmux-agent.service.d/` and `systemctl --user`.
+
+On Debian and Ubuntu, `needrestart` maps processes holding an outdated library to the unit whose cgroup
+they are in. The shells inside tmux sessions make it pick `pdmux-agent.service` after routine upgrades,
+even though the agent itself is a static binary. With `KillMode=process` that restart is harmless apart
+from a brief terminal reconnect; to skip it entirely, add
+`$nrconf{override_rc}{qr(^pdmux-agent)} = 0;` to a file in `/etc/needrestart/conf.d/`.
 
 ### 2-4. Air-gapped and manual installs (`--token`)
 
