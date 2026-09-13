@@ -2,8 +2,9 @@
  * The live fleet: host rows now, metric trends over the window.
  *
  * TWO FEEDS, TWO CADENCES, ON PURPOSE. `GET /hosts` is one request that draws the
- * whole sidebar (rows + services + probe status), so it is polled at roughly the
- * heartbeat interval. The metric series is per host and covers an hour, so it is
+ * whole sidebar (rows + services + probe status). Scoped SSE invalidations request
+ * a fresh snapshot; polling at the heartbeat interval recovers dropped events.
+ * The metric series is per host and covers an hour, so it is
  * refreshed far more slowly — a sparkline whose pixels are 30s apart gains nothing
  * from being fetched every 5s, and re-reading it per host per poll would multiply
  * the load by the size of the fleet.
@@ -15,6 +16,7 @@ import type { HostSeries } from "@pdmux/core";
 import { errorCode, hostsApi, metricsApi } from "./api";
 import { hostSeries } from "./map";
 import type { HostView } from "./types";
+import { FleetEvents } from "./fleet-events";
 
 /** Never poll faster than this, whatever the fleet's heartbeat is set to. */
 const MIN_POLL_MS = 2000;
@@ -40,6 +42,8 @@ export class FleetFeed {
   private hostTimer: ReturnType<typeof setInterval> | null = null;
   private historyTimer: ReturnType<typeof setInterval> | null = null;
   private historyBusy = false;
+  private refreshPending: Promise<void> | null = null;
+  private readonly events = new FleetEvents(() => this.refresh());
 
   constructor(options: FleetFeedOptions = {}) {
     this.hosts = options.initialHosts ?? [];
@@ -48,20 +52,29 @@ export class FleetFeed {
   }
 
   start(): void {
+    if (this.hostTimer) return;
     void this.refresh();
     void this.refreshHistory();
     this.hostTimer = setInterval(() => void this.refresh(), this.pollMs);
     this.historyTimer = setInterval(() => void this.refreshHistory(), HISTORY_REFRESH_MS);
+    this.events.start();
   }
 
   stop(): void {
+    this.events.stop();
     if (this.hostTimer) clearInterval(this.hostTimer);
     if (this.historyTimer) clearInterval(this.historyTimer);
     this.hostTimer = null;
     this.historyTimer = null;
   }
 
-  async refresh(): Promise<void> {
+  refresh(): Promise<void> {
+    if (this.refreshPending) return this.refreshPending;
+    this.refreshPending = this.fetchHosts().finally(() => { this.refreshPending = null; });
+    return this.refreshPending;
+  }
+
+  private async fetchHosts(): Promise<void> {
     try {
       this.hosts = await hostsApi.list();
       this.now = Date.now();

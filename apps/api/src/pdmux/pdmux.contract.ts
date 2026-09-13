@@ -12,6 +12,7 @@ export const PDMUX_HTTP_ROUTES = [
   "GET /hosts/:hostId/file-transfers/:id/download",
   "GET /fleet/scope",
   "GET /fleet/settings",
+  "GET /fleet/events",
   "PUT /fleet/settings",
   "POST /integrations/cloudflare/discover",
   "GET /integrations/cloudflare",
