@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.13.0
+
+Includes agent 0.1.26. Existing systemd installations need the tmux-preservation drop-in described in
+[the operations guide](docs/OPERATIONS.md); agent updates do not rewrite existing units.
+
 - Preserve LF line endings in native build checkouts, including the agent's embedded schema and
   published checksum metadata. Windows packages now use the same agent bytes as Linux and macOS.
 - Keep tmux sessions alive when a systemd-managed agent restarts. A tmux server started by a `session`
