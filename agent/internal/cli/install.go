@@ -418,6 +418,18 @@ func RenderUnit(in InstallInput, execPath string) string {
 		// The agent dials out and holds one socket; a crash must simply reconnect.
 		"Restart=always",
 		"RestartSec=5",
+		// ⚠ LOAD-BEARING. A `session` terminal runs `tmux new -A`, and when no tmux
+		// server is running yet that command starts one — as a descendant of this
+		// unit. tmux daemonizes into its own session and process group, but systemd
+		// kills by cgroup, not by process group: with the default
+		// KillMode=control-group every stop of the agent (a remote update's exit,
+		// a package manager restarting services after a library upgrade, a plain
+		// `systemctl restart`) takes the tmux server and all the work inside it
+		// down, and the next agent quietly recreates an empty session under the
+		// same name. `process` signals only the agent. Nothing is lost by it:
+		// shell-target panes are process groups the agent ends itself on the way
+		// out.
+		"KillMode=process",
 		// The credential lives in the 0600 config file, never in the unit — units
 		// are world-readable and end up in support bundles.
 		fmt.Sprintf("Environment=PDMUX_CONFIG=%s", ConfigPathFor(in)),
@@ -459,6 +471,12 @@ func RenderUnit(in InstallInput, execPath string) string {
 // there is no macOS equivalent of the brick StartLimitIntervalSec=0 avoids.
 // ProcessType Background asks the scheduler to treat it as a daemon rather than
 // as something a user is waiting on.
+//
+// There is no counterpart to the unit's KillMode=process, and none is needed:
+// launchd cleans up a job by process group, and the tmux server a `session`
+// terminal starts is the leader of its own. Measured with a Background job that
+// started a tmux server — the server outlived both `launchctl bootout` and the
+// job exiting on its own, which is the path a remote update takes.
 func RenderPlist(in InstallInput, execPath, logPath string) string {
 	var body strings.Builder
 	body.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")

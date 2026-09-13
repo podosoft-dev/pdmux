@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Keep tmux sessions alive when a systemd-managed agent restarts. A tmux server started by a `session`
+  terminal lives in the agent's cgroup, so the default `KillMode=control-group` ended it — and every
+  program inside — on each remote update or package-manager service restart, after which an empty
+  session reappeared under the same name. The installer now writes `KillMode=process`. Updates do not
+  rewrite an existing unit; see the operations guide for the in-place drop-in.
+
 ## 0.12.3
 
 - Fix certificate extraction arguments in the macOS release verifier and exercise the same native

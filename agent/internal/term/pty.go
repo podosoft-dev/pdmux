@@ -174,7 +174,10 @@ func (p *ptyProcess) Resize(cols, rows int) error {
 // The child is a session leader, so its pid is also its process-group id and a
 // negative signal reaches everything inside. For a `session` terminal that group
 // holds only the tmux CLIENT: the tmux server is its own session, which is
-// exactly why the work survives.
+// exactly why the work survives this signal. It does not survive the service
+// manager on its own — systemd kills by cgroup, and a server this agent started
+// is in the agent's cgroup — which is why the unit carries KillMode=process
+// (see RenderUnit).
 func (p *ptyProcess) Kill() {
 	p.killOnce.Do(func() {
 		// ⚠ A reaped pid is reusable. CloseAll on a dropped socket routinely kills

@@ -251,6 +251,19 @@ func TestPlanInstallStartLimit(t *testing.T) {
 	})
 }
 
+func TestPlanInstallKillMode(t *testing.T) {
+	// A tmux server the agent started lives in the agent's cgroup; the default
+	// KillMode=control-group ends it, and every session in it, on each restart.
+	for name, in := range map[string]InstallInput{"system": systemInstall(), "user": userInstall()} {
+		t.Run("stops only the agent, not the tmux server it started ("+name+")", func(t *testing.T) {
+			unit := RenderUnit(in, "/opt/pdmux/bin/pdmux-agent")
+			if !strings.Contains(unit, "\nKillMode=process\n") {
+				t.Fatalf("a restart would kill every tmux session the agent started:\n%s", unit)
+			}
+		})
+	}
+}
+
 func TestPlanInstallLaunchd(t *testing.T) {
 	darwin := func(user bool) InstallInput {
 		in := systemInstall()
