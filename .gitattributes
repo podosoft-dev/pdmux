@@ -1,0 +1,2 @@
+# Keep build inputs and embedded resources identical on every host platform.
+* text=auto eol=lf

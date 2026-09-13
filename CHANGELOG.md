@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve LF line endings in native build checkouts, including the agent's embedded schema and
+  published checksum metadata. Windows packages now use the same agent bytes as Linux and macOS.
 - Keep tmux sessions alive when a systemd-managed agent restarts. A tmux server started by a `session`
   terminal lives in the agent's cgroup, so the default `KillMode=control-group` ended it — and every
   program inside — on each remote update or package-manager service restart, after which an empty
