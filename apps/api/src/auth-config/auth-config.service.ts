@@ -131,7 +131,7 @@ export class AuthConfigService {
     const config = object(row.config);
     await this.sql`
       INSERT INTO "auth_config" ("key", "enabled", "config", "secret", "updatedAt")
-      VALUES (${row.key}, ${row.enabled}, ${config}, ${row.secret}, CURRENT_TIMESTAMP)
+      VALUES (${row.key}, ${row.enabled}, ${JSON.stringify(config)}, ${row.secret}, CURRENT_TIMESTAMP)
       ON CONFLICT ("key") DO UPDATE SET
         "enabled" = EXCLUDED."enabled",
         "config" = EXCLUDED."config",
