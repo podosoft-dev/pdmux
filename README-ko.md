@@ -1,5 +1,7 @@
 # pdmux
 
+데스크탑 설치: [macOS](docs/install/macos.md) · [Windows](docs/install/windows.md) · [Linux](docs/install/linux.md). 플랫폼별 설치·첫 실행·빌드 절차는 [설치 안내](docs/install/README.md)를 참고하세요.
+
 Codex, Claude 같은 AI CLI를 여러 개 동시에 돌릴 때, 그 터미널들을 한 브라우저에서 같이 보면서 작업하기
 위한 셀프호스트 대시보드입니다.
 

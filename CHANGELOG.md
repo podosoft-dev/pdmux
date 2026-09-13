@@ -7,6 +7,21 @@
   program inside — on each remote update or package-manager service restart, after which an empty
   session reappeared under the same name. The installer now writes `KillMode=process`. Updates do not
   rewrite an existing unit; see the operations guide for the in-place drop-in.
+- Add resumable folder uploads and ZIP64 downloads with empty-directory preservation, conflict
+  review, bounded chunks, progress, and shared browser/desktop transfer controls.
+- Refresh Git dock snapshots after returning to a visible panel while keeping navigation stable.
+- Refresh host cards through scoped server-sent events, retaining polling during outages.
+- Route embedded desktop HTTP and WebSocket traffic through one loopback origin so agent
+  installation, MCP onboarding, terminals, and session URLs work in local mode.
+- Preserve ZIP byte ranges through response middleware and verify authenticated folder uploads,
+  empty directories, pause/resume, and downloads against the real host agent.
+- Fix SQLite audit and authentication-setting writes, and package a usable native tray icon.
+- Accept Electron's SHA-256 certificate fingerprint encoding when matching remote HTTPS pins.
+- Preserve partial native downloads before Chromium shutdown and resume the missing bytes after restart.
+- Add platform-specific installation guides, including app-specific macOS quarantine removal,
+  and native Windows/Linux installer, backup, folder IPC, and data-preservation checks.
+- Keep local packaging unpublished even when callers repeat the no-publish option.
+- Clear Cloudflare tunnel connections before deleting the dedicated tunnel.
 
 ## 0.12.3
 

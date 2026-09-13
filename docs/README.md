@@ -6,6 +6,7 @@ to the rules they produced — so a future reader can weigh a rule instead of gu
 
 | Document | What it covers |
 |---|---|
+| [`install/README.md`](install/README.md) | platform downloads, native builds, first launch, updates, and uninstalling |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | why push rather than pull, why the terminal is same-origin, read-only git, the component split, verifying by geometry |
 | [`CONTRACTS.md`](CONTRACTS.md) | the agent↔server protocol (additions only), enrollment and remote-update frames |
 | [`MCP.md`](MCP.md) | the two credentials an AI CLI can hold, what each reaches, and which guarantees changed shape when fleet-wide access arrived |
@@ -17,6 +18,7 @@ to the rules they produced — so a future reader can weigh a rule instead of gu
 | [`IME_INPUT.md`](IME_INPUT.md) | the input path for composed characters (Korean, Japanese, Chinese) and **its limits** |
 | [`DESKTOP.md`](DESKTOP.md) | the embedded SQLite/local-provider profile, desktop lifecycle, backups, remote mode, and platform packaging |
 | [`FILE-TRANSFERS.md`](FILE-TRANSFERS.md) | folder uploads, ZIP64 downloads, progress, resume, conflicts, and private spool deployment |
+| [`READINESS.md`](READINESS.md) | isolated production-runtime, browser, real-agent, and optional Cloudflare verification |
 
 Every test title carries a `[TC-AREA-NNN]` tag, and those identifiers appear throughout these
 documents. They point into a requirements matrix that is maintained alongside this repository rather
