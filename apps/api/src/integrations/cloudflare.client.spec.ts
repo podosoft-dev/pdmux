@@ -8,6 +8,20 @@ function rows(count: number, kind: "zone" | "policy"): unknown[] {
 }
 
 describe("CloudflareClient", () => {
+  it("[TC-PDEXTERNAL-012] clears active connectors before deleting a tunnel", async () => {
+    const requests: string[] = [];
+    const requestFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      requests.push(`${init?.method} ${url.pathname}${url.search}`);
+      return Response.json({ success: true, result: null });
+    };
+    await new CloudflareClient("test-token", requestFetch as typeof fetch).deleteTunnel("account-1", "tunnel-1");
+    expect(requests).toEqual([
+      "DELETE /client/v4/accounts/account-1/cfd_tunnel/tunnel-1/connections",
+      "DELETE /client/v4/accounts/account-1/cfd_tunnel/tunnel-1",
+    ]);
+  });
+
   it("[TC-PDEXTERNAL-011] discovers every zone and reusable policy across paginated responses", async () => {
     const requests: string[] = [];
     const requestFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {

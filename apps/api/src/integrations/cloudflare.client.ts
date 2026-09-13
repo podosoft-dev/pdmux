@@ -142,10 +142,12 @@ export class CloudflareClient {
     return this.remove(`/accounts/${encodeURIComponent(accountId)}/access/apps/${encodeURIComponent(appId)}`);
   }
 
-  deleteTunnel(accountId: string, tunnelId: string): Promise<void> {
-    return this.remove(
-      `/accounts/${encodeURIComponent(accountId)}/cfd_tunnel/${encodeURIComponent(tunnelId)}?cleanup_connections=true`,
-    );
+  async deleteTunnel(accountId: string, tunnelId: string): Promise<void> {
+    const path = `/accounts/${encodeURIComponent(accountId)}/cfd_tunnel/${encodeURIComponent(tunnelId)}`;
+    // Cloudflare rejects deletion while connectors are registered. Connection
+    // cleanup is a separate endpoint; a deletion query flag does not perform it.
+    await this.remove(`${path}/connections`);
+    await this.remove(path);
   }
 
   private async remove(path: string): Promise<void> {
