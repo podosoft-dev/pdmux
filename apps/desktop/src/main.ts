@@ -175,8 +175,10 @@ async function initialize(): Promise<void> {
     void updater.installDownloadedUpdate().catch((error: unknown) => logError("Install desktop update", error));
   });
 
-  const icon = nativeImage.createFromPath(join(app.isPackaged ? process.resourcesPath : resolve(moduleDirectory, "../../web/static"), "favicon.svg"));
-  tray = new Tray(icon);
+  const icon = nativeImage.createFromPath(join(app.isPackaged ? process.resourcesPath : resolve(moduleDirectory, "../resources"), "tray.png"));
+  if (icon.isEmpty()) throw new Error("Desktop tray image is missing");
+  const traySize = process.platform === "darwin" ? 20 : 24;
+  tray = new Tray(icon.resize({ width: traySize, height: traySize }));
   tray.setToolTip("pdmux");
   tray.on("double-click", () => mainWindow?.show());
   tray.setContextMenu(Menu.buildFromTemplate([
@@ -206,15 +208,17 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow?.focus();
   });
   app.on("activate", () => mainWindow?.show());
-  app.on("before-quit", () => { quitting = true; });
-  app.on("will-quit", (event) => {
+  app.on("before-quit", (event) => {
+    quitting = true;
     if (!stack && !fileTransfers) return;
     event.preventDefault();
     const running = stack;
     const transfers = fileTransfers;
     stack = undefined;
     fileTransfers = undefined;
-    void Promise.resolve(transfers?.close()).finally(() => running?.stop()).finally(() => app.exit(0));
+    void Promise.resolve(transfers?.close()).finally(() => running?.stop())
+      .catch((error: unknown) => logError("Stop desktop runtime", error))
+      .finally(() => app.quit());
   });
   void app.whenReady().then(initialize).catch((error: unknown) => {
     logError("Initialize desktop application", error);

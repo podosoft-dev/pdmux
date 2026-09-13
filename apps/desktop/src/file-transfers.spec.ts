@@ -107,6 +107,8 @@ describe("[TC-PDFILE-009] restricted desktop file transfers", (): void => {
     received = 40;
     await writeFile(savePath + ".pdmux-download-" + jobId + ".part", Buffer.alloc(40));
     await manager.close();
+    // Chromium removes its unfinished file when the application quits.
+    await rm(savePath + ".pdmux-download-" + jobId + ".part");
     item.removeAllListeners();
     frame.url = "http://127.0.0.1:5003/";
     manager = new DesktopFileTransfers(window, session, "http://127.0.0.1:5003", root);

@@ -62,10 +62,15 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
     };
     const calls: Array<{ entry: string; options: SpawnRuntimeOptions }> = [];
     const killed: string[] = [];
-    const ports = [51002, 51001];
+    const ports = [51002, 51003, 51001];
     const manager = new StackManager(layout, {
       allocatePort: () => Promise.resolve(ports.shift() ?? 0),
       waitForUrl: () => Promise.resolve(),
+      startGateway: async (api, web, port) => {
+        expect(api).toBe("http://127.0.0.1:51002");
+        expect(web).toBe("http://127.0.0.1:51003");
+        return { url: `http://127.0.0.1:${port}`, close: async () => { killed.push("gateway"); } };
+      },
       spawn: (_command, args, options) => {
         const entry = args[0] ?? "";
         calls.push({ entry, options });
@@ -85,11 +90,14 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
     expect(calls[1]?.options.env.HOST).toBe("127.0.0.1");
     expect(calls[1]?.options.env.PDMUX_JOBS_PROVIDER).toBe("local");
     expect(calls[2]?.options.env.BACKEND_INTERNAL_URL).toBe("http://127.0.0.1:51002");
+    expect(calls[2]?.options.env.PROTOCOL_HEADER).toBe("x-forwarded-proto");
+    expect(calls[2]?.options.env.HOST_HEADER).toBe("x-forwarded-host");
+    expect(calls[1]?.options.env.CORS_ORIGIN).toBe("http://127.0.0.1:51001");
     if (process.platform !== "win32") {
       expect((await stat(layout.secretPath)).mode & 0o777).toBe(0o600);
     }
 
     await manager.stop();
-    expect(killed).toEqual([layout.webEntry, layout.apiEntry]);
+    expect(killed).toEqual(["gateway", layout.webEntry, layout.apiEntry]);
   });
 });
