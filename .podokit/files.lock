@@ -1554,7 +1554,7 @@
       "outHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "apps/web/static/favicon.svg": {
-      "tier": "managed",
+      "tier": "owned",
       "outHash": "sha256:9fd6d1a1686580e8d8bbeb270e1378c7814e23f9212c47ceaf942214840bbb92"
     },
     "apps/web/tsconfig.json": {

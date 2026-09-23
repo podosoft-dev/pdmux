@@ -132,7 +132,8 @@
     "tests/ui/guards.ui.spec.ts",
     "apps/web/src/lib/server/search-indexing.ts",
     "tests/ui/settings.ui.spec.ts",
-    "tests/ui/smoke.ui.spec.ts"
+    "tests/ui/smoke.ui.spec.ts",
+    "apps/web/static/favicon.svg"
   ],
   "managedOverrides": [
     "apps/web/src/lib/components/ui/input/input.svelte",
