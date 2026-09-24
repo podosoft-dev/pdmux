@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.13.1
+
+- Replace the default browser icon with a terminal and split-pane mark for pdmux, and keep
+  the asset owned across PodoKit updates.
+
 ## 0.13.0
 
 Includes agent 0.1.26. Existing systemd installations need the tmux-preservation drop-in described in
