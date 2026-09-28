@@ -96,6 +96,21 @@ async function waitState(service: FileTransfersService, id: string, expected: st
 }
 
 describe("[TC-PDFILE-004] durable scoped transfers", (): void => {
+  it("clears only finished transfers for their owner and removes stored entries", async (): Promise<void> => {
+    let agentCalls = 0;
+    const { service, db } = await fixture({}, async () => { agentCalls++; throw new Error("Host offline"); });
+    const id = randomUUID();
+    await service.create(owner, { id, direction: "upload", basePath: "", selection: [] });
+    const entry = { id: randomUUID(), path: "done.txt", size: 7, kind: "file" as const, fingerprint: hash(hash("payload")), modified: "" };
+    await service.manifest(owner, id, [entry]);
+    await expect(service.remove(owner, id)).rejects.toMatchObject({ code: "FILES_TRANSFER_STATE" });
+    await expect(service.remove({ ...owner, userId: "other" }, id)).rejects.toMatchObject({ code: "FILES_TRANSFER_NOT_FOUND" });
+    await db.getRepository(FileTransfer).update(id, { state: "completed" });
+    expect(await service.remove(owner, id)).toEqual({ id });
+    expect(await service.list(owner)).toEqual([]);
+    expect(await db.getRepository(FileTransferEntry).countBy({ transferId: id })).toBe(0);
+    expect(agentCalls).toBe(0);
+  });
   it("isolates users/scopes and accepts duplicate manifests without advancing twice", async (): Promise<void> => {
     const { service } = await fixture();
     const id = randomUUID();

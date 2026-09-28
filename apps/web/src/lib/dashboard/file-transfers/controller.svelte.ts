@@ -21,10 +21,12 @@ export class FileTransferController {
   expanded = $state(true);
   handedOff = $state<string[]>([]);
   nativeDownloads = $state<Record<string, NativeDownload>>({});
+  removing = $state<string[]>([]);
   private readonly sources = new Map<string, UploadSource>();
   private readonly running = new Set<string>();
   private readonly stopped = new Set<string>();
   private readonly refreshes = new Map<string, Promise<void>>();
+  private readonly removed = new Set<string>();
   private resolveConflict: ((choice: Choice) => void) | undefined;
   private resolveExclusions: ((proceed: boolean) => void) | undefined;
   private allChoice: Choice | undefined;
@@ -45,7 +47,7 @@ export class FileTransferController {
     this.sources.clear();
   }
   private remember(job: FileTransferView): void {
-    if (this.disposed) return;
+    if (this.disposed || this.removed.has(job.id)) return;
     const index = this.jobs.findIndex((value) => value.id === job.id);
     if (index >= 0 && (this.jobs[index]?.updated ?? 0) > job.updated) return;
     const previous = this.jobs[index];
@@ -198,6 +200,33 @@ export class FileTransferController {
       await this.sources.get(job.id)?.release?.();
       this.sources.delete(job.id);
     } catch (error: unknown) { this.error = transferErrorCode(error); }
+  }
+  async remove(job: FileTransferView): Promise<void> {
+    if (this.removing.includes(job.id)) return;
+    this.removing = [...this.removing, job.id];
+    this.error = "";
+    try {
+      try { await this.api.remove(job.hostId, job.id); }
+      catch (error: unknown) {
+        // The server may have expired the record since the last list response.
+        if (transferErrorCode(error) !== "FILES_TRANSFER_NOT_FOUND") throw error;
+      }
+      this.removed.add(job.id);
+      this.jobs = this.jobs.filter((value) => value.id !== job.id);
+      this.handedOff = this.handedOff.filter((id) => id !== job.id);
+      if (this.nativeDownloads[job.id]) {
+        const downloads = { ...this.nativeDownloads };
+        delete downloads[job.id];
+        this.nativeDownloads = downloads;
+      }
+      await this.sources.get(job.id)?.release?.().catch(() => undefined);
+      this.sources.delete(job.id);
+    } catch { this.error = "FILES_TRANSFER_CLEAR_FAILED"; }
+    finally { this.removing = this.removing.filter((id) => id !== job.id); }
+  }
+  async removeFinished(): Promise<void> {
+    const finished = this.jobs.filter((job) => ["completed", "cancelled", "expired"].includes(job.state));
+    await Promise.all(finished.map((job) => this.remove(job)));
   }
   choose(choice: Choice, all = false): void {
     if (all && (choice === "replace" || choice === "skip")) this.allChoice = choice;

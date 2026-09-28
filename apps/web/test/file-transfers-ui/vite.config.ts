@@ -20,7 +20,8 @@ export default defineConfig({
       });
     },
   }],
-  resolve: { alias: {
+  // Linked local packages must stay under node_modules so Vite prebundles their CommonJS exports.
+  resolve: { preserveSymlinks: true, alias: {
     "#lib": fileURLToPath(new URL("../../src/lib", import.meta.url)),
     "$app/state": fileURLToPath(new URL("./page.ts", import.meta.url)),
     "$app/env": fileURLToPath(new URL("../stubs/app-environment.ts", import.meta.url)),

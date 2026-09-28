@@ -2,6 +2,7 @@ export const PDMUX_HTTP_ROUTES = [
   "GET /hosts/:hostId/file-transfers",
   "POST /hosts/:hostId/file-transfers",
   "GET /hosts/:hostId/file-transfers/:id",
+  "DELETE /hosts/:hostId/file-transfers/:id",
   "GET /hosts/:hostId/file-transfers/:id/entries",
   "POST /hosts/:hostId/file-transfers/:id/manifest",
   "POST /hosts/:hostId/file-transfers/:id/control",
