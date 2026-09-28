@@ -666,6 +666,12 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
       const session = await sessionFor(services, request);
       return { ...await services.fileTransfers.get(transferOwner(session, params.hostId), params.id) };
     })
+    .delete("/hosts/:hostId/file-transfers/:id", async ({ request, params }) => {
+      const session = await sessionFor(services, request);
+      return audit(services, request, session, "host.files.transfer.remove",
+        () => services.fileTransfers.remove(transferOwner(session, params.hostId), params.id),
+        () => ({ type: "host", id: params.hostId, metadata: { transferId: params.id } }));
+    })
     .get("/hosts/:hostId/file-transfers/:id/entries", async ({ request, params }) => {
       const session = await sessionFor(services, request);
       return services.fileTransfers.entries(transferOwner(session, params.hostId), params.id);

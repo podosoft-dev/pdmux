@@ -112,6 +112,15 @@ export class FileTransfersService {
     await this.authorize(owner);
     return this.jobRepo().find({ where: owner, order: { created: "DESC" }, take: 100 });
   }
+  async remove(owner: TransferOwner, id: string): Promise<{ id: string }> {
+    await this.locked(owner.hostId, async () => {
+      const job = await this.get(owner, id);
+      if (!closed.includes(job.state as typeof closed[number])) fail("FILES_TRANSFER_STATE");
+      await this.discard(job);
+      await this.jobRepo().delete({ id, ...owner });
+    });
+    return { id };
+  }
   async entries(owner: TransferOwner, id: string): Promise<FileTransferEntry[]> {
     await this.get(owner, id);
     return this.entryRepo().find({ where: { transferId: id }, order: { path: "ASC" } });
@@ -489,7 +498,9 @@ export class FileTransfersService {
     for (const suffix of [".zip", ".partial"]) await unlink(join(this.spool, job.id + suffix)).catch((error: unknown) => {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
     });
-    if (job.direction === "upload") {
+    // A completed upload has no staged files left; its history can be cleared even
+    // when the host is offline. Cancelled uploads still need their staging removed.
+    if (job.direction === "upload" && job.state !== "completed") {
       for (const entry of await this.entryRepo().findBy({ transferId: job.id, kind: "file" })) {
         await this.ask(job, entry, "discard");
       }

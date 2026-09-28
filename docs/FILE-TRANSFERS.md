@@ -21,7 +21,9 @@ smoke test imports the emitted transfer controller as well as the terminal relay
   Skipping a conflicting directory skips its children too.
 - **Transfers** shows scanning, fingerprint calculation, acknowledged upload bytes, ZIP preparation,
   item counts, and the current path. Collapse the panel without stopping work; pause/resume/cancel
-  are separate controls.
+  are separate controls. The history scrolls within the panel. Use **Clear** on a finished transfer
+  or **Clear finished** to remove all completed, cancelled, and expired transfers. Active and
+  resumable transfers remain available.
 
 Web folder picking requires a secure context and `showDirectoryPicker` support. Otherwise use
 folder drag-and-drop where the browser exposes directory entries. The app does not use a file-only
@@ -69,7 +71,9 @@ bytes, including through the production web proxy. See [runtime verification](RE
 
 Temporary transfer data expires after **24 hours without activity**. API cleanup runs every minute;
 the agent cleans owned staging files at startup and hourly, including when disconnected. Ready ZIPs
-and partial downloads are temporary, not backups. Cancel/expiry never deletes a saved output file.
+and partial downloads are temporary, not backups. Clearing a transfer removes its history and
+temporary data, while uploaded files and saved downloads remain in place. Cancel/expiry never deletes
+a saved output file.
 
 ## Limits and deployment
 
@@ -130,6 +134,7 @@ Endpoints below are relative to `/hosts/:hostId/file-transfers` (the browser add
 |---|---|
 | `GET /`, `POST /` | List/create with UUID, direction, base path and selection |
 | `GET /:id`, `GET /:id/entries` | Read progress and manifest |
+| `DELETE /:id` | Clear a completed, cancelled, or expired transfer and its temporary data |
 | `POST /:id/manifest` | Idempotent batch of up to 250 upload entries |
 | `POST /:id/control` | `start`, `pause`, or `cancel` |
 | `POST /:id/entries/:entryId/reconcile` | Agent's durable offset/commit state |

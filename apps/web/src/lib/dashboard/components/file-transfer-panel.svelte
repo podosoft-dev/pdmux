@@ -20,9 +20,11 @@
   let reselect = $state<FileTransferView | null>(null);
   let picker = $state<HTMLInputElement | null>(null);
   const conflict = $derived(transfers.conflict);
+  const finished = $derived(transfers.jobs.filter((job) => ["completed", "cancelled", "expired"].includes(job.state)));
   const columns = $derived([{ key: "created", label: messages.title, sortable: true, class: "w-full" }]);
 
   function reason(code: string): string {
+    if (code === "FILES_TRANSFER_CLEAR_FAILED") return messages.clearError;
     if (code === "FILES_TRANSFER_SOURCE_CHANGED") return messages.sourceChanged;
     if (code === "FILES_TRANSFER_LIMIT") return messages.limit;
     if (code === "FILES_TRANSFER_DISK_FULL") return messages.diskFull;
@@ -68,76 +70,85 @@
 </script>
 
 {#if transfers.jobs.length || transfers.preparing || transfers.error}
-  <section class="max-h-[45%] min-h-0 shrink-0 overflow-auto border-t text-xs" data-testid="file-transfer-panel" aria-label={messages.title}>
-    <Button variant="ghost" size="sm" class="h-7 w-full justify-between px-2 text-xs" aria-expanded={transfers.expanded} onclick={() => (transfers.expanded = !transfers.expanded)}>
-      <span>{messages.title}</span><span>{transfers.jobs.length}</span>
-    </Button>
-    {#if transfers.expanded}
-      {#if transfers.error}<p class="text-destructive break-words px-2 py-1" role="alert">{reason(transfers.error)}</p>{/if}
-      {#if transfers.preparing}
-        {@const preparation = transfers.preparing}
-        <div class="space-y-1 px-2 py-1" data-testid="transfer-preparation">
-          <p>{preparation.phase === "scanning" ? messages.scanning : messages.hashing} · {preparation.count}</p>
-          <p class="truncate">{preparation.path}</p>
-          <Progress value={preparation.phase === "scanning" || !preparation.totalBytes ? null : preparation.bytes / preparation.totalBytes * 100} aria-label={messages.hashing} />
-          <Button size="sm" variant="outline" onclick={() => transfers.cancelPreparation()}>{messages.cancelPreparation}</Button>
-        </div>
+  <section class="flex max-h-[45%] min-h-0 shrink-0 flex-col border-t text-xs" data-testid="file-transfer-panel" aria-label={messages.title}>
+    <div class="flex shrink-0 items-center">
+      <Button variant="ghost" size="sm" class="h-7 min-w-0 flex-1 justify-between px-2 text-xs" aria-expanded={transfers.expanded} onclick={() => (transfers.expanded = !transfers.expanded)}>
+        <span>{messages.title}</span><span>{transfers.jobs.length}</span>
+      </Button>
+      {#if finished.length}
+        <Button variant="ghost" size="sm" class="h-7 shrink-0 px-2 text-xs" disabled={transfers.removing.length > 0} onclick={() => void transfers.removeFinished()}>{messages.clearAll}</Button>
       {/if}
-      {#if transfers.jobs.length}
-        <DataTable rows={transfers.jobs} {columns} getKey={(job) => job.id} perPage={3} empty={messages.empty} ariaLabel={messages.title}>
-          {#snippet row(job)}
-            <Table.Cell class="max-w-0 whitespace-normal px-2 py-2">
-              <div class="space-y-1" data-testid="transfer-job" data-transfer-id={job.id} data-transfer-state={job.state}>
-                <p class="truncate" title={job.basePath}>{hostLabel(job.hostId)} · ~/{job.basePath}</p>
-                <p class="text-muted-foreground">{messages.states[job.state]} · {job.direction === "upload" ? messages.uploading : messages.downloading}</p>
-                <p class="truncate" title={job.currentPath}>{job.currentPath}</p>
-                <Progress value={percent(job)} aria-label={messages.states[job.state]} />
-                <p class="flex flex-wrap justify-between gap-1 tabular-nums">
-                  <span>{humanSize(job.bytes)} / {humanSize(job.totalBytes)}</span>
-                  <span>{fmt(messages.count, { done: String(job.completedEntries), total: String(job.totalEntries) })}</span>
-                </p>
-                {#if job.errorCode}<p class="text-destructive break-words">{reason(job.errorCode)}</p>{/if}
-                {#if job.exclusions.length}
-                  <p>{messages.excluded}</p>
-                  <pre class="max-h-20 overflow-auto whitespace-pre-wrap break-all">{job.exclusions.join("\n")}</pre>
-                {/if}
-                <div class="flex flex-wrap gap-1">
-                  {#if ["running", "queued"].includes(job.state)}
-                    <Button variant="outline" size="sm" class="h-7 text-xs" onclick={() => void transfers.pause(job)}>{messages.pause}</Button>
+    </div>
+    {#if transfers.expanded}
+      <div class="min-h-0 overflow-y-auto" data-testid="transfer-list">
+        {#if transfers.error}<p class="text-destructive break-words px-2 py-1" role="alert">{reason(transfers.error)}</p>{/if}
+        {#if transfers.preparing}
+          {@const preparation = transfers.preparing}
+          <div class="space-y-1 px-2 py-1" data-testid="transfer-preparation">
+            <p>{preparation.phase === "scanning" ? messages.scanning : messages.hashing} · {preparation.count}</p>
+            <p class="truncate">{preparation.path}</p>
+            <Progress value={preparation.phase === "scanning" || !preparation.totalBytes ? null : preparation.bytes / preparation.totalBytes * 100} aria-label={messages.hashing} />
+            <Button size="sm" variant="outline" onclick={() => transfers.cancelPreparation()}>{messages.cancelPreparation}</Button>
+          </div>
+        {/if}
+        {#if transfers.jobs.length}
+          <DataTable rows={transfers.jobs} {columns} getKey={(job) => job.id} empty={messages.empty} ariaLabel={messages.title}>
+            {#snippet row(job)}
+              <Table.Cell class="max-w-0 whitespace-normal px-2 py-2">
+                <div class="space-y-1" data-testid="transfer-job" data-transfer-id={job.id} data-transfer-state={job.state}>
+                  <p class="truncate" title={job.basePath}>{hostLabel(job.hostId)} · ~/{job.basePath}</p>
+                  <p class="text-muted-foreground">{messages.states[job.state]} · {job.direction === "upload" ? messages.uploading : messages.downloading}</p>
+                  <p class="truncate" title={job.currentPath}>{job.currentPath}</p>
+                  <Progress value={percent(job)} aria-label={messages.states[job.state]} />
+                  <p class="flex flex-wrap justify-between gap-1 tabular-nums">
+                    <span>{humanSize(job.bytes)} / {humanSize(job.totalBytes)}</span>
+                    <span>{fmt(messages.count, { done: String(job.completedEntries), total: String(job.totalEntries) })}</span>
+                  </p>
+                  {#if job.errorCode}<p class="text-destructive break-words">{reason(job.errorCode)}</p>{/if}
+                  {#if job.exclusions.length}
+                    <p>{messages.excluded}</p>
+                    <pre class="max-h-20 overflow-auto whitespace-pre-wrap break-all">{job.exclusions.join("\n")}</pre>
                   {/if}
-                  {#if ["paused", "failed", "draft"].includes(job.state) || (job.direction === "upload" && job.state === "running" && !transfers.hasSource(job.id))}
-                    <Button variant="outline" size="sm" class="h-7 text-xs" onclick={() => resume(job)}>{messages.resume}</Button>
-                  {/if}
-                  {#if job.state === "ready"}
-                    <Button size="sm" class="h-7 text-xs" onclick={() => void transfers.save(job)}>{messages.save}</Button>
-                  {/if}
-                  {#if !["completed", "cancelled", "expired"].includes(job.state)}
-                    <Button variant="ghost" size="sm" class="h-7 text-xs" onclick={() => void transfers.cancel(job)}>{messages.cancel}</Button>
+                  <div class="flex flex-wrap gap-1">
+                    {#if ["running", "queued"].includes(job.state)}
+                      <Button variant="outline" size="sm" class="h-7 text-xs" onclick={() => void transfers.pause(job)}>{messages.pause}</Button>
+                    {/if}
+                    {#if ["paused", "failed", "draft"].includes(job.state) || (job.direction === "upload" && job.state === "running" && !transfers.hasSource(job.id))}
+                      <Button variant="outline" size="sm" class="h-7 text-xs" onclick={() => resume(job)}>{messages.resume}</Button>
+                    {/if}
+                    {#if job.state === "ready"}
+                      <Button size="sm" class="h-7 text-xs" onclick={() => void transfers.save(job)}>{messages.save}</Button>
+                    {/if}
+                    {#if !["completed", "cancelled", "expired"].includes(job.state)}
+                      <Button variant="ghost" size="sm" class="h-7 text-xs" onclick={() => void transfers.cancel(job)}>{messages.cancel}</Button>
+                    {:else}
+                      <Button variant="ghost" size="sm" class="h-7 text-xs" disabled={transfers.removing.includes(job.id)} aria-label={fmt(messages.clearOne, { path: job.basePath || job.currentPath || hostLabel(job.hostId) })} onclick={() => void transfers.remove(job)}>{messages.clear}</Button>
+                    {/if}
+                  </div>
+                  {#if transfers.nativeDownloads[job.id]}
+                    {@const download = transfers.nativeDownloads[job.id]}
+                    {#if download}
+                      <p>{download.state === "completed" ? messages.nativeComplete : messages.nativeTitle}</p>
+                      <Progress value={download.total ? download.received / download.total * 100 : null} aria-label={messages.nativeTitle} />
+                      <p class="tabular-nums">{humanSize(download.received)} / {humanSize(download.total)}</p>
+                      {#if download.state !== "completed"}
+                        <div class="flex flex-wrap gap-1">
+                          <Button size="sm" variant="outline" onclick={() => void transfers.save(job)}>{messages.nativeResume}</Button>
+                          <Button size="sm" variant="outline" onclick={() => void transfers.pauseDownload(job)}>{messages.pause}</Button>
+                          <Button size="sm" variant="ghost" onclick={() => void transfers.cancelDownload(job)}>{messages.cancel}</Button>
+                        </div>
+                      {/if}
+                    {/if}
+                  {:else if transfers.handedOff.includes(job.id)}
+                    <p class="text-muted-foreground">{messages.handedOff}</p>
                   {/if}
                 </div>
-                {#if transfers.nativeDownloads[job.id]}
-                  {@const download = transfers.nativeDownloads[job.id]}
-                  {#if download}
-                    <p>{download.state === "completed" ? messages.nativeComplete : messages.nativeTitle}</p>
-                    <Progress value={download.total ? download.received / download.total * 100 : null} aria-label={messages.nativeTitle} />
-                    <p class="tabular-nums">{humanSize(download.received)} / {humanSize(download.total)}</p>
-                    {#if download.state !== "completed"}
-                      <div class="flex flex-wrap gap-1">
-                        <Button size="sm" variant="outline" onclick={() => void transfers.save(job)}>{messages.nativeResume}</Button>
-                        <Button size="sm" variant="outline" onclick={() => void transfers.pauseDownload(job)}>{messages.pause}</Button>
-                        <Button size="sm" variant="ghost" onclick={() => void transfers.cancelDownload(job)}>{messages.cancel}</Button>
-                      </div>
-                    {/if}
-                  {/if}
-                {:else if transfers.handedOff.includes(job.id)}
-                  <p class="text-muted-foreground">{messages.handedOff}</p>
-                {/if}
-              </div>
-            </Table.Cell>
-          {/snippet}
-        </DataTable>
-      {/if}
-      <p class="text-muted-foreground px-2 py-1">{messages.retention}</p>
+              </Table.Cell>
+            {/snippet}
+          </DataTable>
+        {/if}
+        <p class="text-muted-foreground px-2 py-1">{messages.retention}</p>
+      </div>
     {/if}
   </section>
 {/if}

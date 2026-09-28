@@ -41,6 +41,15 @@ function application(overrides: Partial<PdmuxServices>): TestApplication {
 }
 
 describe("PDMUX HTTP boundary", () => {
+  it("[TC-PDFILE-004] scopes a transfer history removal to the authenticated owner", async (): Promise<void> => {
+    const remove = mock(async (): Promise<{ id: string }> => ({ id: "job" }));
+    const url = "http://localhost/hosts/host-1/file-transfers/job";
+    const response = await application({ fileTransfers: { remove } as unknown as PdmuxServices["fileTransfers"] })
+      .handle(new Request(url, { method: "DELETE" }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ id: "job" });
+    expect(remove).toHaveBeenCalledWith({ userId: "user-1", organizationId: "personal:user-1", hostId: "host-1" }, "job");
+  });
   it("[TC-PDFILE-004] keeps a slow commit alive beyond the server idle timeout", async (): Promise<void> => {
     const commit = mock(async (): Promise<{ id: string }> => { await Bun.sleep(2100); return { id: "entry" }; });
     const app = application({ fileTransfers: { commit } as unknown as PdmuxServices["fileTransfers"] }) as Elysia;

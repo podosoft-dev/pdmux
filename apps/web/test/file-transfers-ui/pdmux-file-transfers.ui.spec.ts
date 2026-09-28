@@ -43,6 +43,11 @@ async function fixture(page: Page): Promise<Fixture> {
       const parts = suffix.split("/");
       const job = jobs.find((job) => job.id === parts[1]);
       if (!job) { await route.fulfill({ status: 404, json: { error: { code: "FILES_TRANSFER_NOT_FOUND" } } }); return; }
+      if (request.method() === "DELETE") {
+        jobs.splice(jobs.indexOf(job), 1);
+        await route.fulfill({ json: { id: job.id } });
+        return;
+      }
       answer = job;
       if (parts[2] === "download") {
         await route.fulfill({ contentType: "application/zip", headers: { "content-disposition": 'attachment; filename="files.zip"' }, body: Buffer.from("fixture ZIP") });
@@ -85,6 +90,45 @@ async function fixture(page: Page): Promise<Fixture> {
   });
   return { jobs, entries, chunks, release };
 }
+
+test("[TC-PDFILE-008] scrolls transfer history and clears finished jobs across reloads", async ({ page }, testInfo): Promise<void> => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await fixture(page);
+  for (let index = 0; index < 8; index++) state.jobs.push({
+    id: crypto.randomUUID(), hostId: "11111111-1111-4111-8111-111111111111", direction: "upload",
+    basePath: `destination/file-${index}.txt`, state: index === 7 ? "paused" : "completed",
+    bytes: 7, totalBytes: 7, completedEntries: 1, totalEntries: 1, currentPath: `file-${index}.txt`,
+    errorCode: "", exclusions: [], archiveBytes: 0, updated: index, created: index,
+  });
+  await page.goto("/");
+  const panel = page.getByTestId("file-transfer-panel");
+  const list = page.getByTestId("transfer-list");
+  await expect(page.getByTestId("transfer-job")).toHaveCount(8);
+  const explorerBefore = await page.getByTestId("file-explorer").boundingBox();
+  await expect(panel.locator('[aria-label="pagination"]')).toHaveCount(0);
+  const before = await list.evaluate((element) => ({ height: element.clientHeight, scrollHeight: element.scrollHeight }));
+  expect(before.scrollHeight).toBeGreaterThan(before.height);
+  expect((await panel.boundingBox())?.height).toBeLessThanOrEqual(844 * 0.45 + 1);
+  await page.getByTestId("transfer-job").last().scrollIntoViewIfNeeded();
+  expect(await list.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(panel.getByRole("button", { name: "Transfers 8" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("transfer-history-scroll.png"), fullPage: true });
+
+  const one = state.jobs[0]!;
+  await page.locator(`[data-transfer-id="${one.id}"]`).getByRole("button", { name: `Clear transfer ${one.basePath}` }).click();
+  await expect(page.locator(`[data-transfer-id="${one.id}"]`)).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("transfer-job")).toHaveCount(7);
+  await panel.getByRole("button", { name: "Clear finished" }).click();
+  await expect(page.getByTestId("transfer-job")).toHaveCount(1);
+  await expect(page.getByTestId("transfer-job")).toHaveAttribute("data-transfer-state", "paused");
+  const explorerAfter = await page.getByTestId("file-explorer").boundingBox();
+  expect(explorerAfter?.height).toBeGreaterThan(explorerBefore?.height ?? 0);
+  await testInfo.attach("transfer-history-geometry", { body: JSON.stringify({ list: before, explorerBefore, explorerAfter }), contentType: "application/json" });
+  await page.reload();
+  await expect(page.getByTestId("transfer-job")).toHaveCount(1);
+  expect(state.jobs).toHaveLength(1);
+});
 
 test("[TC-PDFILE-008] reviews native source exclusions before uploading an empty tree", async ({ page }, testInfo): Promise<void> => {
   await page.setViewportSize({ width: 390, height: 844 });

@@ -7,6 +7,7 @@ function root(hostId: string, id?: string): string {
 export const transferApi = {
   list: (hostId: string): Promise<FileTransferView[]> => api.get(root(hostId)),
   get: (hostId: string, id: string): Promise<FileTransferView> => api.get(root(hostId, id)),
+  remove: (hostId: string, id: string): Promise<{ id: string }> => api.del(root(hostId, id)),
   entries: (hostId: string, id: string): Promise<FileTransferEntryView[]> => api.get(root(hostId, id) + "/entries"),
   create: (hostId: string, input: { id: string; direction: "upload" | "download"; basePath: string; selection: string[] }): Promise<FileTransferView> => api.post(root(hostId), input),
   manifest: (hostId: string, id: string, entries: FileTransferManifestEntry[]): Promise<FileTransferView> => api.post(root(hostId, id) + "/manifest", { entries }),
