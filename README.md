@@ -281,9 +281,14 @@ bun run --cwd apps/api migration:run
 bun run dev
 ```
 
-Web on `5001`, API on `5002`, Postgres `5440`, Redis `6390`, MinIO `9010` (console `9011`). Change
+Web on `5001`, API on `5002`, Postgres `5440`, Redis `6390`, Silo `9010` (console `9011`). Change
 them in `.env` if they collide. Why this is a development path and not a way to serve the product is
 [docs/OPERATIONS.md](docs/OPERATIONS.md) §1-1.
+
+Bundled object storage uses `pgsty/silo` and `pgsty/mc`, pinned to
+`RELEASE.2026-09-16T00-00-00Z`. The `minio` service and volume names, `MINIO_*` credentials,
+`STORAGE_PROVIDER=minio`, and `S3_*` settings remain compatible. For an existing data volume,
+follow the [storage upgrade and recovery precautions](docs/OPERATIONS.md#1-deployment-shape).
 
 ```bash
 bun run lint                # type-check both apps and the packages

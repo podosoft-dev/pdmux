@@ -17,7 +17,7 @@ browser (SvelteKit + xterm.js)
    ▼
 pdmux-api (Bun + Elysia)    Postgres  organisations, users, hosts, services, layouts, metrics, commit metadata
    ▲                        Redis     sessions, pub/sub, rate limits, job queues (retention, cleanup)
-   │                        S3/MinIO  commit patch bodies
+   │                        S3/Silo   commit patch bodies
    │  WebSocket (the agent dials **outbound**, x-api-key)
 pdmux-agent (one per host)  PTY · session enumeration · CPU/MEM/SWAP/DISK · service probes · read-only git · token usage
 ```

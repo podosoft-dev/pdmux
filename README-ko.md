@@ -81,7 +81,7 @@ Cloudflare Tunnel로 공개할 수 있습니다. 기본값은 재사용 Cloudfla
                                        │
                                        ├─ PostgreSQL   호스트·서비스·레이아웃·지표·커밋 메타
                                        ├─ Redis        세션·pub/sub·레이트리밋·작업 큐
-                                       └─ S3 / MinIO   커밋 패치 본문
+                                       └─ S3 / Silo    커밋 패치 본문
 ```
 
 각 호스트에는 에이전트가 하나 뜹니다. 정적 Go 바이너리 하나이고, 서버로 **나가는** 웹소켓 하나를 열어서
@@ -255,9 +255,14 @@ bun run --cwd apps/api migration:run
 bun run dev
 ```
 
-web `5001`, api `5002`, Postgres `5440`, Redis `6390`, MinIO `9010`(콘솔 `9011`)입니다. 포트가 겹치면
+web `5001`, api `5002`, Postgres `5440`, Redis `6390`, Silo `9010`(콘솔 `9011`)입니다. 포트가 겹치면
 `.env`에서 바꿉니다. 이것이 왜 개발 경로일 뿐 제품을 서비스하는 방법이 아닌지는
 [docs/OPERATIONS.md](docs/OPERATIONS.md) §1-1에 적어 두었습니다.
+
+내장 오브젝트 스토리지는 `pgsty/silo`와 `pgsty/mc`의 `RELEASE.2026-09-16T00-00-00Z` 버전을
+사용합니다. 기존 `minio` 서비스·볼륨 이름, `MINIO_*` 자격증명, `STORAGE_PROVIDER=minio`, `S3_*`
+설정은 유지합니다. 기존 데이터 볼륨을 전환할 때는 [스토리지 전환·복구 절차](docs/OPERATIONS.md#1-deployment-shape)를
+먼저 확인하세요.
 
 ```bash
 bun run lint                # 두 앱과 패키지 타입 체크
