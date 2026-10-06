@@ -21,7 +21,19 @@ operations are documented in [`DESKTOP.md`](DESKTOP.md).
 | API + web | two containers | behind a gateway (Caddy/Traefik/Nginx), serving everything on the **same origin** |
 | PostgreSQL | 1 | a managed instance with automatic backups |
 | Redis | 1 | shared by sessions, rate limits and job queues |
-| Object storage | MinIO | any S3-compatible service (stores commit patch bodies) |
+| Object storage | Silo | any S3-compatible service (stores commit patch bodies) |
+
+Bundled storage uses `pgsty/silo` with the matching `pgsty/mc` client, both pinned to
+`RELEASE.2026-09-16T00-00-00Z`. The existing `minio` service and volume names,
+`STORAGE_PROVIDER=minio`, `MINIO_*` credentials, and `S3_*` settings remain compatible.
+Object keys and bucket names are unchanged.
+
+Before converting an existing MinIO volume, stop application writes and the storage service,
+then take and test a complete `/data` backup, including `.minio.sys`, ownership, permissions,
+deployment settings, and any encryption keys. Preserve the previous server image. Rehearse the
+conversion on a restored copy before switching production. Recovery requires restoring the
+complete backup and previous image together; changing only the image back can leave upgraded
+IAM metadata unreadable by the previous server.
 
 **Why the same origin matters**: the terminal connects from the browser to `/terminal/ws`. Putting
 web and API on different domains makes cookies, CORS and the WebSocket upgrade all special cases,

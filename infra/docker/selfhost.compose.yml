@@ -88,10 +88,10 @@ services:
       retries: 12
     restart: unless-stopped
 
-  # Commit patch bodies. Any S3-compatible service works; point S3_ENDPOINT at it and
+  # Silo stores commit patch bodies. Any S3-compatible service works; point S3_ENDPOINT at it and
   # drop this service if you already have one.
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
     command: ["server", "/data"]
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID in .env}
@@ -106,7 +106,7 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       minio: { condition: service_healthy }
     entrypoint: >
