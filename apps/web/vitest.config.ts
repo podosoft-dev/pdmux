@@ -22,7 +22,8 @@ export default defineConfig({
    */
   plugins: [svelte()],
   test: {
-    include: ["test/**/*.test.ts"],
+    // PodoKit ships unit tests next to its managed modules under src/.
+    include: ["test/**/*.test.ts", "src/**/*.test.ts"],
     environment: "node",
     // Bun exposes `__esModule` on genuine ESM namespaces with an undefined
     // value. Vitest 4 otherwise applies CommonJS interop and loses named
