@@ -152,6 +152,15 @@ export interface FsEntryView {
 export type SelectMode = 'single' | 'toggle' | 'range';
 
 /**
+ * How a click on a row's CHECKBOX asked for the selection to change.
+ *
+ * ⚠ THERE IS NO `single`. A checkbox adds to or takes from the selection; replacing the
+ * selection is what a click on the name does, and a box that did it too would make the
+ * two controls of one row indistinguishable.
+ */
+export type CheckMode = Exclude<SelectMode, 'single'>;
+
+/**
  * One file read from a host's disk — the shape `BlobView` already renders.
  *
  * The app declares the same shape for its API layer; this copy exists so the

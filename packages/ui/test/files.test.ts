@@ -1,11 +1,19 @@
 import { cleanup, render } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FILE_ICON_NAMES, FS_ROW_CHROME, hasLightTwin, lightTwinOf } from '@pdmux/core';
+import { FILE_ICON_NAMES, FS_CHECK_W, FS_ROW_CHROME, FS_ROW_GAP, hasLightTwin, lightTwinOf } from '@pdmux/core';
 import FileExplorer from '../src/components/FileExplorer.svelte';
 import { FILE_ICON_SVG } from '../src/icons/file-icons.gen.js';
 import type { FsDirView } from '../src/types.js';
+
+/** The control that opens or selects an entry — the row's button, not the row. */
+const nameOf = (container: HTMLElement, name: string): HTMLButtonElement =>
+	container.querySelector(`[data-pdmux-entry='${name}'] .pdmux-files-row`) as HTMLButtonElement;
+
+const boxOf = (container: HTMLElement, name: string): HTMLInputElement =>
+	container.querySelector(`[data-pdmux-check='${name}']`) as HTMLInputElement;
 
 afterEach(cleanup);
 
@@ -95,12 +103,11 @@ describe('[TC-PDUI-220] a listing is read by colour and answers a click', () => 
 		const { container } = render(FileExplorer, {
 			props: { path: 'Project', dir: dirOf([entry('src', { dir: true }), entry('a.ts')]), onOpenDir, onSelect },
 		});
-		const rows = container.querySelectorAll<HTMLButtonElement>('[data-pdmux-entry]');
-		rows[0]?.click();
+		nameOf(container, 'src').click();
 		// The path it reports is the FULL relative path, never the bare name: the
 		// agent resolves against the home, not against wherever the panel happens to be.
 		expect(onOpenDir).toHaveBeenCalledWith('Project/src');
-		rows[1]?.click();
+		nameOf(container, 'a.ts').click();
 		expect(onSelect).toHaveBeenCalledWith('a.ts', 'single');
 	});
 
@@ -109,10 +116,10 @@ describe('[TC-PDUI-220] a listing is read by colour and answers a click', () => 
 		const { container } = render(FileExplorer, {
 			props: { dir: dirOf([entry('a.ts'), entry('b.ts')]), onSelect },
 		});
-		const row = container.querySelector<HTMLButtonElement>("[data-pdmux-entry='b.ts']");
-		row?.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }));
+		const row = nameOf(container, 'b.ts');
+		row.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }));
 		expect(onSelect).toHaveBeenLastCalledWith('b.ts', 'toggle');
-		row?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+		row.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
 		expect(onSelect).toHaveBeenLastCalledWith('b.ts', 'range');
 	});
 
@@ -350,5 +357,161 @@ describe('[TC-PDUI-223] the column header sorts and resizes what is below it', (
 		expect(head).toContain('gap: var(--pdmux-files-gap, 8px)');
 		expect(head).toContain(`padding: 3px ${padding}px`);
 		expect(head).toContain('position: sticky');
+	});
+});
+
+describe('[TC-PDUI-230] a checkbox column selects without navigating', () => {
+	const mixed = () => dirOf([entry('src', { dir: true }), entry('a.ts'), entry('b.ts'), entry('c.ts')]);
+	/** The component re-reads `selected` one tick after a click; wait for that turn. */
+	const settle = async (): Promise<void> => {
+		await tick();
+		await tick();
+	};
+
+	it('is not drawn unless the consumer asks for it', () => {
+		// A consumer that only browses keeps today's listing — and today's name width.
+		const { container } = render(FileExplorer, { props: { dir: mixed() } });
+		expect(container.querySelector('input[type=checkbox]')).toBeNull();
+		expect(container.querySelector('.pdmux-files-check')).toBeNull();
+		expect(container.querySelector('.pdmux-files-head-check')).toBeNull();
+	});
+
+	it('toggles a folder or a file with the box, and never opens either', () => {
+		const onOpenDir = vi.fn();
+		const onSelect = vi.fn();
+		const onCheck = vi.fn();
+		const { container } = render(FileExplorer, {
+			props: { dir: mixed(), selectable: true, onOpenDir, onSelect, onCheck },
+		});
+		boxOf(container, 'src').click();
+		boxOf(container, 'a.ts').click();
+		// ⚠ THE WHOLE POINT. Before this, a folder could only be chosen by switching the
+		// panel into a mode where a click on it did not open it.
+		expect(onCheck.mock.calls).toEqual([
+			['src', 'toggle'],
+			['a.ts', 'toggle'],
+		]);
+		expect(onOpenDir).not.toHaveBeenCalled();
+		expect(onSelect).not.toHaveBeenCalled();
+		// Each box is named for its entry, so a screen reader hears what it would select.
+		expect(boxOf(container, 'src').getAttribute('aria-label')).toBe('Select src');
+		expect(boxOf(container, 'src').closest('.pdmux-files-row')).toBeNull();
+	});
+
+	it('reports a Shift-click on a box as a range', () => {
+		const onCheck = vi.fn();
+		const { container } = render(FileExplorer, { props: { dir: mixed(), selectable: true, onCheck } });
+		boxOf(container, 'c.ts').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+		expect(onCheck).toHaveBeenLastCalledWith('c.ts', 'range');
+	});
+
+	it('keeps the name doing what it did: a folder opens, a file selects', () => {
+		const onOpenDir = vi.fn();
+		const onSelect = vi.fn();
+		const onCheck = vi.fn();
+		const { container } = render(FileExplorer, {
+			props: { path: 'Project', dir: mixed(), selectable: true, onOpenDir, onSelect, onCheck },
+		});
+		nameOf(container, 'src').click();
+		expect(onOpenDir).toHaveBeenCalledWith('Project/src');
+		nameOf(container, 'b.ts').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }));
+		expect(onSelect).toHaveBeenLastCalledWith('b.ts', 'toggle');
+		expect(onCheck).not.toHaveBeenCalled();
+	});
+
+	it('draws the box from `selected`, and puts it back when the caller declines', async () => {
+		const { container, rerender } = render(FileExplorer, {
+			props: { dir: mixed(), selectable: true, selected: ['a.ts'], onCheck: vi.fn() },
+		});
+		expect(boxOf(container, 'a.ts').checked).toBe(true);
+		expect(container.querySelector<HTMLElement>("[data-pdmux-entry='a.ts']")?.dataset.pdmuxSelected).toBe('true');
+		// ⚠ THE BROWSER FLIPS THE BOX BEFORE ANY HANDLER RUNS. A caller that did not take
+		// the toggle leaves `selected` as it was, and Svelte only writes `checked` when the
+		// prop changes — so without the re-read, `b.ts` stays drawn checked over an entry
+		// that is not selected.
+		boxOf(container, 'b.ts').click();
+		await settle();
+		expect(boxOf(container, 'b.ts').checked).toBe(false);
+		await rerender({ selected: ['a.ts', 'b.ts'] });
+		expect(boxOf(container, 'b.ts').checked).toBe(true);
+	});
+
+	it('says none, some or all in the header, and asks for all or none', async () => {
+		const onCheckAll = vi.fn();
+		const { container, rerender } = render(FileExplorer, {
+			props: { dir: mixed(), selectable: true, selected: [], onCheckAll },
+		});
+		const all = container.querySelector<HTMLInputElement>('[data-pdmux-check-all]') as HTMLInputElement;
+		expect(all.getAttribute('aria-label')).toBe('Select all');
+		expect([all.checked, all.indeterminate]).toEqual([false, false]);
+
+		await rerender({ selected: ['a.ts'] });
+		expect([all.checked, all.indeterminate]).toEqual([false, true]);
+		all.click();
+		// From "some", the box asks for every entry, in the order on screen.
+		expect(onCheckAll).toHaveBeenLastCalledWith(['src', 'a.ts', 'b.ts', 'c.ts']);
+		await settle();
+		// The caller has not answered yet, so the box is still "some", not the browser's guess.
+		expect([all.checked, all.indeterminate]).toEqual([false, true]);
+
+		await rerender({ selected: ['src', 'a.ts', 'b.ts', 'c.ts'] });
+		expect([all.checked, all.indeterminate]).toEqual([true, false]);
+		all.click();
+		expect(onCheckAll).toHaveBeenLastCalledWith([]);
+	});
+
+	it('disables a box the caller cannot act on, says why, and leaves it out of select-all', async () => {
+		const reason = 'Update the host agent to transfer folders.';
+		const onCheck = vi.fn();
+		const onCheckAll = vi.fn();
+		const { container, rerender } = render(FileExplorer, {
+			props: {
+				dir: mixed(),
+				selectable: true,
+				selected: [],
+				checkDisabledReason: (item: FsDirView['entries'][number]) => (item.dir ? reason : null),
+				onCheck,
+				onCheckAll,
+			},
+		});
+		const folder = boxOf(container, 'src');
+		expect(folder.disabled).toBe(true);
+		// On the box for its accessible description, and on the cell for the tooltip — a
+		// disabled control does not reliably show its own.
+		expect(folder.title).toBe(reason);
+		expect(folder.closest('label')?.title).toBe(reason);
+		expect(boxOf(container, 'a.ts').disabled).toBe(false);
+		expect(boxOf(container, 'a.ts').title).toBe('');
+
+		const all = container.querySelector<HTMLInputElement>('[data-pdmux-check-all]') as HTMLInputElement;
+		all.click();
+		expect(onCheckAll).toHaveBeenLastCalledWith(['a.ts', 'b.ts', 'c.ts']);
+		// Every box that CAN be checked is checked: that is "all", whatever the folder says.
+		await rerender({ selected: ['a.ts', 'b.ts', 'c.ts'] });
+		expect([all.checked, all.indeterminate]).toEqual([true, false]);
+
+		// A directory of nothing but folders leaves select-all with nothing to do.
+		await rerender({ dir: dirOf([entry('src', { dir: true }), entry('lib', { dir: true })]), selected: [] });
+		expect(all.disabled).toBe(true);
+	});
+
+	it('spends in the stylesheet exactly what the reducer charges for the column', () => {
+		// ⚠ `fsColumnRoom()` takes `FS_CHECK_W` plus one gap off the width the columns may
+		// spend. The row cell, the header cell and the box are three rules that must agree
+		// with that one number, and CSS cannot read it.
+		const css = readFileSync(join(import.meta.dirname, '../src/styles.css'), 'utf8');
+		const rule = (selector: string): string =>
+			css.match(new RegExp(`\\n${selector.replace(/[.*]/g, '\\$&')}\\s*\\{[^}]*\\}`, 's'))?.[0] ?? '';
+		expect(rule('.pdmux-files-checkbox')).toContain(`inline-size: ${FS_CHECK_W}px`);
+		const row = rule('.pdmux-files-row');
+		const padding = Number(/padding:\s*\d+px\s+(\d+)px/.exec(row)?.[1]);
+		// The row cell is the button's padding, the box, and the rest of the gap.
+		expect(rule('.pdmux-files-check')).toContain(
+			`padding-inline: ${padding}px calc(var(--pdmux-files-gap, ${FS_ROW_GAP}px) - ${padding}px)`,
+		);
+		// The header cell is the box alone: its padding is handed back by its margins.
+		const head = rule('.pdmux-files-head-check');
+		expect(head).toContain(`margin-inline: -${padding}px -4px`);
+		expect(head).toContain(`padding-inline: ${padding}px 4px`);
 	});
 });

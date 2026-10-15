@@ -24,7 +24,7 @@ import {
   setFsColumnWidth,
   sortFsEntries,
 } from "@pdmux/core";
-import type { FsDirView } from "@pdmux/ui";
+import type { CheckMode, FsDirView, FsEntryView } from "@pdmux/ui";
 import type { FsFileView } from "./types";
 import { errorCode, filesApi } from "./api";
 import { FileTransferController } from "./file-transfers/controller.svelte";
@@ -86,6 +86,14 @@ export class FilesDock {
   readonly #api: typeof filesApi;
   /** Guards against a slow answer landing after the user moved on. */
   #request = 0;
+  /**
+   * Where a Shift range starts: the last entry clicked by its name or its checkbox.
+   *
+   * ⚠ NOT "THE LAST ENTRY IN `selected`". Unchecking a box removes it from the array, and
+   * a range would then start from whatever happened to be checked before it — not from
+   * the row the person was just looking at.
+   */
+  #anchor: string | null = null;
 
   constructor(options: FilesDockOptions = {}) {
     this.#api = { ...filesApi, ...options.api };
@@ -161,6 +169,7 @@ export class FilesDock {
     const ticket = ++this.#request;
     this.path = path;
     this.selected = [];
+    this.#anchor = null;
     this.file = null;
     this.fileLoading = false;
     this.image = null;
@@ -187,10 +196,12 @@ export class FilesDock {
   /** Re-read the directory now shown, keeping the selection that still exists. */
   async refresh(): Promise<void> {
     const keep = this.selected;
+    const anchor = this.#anchor;
     const openFile = this.file?.path ?? null;
     await this.openDir(this.path);
     const names = new Set((this.dir?.entries ?? []).map((entry) => entry.name));
     this.selected = keep.filter((name) => names.has(name));
+    this.#anchor = anchor !== null && names.has(anchor) ? anchor : null;
     if (openFile && this.selected.length === 1) await this.#preview(openFile);
   }
 
@@ -205,22 +216,18 @@ export class FilesDock {
     // between the two rows the person clicked, and after a header click those are not
     // the same two positions in the host's answer.
     const entries = (this.shown?.entries ?? []).map((entry) => entry.name);
+    const span = mode === "range" ? this.#span(name) : null;
     if (mode === "toggle") {
       this.selected = this.selected.includes(name)
         ? this.selected.filter((other) => other !== name)
         : [...this.selected, name];
-    } else if (mode === "range" && this.selected.length) {
-      const anchor = entries.indexOf(this.selected[this.selected.length - 1] ?? "");
-      const target = entries.indexOf(name);
-      if (anchor >= 0 && target >= 0) {
-        const [from, to] = anchor <= target ? [anchor, target] : [target, anchor];
-        this.selected = entries.slice(from, to + 1);
-      } else {
-        this.selected = [name];
-      }
+    } else if (span) {
+      this.selected = entries.slice(span[0], span[1] + 1);
     } else {
       this.selected = [name];
     }
+    // A range keeps its anchor, so a second Shift-click re-draws it from the same row.
+    if (!span) this.#anchor = name;
 
     const only = this.selected.length === 1 && this.selected[0] === name && !this.shown?.entries.find((entry) => entry.name === name)?.dir;
     const shape = only ? previewableAs(name) : null;
@@ -228,6 +235,45 @@ export class FilesDock {
     this.fileLoading = false;
     this.image = shape === "image" && this.hostId ? { path: this.join(name), url: this.#api.url(this.hostId, this.join(name), true) } : null;
     if (shape === "text") void this.#preview(this.join(name));
+  }
+
+  /**
+   * A click on a row's checkbox.
+   *
+   * ⚠ IT NEVER PREVIEWS. A preview reads the file from the host, and ticking the boxes of
+   * ten files to download them is not asking to read any of them. The preview that is open
+   * stays only while its file is still the whole selection.
+   *
+   * A range takes the state the clicked box is moving to — the way a mail client does it:
+   * Shift-checking a box checks everything back to the anchor, Shift-unchecking unchecks
+   * it. Entries `checkable` refuses are skipped, because the screen draws their boxes
+   * disabled and a range must not tick a box nobody could have ticked.
+   */
+  check(name: string, mode: CheckMode, checkable: (entry: FsEntryView) => boolean = () => true): void {
+    const on = !this.selected.includes(name);
+    const span = mode === "range" ? this.#span(name) : null;
+    const entries = this.shown?.entries ?? [];
+    const names = span
+      ? entries.slice(span[0], span[1] + 1).filter(checkable).map((entry) => entry.name)
+      : [name];
+    const had = new Set(this.selected);
+    const changed = new Set(names);
+    this.selected = on
+      ? [...this.selected, ...names.filter((other) => !had.has(other))]
+      : this.selected.filter((other) => !changed.has(other));
+    this.#anchor = name;
+    this.#keepPreviewOnlyForSelection();
+  }
+
+  /** Replace the selection outright — select-all, and the clear control. */
+  setSelection(names: readonly string[]): void {
+    this.selected = [...names];
+    this.#anchor = null;
+    this.#keepPreviewOnlyForSelection();
+  }
+
+  clearSelection(): void {
+    this.setSelection([]);
   }
 
   closePreview(): void {
@@ -332,6 +378,22 @@ export class FilesDock {
       this.fileLoading = false;
       this.file = { path, lines: [], binary: false, truncated: false, bytes: 0, error: messageOf(cause) };
     }
+  }
+
+  /** The on-screen indices between the anchor and `name`, or null when either is gone. */
+  #span(name: string): [number, number] | null {
+    const entries = (this.shown?.entries ?? []).map((entry) => entry.name);
+    const start = this.#anchor !== null && entries.includes(this.#anchor) ? this.#anchor : this.selected.at(-1);
+    const from = entries.indexOf(start ?? "");
+    const to = entries.indexOf(name);
+    if (from < 0 || to < 0) return null;
+    return from <= to ? [from, to] : [to, from];
+  }
+
+  #keepPreviewOnlyForSelection(): void {
+    const shown = this.image?.path ?? this.file?.path ?? null;
+    const only = this.selected.length === 1 ? this.join(this.selected[0] ?? "") : null;
+    if (shown !== null && shown !== only) this.closePreview();
   }
 
   #current(ticket: number): boolean {

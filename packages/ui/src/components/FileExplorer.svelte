@@ -38,6 +38,12 @@
 	 * pair — so the two tables in this product behave alike. `@pdmux/core`'s
 	 * `nextFsSort` carries that rule.
 	 *
+	 * ⚠ THE CHECKBOX COLUMN IS OPT-IN (`selectable`) AND IT IS NOT A MODE. A checkbox
+	 * toggles its entry and never navigates; the name keeps doing what it always did —
+	 * a folder opens, a file is selected and previewed. The selection-mode toggle this
+	 * replaced made the same click mean two things depending on a button elsewhere, so
+	 * a folder could not be opened while choosing, and Shift could not reach a range.
+	 *
 	 * ⚠ SORTING HAPPENS BEFORE THE ENTRIES ARRIVE HERE. `dir.entries` is drawn in the
 	 * order it is given, because the store that owns the listing also owns the
 	 * selection — and its shift-click range is computed on ARRAY INDEX. A component
@@ -53,13 +59,15 @@
 		type FsSortKey,
 		FS_COLUMN_DEFAULTS,
 		fileKindOf,
+		fsColumnRoom,
 		humanSize,
 		isDefaultFsSort,
 		modeLabel,
 		UNKNOWN_VALUE,
 		visibleFsColumns,
 	} from '@pdmux/core';
-	import type { FsDirView, FsFileView, SelectMode } from '../types.js';
+	import { tick } from 'svelte';
+	import type { CheckMode, FsDirView, FsEntryView, FsFileView, SelectMode } from '../types.js';
 	import { type Translate, translator } from '../i18n.js';
 	import BlobView from './BlobView.svelte';
 	import FileIcon from './FileIcon.svelte';
@@ -100,9 +108,33 @@
 		 */
 		formatDate?: (epochSeconds: number) => string;
 		t?: Translate;
+		/**
+		 * Draw a checkbox in front of every row and a select-all box in the header.
+		 *
+		 * ⚠ IT COSTS THE NAME COLUMN `FS_CHECK_W` PLUS A GAP, so the columns that fit are
+		 * decided on `fsColumnRoom()` rather than on the raw width — otherwise the number
+		 * columns would keep their slots and the box would come out of the name.
+		 */
+		selectable?: boolean;
+		/**
+		 * Why an entry cannot be checked, or `null` when it can. The reason becomes the
+		 * box's tooltip and accessible description, and select-all skips the entry. Read
+		 * only with `selectable`.
+		 */
+		checkDisabledReason?: (entry: FsEntryView) => string | null;
 		onOpenDir?: (path: string) => void;
-		/** A click on a row. Directories navigate; files select and preview. */
+		/** A click on a row's name. Directories navigate; files select and preview. */
 		onSelect?: (name: string, mode: SelectMode) => void;
+		/**
+		 * A click on a row's checkbox: `toggle`, or `range` with Shift (from the caller's
+		 * anchor, in the order on screen). It never navigates and never previews.
+		 */
+		onCheck?: (name: string, mode: CheckMode) => void;
+		/**
+		 * The header checkbox, reported as the selection it asks for: every checkable
+		 * entry shown, or none when they are all checked already.
+		 */
+		onCheckAll?: (names: string[]) => void;
 		onClosePreview?: () => void;
 		/** A click on a column header. Reports the KEY; the store decides the direction. */
 		onSort?: (key: FsSortKey) => void;
@@ -135,8 +167,12 @@
 		scheme = 'light',
 		formatDate,
 		t,
+		selectable = false,
+		checkDisabledReason,
 		onOpenDir,
 		onSelect,
+		onCheck,
+		onCheckAll,
 		onClosePreview,
 		onSort,
 		onColumnResize,
@@ -176,7 +212,9 @@
 		return () => observer.disconnect();
 	});
 
-	const visible = $derived(visibleFsColumns(bodyWidth, columns));
+	/** What the name and the number columns may spend — the body minus the checkbox column. */
+	const room = $derived(fsColumnRoom(bodyWidth, selectable));
+	const visible = $derived(visibleFsColumns(room, columns));
 	const shows = (key: FsColumnKey): boolean => visible.includes(key);
 
 	/** `0` means the host did not say — never a date in 1970. */
@@ -198,15 +236,64 @@
 		return tr(id, fallback);
 	};
 
+	const disabledReason = (entry: FsEntryView): string | null =>
+		selectable ? (checkDisabledReason?.(entry) ?? null) : null;
+
+	/** The entries a checkbox can take, in the order on screen. Select-all counts only these. */
+	const checkable = $derived(
+		selectable && dir ? dir.entries.filter((entry) => disabledReason(entry) === null).map((entry) => entry.name) : [],
+	);
+	const allState = $derived.by((): 'none' | 'some' | 'all' => {
+		const checked = checkable.filter((name) => chosen.has(name)).length;
+		if (checked === 0) return 'none';
+		return checked === checkable.length ? 'all' : 'some';
+	});
+
+	let allBox = $state<HTMLInputElement | null>(null);
+	const syncAll = (box: HTMLInputElement): void => {
+		box.checked = allState === 'all';
+		box.indeterminate = allState === 'some';
+	};
+	// `indeterminate` is a property with no attribute, so it is set rather than rendered.
+	$effect(() => {
+		if (allBox) syncAll(allBox);
+	});
+
+	/**
+	 * ⚠ THE BOX IS PUT BACK TO WHAT `selected` SAYS ONCE THE CALLER HAS ANSWERED. The
+	 * browser flips a checkbox before any handler runs, and Svelte only writes `checked`
+	 * when the prop CHANGES — so a caller that declined the toggle (or a range that left
+	 * this box as it was) would otherwise leave a box drawn checked over an entry that is
+	 * not selected. `preventDefault` is not the fix: the browser restores the box after
+	 * dispatch, which is after Svelte has already flushed the new state, and the restore
+	 * would win.
+	 */
+	async function check(name: string, event: MouseEvent): Promise<void> {
+		const box = event.currentTarget as HTMLInputElement;
+		onCheck?.(name, event.shiftKey ? 'range' : 'toggle');
+		await tick();
+		box.checked = chosen.has(name);
+	}
+
+	async function checkAll(event: MouseEvent): Promise<void> {
+		const box = event.currentTarget as HTMLInputElement;
+		onCheckAll?.(allState === 'all' ? [] : [...checkable]);
+		await tick();
+		syncAll(box);
+	}
+
+	const checkLabel = (name: string): string =>
+		tr('pdmux.files.selectEntry', 'Select {name}').replace('{name}', name);
+
 	/**
 	 * The ordering, said out loud.
 	 *
 	 * ⚠ NOT `aria-sort`, AND THE LINTER IS RIGHT ABOUT WHY. That attribute belongs to
 	 * `columnheader`, which belongs inside a table or a grid — and the listing below is
-	 * deliberately a LIST OF BUTTONS, one activatable thing per file, which is what a
-	 * file browser actually is. Wrapping it in table roles to license one attribute
-	 * would describe the panel as something it is not, and a screen reader would then
-	 * announce cells that do not exist. `DataTable` uses `aria-sort` correctly because
+	 * deliberately a LIST whose rows hold a button (and, with `selectable`, a checkbox),
+	 * which is what a file browser actually is. Wrapping it in table roles to license one
+	 * attribute would describe the panel as something it is not, and a screen reader would
+	 * then announce cells that do not exist. `DataTable` uses `aria-sort` correctly because
 	 * it renders a real `<table>`.
 	 *
 	 * So the state goes into the control's own name, which every reader announces, and
@@ -269,6 +356,20 @@
 					every column would sit a scrollbar to the right of its cells.
 				-->
 				<div class="pdmux-files-head" data-pdmux-files-head>
+					{#if selectable}
+						<label class="pdmux-files-head-check">
+							<input
+								class="pdmux-files-checkbox"
+								type="checkbox"
+								bind:this={allBox}
+								checked={allState === 'all'}
+								disabled={checkable.length === 0}
+								aria-label={tr('pdmux.files.selectAll', 'Select all')}
+								data-pdmux-check-all
+								onclick={(event) => void checkAll(event)}
+							/>
+						</label>
+					{/if}
 					<span class="pdmux-files-head-icon" aria-hidden="true"></span>
 					<div class="pdmux-files-cell pdmux-files-cell-name">
 						<button
@@ -302,8 +403,8 @@
 								{t}
 								invert
 								label={tr('pdmux.files.resizeColumn', 'Resize column')}
-								onDrag={(delta) => onColumnResize?.(key, delta, false, bodyWidth)}
-								onCommit={(delta) => onColumnResize?.(key, delta, true, bodyWidth)}
+								onDrag={(delta) => onColumnResize?.(key, delta, false, room)}
+								onCommit={(delta) => onColumnResize?.(key, delta, true, room)}
 							/>
 							<button
 								class="pdmux-files-col"
@@ -322,15 +423,43 @@
 				<ul class="pdmux-files-list" data-pdmux-lines={dir.entries.length}>
 					{#each dir.entries as entry (entry.name)}
 						{@const kind = fileKindOf(entry.name, entry.dir)}
-						<li>
+						{@const isChosen = chosen.has(entry.name)}
+						{@const reason = disabledReason(entry)}
+						<!--
+							⚠ THE ROW IS THE `li`, NOT THE BUTTON, once a row holds two controls: a
+							checkbox may not live inside a button. So the entry's marks and the
+							selection highlight sit here, and the button keeps the geometry the
+							column reducer budgets.
+
+							⚠ THE LABEL IS THE TARGET, THE BOX IS ITS PICTURE. The label spans the
+							row's full height and its leading edge, so a fingertip on the left of a
+							row checks it instead of opening a folder by a few pixels.
+						-->
+						<li
+							class="pdmux-files-item"
+							data-pdmux-entry={entry.name}
+							data-pdmux-kind={entry.dir ? 'dir' : 'file'}
+							data-pdmux-file-kind={kind}
+							data-pdmux-selected={isChosen ? 'true' : undefined}
+						>
+							{#if selectable}
+								<label class="pdmux-files-check" title={reason ?? undefined}>
+									<input
+										class="pdmux-files-checkbox"
+										type="checkbox"
+										checked={isChosen}
+										disabled={reason !== null}
+										aria-label={checkLabel(entry.name)}
+										title={reason ?? undefined}
+										data-pdmux-check={entry.name}
+										onclick={(event) => void check(entry.name, event)}
+									/>
+								</label>
+							{/if}
 							<button
 								class="pdmux-files-row"
 								type="button"
-								data-pdmux-entry={entry.name}
-								data-pdmux-kind={entry.dir ? 'dir' : 'file'}
-								data-pdmux-file-kind={kind}
-								data-pdmux-selected={chosen.has(entry.name) ? 'true' : undefined}
-								aria-current={chosen.has(entry.name) ? 'true' : undefined}
+								aria-current={isChosen ? 'true' : undefined}
 								onclick={(event) =>
 									entry.dir ? onOpenDir?.(join(entry.name)) : onSelect?.(entry.name, modeOf(event))}
 							>

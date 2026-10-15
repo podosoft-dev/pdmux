@@ -225,7 +225,9 @@
       "sortedAscending": "{column}, sorted ascending",
       "sortedDescending": "{column}, sorted descending",
       "resizeColumn": "Resize column",
-      "sortedSubset": "Sorted within the entries listed, not the whole directory"
+      "sortedSubset": "Sorted within the entries listed, not the whole directory",
+      "selectEntry": "Select {name}",
+      "selectAll": "Select all"
     }
   },
   "dash": {
@@ -920,7 +922,6 @@
         "nativeResume": "Resume download",
         "title": "Transfers",
         "uploadFolder": "Upload folder",
-        "selectMode": "Select files and folders",
         "folderUnavailable": "Drop a folder to preserve its empty folders.",
         "upgrade": "Update the host agent to transfer folders.",
         "scanning": "Scanning folders",
@@ -975,7 +976,9 @@
       "editPath": "Type a path",
       "go": "Go to this path",
       "toggle": "Toggle file explorer",
-      "download": "Download {count} file(s)",
+      "download": "Download {count} item(s)",
+      "selectedCount": "{count} selected",
+      "clearSelection": "Clear selection",
       "downloadLabel": "Download",
       "upload": "Upload files here",
       "delete": "Delete selected",

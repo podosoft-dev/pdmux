@@ -7,7 +7,7 @@
    * toolbar built inside it comes out as a look-alike beside real ones; and the
    * package may not fetch (`[TC-PDUI-030]`), so the network belongs here too.
    */
-  import { FileExplorer, type SelectMode, type Translate } from "@pdmux/ui";
+  import { type CheckMode, FileExplorer, type FsEntryView, type SelectMode, type Translate } from "@pdmux/ui";
   import type { FsColumnKey, FsSortKey } from "@pdmux/core";
   import { mode as colourScheme } from "mode-watcher";
   import CheckIcon from "@lucide/svelte/icons/check";
@@ -18,6 +18,7 @@
   import { FILE_TRANSFER_CAPABILITY } from "@pdmux/protocol/transfer-limits";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import XIcon from "@lucide/svelte/icons/x";
   import { Button } from "#lib/components/ui/button/index.js";
   import { Input } from "#lib/components/ui/input/index.js";
   import * as Select from "#lib/components/ui/select/index.js";
@@ -52,9 +53,19 @@
     uploading && uploading.total > 0 ? Math.min(100, Math.round((uploading.sent / uploading.total) * 100)) : 0,
   );
   $effect(() => {
-    if (!folderTransfers) selecting = false;
     if (files.hostId && folderTransfers) void files.transfers.load(files.hostId);
   });
+
+  /**
+   * Why a row's checkbox is disabled.
+   *
+   * ⚠ A FOLDER ON AN AGENT WITHOUT FOLDER TRANSFERS CANNOT BE DOWNLOADED, so its box says
+   * so instead of letting it into a selection the Download button would then refuse as a
+   * whole. Files stay checkable: the per-file download works on every agent.
+   */
+  const checkDisabledReason = (entry: FsEntryView): string | null =>
+    entry.dir && !folderTransfers ? i18n.t.dash.files.transfers.upgrade : null;
+  const checkable = (entry: FsEntryView): boolean => checkDisabledReason(entry) === null;
 
   /**
    * A column edge being dragged.
@@ -74,7 +85,7 @@
   let picker = $state<HTMLInputElement | null>(null);
   let dragging = $state(false);
   let confirmOpen = $state(false);
-  let selecting = $state(false);
+  let panel = $state<HTMLDivElement | null>(null);
   const names = $derived(
     files.selectedEntries
       .slice(0, 5)
@@ -92,11 +103,31 @@
   function uploadFolder(): void {
     if (files.hostId && folderTransfers) void files.transfers.prepare(files.hostId, files.path, pickFolder);
   }
-  function openDirectory(path: string): void {
-    const entry = files.shown?.entries.find((entry) => (files.path ? files.path + "/" : "") + entry.name === path);
-    if (selecting && entry) files.select(entry.name, "toggle");
-    else onOpenDir(path);
+
+  /**
+   * Escape drops the selection while focus is anywhere in the panel.
+   *
+   * ⚠ NOT FROM A TEXT FIELD. Escape in the path field already means "stop editing", and a
+   * key that also threw the selection away would cost the person the thing they were
+   * about to act on. Attached here rather than as `onkeydown` in the markup because the
+   * panel is a landmark, not a control — the listener only hears what bubbles from the
+   * controls inside it.
+   */
+  function onPanelKey(event: KeyboardEvent): void {
+    if (event.key !== "Escape" || event.defaultPrevented || files.selected.length === 0) return;
+    const target = event.target;
+    if (target instanceof HTMLTextAreaElement) return;
+    if (target instanceof HTMLInputElement && target.type !== "checkbox") return;
+    event.preventDefault();
+    files.clearSelection();
   }
+
+  $effect(() => {
+    const node = panel;
+    if (!node) return;
+    node.addEventListener("keydown", onPanelKey);
+    return () => node.removeEventListener("keydown", onPanelKey);
+  });
 
   /**
    * ⚠ `dragover` MUST BE CANCELLED OR THE DROP NEVER FIRES — and the browser
@@ -227,6 +258,7 @@
      file aims at the area, and a target that only covers the rows makes a drop
      onto the empty space below them navigate the browser away from the app. -->
 <div
+  bind:this={panel}
   class="pdmux pdmux-files-dock"
   data-pdmux-region="files"
   data-testid="files-dock"
@@ -237,7 +269,8 @@
   ondragleave={() => (dragging = false)}
   ondrop={onDrop}
 >
-  <header class="flex items-center gap-2 border-b px-2 py-1.5 text-xs">
+  <!-- `@container`: the toolbar sizes the selection count by its OWN width (see below). -->
+  <header class="@container flex items-center gap-2 border-b px-2 py-1.5 text-xs">
     <Select.Root
       type="single"
       value={files.hostId ?? ""}
@@ -252,12 +285,42 @@
     </Select.Root>
     <!-- The toolbar. Actions sit beside the host picker, and each is disabled
          rather than hidden when the selection cannot answer it — a control that
-         appears and disappears as rows are clicked is harder to aim at. -->
-    {#if folderTransfers}
-      <Button variant={selecting ? "secondary" : "ghost"} size="sm" class="h-7 px-2"
-        aria-pressed={selecting} aria-label={i18n.t.dash.files.transfers.selectMode}
-        title={i18n.t.dash.files.transfers.selectMode} data-testid="files-select-mode"
-        onclick={() => (selecting = !selecting)}><CheckIcon class="size-4" /></Button>
+         appears and disappears as rows are clicked is harder to aim at.
+
+         ⚠ THE SELECTION COUNT IS THE ONE EXCEPTION, AND IT SITS LEFT OF THE ACTIONS SO
+         IT CANNOT MOVE THEM: the host picker gives up the room. It says how many are
+         chosen in THIS directory, and it is gone the moment the panel opens another —
+         the selection does not travel, and a count that lingered would say it did.
+
+         ⚠ AND ON A NARROW TOOLBAR IT IS THE NUMBER ALONE. The words took the host picker
+         to 64px ("T…") on a 390px phone. The five actions, their gaps and the clear button
+         spend about 250px and "N selected" another 60, so below a 420px toolbar the words
+         would leave the picker under 100px. Decided by a container query on this header —
+         the dock's own width, not the viewport's: one viewport holds a 440px dock and a
+         full-width phone view. The words stay the title and the screen-reader text. -->
+    {#if selectedCount > 0}
+      {@const summary = fmt(i18n.t.dash.files.selectedCount, { count: String(selectedCount) })}
+      <div class="flex shrink-0 items-center" data-testid="files-selection">
+        <span
+          class="text-muted-foreground tabular-nums whitespace-nowrap"
+          role="status"
+          title={summary}
+          data-testid="files-selection-count"
+        >
+          <span class="sr-only">{summary}</span>
+          <span class="hidden @min-[420px]:inline" aria-hidden="true" data-pdmux-count="full">{summary}</span>
+          <span class="@min-[420px]:hidden" aria-hidden="true" data-pdmux-count="short">{selectedCount}</span>
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          class="h-7 px-1.5"
+          title={i18n.t.dash.files.clearSelection}
+          aria-label={i18n.t.dash.files.clearSelection}
+          data-testid="files-clear-selection"
+          onclick={() => files.clearSelection()}><XIcon class="size-4" /></Button
+        >
+      </div>
     {/if}
     <Button
       variant="ghost"
@@ -401,8 +464,12 @@
     scheme={colourScheme.current === "dark" ? "dark" : "light"}
     formatDate={listingDate}
     {t}
-    onOpenDir={openDirectory}
-    onSelect={(name: string, mode: SelectMode) => files.select(name, selecting ? "toggle" : mode)}
+    selectable
+    {checkDisabledReason}
+    {onOpenDir}
+    onSelect={(name: string, mode: SelectMode) => files.select(name, mode)}
+    onCheck={(name: string, mode: CheckMode) => files.check(name, mode, checkable)}
+    onCheckAll={(names: string[]) => files.setSelection(names)}
     onClosePreview={() => files.closePreview()}
     onSort={(key: FsSortKey) => files.sortBy(key)}
     onColumnResize={dragColumn}
@@ -447,12 +514,17 @@
 />
 
 <style>
-  /* The panel fills its half of the dock column; the listing inside it scrolls. */
+  /* The panel fills its half of the dock column; the listing inside it scrolls.
+     `min-width: 0` because the toolbar's widest moment (a selection count beside five
+     actions) is wider than a 390px phone: placed in a row, the panel would grow to its
+     toolbar and push past the screen (measured 421px) instead of letting the host picker
+     give up the room. */
   .pdmux-files-dock {
     display: flex;
     flex: 1;
     flex-direction: column;
     min-height: 0;
+    min-width: 0;
     background: var(--pdmux-card);
   }
 </style>

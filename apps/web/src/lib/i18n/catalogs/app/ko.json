@@ -225,7 +225,9 @@
       "sortedAscending": "{column} 오름차순 정렬됨",
       "sortedDescending": "{column} 내림차순 정렬됨",
       "resizeColumn": "열 너비 조절",
-      "sortedSubset": "목록에 있는 항목 안에서만 정렬했습니다"
+      "sortedSubset": "목록에 있는 항목 안에서만 정렬했습니다",
+      "selectEntry": "{name} 선택",
+      "selectAll": "모두 선택"
     }
   },
   "dash": {
@@ -920,7 +922,6 @@
         "nativeResume": "다운로드 재개",
         "title": "전송",
         "uploadFolder": "폴더 업로드",
-        "selectMode": "파일과 폴더 선택",
         "folderUnavailable": "폴더를 끌어다 놓으면 빈 폴더까지 보존합니다.",
         "upgrade": "폴더 전송을 사용하려면 호스트의 에이전트를 업데이트하세요.",
         "scanning": "폴더 확인 중",
@@ -975,7 +976,9 @@
       "editPath": "경로 입력",
       "go": "이 경로로 이동",
       "toggle": "파일 탐색기 접기/펴기",
-      "download": "{count}개 파일 다운로드",
+      "download": "{count}개 항목 다운로드",
+      "selectedCount": "{count}개 선택됨",
+      "clearSelection": "선택 해제",
       "downloadLabel": "다운로드",
       "upload": "이 폴더로 업로드",
       "delete": "선택 삭제",

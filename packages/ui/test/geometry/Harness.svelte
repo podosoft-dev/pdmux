@@ -224,6 +224,13 @@
 		(typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('scheme')) === 'dark'
 			? 'dark'
 			: 'light';
+	/**
+	 * `?select=1` draws the checkbox column. It costs the name column a box and a gap, so
+	 * the spec measures both shapes at the same widths.
+	 */
+	const filesSelectable =
+		(typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('select')) === '1';
+	let filesSelected = $state<string[]>(['module-1.ts', 'module-2.ts']);
 	let filesSort = $state<FsSort>({ key: 'name', dir: 'asc' });
 	let filesColumns = $state<FsColumns>(defaultFsColumns());
 	let columnBase: number | null = null;
@@ -308,6 +315,14 @@
 			formatDate={(seconds) => new Date(seconds * 1000).toISOString().slice(0, 16).replace('T', ' ')}
 			onSort={(key) => (filesSort = nextFsSort(filesSort, key))}
 			onColumnResize={dragColumn}
+			selectable={filesSelectable}
+			selected={filesSelectable ? filesSelected : []}
+			checkDisabledReason={(entry) => (entry.name === 'node_modules' ? 'Not here' : null)}
+			onCheck={(name) =>
+				(filesSelected = filesSelected.includes(name)
+					? filesSelected.filter((other) => other !== name)
+					: [...filesSelected, name])}
+			onCheckAll={(names) => (filesSelected = names)}
 		/>
 	</div>
 {:else if screen === 'tree'}

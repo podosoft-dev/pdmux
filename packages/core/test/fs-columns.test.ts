@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	FS_CHECK_W,
 	FS_COLUMN_DEFAULTS,
 	FS_COLUMN_MAX,
 	FS_COLUMN_MIN,
@@ -7,6 +8,7 @@ import {
 	FS_ROW_CHROME,
 	FS_ROW_GAP,
 	defaultFsColumns,
+	fsColumnRoom,
 	setFsColumnWidth,
 	visibleFsColumns,
 } from '../src/fs-columns.js';
@@ -44,6 +46,45 @@ describe('[TC-PDCORE-103] a listing keeps its name column whatever the panel doe
 			// corrects it before a person can read the row.
 			expect(visibleFsColumns(0)).toEqual(['size', 'modified', 'mode']);
 			expect(visibleFsColumns(Number.NaN)).toEqual(['size', 'modified', 'mode']);
+		});
+	});
+
+	describe('the checkbox column', () => {
+		it('is paid for by the columns, never by the name', () => {
+			// ⚠ A panel that EXACTLY fits three columns beside the name floor has nothing left
+			// for a checkbox. Fed the full width, the reducer keeps `mode` and the name drops
+			// to 74px; fed what is left after the checkbox, it folds `mode` instead.
+			const panel = widthFor(['size', 'modified', 'mode']);
+			expect(visibleFsColumns(panel)).toContain('mode');
+			const room = fsColumnRoom(panel, true);
+			expect(room).toBe(panel - FS_CHECK_W - FS_ROW_GAP);
+			expect(visibleFsColumns(room)).toEqual(['size', 'modified']);
+			// A listing without checkboxes is not charged for one.
+			expect(fsColumnRoom(panel, false)).toBe(panel);
+		});
+
+		it('keeps the name its floor when a column is dragged beside it', () => {
+			for (const panel of [260, 390, 420]) {
+				const room = fsColumnRoom(panel, true);
+				const columns = defaultFsColumns();
+				for (const key of visibleFsColumns(room, columns)) {
+					const dragged = setFsColumnWidth(columns, key, FS_COLUMN_MAX, room);
+					const used = visibleFsColumns(room, columns).reduce(
+						(total, k) => total + dragged[k] + FS_ROW_GAP,
+						FS_ROW_CHROME + FS_ROW_GAP + FS_CHECK_W + FS_ROW_GAP,
+					);
+					expect(panel - used, `${panel}px, dragged ${key}`).toBeGreaterThanOrEqual(FS_NAME_MIN);
+				}
+			}
+		});
+
+		it('leaves an unmeasured panel unmeasured, and a measured one measured', () => {
+			// `<= 0` means "show everything until the observer answers"; a subtraction must not
+			// turn a real, very narrow width into that.
+			expect(fsColumnRoom(0, true)).toBe(0);
+			expect(fsColumnRoom(Number.NaN, true)).toBeNaN();
+			expect(fsColumnRoom(10, true)).toBe(1);
+			expect(visibleFsColumns(fsColumnRoom(10, true))).toEqual(['size']);
 		});
 	});
 

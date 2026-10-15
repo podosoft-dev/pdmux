@@ -14,8 +14,18 @@ smoke test imports the emitted transfer controller as well as the terminal relay
   together onto the explorer. Ordinary file selection still works.
 - A folder or multiple-item download becomes one **ZIP64 archive**. A single file keeps its
   original format and uses the existing streaming download endpoint.
-- Enable **Select files and folders** (the check-mark toolbar button), select the desired folders
-  and files, then press Download. Disable selection mode to open folders with a click again.
+- Tick the checkbox in front of each folder or file to download, then press **Download** (its
+  tooltip counts the items). A checkbox only selects; clicking a name still opens the folder or
+  selects and previews the file. Shift-click a checkbox to tick (or untick) everything back to the
+  last one clicked, in the order on screen. The header checkbox selects every entry shown, or
+  clears them all; it shows a dash while only some are selected.
+- The toolbar shows how many items are selected (only the number when the explorer is
+  narrow), with a clear button, while something is selected. Escape clears the selection too, while focus is in the explorer (except in the path
+  field). The selection belongs to the directory shown: opening another directory or host clears
+  it, and the count disappears with it.
+- On a host whose agent predates folder transfers, folder checkboxes are disabled (dashed and
+  faded) and say why in their tooltip; files stay selectable and download one by one in their
+  original format.
 - Existing directories merge. Files prompt for **Overwrite**, **Skip**, or **Cancel transfer**,
   optionally for all subsequent conflicts. Files cannot replace directories or vice versa.
   Skipping a conflicting directory skips its children too.

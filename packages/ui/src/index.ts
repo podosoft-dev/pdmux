@@ -55,6 +55,7 @@ export { identityTranslate, translator } from './i18n.js';
 export type { Translate } from './i18n.js';
 export type { ShellViewTab, ShellViewTabIcon } from './components/ShellViewTabs.svelte';
 export type {
+	CheckMode,
 	HostDetail,
 	FsDirView,
 	FsEntryView,

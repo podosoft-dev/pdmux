@@ -419,7 +419,7 @@ thing and the levels are what somebody came to walk.
 
 | Component | Key props | Callbacks |
 |---|---|---|
-| `FileExplorer` | `dir: FsDirView`, `path`, `loading`, `unavailable`, `idle`, `selected`, `file`, `image`, `sort: FsSort`, `columns: FsColumns`, `scheme`, `formatDate` | `onOpenDir(path)`, `onSelect(name, mode)`, `onClosePreview()`, `onSort(key)`, `onColumnResize(key, delta, commit, panelWidth)` |
+| `FileExplorer` | `dir: FsDirView`, `path`, `loading`, `unavailable`, `idle`, `selected`, `file`, `image`, `sort: FsSort`, `columns: FsColumns`, `scheme`, `formatDate`, `selectable`, `checkDisabledReason(entry)` | `onOpenDir(path)`, `onSelect(name, mode)`, `onCheck(name, mode: CheckMode)`, `onCheckAll(names)`, `onClosePreview()`, `onSort(key)`, `onColumnResize(key, delta, commit, panelWidth)` |
 | `FileIcon` | `name`, `dir`, `open`, `root`, `scheme` | — |
 
 **The listing arrives sorted.** `onSort` reports the **key** that was clicked and nothing else; the
@@ -427,6 +427,33 @@ consumer applies core's `nextFsSort()` and hands back a reordered `dir`. That is
 consumer owns the selection, and a shift-click range is computed on **array index**, so a component
 that reordered rows for display would make a range select different files from the ones the person
 dragged between.
+
+**Checkboxes are opt-in, and a checkbox never navigates.** `selectable` draws a checkbox in front of
+every row and a select-all box in the header. A click on a box reports `onCheck(name, 'toggle')`, or
+`'range'` with Shift; the consumer owns the selection and the anchor a range starts from, exactly as
+it does for `onSelect`. A click on the name keeps its meaning (a folder opens, a file is selected),
+so choosing several folders never requires a mode in which a folder cannot be opened.
+`checkDisabledReason(entry)` returns why an entry cannot be checked (or `null`): its box is disabled,
+the reason becomes the tooltip and accessible description, and select-all skips it. `onCheckAll`
+reports the selection the header asks for: every checkable entry shown, in screen order, or `[]`
+when they are all checked already. The header box is checked when every checkable entry is
+selected and `indeterminate` when some are. After a click the box is redrawn from `selected`, so a
+consumer that declines a toggle never leaves a box drawn checked over an unselected entry.
+
+With checkboxes the row is the `li` (`.pdmux-files-item`, carrying `data-pdmux-entry`,
+`data-pdmux-selected` and the kind marks) and it holds two controls, the checkbox's label and the
+`.pdmux-files-row` button, because a checkbox cannot be nested in a button. The box costs the name
+column `FS_CHECK_W` plus one gap and nothing more: the component decides which number columns fit
+on `fsColumnRoom(listingWidth, selectable)` and reports that same room to `onColumnResize`, so a
+narrow panel folds a number column instead of squeezing the name (TC-PDUI-231). On a coarse pointer
+rows and the header are at least 32 px high and the box's label spans the full row height.
+
+The box is painted after shadcn's Checkbox with one deliberate difference: an unchecked box is
+bordered in `--pdmux-muted`, not `--input`, because its border is the control's only boundary and
+must clear 3:1 against the row (WCAG 1.4.11). Measured in headless Chromium: `--input` gave 1.27:1
+on the app's light row and 1.57:1 in its dark theme; `--pdmux-muted` gives 4.83:1 and 6.75:1. A
+disabled box is dashed, filled with `--pdmux-hover` and faded, so it never reads as an empty
+enabled one (TC-PDUI-232).
 
 **Column widths are pixels the consumer holds, and the clamp is core's.** `onColumnResize` reports a
 delta measured **from where the gesture started** (add it to the width the gesture started from — a

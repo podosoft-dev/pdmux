@@ -21,6 +21,8 @@
 	--pdmux-line: var(--color-border, #dfe3e8);
 	--pdmux-muted: var(--color-muted-foreground, #6b7280);
 	--pdmux-accent: var(--color-primary, #2563eb);
+	/* What is drawn ON the accent — shadcn's `--primary-foreground`, read the same way. */
+	--pdmux-accent-fg: var(--color-primary-foreground, #ffffff);
 	--pdmux-hot: #dc2626;
 	--pdmux-low: #b91c1c;
 	/*
@@ -3152,8 +3154,35 @@
 	padding: 0;
 }
 
+/*
+ * One entry: an optional checkbox, then the button that opens or selects it.
+ *
+ * ⚠ THE HIGHLIGHT, THE HOVER AND THE KIND COLOURS LIVE ON THE ITEM, NOT THE BUTTON. A
+ * checkbox may not be nested in a button, so once a row holds both the item is the only
+ * box that covers the whole row.
+ */
+.pdmux-files-item {
+	display: flex;
+	align-items: stretch;
+	border-radius: var(--pdmux-radius-sm);
+}
+
+.pdmux-files-item:hover {
+	background: var(--pdmux-hover);
+	color: var(--pdmux-hover-fg);
+}
+
+.pdmux-files-item[data-pdmux-selected='true'] {
+	background: var(--pdmux-hover);
+	color: var(--pdmux-fg);
+	outline: 1px solid var(--pdmux-ring);
+	outline-offset: -1px;
+}
+
 .pdmux-files-row {
 	display: flex;
+	flex: 1;
+	min-width: 0;
 	align-items: center;
 	/* ⚠ THE GAP AND THE PADDING ARE ALSO NUMBERS IN `@pdmux/core`. `fs-columns.ts`
 	   decides which columns fit, which it cannot do without spending exactly what this
@@ -3162,7 +3191,6 @@
 	   in `test/files.test.ts` reads this file and asserts that, because CSS cannot
 	   read a constant and two numbers for one distance always drift. */
 	gap: var(--pdmux-files-gap, 8px);
-	width: 100%;
 	padding: 3px 6px;
 	font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	text-align: start;
@@ -3173,16 +3201,120 @@
 	cursor: pointer;
 }
 
-.pdmux-files-row:hover {
-	background: var(--pdmux-hover);
-	color: var(--pdmux-hover-fg);
+/*
+ * The checkbox cell of a row.
+ *
+ * ⚠ IT SPENDS `FS_CHECK_W` PLUS ONE GAP, AND NOT A PIXEL MORE: the 6px the button's own
+ * padding would have spent before the icon, the box, and what is left of the gap (the
+ * button brings its 6px of padding after it). `fsColumnRoom()` charges the columns
+ * exactly that, and `.pdmux-files-head-check` spends the same inside the header.
+ *
+ * Padding rather than a margin so the whole cell — the row's full height and its
+ * leading edge — is the label, which is the target a pointer or a fingertip hits.
+ */
+.pdmux-files-check {
+	flex: none;
+	display: flex;
+	align-items: center;
+	padding-inline: 6px calc(var(--pdmux-files-gap, 8px) - 6px);
+	cursor: pointer;
 }
 
-.pdmux-files-row[data-pdmux-selected='true'] {
-	background: var(--pdmux-hover);
+/*
+ * A native checkbox painted after the app's shadcn Checkbox: `shadow-xs`; checked fills
+ * with the primary colour under a check; indeterminate draws a minus without the fill.
+ * Still a native control for the reason `.pdmux-switch` records: checked state, keyboard,
+ * the label and the accessibility tree come with the element, and this package cannot
+ * depend on shadcn.
+ *
+ * ⚠ THE BORDER IS `--pdmux-muted`, NOT shadcn's `--input` — and that is the one place
+ * this departs from shadcn, on purpose. An unchecked box is a control's only boundary,
+ * which WCAG 1.4.11 wants at 3:1 against the row. Measured (headless Chromium, 2026-10):
+ * `--input` gave 1.27:1 on the app's white row and 1.57:1 in its dark theme, where the
+ * token is 15% white — the box existed for the DOM and not for the eye. The muted text
+ * colour is opaque in both themes and clears 3:1 on the row and on the hovered row.
+ *
+ * 14px rather than shadcn's `size-4`, the same size as the row icon beside it.
+ *
+ * The glyphs are lucide's `check` and `minus` (ISC, (c) Lucide Icons and Contributors),
+ * drawn as a mask over `currentColor` so they follow the token rather than a colour baked
+ * into the SVG.
+ */
+.pdmux-files-checkbox {
+	appearance: none;
+	-webkit-appearance: none;
+	flex: none;
+	display: grid;
+	place-content: center;
+	box-sizing: border-box;
+	inline-size: 14px;
+	block-size: 14px;
+	margin: 0;
+	padding: 0;
 	color: var(--pdmux-fg);
-	outline: 1px solid var(--pdmux-ring);
-	outline-offset: -1px;
+	background: transparent;
+	border: 1px solid var(--pdmux-muted);
+	border-radius: calc(var(--pdmux-radius-sm) - 2px);
+	box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
+	cursor: pointer;
+	transition:
+		background-color 0.15s ease,
+		border-color 0.15s ease;
+}
+
+.pdmux-files-checkbox::before {
+	content: '';
+	inline-size: 10px;
+	block-size: 10px;
+	background: currentColor;
+	-webkit-mask: center / contain no-repeat;
+	mask: center / contain no-repeat;
+	visibility: hidden;
+}
+
+.pdmux-files-checkbox:indeterminate::before {
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E");
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E");
+	visibility: visible;
+}
+
+.pdmux-files-checkbox:checked {
+	color: var(--pdmux-accent-fg);
+	background: var(--pdmux-accent);
+	border-color: var(--pdmux-accent);
+}
+
+.pdmux-files-checkbox:checked::before {
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+	visibility: visible;
+}
+
+.pdmux-files-checkbox:focus-visible {
+	outline: none;
+	border-color: var(--pdmux-ring);
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--pdmux-ring) 50%, transparent);
+}
+
+/*
+ * ⚠ A DISABLED BOX MUST NOT LOOK LIKE AN EMPTY ONE. Fading alone left it reading as an
+ * unchecked box a little lighter than its neighbours, so it is also dashed and filled with
+ * the muted surface: three cues, none of them colour-only. Its reason is the tooltip.
+ */
+.pdmux-files-checkbox:disabled {
+	cursor: not-allowed;
+	opacity: 0.55;
+	box-shadow: none;
+}
+
+.pdmux-files-checkbox:disabled:not(:checked) {
+	border-style: dashed;
+	background: var(--pdmux-hover);
+}
+
+.pdmux-files-check:has(> .pdmux-files-checkbox:disabled),
+.pdmux-files-head-check:has(> .pdmux-files-checkbox:disabled) {
+	cursor: not-allowed;
 }
 
 /*
@@ -3196,26 +3328,26 @@
  * unknown files stay the body colour, because most of a directory is those and a
  * listing where everything is coloured says nothing.
  */
-.pdmux-files-row[data-pdmux-file-kind='dir'] .pdmux-files-name {
+.pdmux-files-item[data-pdmux-file-kind='dir'] .pdmux-files-name {
 	color: var(--pdmux-code-title, #0550ae);
 	font-weight: 500;
 }
 
-.pdmux-files-row[data-pdmux-file-kind='code'] .pdmux-files-name {
+.pdmux-files-item[data-pdmux-file-kind='code'] .pdmux-files-name {
 	color: var(--pdmux-code-keyword, #8250df);
 }
 
-.pdmux-files-row[data-pdmux-file-kind='data'] .pdmux-files-name {
+.pdmux-files-item[data-pdmux-file-kind='data'] .pdmux-files-name {
 	color: var(--pdmux-code-number, #b1531a);
 }
 
-.pdmux-files-row[data-pdmux-file-kind='image'] .pdmux-files-name,
-.pdmux-files-row[data-pdmux-file-kind='media'] .pdmux-files-name {
+.pdmux-files-item[data-pdmux-file-kind='image'] .pdmux-files-name,
+.pdmux-files-item[data-pdmux-file-kind='media'] .pdmux-files-name {
 	color: var(--pdmux-code-string, #0a7d3f);
 }
 
-.pdmux-files-row[data-pdmux-file-kind='archive'] .pdmux-files-name,
-.pdmux-files-row[data-pdmux-file-kind='binary'] .pdmux-files-name {
+.pdmux-files-item[data-pdmux-file-kind='archive'] .pdmux-files-name,
+.pdmux-files-item[data-pdmux-file-kind='binary'] .pdmux-files-name {
 	color: var(--pdmux-code-type, #953800);
 }
 
@@ -3319,6 +3451,24 @@
 	font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 	background: var(--pdmux-card);
 	border-bottom: 1px solid var(--pdmux-line);
+}
+
+/*
+ * The select-all box. Its LAYOUT width is the box alone — the header's own padding and
+ * gap already spend what `.pdmux-files-check` spends as padding in a row — and the
+ * negative margins hand its hit area the header's full height and the edges around it
+ * without moving anything.
+ */
+.pdmux-files-head-check {
+	flex: none;
+	display: flex;
+	align-items: center;
+	align-self: stretch;
+	margin-block: -3px;
+	padding-block: 3px;
+	margin-inline: -6px -4px;
+	padding-inline: 6px 4px;
+	cursor: pointer;
 }
 
 /*
@@ -3429,6 +3579,33 @@
 	color: var(--pdmux-muted);
 	border: 1px solid var(--pdmux-line);
 	border-radius: 999px;
+}
+
+/*
+ * Finger-sized rows. Pointer decides size, as in the shell's coarse block: a 24px row is
+ * a coin-toss between a checkbox, a name and the row below. Here rather than in that
+ * block because these rules come after it, and source order is what decides a tie.
+ */
+@media (pointer: coarse) {
+	/* ⚠ `border-box` stated, not inherited: a Tailwind app's preflight sets it and a bare
+	   host page does not, and a content-box header came out 39px in one and 33px in the
+	   other. 33 is the 32px target plus the header's 1px rule. */
+	.pdmux-files-item {
+		box-sizing: border-box;
+		min-height: 32px;
+	}
+
+	.pdmux-files-head {
+		box-sizing: border-box;
+		min-height: 33px;
+	}
+
+	.pdmux-files-row,
+	.pdmux-files-check,
+	.pdmux-files-head-check {
+		touch-action: manipulation;
+		-webkit-tap-highlight-color: transparent;
+	}
 }
 
 /*

@@ -64,6 +64,32 @@ export const FS_ROW_GAP = 8;
  */
 export const FS_ROW_CHROME = 26;
 
+/**
+ * The selection checkbox's box, when the listing draws one. A row spends it plus one
+ * `FS_ROW_GAP` before its icon, and the header spends exactly the same.
+ *
+ * ⚠ THE SAME CONTRACT AS `FS_ROW_CHROME`: `.pdmux-files-checkbox` must be this wide, and
+ * a spec in `@pdmux/ui` reads the stylesheet to say so.
+ */
+export const FS_CHECK_W = 14;
+
+/**
+ * What a listing has left for the name and the number columns once the checkbox column
+ * is drawn.
+ *
+ * ⚠ THE CHECKBOX IS NOT ROOM THE COLUMNS MAY SPEND, exactly as the scrollbar is not.
+ * Feeding the full listing width to `visibleFsColumns` and `setFsColumnWidth` while a
+ * checkbox sits in front of every row would let the number columns keep their slots and
+ * take the difference out of the NAME — the column the floor exists to protect.
+ *
+ * Unmeasured (`<= 0`) stays unmeasured; a measured width never becomes "unmeasured" by
+ * subtraction, or a very narrow panel would suddenly be told every column fits.
+ */
+export function fsColumnRoom(listingWidth: number, checkboxes: boolean): number {
+	if (!checkboxes || !Number.isFinite(listingWidth) || listingWidth <= 0) return listingWidth;
+	return Math.max(1, listingWidth - FS_CHECK_W - FS_ROW_GAP);
+}
+
 const clamp = (px: number, min: number, max: number): number => Math.min(max, Math.max(min, Math.round(px)));
 
 /** Room left for the name once `keys` are drawn at these widths. */

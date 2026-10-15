@@ -11,9 +11,13 @@
     path: files.path, home: "/home/example", entries: [
       { name: "folder", dir: true, symlink: false, size: 0, mode: 0o700, modified: 1 },
       { name: "file.txt", dir: false, symlink: false, size: 7, mode: 0o600, modified: 1 },
+      { name: "notes.md", dir: false, symlink: false, size: 12, mode: 0o600, modified: 1 },
     ], dropped: 0, truncated: false, error: null,
   };
-  const hosts = [{ id: hostId, label: "Test host", capabilities: ["files", "files-transfer-v1"] }] as HostView[];
+  // `?legacy` is a host whose agent predates folder transfers.
+  const legacy = new URLSearchParams(location.search).has("legacy");
+  const capabilities = legacy ? ["files"] : ["files", "files-transfer-v1"];
+  const hosts = [{ id: hostId, label: "Test host", capabilities }] as HostView[];
   onDestroy(() => files.transfers.dispose());
 </script>
 <main class="pdmux h-screen max-w-[440px] min-w-0">

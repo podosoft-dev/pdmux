@@ -12,6 +12,14 @@
  * (which sets PDMUX_BROWSER_TEST=1); without the flag these skip and no server runs.
  */
 import { expect, test } from '@playwright/test';
+import {
+	FS_CHECK_W,
+	FS_COLUMN_DEFAULTS,
+	FS_ROW_CHROME,
+	FS_ROW_GAP,
+	fsColumnRoom,
+	visibleFsColumns,
+} from '@pdmux/core';
 
 const enabled = Boolean(process.env.PDMUX_BROWSER_TEST);
 
@@ -947,4 +955,238 @@ test.describe('pdmux ui geometry', () => {
 		expect(Math.abs((grown?.head?.width ?? 0) - (grown?.cell?.width ?? 0))).toBeLessThanOrEqual(1);
 		expect(after.name.cell?.width ?? 0).toBeGreaterThan(60);
 	});
+
+	/**
+	 * ⚠ THE CHECKBOX COLUMN IS A SIBLING IN A HORIZONTAL ROW OF FIXED-WIDTH CELLS — the
+	 * exact shape of the 420px → 0px incident. So it is measured, not assumed: the name
+	 * gives up the box and one gap and nothing more, the reducer is told about the box
+	 * (or the number columns keep their slots and the name pays), and the box sits in the
+	 * same place in the header and in every row.
+	 */
+	const checkGeometry = (page: import('@playwright/test').Page) =>
+		page.evaluate(() => {
+			const rect = (node: Element | null) => {
+				if (!node) return null;
+				const box = node.getBoundingClientRect();
+				const round = (value: number) => Math.round(value * 10) / 10;
+				return { left: round(box.left), right: round(box.right), width: round(box.width), height: round(box.height) };
+			};
+			const body = document.querySelector('[data-pdmux-files-body]') as HTMLElement;
+			const head = document.querySelector('[data-pdmux-files-head]') as HTMLElement;
+			const item = document.querySelector("[data-pdmux-entry='module-1.ts']") as HTMLElement;
+			const row = item.querySelector('.pdmux-files-row') as HTMLElement;
+			const cell = item.querySelector('.pdmux-files-check');
+			const box = item.querySelector('.pdmux-files-checkbox');
+			const hit = (node: Element | null, x: number, y: number) =>
+				Boolean(node && document.elementFromPoint(x, y)?.closest('label') === node);
+			const cellBox = cell?.getBoundingClientRect();
+			return {
+				bodyWidth: body.clientWidth,
+				bodyOverflow: body.scrollWidth - body.clientWidth,
+				rowOverflow: row.scrollWidth - row.clientWidth,
+				columns: [...head.querySelectorAll<HTMLElement>('[data-pdmux-cell]')].map((node) => node.dataset.pdmuxCell),
+				head: rect(head),
+				headCheck: rect(head.querySelector('.pdmux-files-head-check')),
+				headBox: rect(head.querySelector('.pdmux-files-checkbox')),
+				headIcon: rect(head.querySelector('.pdmux-files-head-icon')),
+				headName: rect(head.querySelector('.pdmux-files-cell-name')),
+				item: rect(item),
+				check: rect(cell),
+				box: rect(box),
+				button: rect(row),
+				icon: rect(row.querySelector('.pdmux-files-icon')),
+				name: rect(row.querySelector('.pdmux-files-name')),
+				// The label's own corners hit the label: nothing paints over the target.
+				cornersHit: cellBox
+					? hit(cell, cellBox.left + 1, cellBox.top + 1) && hit(cell, cellBox.right - 1, cellBox.bottom - 1)
+					: false,
+			};
+		});
+
+	for (const width of [420, 390, 260]) {
+		test(`[TC-PDUI-231] the checkbox column costs the name a box and a gap at ${width}px`, async ({ page }, testInfo) => {
+			await page.goto(`/?screen=files&width=${width}`);
+			await page.waitForSelector('[data-pdmux-files-head]');
+			const plain = await page.evaluate(() => {
+				const row = document.querySelector("[data-pdmux-entry='module-1.ts'] .pdmux-files-row") as HTMLElement;
+				return {
+					name: Math.round((row.querySelector('.pdmux-files-name') as HTMLElement).getBoundingClientRect().width * 10) / 10,
+					columns: [...document.querySelectorAll<HTMLElement>('[data-pdmux-files-head] [data-pdmux-cell]')].map(
+						(node) => node.dataset.pdmuxCell,
+					),
+					boxes: document.querySelectorAll('input[type=checkbox]').length,
+				};
+			});
+			expect(plain.boxes, 'a listing that did not ask for checkboxes draws none').toBe(0);
+
+			await page.goto(`/?screen=files&width=${width}&select=1`);
+			await page.waitForSelector('[data-pdmux-files-head]');
+			const box = await checkGeometry(page);
+			console.log(`TC-PDUI-231 ${width}px plain=${JSON.stringify(plain)} select=${JSON.stringify(box)}`);
+			await testInfo.attach(`checkbox-geometry-${width}`, {
+				body: JSON.stringify({ plain, select: box }, null, 2),
+				contentType: 'application/json',
+			});
+			await page.screenshot({ path: testInfo.outputPath(`files-checkbox-${width}.png`), animations: 'disabled' });
+
+			// ⚠ THE REDUCER WAS TOLD. The name is what the core budget says it is once the box
+			// is charged, to the pixel — not what is left after the number columns took their
+			// usual slots.
+			const room = fsColumnRoom(box.bodyWidth, true);
+			const visible = visibleFsColumns(room, FS_COLUMN_DEFAULTS);
+			expect(box.columns).toEqual([...visible]);
+			const used = visible.reduce((total, key) => total + FS_COLUMN_DEFAULTS[key] + FS_ROW_GAP, FS_ROW_CHROME + FS_ROW_GAP);
+			expect(Math.abs((box.name?.width ?? 0) - (room - used))).toBeLessThanOrEqual(1);
+			// Where the same columns fit, the name gave up exactly the box and one gap.
+			if (plain.columns.join() === box.columns.join()) {
+				expect(Math.abs(plain.name - (box.name?.width ?? 0) - (FS_CHECK_W + FS_ROW_GAP))).toBeLessThanOrEqual(1);
+			}
+			expect(box.name?.width ?? 0).toBeGreaterThanOrEqual(90);
+
+			// The cell is the box and one gap; the box is the box. The header spends the same.
+			expect(Math.abs((box.check?.width ?? 0) - (FS_CHECK_W + FS_ROW_GAP))).toBeLessThanOrEqual(0.5);
+			expect(box.box?.width).toBe(FS_CHECK_W);
+			expect(box.headBox?.width).toBe(FS_CHECK_W);
+			// Header box over row box, header icon over row icon, header name over row name.
+			expect(Math.abs((box.headBox?.left ?? 0) - (box.box?.left ?? 0))).toBeLessThanOrEqual(1);
+			expect(Math.abs((box.headIcon?.left ?? 0) - (box.icon?.left ?? 0))).toBeLessThanOrEqual(1);
+			expect(Math.abs((box.headName?.left ?? 0) - (box.name?.left ?? 0))).toBeLessThanOrEqual(1);
+			// No overlap and no clipping: the box ends before the icon starts, the row does not
+			// scroll sideways, and the listing does not either.
+			expect(box.box?.right ?? 0).toBeLessThanOrEqual(box.icon?.left ?? 0);
+			expect(box.box?.left ?? 0).toBeGreaterThanOrEqual(box.item?.left ?? 0);
+			expect(box.rowOverflow).toBe(0);
+			expect(box.bodyOverflow).toBe(0);
+			// The target is the row's full height and nothing covers it.
+			expect(Math.abs((box.check?.height ?? 0) - (box.item?.height ?? 0))).toBeLessThanOrEqual(0.5);
+			expect(box.cornersHit).toBe(true);
+			// The box did not make the row taller than the icon is allowed to.
+			expect(box.item?.height ?? 0).toBeLessThanOrEqual(26);
+		});
+	}
+
+	test.describe('on a coarse pointer', () => {
+		test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+		test('[TC-PDUI-231] a fingertip gets a 32px row, a 32px box target and a 32px header', async ({ page }, testInfo) => {
+			await page.goto('/?screen=files&width=390&select=1');
+			await page.waitForSelector('[data-pdmux-files-head]');
+			expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+			const box = await checkGeometry(page);
+			console.log(`TC-PDUI-231 coarse 390px ${JSON.stringify(box)}`);
+			await testInfo.attach('checkbox-geometry-coarse-390', {
+				body: JSON.stringify(box, null, 2),
+				contentType: 'application/json',
+			});
+			await page.screenshot({ path: testInfo.outputPath('files-checkbox-coarse-390.png'), animations: 'disabled' });
+			expect(box.item?.height ?? 0).toBeGreaterThanOrEqual(32);
+			expect(box.check?.height ?? 0).toBeGreaterThanOrEqual(32);
+			expect(box.button?.height ?? 0).toBeGreaterThanOrEqual(32);
+			expect(box.headCheck?.height ?? 0).toBeGreaterThanOrEqual(32);
+			// Still aligned, still not crowding the name.
+			expect(Math.abs((box.headBox?.left ?? 0) - (box.box?.left ?? 0))).toBeLessThanOrEqual(1);
+			expect(box.rowOverflow).toBe(0);
+			expect(box.bodyOverflow).toBe(0);
+
+			// A tap on the box toggles it.
+			const before = await page.locator("[data-pdmux-check='module-3.ts']").isChecked();
+			await page.locator("[data-pdmux-check='module-3.ts']").tap();
+			expect(await page.locator("[data-pdmux-check='module-3.ts']").isChecked()).toBe(!before);
+		});
+	});
+
+	/**
+	 * ⚠ AN UNCHECKED BOX IS A CONTROL BOUNDARY, AND WCAG 1.4.11 WANTS 3:1 FOR IT. shadcn's
+	 * Checkbox draws it in `--input`, which measured about 1.2:1 on a white row and is 15%
+	 * white in the app's dark theme — the box was there for the DOM and missing for the eye.
+	 * Measured here against the package's own fallback palette, in both schemes; the app's
+	 * palette is measured by the file-transfer harness.
+	 *
+	 * The colours go through a canvas because the engine is the only thing that knows what
+	 * an `oklch()` or a translucent token paints as.
+	 */
+	const boxContrast = (page: import('@playwright/test').Page, name: string) =>
+		page.evaluate(async (entry) => {
+			// A colour read mid-transition is neither the old colour nor the new one.
+			await Promise.all(document.getAnimations().map((animation) => animation.finished));
+			const canvas = document.createElement('canvas');
+			canvas.width = 1;
+			canvas.height = 1;
+			const context = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+			const rgba = (color: string): [number, number, number, number] => {
+				context.clearRect(0, 0, 1, 1);
+				context.fillStyle = '#000';
+				context.fillStyle = color;
+				context.fillRect(0, 0, 1, 1);
+				const [r = 0, g = 0, b = 0, a = 0] = context.getImageData(0, 0, 1, 1).data;
+				return [r, g, b, a / 255];
+			};
+			const over = (top: [number, number, number, number], base: [number, number, number]) =>
+				[0, 1, 2].map((i) => top[i]! * top[3] + base[i]! * (1 - top[3])) as [number, number, number];
+			const backdrop = (node: Element | null): [number, number, number] => {
+				const layers: [number, number, number, number][] = [];
+				for (let element = node; element; element = element.parentElement) {
+					const colour = rgba(getComputedStyle(element).backgroundColor);
+					if (colour[3] > 0) layers.push(colour);
+					if (colour[3] >= 1) break;
+				}
+				return layers.reverse().reduce<[number, number, number]>((base, layer) => over(layer, base), [255, 255, 255]);
+			};
+			const luminance = ([r, g, b]: [number, number, number]) => {
+				const channel = (value: number) => {
+					const c = value / 255;
+					return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+				};
+				return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+			};
+			const ratio = (a: [number, number, number], b: [number, number, number]) => {
+				const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+				return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+			};
+			const item = document.querySelector(`[data-pdmux-entry='${entry}']`) as HTMLElement;
+			const box = item.querySelector('.pdmux-files-checkbox') as HTMLInputElement;
+			const style = getComputedStyle(box);
+			const row = backdrop(item);
+			const hover = over(rgba(getComputedStyle(item).getPropertyValue('--pdmux-hover')), backdrop(item.parentElement));
+			return {
+				border: style.borderTopColor,
+				ratio: ratio(over(rgba(style.borderTopColor), row), row),
+				hoverRatio: ratio(over(rgba(style.borderTopColor), hover), hover),
+				borderStyle: style.borderTopStyle,
+				opacity: Number(style.opacity),
+				cursor: style.cursor,
+				labelCursor: getComputedStyle(box.parentElement as HTMLElement).cursor,
+				fill: style.backgroundColor,
+				title: box.title,
+			};
+		}, name);
+
+	for (const scheme of ['light', 'dark'] as const) {
+		test(`[TC-PDUI-232] an unchecked box clears 3:1 and a disabled one looks disabled, ${scheme}`, async ({ page }, testInfo) => {
+			await page.emulateMedia({ colorScheme: scheme });
+			await page.goto(`/?screen=files&width=390&select=1&scheme=${scheme}`);
+			await page.waitForSelector('[data-pdmux-files-head]');
+			const unchecked = await boxContrast(page, 'module-3.ts');
+			const disabled = await boxContrast(page, 'node_modules');
+			const checked = await boxContrast(page, 'module-1.ts');
+			console.log(`TC-PDUI-232 ${scheme} ${JSON.stringify({ unchecked, disabled, checked })}`);
+			await testInfo.attach(`checkbox-contrast-${scheme}`, {
+				body: JSON.stringify({ unchecked, disabled, checked }, null, 2),
+				contentType: 'application/json',
+			});
+			await page.screenshot({ path: testInfo.outputPath(`files-checkbox-${scheme}.png`), animations: 'disabled' });
+			expect(unchecked.ratio).toBeGreaterThanOrEqual(3);
+			expect(unchecked.hoverRatio).toBeGreaterThanOrEqual(3);
+			expect(unchecked.borderStyle).toBe('solid');
+			expect(unchecked.opacity).toBe(1);
+			expect(disabled.borderStyle).toBe('dashed');
+			expect(disabled.opacity).toBeLessThan(1);
+			expect(disabled.cursor).toBe('not-allowed');
+			expect(disabled.labelCursor).toBe('not-allowed');
+			expect(disabled.title).toBe('Not here');
+			expect(disabled.fill).not.toBe(unchecked.fill);
+			expect(checked.borderStyle).toBe('solid');
+			expect(checked.opacity).toBe(1);
+		});
+	}
 });
