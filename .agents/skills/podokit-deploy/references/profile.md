@@ -60,9 +60,14 @@ bunx --bun @podosoft/podokit deploy init \
 The fields that differ from the Kubernetes driver:
 
 - `target`: Docker context, endpoint fingerprint, Compose project name
-- `exposure`: `bindAddress` and `port` published from the web service. It defaults to
-  `127.0.0.1`, because the expected front door is a reverse proxy on the same host —
-  binding every interface publishes the app before TLS exists
+- `exposure`: `bindAddress` and `port`, plus an exact `webSocketPaths` allowlist,
+  `trustedProxyCidrs`, and `gatewayImage`. With an empty allowlist, web owns the
+  published port. With paths, an internal gateway owns it, sends only exact listed
+  paths to API, and sends every other request to web. Forwarding headers are trusted
+  only from the direct proxy CIDRs in `trustedProxyCidrs`; leave it empty without an
+  external proxy. The bind address defaults to `127.0.0.1`, because the expected
+  front door is a trusted reverse proxy — binding every interface publishes the app
+  before TLS exists.
 - `workloads`: replicas plus Compose `cpus` and `memory` limits
 - `dependencies`: `managed`, `external`, or `disabled`, each with a named Docker
   volume and the path of its env file on the target host
@@ -86,3 +91,5 @@ Required keys:
 Data volumes are declared `external`, so `docker compose down -v` cannot delete the
 database. Editing an env file changes the containers' rollout label, so the next
 apply actually restarts them instead of leaving stale environment values running.
+The gateway image is resolved to an immutable digest during planning. The external
+TLS proxy keeps one upstream; do not duplicate the WebSocket path split there.

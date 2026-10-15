@@ -1,8 +1,15 @@
 # Containerized Bun development environment.
+#
+# Every service has a memory limit equal to its swap limit, so a runaway process
+# is OOM-killed inside its container instead of exhausting the host. Override a
+# limit with the matching *_MEM_LIMIT variable from the shell or the project's
+# .env file (not .env.docker), e.g. API_MEM_LIMIT=3g podo dev watch.
 name: pdmux-dev
 
 services:
   traefik:
+    mem_limit: ${TRAEFIK_MEM_LIMIT:-256m}
+    memswap_limit: ${TRAEFIK_MEM_LIMIT:-256m}
     profiles: [podokit-legacy-proxy]
     image: traefik:v3.5
     command:
@@ -19,6 +26,8 @@ services:
     networks: [podokit]
 
   web:
+    mem_limit: ${WEB_MEM_LIMIT:-2g}
+    memswap_limit: ${WEB_MEM_LIMIT:-2g}
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -42,6 +51,8 @@ services:
         - { action: rebuild, path: ./apps/web/package.json }
 
   api:
+    mem_limit: ${API_MEM_LIMIT:-2g}
+    memswap_limit: ${API_MEM_LIMIT:-2g}
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -61,6 +72,8 @@ services:
         - { action: rebuild, path: ./apps/api/package.json }
 
   worker:
+    mem_limit: ${WORKER_MEM_LIMIT:-1g}
+    memswap_limit: ${WORKER_MEM_LIMIT:-1g}
     profiles: [queue]
     build:
       context: .
@@ -81,6 +94,8 @@ services:
         - { action: rebuild, path: ./apps/api/package.json }
 
   postgres:
+    mem_limit: ${POSTGRES_MEM_LIMIT:-1g}
+    memswap_limit: ${POSTGRES_MEM_LIMIT:-1g}
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: podokit
@@ -96,11 +111,15 @@ services:
     networks: [podokit]
 
   redis:
+    mem_limit: ${REDIS_MEM_LIMIT:-256m}
+    memswap_limit: ${REDIS_MEM_LIMIT:-256m}
     profiles: [cache]
     image: redis:7-alpine
     networks: [podokit]
 
   minio:
+    mem_limit: ${MINIO_MEM_LIMIT:-512m}
+    memswap_limit: ${MINIO_MEM_LIMIT:-512m}
     profiles: [storage]
     image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
     command: server /data --console-address ":9001"
@@ -112,6 +131,8 @@ services:
     networks: [podokit]
 
   minio-init:
+    mem_limit: ${MINIO_INIT_MEM_LIMIT:-128m}
+    memswap_limit: ${MINIO_INIT_MEM_LIMIT:-128m}
     profiles: [storage]
     image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:

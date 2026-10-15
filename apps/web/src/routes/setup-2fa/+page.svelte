@@ -1,6 +1,5 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import QRCode from "qrcode";
   import { Button } from "#lib/components/ui/button/index.js";
   import { Input } from "#lib/components/ui/input/index.js";
   import { Label } from "#lib/components/ui/label/index.js";
@@ -21,13 +20,20 @@
 
   $effect(() => {
     const uri = setup?.totpURI;
-    if (!uri) {
-      qrDataUrl = "";
-      return;
-    }
-    QRCode.toDataURL(uri, { margin: 1, width: 176 })
-      .then((url) => (qrDataUrl = url))
-      .catch(() => (qrDataUrl = ""));
+    qrDataUrl = "";
+    if (!uri) return;
+    let active = true;
+    import("qrcode")
+      .then(({ toDataURL }) => toDataURL(uri, { margin: 1, width: 176 }))
+      .then((url) => {
+        if (active && setup?.totpURI === uri) qrDataUrl = url;
+      })
+      .catch(() => {
+        if (active) qrDataUrl = "";
+      });
+    return () => {
+      active = false;
+    };
   });
 
   async function begin(): Promise<void> {

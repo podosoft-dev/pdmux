@@ -1,11 +1,11 @@
 import type { RequestHandler } from "@sveltejs/kit";
-import { backendBaseUrl, proxyRequest, resolveClientIp } from "#lib/server/backend-proxy.js";
+import { backendBaseUrl, proxyRequest, rawSubpath, resolveClientIp } from "#lib/server/backend-proxy.js";
 
 // Proxy the better-auth handler, keeping the /api/auth prefix.
-const handler: RequestHandler = ({ request, params, url, getClientAddress }) =>
+const handler: RequestHandler = ({ request, url, getClientAddress }) =>
   proxyRequest(
     request,
-    `${backendBaseUrl()}/api/auth/${params.all}${url.search}`,
+    `${backendBaseUrl()}/api/auth/${rawSubpath(url, "/api/auth/")}${url.search}`,
     resolveClientIp(getClientAddress),
   );
 

@@ -1,9 +1,8 @@
 import type { LayoutServerLoad } from "./$types";
 import { redirect } from "@sveltejs/kit";
 import { safeAuthRedirect } from "#lib/auth-redirect.js";
-import { loadMessages } from "#lib/i18n/messages.js";
+import { getCapabilities } from "#lib/server/capabilities.js";
 import { isPublicPath, requireBackendAvailable } from "#lib/server/guards.js";
-import type { Capabilities } from "@podosoft/podokit-api-client";
 
 // "/" is a public landing page. Auth pages return signed-in users to their safe
 // requested page, and the admin area requires a session. /maintenance is public
@@ -43,19 +42,13 @@ export const load: LayoutServerLoad = async (event) => {
   if (!locals.user && !isPublicPath(pathname)) {
     redirect(303, `/login?redirect=${encodeURIComponent(`${pathname}${url.search}`)}`);
   }
-  let sessionIdleTimeoutMinutes: number | null = null;
-  if (locals.user) {
-    try {
-      const response = await event.fetch("/api/account/capabilities");
-      if (response.ok) {
-        const capabilities = (await response.json()) as Capabilities;
-        sessionIdleTimeoutMinutes = capabilities.sessionIdleTimeoutMinutes ?? null;
-      }
-    } catch {
-      // Keep automatic logout disabled in the browser if policy lookup fails.
-      // The server-side session expiration remains authoritative.
-    }
-  }
-  const messages = await loadMessages(locals.locale, site?.locale);
-  return { user: locals.user, locale: locals.locale, messages, site, sessionIdleTimeoutMinutes };
+  // Automatic logout stays disabled in the browser if the policy lookup fails;
+  // the server-side session expiration remains authoritative. Protected loads
+  // of the same request reuse this capabilities response.
+  const sessionIdleTimeoutMinutes = locals.user
+    ? ((await getCapabilities(event)).sessionIdleTimeoutMinutes ?? null)
+    : null;
+  // Messages are resolved by the universal +layout.ts. This load re-runs on every
+  // client navigation for the path checks above and must not resend them.
+  return { user: locals.user, locale: locals.locale, site, sessionIdleTimeoutMinutes };
 };

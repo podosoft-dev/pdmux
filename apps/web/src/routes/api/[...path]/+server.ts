@@ -1,11 +1,11 @@
 import type { RequestHandler } from "@sveltejs/kit";
-import { backendBaseUrl, proxyRequest, resolveClientIp } from "#lib/server/backend-proxy.js";
+import { backendBaseUrl, proxyRequest, rawSubpath, resolveClientIp } from "#lib/server/backend-proxy.js";
 
 // Proxy the app's REST API, stripping the /api prefix (backend routes are at root).
-const handler: RequestHandler = ({ request, params, url, getClientAddress, platform }) =>
+const handler: RequestHandler = ({ request, url, getClientAddress, platform }) =>
   proxyRequest(
     request,
-    `${backendBaseUrl()}/${params.path}${url.search}`,
+    `${backendBaseUrl()}/${rawSubpath(url, "/api/")}${url.search}`,
     resolveClientIp(getClientAddress),
     platform?.server,
   );

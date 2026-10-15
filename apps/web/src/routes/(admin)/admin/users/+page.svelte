@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { goto } from "$app/navigation";
   import { Button } from "#lib/components/ui/button/index.js";
   import { Input } from "#lib/components/ui/input/index.js";
@@ -15,6 +16,8 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { toast } from "svelte-sonner";
   import { api } from "#lib/api.js";
+  import { listAdminSessions, revokeAdminSession, type AdminSession } from "#lib/admin/sessions.js";
+  import { DEFAULT_USER_SORT, keepLatestFilter, listUsersQuery } from "#lib/admin/users.js";
   import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
   import { cn } from "#lib/utils.js";
   import { deviceLabel } from "#lib/device-label.js";
@@ -42,11 +45,16 @@
   };
 
   const PAGE_SIZE = DEFAULT_PAGE_SIZE;
-  const LOAD_LIMIT = 500; // bounded client-side list; add server-side filtering for larger deployments
+  // Sessions shown in the manage dialog: the newest page for one user.
+  const MANAGED_SESSIONS_LIMIT = 100;
   let users = $state<Row[]>([]);
+  let total = $state(0);
   let page = $state(1);
-  let sort = $state<SortState | null>(null);
+  let sort = $state<SortState | null>({ ...DEFAULT_USER_SORT });
+  let loading = $state(false);
   let busy = $state(false);
+  let latestRequest = 0;
+  let loadedSortKey = `${DEFAULT_USER_SORT.key}:${DEFAULT_USER_SORT.dir}`;
 
   // Toolbar: filters + search both commit on the Search button (nothing applies
   // until then), so multiple filter/search conditions apply together.
@@ -56,6 +64,19 @@
   let appliedSearchField = $state("email");
   let filterValues = $state<Record<string, string>>({ role: "", status: "" });
   let appliedFilters = $state<Record<string, string>>({ role: "", status: "" });
+  let stagedFilters = { role: "", status: "" };
+
+  // The list endpoint takes a single filter, so picking a role clears the status
+  // and vice versa (see keepLatestFilter).
+  $effect(() => {
+    const next = keepLatestFilter(stagedFilters, {
+      role: filterValues.role ?? "",
+      status: filterValues.status ?? "",
+    });
+    stagedFilters = next;
+    if (filterValues.role !== next.role) filterValues.role = next.role;
+    if (filterValues.status !== next.status) filterValues.status = next.status;
+  });
 
   const columns = $derived<DataTableColumn<Row>[]>([
     { key: "name", label: i18n.t.users.name, sortable: true },
@@ -82,7 +103,6 @@
       label: i18n.t.users.status,
       options: [
         { value: "", label: i18n.t.toolbar.all },
-        { value: "active", label: i18n.t.users.active },
         { value: "pending", label: i18n.t.users.pendingApproval },
         { value: "banned", label: i18n.t.users.banned },
       ],
@@ -93,32 +113,44 @@
     { value: "name", label: i18n.t.users.name },
   ]);
 
-  const filtered = $derived(
-    users.filter((u) => {
-      if (appliedSearch) {
-        const hay = (appliedSearchField === "name" ? u.name : u.email).toLowerCase();
-        if (!hay.includes(appliedSearch.toLowerCase())) return false;
-      }
-      if (appliedFilters.role && (u.role ?? "user") !== appliedFilters.role) return false;
-      if (appliedFilters.status === "banned" && !u.banned) return false;
-      if (appliedFilters.status === "pending" && u.signupApproved !== false) return false;
-      if (appliedFilters.status === "active" && (u.banned || u.signupApproved === false)) return false;
-      return true;
-    }),
-  );
-
+  // Loads only the current page; a newer request supersedes one still in flight.
   async function load(): Promise<void> {
-    const { data: res, error } = await api.auth.admin.listUsers({ query: { limit: LOAD_LIMIT } });
-    if (error) return void toast.error(error.message ?? i18n.t.users.loadFailed);
-    users = (res?.users ?? []) as Row[];
+    const request = ++latestRequest;
+    const sortKey = sort ? `${sort.key}:${sort.dir}` : "";
+    if (sortKey !== loadedSortKey) page = 1;
+    const query = listUsersQuery({
+      page,
+      perPage: PAGE_SIZE,
+      sort,
+      search: appliedSearch,
+      searchField: appliedSearchField,
+      role: appliedFilters.role ?? "",
+      status: appliedFilters.status ?? "",
+    });
+    loading = true;
+    const { data: res, error } = await api.auth.admin.listUsers({ query });
+    if (request !== latestRequest) return;
+    loading = false;
+    if (error) return void toast.error(i18n.t.users.loadFailed);
+    const rows = (res?.users ?? []) as Row[];
+    const count = res?.total ?? rows.length;
+    // An action can empty the last page; show the one before it instead.
+    const lastPage = Math.max(Math.ceil(count / PAGE_SIZE), 1);
+    if (rows.length === 0 && page > lastPage) {
+      page = lastPage;
+      return load();
+    }
+    loadedSortKey = sortKey;
+    users = rows;
+    total = count;
   }
 
-  async function applySearch(): Promise<void> {
-    await load(); // refresh from the server on explicit search, then filter client-side
+  function applySearch(): void {
     appliedSearch = search;
     appliedSearchField = searchField;
     appliedFilters = { ...filterValues };
     page = 1;
+    void load();
   }
 
   // Impersonate — become the user, then continue on the signed-in account page
@@ -176,7 +208,6 @@
 
   // Manage user — a two-pane modal mirroring the account settings, admin-scoped.
   type ManageSection = "profile" | "security" | "sessions" | "danger";
-  type Session = { id: string; token: string; userAgent?: string | null; ipAddress?: string | null; createdAt: string | Date };
   let manageOpen = $state(false);
   let mUser = $state<Row | null>(null);
   let mSection = $state<ManageSection>("profile");
@@ -192,10 +223,11 @@
   let mBanReason = $state("");
   let mBanDays = $state("");
   // sessions
-  let mSessions = $state<Session[]>([]);
+  let mSessions = $state<AdminSession[]>([]);
+  let mSessionsTotal = $state(0);
   let mSessionsPage = $state(1);
   let mSessionsSort = $state<SortState | null>(null);
-  const mSessionsColumns: DataTableColumn<Session>[] = [
+  const mSessionsColumns: DataTableColumn<AdminSession>[] = [
     { key: "userAgent", label: i18n.t.adminSessions.device, sortable: true, value: (s) => deviceLabel(s.userAgent) ?? s.userAgent ?? "" },
     { key: "ipAddress", label: i18n.t.adminSessions.ip, sortable: true },
     { key: "createdAt", label: i18n.t.adminSessions.since, sortable: true, value: (s) => new Date(s.createdAt).getTime() },
@@ -217,6 +249,7 @@
     mBanDays = "";
     mDeleteArmed = false;
     mSessions = [];
+    mSessionsTotal = 0;
     mSessionsPage = 1;
     manageOpen = true;
     await loadManagedSessions();
@@ -224,8 +257,15 @@
 
   async function loadManagedSessions(): Promise<void> {
     if (!mUser) return;
-    const { data: res } = await api.auth.admin.listUserSessions({ userId: mUser.id });
-    mSessions = (res?.sessions ?? []) as Session[];
+    const userId = mUser.id;
+    try {
+      const result = await listAdminSessions(api, { limit: MANAGED_SESSIONS_LIMIT, userId });
+      if (mUser?.id !== userId) return;
+      mSessions = result.items;
+      mSessionsTotal = result.total;
+    } catch {
+      toast.error(i18n.t.adminSessions.loadFailed);
+    }
   }
 
   async function saveProfile(event: Event): Promise<void> {
@@ -329,11 +369,15 @@
     await load();
   }
 
-  async function revokeSession(token: string): Promise<void> {
+  async function revokeSession(id: string): Promise<void> {
     busy = true;
-    const { error } = await api.auth.admin.revokeUserSession({ sessionToken: token });
-    busy = false;
-    if (error) return void toast.error(error.message ?? i18n.t.adminSessions.loadFailed);
+    try {
+      await revokeAdminSession(api, id);
+    } catch {
+      return void toast.error(i18n.t.adminSessions.revokeFailed);
+    } finally {
+      busy = false;
+    }
     toast.success(i18n.t.adminSessions.revoked);
     await loadManagedSessions();
   }
@@ -343,7 +387,7 @@
     busy = true;
     const { error } = await api.auth.admin.revokeUserSessions({ userId: mUser.id });
     busy = false;
-    if (error) return void toast.error(error.message ?? i18n.t.adminSessions.loadFailed);
+    if (error) return void toast.error(error.message ?? i18n.t.adminSessions.revokeFailed);
     toast.success(i18n.t.adminSessions.allRevoked);
     await loadManagedSessions();
   }
@@ -360,7 +404,7 @@
   }
 
   $effect(() => {
-    void load();
+    untrack(() => void load());
   });
 </script>
 
@@ -383,14 +427,18 @@
 
   <DataTable
     {columns}
-    rows={filtered}
+    rows={users}
     getKey={(u) => u.id}
-    empty={i18n.t.users.empty}
+    empty={loading ? "…" : i18n.t.users.empty}
     bind:sort
     bind:page
+    manualSort
+    manualPagination
     perPage={PAGE_SIZE}
+    {total}
     ariaLabel={i18n.t.users.title}
-    label={fmt(i18n.t.users.total, { count: filtered.length })}
+    label={fmt(i18n.t.users.total, { count: total })}
+    onChange={() => void load()}
   >
     {#snippet row(user, { cellClass })}
       <Table.Cell class={cn(cellClass("name"), "font-medium")}>{user.name}</Table.Cell>
@@ -555,14 +603,14 @@
               bind:sort={mSessionsSort}
               bind:page={mSessionsPage}
               perPage={PAGE_SIZE}
-              label={fmt(i18n.t.adminSessions.total, { count: mSessions.length })}
+              label={fmt(i18n.t.adminSessions.total, { count: mSessionsTotal })}
               empty={i18n.t.adminSessions.empty}
             >
               {#snippet row(s)}
                 <Table.Cell class="max-w-40 truncate" title={s.userAgent ?? ""}>{deviceLabel(s.userAgent) ?? s.userAgent ?? i18n.t.adminSessions.unknown}</Table.Cell>
                 <Table.Cell class="text-muted-foreground">{s.ipAddress ?? "—"}</Table.Cell>
                 <Table.Cell class="text-muted-foreground">{formatDateTime(s.createdAt)}</Table.Cell>
-                <Table.Cell><Button variant="ghost" size="sm" disabled={busy} onclick={() => revokeSession(s.token)}>{i18n.t.users.revokeSession}</Button></Table.Cell>
+                <Table.Cell><Button variant="ghost" size="sm" disabled={busy} onclick={() => revokeSession(s.id)}>{i18n.t.users.revokeSession}</Button></Table.Cell>
               {/snippet}
             </DataTable>
           </div>

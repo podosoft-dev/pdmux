@@ -24,8 +24,8 @@
   const ac = $derived(data.authConfig);
 
   type EditableFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "oidcProvider";
-  // require2fa is a policy flag stored alongside the feature flags but not part of
-  // the typed Capabilities, so it is toggled but never read from `caps`.
+  // require2fa is an enrolment policy and mcpEnabled a product policy rather than
+  // features, so their cards read `data` instead of the feature flags in `caps`.
   type ToggleFlag = EditableFlag | "require2fa" | "mcpEnabled";
   type ServerKey = "requireEmailVerification" | "requireSignupApproval" | "hibp" | "allowDelete" | "auditLog";
 

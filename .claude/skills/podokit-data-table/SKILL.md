@@ -44,5 +44,6 @@ put pagination outside the table.
   above the DataTable. Filters + search apply together on the Search button/Enter
   (don't query on every keystroke); the search field is a `select` of columns.
 
-The `/admin/users` page is the reference implementation. See `docs/development.md`
+The `/admin/users` page is the reference implementation (server offset paging);
+`/admin/sessions` shows keyset paging with a cursor. See `docs/development.md`
 ("Data tables", "Search & filters") on the PodoKit repo.

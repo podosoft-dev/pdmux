@@ -3,6 +3,7 @@
   import { Button } from "#lib/components/ui/button/index.js";
   import * as Card from "#lib/components/ui/card/index.js";
   import { getI18n } from "#lib/i18n/index.js";
+  import { signedOAuthQuery } from "#lib/oauth-query.js";
 
   const i18n = getI18n();
   // The OAuth provider redirects here with the authorization request in the query
@@ -14,13 +15,13 @@
   async function decide(accept: boolean): Promise<void> {
     busy = true;
     // The authorization request is carried in the signed query params we were
-    // redirected here with; forward them verbatim so the server can validate and
-    // restore it. Credentials carry the user's session. The response says where next.
+    // redirected here with; the server verifies them from the body, then restores
+    // the request. Credentials carry the user's session. The response says where next.
     const res = await fetch(`/api/auth/oauth2/consent${page.url.search}`, {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ accept }),
+      body: JSON.stringify({ accept, oauth_query: signedOAuthQuery(page.url.search) }),
     });
     const data = (await res.json().catch(() => ({}))) as { url?: string; redirectURI?: string };
     const next = data.url ?? data.redirectURI;

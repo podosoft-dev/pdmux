@@ -51,6 +51,13 @@ test("profile image upload, replacement, public read, and removal", async ({ pla
   expect(firstImage.ok()).toBeTruthy();
   expect(firstImage.headers()["content-type"]).toContain("image/png");
   expect(firstImage.headers()["cache-control"]).toBe(expectedImageCache);
+  expect(firstImage.headers()["content-length"]).toBe(String(PNG.byteLength));
+  expect((await firstImage.body()).equals(PNG)).toBe(true);
+  const etag = firstImage.headers()["etag"];
+  expect(etag).toMatch(/^"[^"]+"$/);
+  const revalidated = await admin.get(firstBody.image, { headers: { "if-none-match": etag ?? "" } });
+  expect(revalidated.status()).toBe(304);
+  expect(revalidated.headers()["cache-control"]).toBe(expectedImageCache);
 
   const replacement = await admin.post("/api/account/profile-image", {
     multipart: { file: { name: "replacement.png", mimeType: "image/png", buffer: PNG } },

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIResponse } from "@playwright/test";
 import { adminState } from "../helpers/accounts";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
@@ -6,7 +6,24 @@ const origin = { origin: base };
 
 // The global limit is shared by every request that reaches this stack. Exercising a
 // production-sized window inside the full suite would leave all following tests rate-limited.
-const limit = Number(process.env.RATE_LIMIT_MAX ?? 100);
+const limit = Number(process.env.RATE_LIMIT_MAX ?? 300);
+const authLimit = Number(process.env.RATE_LIMIT_AUTH_MAX ?? 20);
+
+async function session(
+  playwright: import("@playwright/test").PlaywrightWorkerArgs["playwright"],
+) {
+  const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const email = `rate-limit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+  const signup = await ctx.post("/api/auth/sign-up/email", {
+    data: {
+      email,
+      password: "Podokit3e-Str0ng!pw",
+      name: "Rate Limit",
+    },
+  });
+  expect(signup.ok()).toBeTruthy();
+  return ctx;
+}
 
 test("rate limit: health probes stay available while ordinary routes return 429 @smoke", async ({
   playwright,
@@ -69,4 +86,61 @@ test("rate limit: health probes stay available while ordinary routes return 429 
     }
     await admin.dispose();
   }
+});
+
+test("rate limit: each signed session has its own counter and forged sessions do not", async ({
+  playwright,
+}) => {
+  const email = `rate-limit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+  const password = "Podokit3e-Str0ng!pw";
+  const first = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  expect((await first.post("/api/auth/sign-up/email", { data: { email, password, name: "Rate Limit" } })).ok()).toBeTruthy();
+  const probe = await first.get("/api/cache/rate-limit-probe");
+  test.skip(probe.status() >= 500, "throttler storage (redis) not reachable");
+  const remaining = (response: APIResponse): number => Number(response.headers()["ratelimit-remaining"]);
+  const ceiling = Number(probe.headers()["ratelimit-limit"]);
+  expect(remaining(probe)).toBe(ceiling - 1);
+
+  // The signed bearer form of the same session shares its counter.
+  const cookie = (await first.storageState()).cookies.find((c) => c.name.endsWith("session_token"));
+  expect(cookie, "sign-up set a session cookie").toBeTruthy();
+  const bearer = await playwright.request.newContext({
+    baseURL: base,
+    extraHTTPHeaders: { ...origin, authorization: `Bearer ${cookie?.value ?? ""}` },
+  });
+  expect(remaining(await bearer.get("/api/cache/rate-limit-probe"))).toBe(ceiling - 2);
+
+  // Counters follow the session, not the user: signing in again starts a new one.
+  const second = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  expect((await second.post("/api/auth/sign-in/email", { data: { email, password } })).ok()).toBeTruthy();
+  expect(remaining(await second.get("/api/cache/rate-limit-probe"))).toBe(ceiling - 1);
+
+  // A session cookie without a valid signature is counted with anonymous traffic
+  // from the same client address instead of receiving a fresh counter. The cache
+  // probe requires a session, so compare on a public route with the general limit.
+  const token = decodeURIComponent(cookie?.value ?? "").split(".")[0] ?? "";
+  const forged = await playwright.request.newContext({
+    baseURL: base,
+    extraHTTPHeaders: { ...origin, cookie: `${cookie?.name ?? ""}=${token}.${"A".repeat(43)}%3D` },
+  });
+  const anonymous = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  await expect(async () => {
+    const before = await anonymous.get("/api/account/capabilities");
+    const after = await forged.get("/api/account/capabilities");
+    expect(before.status()).toBe(200);
+    expect(remaining(after)).toBeLessThan(remaining(before));
+  }).toPass({ timeout: 10_000 });
+
+  for (const context of [first, bearer, second, forged, anonymous]) await context.dispose();
+});
+
+test("rate limit: session reads do not consume the strict authentication budget", async ({
+  playwright,
+}) => {
+  const ctx = await session(playwright);
+  for (let i = 0; i < authLimit + 5; i++) {
+    const response = await ctx.get("/api/auth/get-session");
+    expect(response.status(), `session request ${i + 1}`).toBe(200);
+  }
+  await ctx.dispose();
 });

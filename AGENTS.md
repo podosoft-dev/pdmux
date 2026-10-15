@@ -11,23 +11,54 @@ A Bun 1.4 full-stack TypeScript monorepo (Bun workspaces):
 - `apps/api` — **Elysia on Bun** backend (`pdmux-api`), TypeORM + PostgreSQL or desktop SQLite, OpenAPI at `/api-docs`.
 - `apps/web` — **SvelteKit on Bun** frontend (`pdmux-web`), Tailwind v4 + shadcn-svelte + typesafe-i18n.
 - `apps/desktop` — Electron lifecycle shell that embeds the same API and web builds with local providers.
-- `infra/` — Docker Compose (PostgreSQL/Redis) and example k3s manifests.
-- `.podokit/` — PodoKit's generation lockfile (see "PodoKit tooling" below). Do not edit by hand.
+- `infra/` — provider-aware Docker Compose and example k3s manifests.
+- `.podokit/` — PodoKit generation metadata plus application-owned development and
+  deployment profiles (see "PodoKit tooling" below).
 
 ## Setup & commands
+
+Inspect active infrastructure with `podo provider list`. New-project defaults
+are `database=postgres`, `cache=redis`, `object-storage=s3`, `events=redis`, and
+`jobs=bullmq`. A simple single-process app can instead use `sqlite`, `memory`
+cache/events, `local` files, and `local` jobs. Only the database has a creation
+flag (`--database`); apply other choices using
+`podo provider set <capability> <provider> --apply` before adding features.
+Provider selection does not migrate or delete existing data.
+
+**pdmux selects providers at startup, not at generation.** One build serves the
+self-hosted server and the desktop shell: `apps/api/src/runtime/providers.ts`
+reads `PDMUX_DESKTOP` and the `PDMUX_*_PROVIDER` variables, and
+`apps/api/src/config/providers.ts` hands that selection to the PodoKit modules.
+Both the server and the local implementation modules are installed, and each
+stays inactive unless its provider is selected. `.podokit/manifest.json` records
+the server selection for deployments. Do not run `podo provider set`: it rewrites
+`config/providers.ts` to fixed values. A provider module must precede the modules
+that consume it in the manifest order and in `app.ts`, because a module resolves
+its dependencies while it is configured.
 
 ```bash
 bun install
 cp .env.example .env
-docker compose -f infra/docker/docker-compose.yml up -d   # PostgreSQL (+ Redis)
+bun run --cwd apps/api migration:run
 bun run dev        # api on http://localhost:5002, web on http://localhost:5001
 ```
+
+For PostgreSQL, start `docker compose -f infra/docker/docker-compose.yml up -d`
+before migrating. Add `--profile cache` for Redis; Silo uses the overlay from
+`object-storage-s3`. Skip external services entirely for the complete local
+combination. `podo dev watch` is a separate container workflow and requires
+Docker. SQLite and local files default to `./data/podokit.sqlite` and
+`./data/files` relative to the API working directory; migrations and runtime
+must use the same database path. Keep local providers at one API process.
+Merge added module settings from `.env.example` into an existing `.env`.
 
 - **Ports: web = 5001, api = 5002.** The web app reaches the API only through its
   SvelteKit server proxy (`/api/*`), never with a direct browser `fetch`.
 - Build: `bun run build` · Type-check/lint: `bun run lint` · Unit tests: `bun run test`
 - Per workspace: `bun run --cwd apps/api build` / `bun run --cwd apps/web build`.
 - Better Auth and application migrations: `bun run --cwd apps/api migrate:all`.
+- `bun run --cwd apps/api migration:run` applies only the PostgreSQL application migrations. The
+  desktop SQLite schema is created by `migrate:all` (module tables plus entity synchronization).
 - PostgreSQL migrations are statically registered in `apps/api/src/database/migrations.ts` and
   embedded in the API bundles. Register every new migration there without renaming or editing
   historical migrations. The build rejects a missing registration; do not restore runtime globs.
@@ -101,10 +132,11 @@ Useful commands:
   API WebSocket path allowlist.
 - `podo add <module>` — add a feature (auth, admin-dashboard, redis, bullmq, …). It wires itself into the app; run `podo add` with no argument to list modules.
 - `podo remove <module>` — un-apply a module (inverse of add; refuses if another module needs it, keeps files you edited).
+- `podo provider list` / `podo provider set <capability> <provider> [--apply]` — inspect or switch database, cache, object storage, events, and jobs. Set is dry-run by default and never migrates or deletes provider data. Local providers require one API process.
 - `podo status` / `podo diff` — see your local edits vs. what PodoKit generated.
 - `podo update` — pull in template/module improvements (3-way merges your edits; never touches owned files).
-- `podo deploy` — plan, apply, verify, or roll back an immutable release on Kubernetes or one Docker host. Use `.agents/skills/podokit-deploy`.
-- `podo deploy sync` — copy local build output into a running Compose deployment and restart it. This is not a release. Use `.agents/skills/podokit-deploy-fast`.
+- `podo deploy` — plan, apply, verify, or roll back an immutable release on Kubernetes or one Docker host. Production API WebSocket paths belong in the deployment profile's exact `exposure.webSocketPaths` allowlist; Compose trusts forwarding headers only from `exposure.trustedProxyCidrs`. Tag `vX.Y.Z` to build and push the images (`.github/workflows/release.yml`; check its runner — GitHub-hosted minutes are free for public repositories only). Use `.agents/skills/podokit-deploy`.
+- `podo deploy sync` — copy local build output into a running Compose deployment and restart it, for iterating without a release. Not a release: no image is published and the next `apply` discards it. Use `.agents/skills/podokit-deploy-fast`.
 
 **⚠ `/account` moved into the product shell.** It lives at `apps/web/src/routes/(shell)/account/` (page + loader,
 the loader ejected with `podo eject` and moved) so the host sidebar stays put, exactly like `/hosts`. `podo update`
@@ -130,6 +162,7 @@ Conventional Commits (`feat|fix|docs|refactor|test|chore`), imperative mood,
 - Configure OAuth providers, SMTP, sign-up approval, automatic logout, and server toggles on the admin Settings page. Only `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` are required environment variables.
 - Use `bun run --cwd apps/api auth:configure -- ...` and `.claude/skills/podokit-configure-auth` to apply OAuth/SMTP credentials without committing secrets. The sign-up approval gate is provider-independent; do not add provider-specific approval checks.
 - Run `bun run --cwd apps/api migrate:all` in development and production so Better Auth and application migrations use the versions installed by the app.
+- Back up existing databases before upgrading authentication. Migrations check duplicate `(providerId, accountId)` identities and clean up obsolete issuer constraints; resolve reported collisions manually rather than guessing account ownership.
 
 ### admin-dashboard
 - Admin console lives at `/admin/*` (users, sessions, organizations, audit, settings, account). Set `ADMIN_EMAILS`, then create or verify the initial account with `bun run --cwd apps/api admin:bootstrap`; never commit or persist `ADMIN_BOOTSTRAP_PASSWORD`. When sign-up approval is enabled, self-registered users stay pending until an administrator approves them on `/admin/users`; administrator-created users bypass the queue.

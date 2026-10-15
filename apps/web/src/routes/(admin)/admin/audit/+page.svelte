@@ -1,47 +1,54 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { Badge } from "#lib/components/ui/badge/index.js";
   import * as Table from "#lib/components/ui/table/index.js";
   import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "#lib/components/data-table.svelte";
   import TableToolbar, { type ToolbarFilter, type ToolbarSearchField } from "#lib/components/table-toolbar.svelte";
   import { toast } from "svelte-sonner";
   import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
+  import {
+    cursorForPage,
+    emptyTrail,
+    fetchAuditActions,
+    fetchAuditLogPage,
+    recordPage,
+    trailCount,
+    type AuditLogEntry,
+    type AuditLogFilters,
+    type AuditLogOrder,
+  } from "#lib/audit-log.js";
 
   const i18n = getI18n();
-  type Entry = {
-    id: string;
-    action: string;
-    actorId: string | null;
-    actorName: string | null;
-    actorEmail: string | null;
-    targetLabel: string | null;
-    ip: string | null;
-    createdAt: string;
-  };
+  const PAGE_SIZE = DEFAULT_PAGE_SIZE;
 
-  let entries = $state<Entry[]>([]);
+  let entries = $state<AuditLogEntry[]>([]);
+  let actions = $state<string[]>([]);
   let page = $state(1);
+  let shownPage = $state(1);
+  let trail = $state(emptyTrail());
   let sort = $state<SortState | null>({ key: "createdAt", dir: "desc" });
   let search = $state("");
-  let appliedSearch = $state("");
-  let filterValues = $state<Record<string, string>>({ action: "" });
-  let appliedFilters = $state<Record<string, string>>({ action: "" });
   let searchField = $state("actor");
-  let appliedSearchField = $state("actor");
+  let filterValues = $state<Record<string, string>>({ action: "" });
+  let applied = $state<AuditLogFilters>({ action: "", actor: "", target: "" });
+  let trailOrder: AuditLogOrder = "desc";
+  let latestRequest = 0;
 
-  const columns = $derived<DataTableColumn<Entry>[]>([
+  // The server pages by time with a cursor, so time is the only sortable column.
+  const columns = $derived<DataTableColumn<AuditLogEntry>[]>([
     { key: "createdAt", label: i18n.t.audit.when, sortable: true, class: "whitespace-nowrap" },
-    { key: "actor", label: i18n.t.audit.actor, sortable: true, value: (e) => e.actorName ?? e.actorEmail },
-    { key: "action", label: i18n.t.audit.action, sortable: true },
-    { key: "target", label: i18n.t.audit.target, sortable: true, value: (e) => e.targetLabel },
-    { key: "ip", label: i18n.t.audit.ip, sortable: true },
+    { key: "actor", label: i18n.t.audit.actor },
+    { key: "action", label: i18n.t.audit.action },
+    { key: "target", label: i18n.t.audit.target },
+    { key: "ip", label: i18n.t.audit.ip },
   ]);
 
-  const actions = $derived([...new Set(entries.map((e) => e.action))].sort());
+  const actionOptions = $derived([...new Set([...actions, ...(applied.action ? [applied.action] : [])])].sort());
   const filters = $derived<ToolbarFilter[]>([
     {
       key: "action",
       label: i18n.t.audit.action,
-      options: [{ value: "", label: i18n.t.toolbar.all }, ...actions.map((a) => ({ value: a, label: a }))],
+      options: [{ value: "", label: i18n.t.toolbar.all }, ...actionOptions.map((a) => ({ value: a, label: a }))],
     },
   ]);
 
@@ -50,33 +57,63 @@
     { value: "target", label: i18n.t.audit.target },
   ]);
 
-  const filtered = $derived(
-    entries.filter((e) => {
-      if (appliedFilters.action && e.action !== appliedFilters.action) return false;
-      if (appliedSearch) {
-        const hay = (
-          appliedSearchField === "target"
-            ? (e.targetLabel ?? "")
-            : `${e.actorName ?? ""} ${e.actorEmail ?? ""}`
-        ).toLowerCase();
-        if (!hay.includes(appliedSearch.toLowerCase())) return false;
-      }
-      return true;
-    }),
+  const count = $derived(trailCount(trail, PAGE_SIZE));
+  const first = $derived((shownPage - 1) * PAGE_SIZE + 1);
+  const label = $derived(
+    trail.end || entries.length === 0
+      ? fmt(i18n.t.audit.total, { count })
+      : fmt(i18n.t.audit.range, { from: first, to: first + entries.length - 1 }),
   );
 
-  async function load(): Promise<void> {
+  function currentOrder(): AuditLogOrder {
+    return sort?.dir === "asc" ? "asc" : "desc";
+  }
+
+  async function load(target: number): Promise<void> {
+    const cursor = cursorForPage(trail, target);
+    if (cursor === undefined) {
+      page = shownPage;
+      return;
+    }
+    const request = ++latestRequest;
     try {
-      const res = await fetch("/api/audit-logs");
-      if (!res.ok) throw new Error();
-      entries = (await res.json()) as Entry[];
+      const result = await fetchAuditLogPage(fetch, applied, trailOrder, cursor, PAGE_SIZE);
+      if (request !== latestRequest) return;
+      entries = result.entries;
+      page = target;
+      shownPage = target;
+      trail = recordPage(trail, target, result.entries.length, result.nextCursor);
     } catch {
+      if (request !== latestRequest) return;
+      page = shownPage;
       toast.error(i18n.t.audit.loadFailed);
     }
   }
 
-  $effect(() => {
-    void load();
+  function restart(): void {
+    trailOrder = currentOrder();
+    trail = emptyTrail();
+    void load(1);
+  }
+
+  function applySearch(): void {
+    const value = search.trim();
+    applied = {
+      action: filterValues.action ?? "",
+      actor: searchField === "actor" ? value : "",
+      target: searchField === "target" ? value : "",
+    };
+    restart();
+  }
+
+  function onTableChange(state: { page: number }): void {
+    if (currentOrder() !== trailOrder) restart();
+    else void load(state.page);
+  }
+
+  onMount(() => {
+    restart();
+    void fetchAuditActions(fetch).then((codes) => { actions = codes; }, () => undefined);
   });
 </script>
 
@@ -89,21 +126,27 @@
     {searchFields}
     bind:searchField
     bind:search
+    searchPlaceholder={searchField === "target" ? i18n.t.audit.targetHint : i18n.t.audit.actorHint}
     filterHeading={i18n.t.toolbar.filter}
     searchHeading={i18n.t.toolbar.search}
     searchButton={i18n.t.toolbar.searchButton}
-    onSearch={() => { appliedSearch = search; appliedSearchField = searchField; appliedFilters = { ...filterValues }; page = 1; }}
+    onSearch={applySearch}
   />
 
   <DataTable
     {columns}
-    rows={filtered}
+    rows={entries}
     getKey={(e) => e.id}
     empty={i18n.t.audit.empty}
+    ariaLabel={i18n.t.audit.title}
     bind:sort
+    manualSort
     bind:page
-    perPage={DEFAULT_PAGE_SIZE}
-    label={fmt(i18n.t.audit.total, { count: filtered.length })}
+    perPage={PAGE_SIZE}
+    total={count}
+    manualPagination
+    {label}
+    onChange={onTableChange}
   >
     {#snippet row(e)}
       <Table.Cell class="text-muted-foreground whitespace-nowrap">{formatDateTime(e.createdAt)}</Table.Cell>
