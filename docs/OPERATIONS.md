@@ -120,31 +120,24 @@ Pull requests and main pushes also build the final API image on native AMD64 and
 run both checks against disposable PostgreSQL. These CI jobs neither publish images nor create tags
 or releases, so upgrade compatibility can be verified before a release is approved.
 
-**Installations with accounts must skip `0.11.0` and upgrade to `0.11.1` or later.** Better Auth 1.7
-made account identity the pair `(issuer, accountId)`. Release `0.11.0` delegated directly to the
-generated schema migration, which cannot choose a trusted issuer for existing rows. PostgreSQL fails
-safely before rollout, but that release cannot upgrade a populated account table.
+**Installations with accounts must skip `0.11.0`.** Better Auth 1.7.0 made account identity the pair
+`(issuer, accountId)`, and release `0.11.0` delegated directly to the generated schema migration,
+which cannot choose a trusted issuer for existing rows. Releases from `0.11.1` filled the issuer
+before that migration and installed a compatibility trigger so a container still serving the
+previous release could keep creating accounts during the rollout.
 
-The corrected migration in `0.11.1` or later runs before Better Auth's generated migration. It:
+Better Auth 1.7.3 returned account identity to `(providerId, accountId)`. Releases built on PodoKit
+1.2.0 or later run a migration before Better Auth's generated one that:
 
-- inventories every legacy provider and uses an explicit issuer map for the social providers pdmux
-  supports;
-- changes credential identities to `local:credential` with the linked user id, and preserves the
-  existing stable provider identifier for supported social accounts;
-- checks unresolved rows and `(issuer, accountId)` collisions before adding the required constraint
-  and unique index;
-- installs a compatibility trigger in the same transaction, so an old API container still serving
-  during rollout can create supported accounts without writing an empty identity; and
-- rolls the entire transaction back for Microsoft or an unknown/custom provider instead of guessing
-  identity from mutable or unverified data.
+- locks the `account` table and stops when two rows share a `(providerId, accountId)` pair;
+- drops the issuer compatibility trigger and the `(issuer, accountId)` unique index, and makes
+  `issuer` nullable;
+- adds the unique `(providerId, accountId)` index; and
+- on the desktop SQLite profile, drops the unused `issuer` column.
 
-Microsoft is intentionally not automatic: Better Auth 1.7 changed its stable account identifier from
-the app-specific `sub` to the directory `oid`, and the old account row does not contain a trustworthy
-mapping. If the migration reports `microsoft` or another unmapped provider, keep the previous release
-running, pause authentication writes, and follow Better Auth's
-[account identity migration guide](https://better-auth.com/docs/guides/1-7-upgrade-guide#account-identity-is-scoped-by-issuer)
-with verified provider data. Re-run the same release after the inventory, collision check, and
-backfill are complete. Never infer ownership by email.
+It is idempotent, so a repeated or interrupted migration is safe. If it reports duplicate
+identities, keep the previous release running and resolve the duplicate rows by hand with verified
+provider data before migrating again. Never infer ownership by email.
 
 ---
 

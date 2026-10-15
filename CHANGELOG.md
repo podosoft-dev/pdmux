@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Update the PodoKit foundation to 1.2.0. Admin users, sessions, and audit pages page on the
+  server; event streams require a signed-in user and scope events by topic and audience; stored
+  objects stream with validators; database pools and readiness checks are bounded and
+  configurable; and the development containers have memory limits.
+- Select PodoKit's provider modules at startup, so one build serves the server (PostgreSQL,
+  Redis, S3-compatible storage, BullMQ) and the desktop edition (SQLite, in-process cache and
+  events, local files) with PodoKit's own implementations.
+- Fan host change notices out through the events provider on their own bus topic. The fleet event
+  stream still re-checks the session and scope before telling a browser that its hosts changed.
+- Relax the Better Auth account identity schema for Better Auth 1.7.3 and later: the issuer
+  compatibility trigger and index are removed and `(providerId, accountId)` is unique again.
+
 ## 0.13.1
 
 - Replace the default browser icon with a terminal and split-pane mark for pdmux, and keep

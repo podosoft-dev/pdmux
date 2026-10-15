@@ -51,7 +51,10 @@ Visible fleet cards subscribe to same-origin `/api/fleet/events`. The API sends 
 `ready`, `hosts.changed`, and `heartbeat` invalidations; host payloads continue through authorized
 REST reads. Changes are coalesced, filtered to the current scope, and the session is rechecked during
 the connection. Hidden pages close the stream. Reconnection refreshes the snapshot, while existing
-polling continues to recover when streaming is unavailable. See [`READINESS.md`](READINESS.md).
+polling continues to recover when streaming is unavailable. Host change notices reach every API
+replica through the events provider (Redis on a server, in-process on the desktop) on their own bus
+topic; they never reach a browser except as this stream's scoped invalidation. See
+[`READINESS.md`](READINESS.md).
 
 An earlier tool had the hub **SSH into each machine** and scrape its state. That makes all of
 the following prerequisites: the same network, distributed SSH keys, open inbound ports, and a
