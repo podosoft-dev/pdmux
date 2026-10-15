@@ -221,6 +221,8 @@ const PATTERN_ALLOW = [
 	{ file: 'apps/web/src/lib/i18n/catalogs/admin-dashboard/ko.json', ids: ['korean'] },
 	{ file: 'apps/web/test/i18n-placeholders.test.ts', ids: ['korean'] },
 	{ file: 'apps/web/test/layout-store.test.ts', ids: ['korean'] },
+	// PodoKit's message loader spec asserts a value from the Korean catalogue.
+	{ file: 'apps/web/src/lib/i18n/messages.test.ts', ids: ['korean'] },
 	// Desktop operating-system surfaces use a small in-code catalogue because they
 	// run before the web application exists. The spec pins the same translated data.
 	{ file: 'apps/desktop/src/i18n.ts', ids: ['korean'] },
