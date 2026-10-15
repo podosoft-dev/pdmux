@@ -75,6 +75,15 @@ The two layers are not mixed. This boundary was settled during the shell geometr
 Theming connects through tokens (`--pdmux-*`) only. Code in the app that breaks the shadcn vocabulary
 is fixed with shadcn.
 
+**Light or dark is decided by a class first, the OS second.** The package's dark palette applies
+when the `.pdmux` element or any ancestor has the class `dark` (the shadcn / mode-watcher
+convention), whatever the OS prefers; a `light` class on an ancestor keeps it off on a dark OS; with
+neither class, `prefers-color-scheme` decides, so an installer without a class system still follows
+the OS. An app that themes by class should therefore put `light` on `<html>` as well as `dark` —
+this app mounts mode-watcher with `lightClassNames={["light"]}`. Before this, the palette followed
+the OS alone: a dark app on a light OS painted `#0550ae` folder names on its dark card (2.33:1), and
+a light app on a dark OS painted pastel names on white (1.95:1) (TC-PDUI-233).
+
 ---
 
 ## 2. Components

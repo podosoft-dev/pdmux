@@ -1189,4 +1189,94 @@ test.describe('pdmux ui geometry', () => {
 			expect(checked.opacity).toBe(1);
 		});
 	}
+
+	/**
+	 * ⚠ THE PACKAGE FOLLOWS THE APP'S THEME CLASS, NOT ONLY THE OS. Its dark palette used to
+	 * sit under `prefers-color-scheme` alone, while the app (mode-watcher, shadcn) switches by
+	 * a class on `<html>`. A dark app on a light OS therefore painted the LIGHT code palette —
+	 * `#0550ae` folder names — on its dark card, and a light app on a dark OS painted pastel
+	 * names on white. The class decides when there is one; the OS decides when there is not.
+	 */
+	const nameContrast = (page: import('@playwright/test').Page) =>
+		page.evaluate(async () => {
+			await Promise.all(document.getAnimations().map((animation) => animation.finished));
+			const canvas = document.createElement('canvas');
+			canvas.width = 1;
+			canvas.height = 1;
+			const context = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+			const rgba = (color: string): [number, number, number, number] => {
+				context.clearRect(0, 0, 1, 1);
+				context.fillStyle = '#000';
+				context.fillStyle = color;
+				context.fillRect(0, 0, 1, 1);
+				const [r = 0, g = 0, b = 0, a = 0] = context.getImageData(0, 0, 1, 1).data;
+				return [r, g, b, a / 255];
+			};
+			const over = (top: [number, number, number, number], base: [number, number, number]) =>
+				[0, 1, 2].map((i) => top[i]! * top[3] + base[i]! * (1 - top[3])) as [number, number, number];
+			const backdrop = (node: Element | null): [number, number, number] => {
+				const layers: [number, number, number, number][] = [];
+				for (let element = node; element; element = element.parentElement) {
+					const colour = rgba(getComputedStyle(element).backgroundColor);
+					if (colour[3] > 0) layers.push(colour);
+					if (colour[3] >= 1) break;
+				}
+				return layers.reverse().reduce<[number, number, number]>((base, layer) => over(layer, base), [255, 255, 255]);
+			};
+			const luminance = ([r, g, b]: [number, number, number]) => {
+				const channel = (value: number) => {
+					const c = value / 255;
+					return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+				};
+				return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+			};
+			const ratio = (a: [number, number, number], b: [number, number, number]) => {
+				const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+				return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+			};
+			const seen = new Set<string>();
+			const names: { kind: string; color: string; ratio: number }[] = [];
+			for (const item of document.querySelectorAll<HTMLElement>('[data-pdmux-entry]')) {
+				const kind = item.dataset.pdmuxFileKind ?? '';
+				if (seen.has(kind)) continue;
+				seen.add(kind);
+				const name = item.querySelector('.pdmux-files-name') as HTMLElement;
+				const row = backdrop(item);
+				names.push({ kind, color: getComputedStyle(name).color, ratio: ratio(over(rgba(getComputedStyle(name).color), row), row) });
+			}
+			const card = backdrop(document.querySelector('[data-pdmux-files-body]'));
+			return { card: Math.round(luminance(card) * 1000) / 1000, names };
+		});
+
+	for (const theme of [
+		{ html: 'dark', os: 'light', dark: true },
+		{ html: 'light', os: 'dark', dark: false },
+		{ html: '', os: 'dark', dark: true },
+	] as const) {
+		const label = theme.html ? `the app's .${theme.html} class on a ${theme.os} OS` : `no app class on a ${theme.os} OS`;
+		test(`[TC-PDUI-233] the palette follows ${label}`, async ({ page }, testInfo) => {
+			await page.emulateMedia({ colorScheme: theme.os });
+			await page.goto(`/?screen=files&width=390&select=1&scheme=${theme.dark ? 'dark' : 'light'}`);
+			await page.waitForSelector('[data-pdmux-files-head]');
+			if (theme.html) await page.evaluate((name) => document.documentElement.classList.add(name), theme.html);
+			const palette = await nameContrast(page);
+			const unchecked = await boxContrast(page, 'module-3.ts');
+			const checked = await boxContrast(page, 'module-1.ts');
+			const result = { palette, unchecked: unchecked.ratio, checked: checked.ratio, checkedBorder: checked.border };
+			console.log(`TC-PDUI-233 ${label} ${JSON.stringify(result)}`);
+			await testInfo.attach('theme-contrast', { body: JSON.stringify(result, null, 2), contentType: 'application/json' });
+			await page.screenshot({ path: testInfo.outputPath(`files-theme-${theme.html || 'none'}-${theme.os}.png`), animations: 'disabled' });
+
+			// The card is the theme's, and every name reads on it.
+			if (theme.dark) expect(palette.card).toBeLessThan(0.05);
+			else expect(palette.card).toBeGreaterThan(0.8);
+			expect(palette.names.length).toBeGreaterThanOrEqual(5);
+			for (const name of palette.names) {
+				expect(name.ratio, `${name.kind} names (${name.color}) on the row`).toBeGreaterThanOrEqual(4.5);
+			}
+			// The box keeps its 3:1, unchecked and checked, on the row it sits on.
+			expect(unchecked.ratio).toBeGreaterThanOrEqual(3);
+			expect(checked.ratio).toBeGreaterThanOrEqual(3);
+		});
+	}
 });

@@ -533,3 +533,93 @@ test.describe("checkbox contrast at 390px", (): void => {
     });
   }
 });
+
+/**
+ * The explorer's names, read against their own rows.
+ *
+ * ⚠ THE APP'S PALETTE, NOT THE PACKAGE'S FALLBACK. Here the card comes from the app's
+ * `--card`, which follows mode-watcher's class, while the name colours come from the
+ * package. That split is exactly how a dark app on a light OS ended up with `#0550ae`
+ * folder names on a near-black card.
+ */
+async function nameContrast(page: Page): Promise<{ card: number; names: { kind: string; color: string; ratio: number }[] }> {
+  return page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map((animation) => animation.finished));
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d", { willReadFrequently: true })!;
+    const rgba = (color: string): [number, number, number, number] => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = "#000";
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const [r = 0, g = 0, b = 0, a = 0] = context.getImageData(0, 0, 1, 1).data;
+      return [r, g, b, a / 255];
+    };
+    const over = (top: [number, number, number, number], base: [number, number, number]): [number, number, number] =>
+      [0, 1, 2].map((i) => top[i]! * top[3] + base[i]! * (1 - top[3])) as [number, number, number];
+    const backdrop = (node: Element | null): [number, number, number] => {
+      const layers: [number, number, number, number][] = [];
+      for (let element = node; element; element = element.parentElement) {
+        const colour = rgba(getComputedStyle(element).backgroundColor);
+        if (colour[3] > 0) layers.push(colour);
+        if (colour[3] >= 1) break;
+      }
+      return layers.reverse().reduce<[number, number, number]>((base, layer) => over(layer, base), [255, 255, 255]);
+    };
+    const luminance = ([r, g, b]: [number, number, number]): number => {
+      const channel = (value: number): number => {
+        const c = value / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    };
+    const ratio = (a: [number, number, number], b: [number, number, number]): number => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+      return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+    };
+    const names = [...document.querySelectorAll<HTMLElement>("[data-pdmux-entry]")].map((item) => {
+      const name = item.querySelector(".pdmux-files-name") as HTMLElement;
+      const row = backdrop(item);
+      return { kind: item.dataset.pdmuxEntry ?? "", color: getComputedStyle(name).color, ratio: ratio(over(rgba(getComputedStyle(name).color), row), row) };
+    });
+    return { card: Math.round(luminance(backdrop(document.querySelector("[data-pdmux-files-body]"))) * 1000) / 1000, names };
+  });
+}
+
+for (const width of [1280, 390]) {
+  test.describe(`the app's theme class at ${width}px`, (): void => {
+    test.use({ viewport: { width, height: 844 }, ...(width === 390 ? { hasTouch: true, isMobile: true } : {}) });
+
+    for (const theme of [{ html: "dark", os: "light" }, { html: "light", os: "dark" }] as const) {
+      // The light-class case is the mirror image and needs no second screenshot width.
+      if (theme.html === "light" && width !== 390) continue;
+      test(`[TC-PDUI-233] the explorer follows the app's .${theme.html} class on a ${theme.os} OS at ${width}px`, async ({ page }, testInfo): Promise<void> => {
+        await page.emulateMedia({ colorScheme: theme.os });
+        await fixture(page);
+        await page.goto("/");
+        // mode-watcher puts the resolved mode on <html>: `dark`, or `light` (lightClassNames).
+        await page.evaluate((name) => document.documentElement.classList.add(name), theme.html);
+        const tap = (target: Locator): Promise<void> => (width === 390 ? target.tap() : target.click());
+        await tap(box(page, "file.txt"));
+        await expect(box(page, "file.txt")).toBeChecked();
+        const palette = await nameContrast(page);
+        const unchecked = await boxContrast(page, "notes.md");
+        const checked = await boxContrast(page, "file.txt");
+        const result = { palette, unchecked: unchecked.ratio, checked: checked.ratio };
+        console.log(`TC-PDUI-233 .${theme.html} on ${theme.os} OS ${width}px ${JSON.stringify(result)}`);
+        await testInfo.attach("theme-contrast", { body: JSON.stringify(result, null, 2), contentType: "application/json" });
+        if (theme.html === "dark") {
+          await page.screenshot({ path: testInfo.outputPath(`files-dark-class-${width}.png`), fullPage: true, animations: "disabled" });
+        }
+        if (theme.html === "dark") expect(palette.card).toBeLessThan(0.05);
+        else expect(palette.card).toBeGreaterThan(0.8);
+        expect(palette.names.length).toBe(3);
+        for (const name of palette.names) expect(name.ratio, `${name.kind} (${name.color})`).toBeGreaterThanOrEqual(4.5);
+        expect(unchecked.ratio).toBeGreaterThanOrEqual(3);
+        expect(checked.ratio).toBeGreaterThanOrEqual(3);
+      });
+    }
+  });
+}

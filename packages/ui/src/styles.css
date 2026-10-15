@@ -71,13 +71,72 @@
 	   Deliberately NOT a semantic token and NOT overridden in dark mode: a terminal is a
 	   terminal in either scheme, and this value only exists to equal what xterm paints. */
 	--pdmux-term-bg: #2b2b2b;
+	/* A patch's added and removed lines. */
+	--pdmux-diff-add: #15803d;
+	--pdmux-diff-del: #b91c1c;
 	--pdmux-row: 24px;
 	color: var(--pdmux-fg);
 	font: 14px/1.5 system-ui, sans-serif;
 }
 
+/*
+ * THE DARK PALETTE, AND WHO DECIDES WHEN IT APPLIES.
+ *
+ * ⚠ THE APP'S CLASS FIRST, THE OS ONLY WHEN THE APP SAYS NOTHING. This used to be
+ * `prefers-color-scheme` alone, and the app switches theme with a class on `<html>`
+ * (mode-watcher, the shadcn convention). Measured in the product: a dark app on a light
+ * OS kept the LIGHT code palette, so folder names were #0550ae on its near-black card
+ * (2.33:1); a light app on a dark OS got the pastel palette on white (1.95:1). So:
+ *
+ *   - `.dark` on an ancestor (or on the `.pdmux` element) turns it on, whatever the OS says;
+ *   - `.light` on an ancestor keeps it off, whatever the OS says;
+ *   - with neither, the OS decides — an installer without a class system still gets dark.
+ *
+ * ⚠ THE TWO BLOCKS CARRY THE SAME DECLARATIONS, because CSS cannot OR a media query with
+ * a selector. `test/theme.test.ts` reads both and fails if they differ by a token or a
+ * value, and fails if any other rule in this file hides behind the OS query alone.
+ *
+ * `:where()` keeps both at the specificity of the light block above, (0,1,0), so source
+ * order decides — and they come after it.
+ */
+.pdmux:where(.dark, .dark *) {
+	--pdmux-bg: var(--color-background, #14171c);
+	--pdmux-fg: var(--color-foreground, #e6e9ef);
+	--pdmux-card: var(--color-card, #1c2029);
+	--pdmux-line: var(--color-border, #2b313c);
+	--pdmux-muted: var(--color-muted-foreground, #9aa3b2);
+	--pdmux-popover: var(--color-popover, var(--popover, #1c2029));
+	--pdmux-popover-fg: var(--color-popover-foreground, var(--popover-foreground, #e6e9ef));
+	--pdmux-hover: var(--color-accent, var(--accent, #262c37));
+	/* The code palette, lightened for a dark card. Same six roles. */
+	--pdmux-code-keyword: #d2a8ff;
+	--pdmux-code-string: #7ee787;
+	--pdmux-code-number: #ffa657;
+	--pdmux-code-title: #79c0ff;
+	--pdmux-code-type: #ffa198;
+	--pdmux-code-attr: #7ee787;
+	--pdmux-hover-fg: var(--color-accent-foreground, var(--accent-foreground, #e6e9ef));
+	--pdmux-input: var(--color-input, var(--input, #333a47));
+	--pdmux-ring: var(--color-ring, var(--ring, #6b7280));
+	/* Lifted toward the light end: the 600-weight light-mode pair reads as muddy on
+	   `--pdmux-card` at #1c2029, and a stroked glyph has even less area than the 8px dot
+	   this note was first written for. Same reason the grey goes the OPPOSITE way from
+	   its light-mode twin: #6b7280 measures 3.4:1 here, so the dark card gets the pale
+	   one (6.4:1) and the white card gets the dark one. */
+	--pdmux-ok: #4ade80;
+	--pdmux-down: #f87171;
+	--pdmux-idle: #9ca3af;
+	/* blue-500 rather than the light card's blue-600: #2563eb measured 2.71:1 against a
+	   selected dark row, under the 3:1 a checked box's fill needs; this is 3.81:1 there,
+	   4.43:1 on the card, and the white check on it is 3.68:1. */
+	--pdmux-accent: var(--color-primary, #3b82f6);
+	--pdmux-diff-add: #4ade80;
+	--pdmux-diff-del: #f87171;
+}
+
 @media (prefers-color-scheme: dark) {
-	.pdmux {
+	/* The same declarations as the block above, without its notes. */
+	.pdmux:where(:not(.light, .light *)) {
 		--pdmux-bg: var(--color-background, #14171c);
 		--pdmux-fg: var(--color-foreground, #e6e9ef);
 		--pdmux-card: var(--color-card, #1c2029);
@@ -86,7 +145,6 @@
 		--pdmux-popover: var(--color-popover, var(--popover, #1c2029));
 		--pdmux-popover-fg: var(--color-popover-foreground, var(--popover-foreground, #e6e9ef));
 		--pdmux-hover: var(--color-accent, var(--accent, #262c37));
-		/* The code palette, lightened for a dark card. Same six roles. */
 		--pdmux-code-keyword: #d2a8ff;
 		--pdmux-code-string: #7ee787;
 		--pdmux-code-number: #ffa657;
@@ -96,14 +154,12 @@
 		--pdmux-hover-fg: var(--color-accent-foreground, var(--accent-foreground, #e6e9ef));
 		--pdmux-input: var(--color-input, var(--input, #333a47));
 		--pdmux-ring: var(--color-ring, var(--ring, #6b7280));
-		/* Lifted toward the light end: the 600-weight light-mode pair reads as muddy on
-		   `--pdmux-card` at #1c2029, and a stroked glyph has even less area than the 8px dot
-		   this note was first written for. Same reason the grey goes the OPPOSITE way from
-		   its light-mode twin: #6b7280 measures 3.4:1 here, so the dark card gets the pale
-		   one (6.4:1) and the white card gets the dark one. */
 		--pdmux-ok: #4ade80;
 		--pdmux-down: #f87171;
 		--pdmux-idle: #9ca3af;
+		--pdmux-accent: var(--color-primary, #3b82f6);
+		--pdmux-diff-add: #4ade80;
+		--pdmux-diff-del: #f87171;
 	}
 }
 
@@ -2112,12 +2168,12 @@
 
 .pdmux-patch span[data-kind='add'] {
 	background: rgb(22 163 74 / 13%);
-	color: #15803d;
+	color: var(--pdmux-diff-add);
 }
 
 .pdmux-patch span[data-kind='del'] {
 	background: rgb(220 38 38 / 12%);
-	color: #b91c1c;
+	color: var(--pdmux-diff-del);
 }
 
 .pdmux-patch span[data-kind='hunk'] {
@@ -2127,15 +2183,6 @@
 
 .pdmux-patch span[data-kind='meta'] {
 	color: var(--pdmux-muted);
-}
-
-@media (prefers-color-scheme: dark) {
-	.pdmux-patch span[data-kind='add'] {
-		color: #4ade80;
-	}
-	.pdmux-patch span[data-kind='del'] {
-		color: #f87171;
-	}
 }
 
 /* --- refs panel ----------------------------------------------------------- */
