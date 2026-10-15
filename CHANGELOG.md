@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.14.0
+
 - Update the PodoKit foundation to 1.2.0. Admin users, sessions, and audit pages page on the
   server; event streams require a signed-in user and scope events by topic and audience; stored
   objects stream with validators; database pools and readiness checks are bounded and
