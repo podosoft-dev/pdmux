@@ -13,8 +13,8 @@ if (process.env.PDMUX_MIGRATION_TEST_ISOLATED !== "1" || process.env.POSTGRES_HO
   throw new Error("Run this destructive fixture only through bun run test:migrations");
 }
 
-describe("[TC-PDHOST-030] published migration upgrade path", () => {
-  it("preserves an installed schema, rolls back failures, and tolerates old clients and reruns", async () => {
+describe("[TC-PDHOST-030][TC-PDHOST-026] published migration upgrade path", () => {
+  it("preserves an installed schema, relaxes the account issuer, rolls back failures, and tolerates old clients and reruns", async () => {
     const directory = mkdtempSync(join(tmpdir(), "pdmux-upgrade-bundle-"));
     const bundle = join(directory, "migrate.js");
     copyFileSync(join(__dirname, "../dist/migrate.js"), bundle);
@@ -44,6 +44,39 @@ describe("[TC-PDHOST-030] published migration upgrade path", () => {
       const rows: Array<{ count: string }> = await source.query(sql);
       return Number(rows[0]?.count);
     }
+    // The account identity shape Better Auth 1.7.0-1.7.2 created, with the
+    // compatibility trigger releases 0.11.1 to 0.13.x installed for a serving
+    // older API. Production databases carry exactly this until the next migration.
+    async function recreateLegacyAccountIdentity(): Promise<void> {
+      await source.query('DROP INDEX IF EXISTS "account_providerId_accountId_uidx"');
+      await source.query('ALTER TABLE "account" ADD COLUMN "issuer" text NOT NULL');
+      await source.query('CREATE UNIQUE INDEX "account_issuer_accountId_uidx" ON "account" ("issuer", "accountId")');
+      await source.query(`CREATE OR REPLACE FUNCTION public.podokit_fill_legacy_account_issuer()
+        RETURNS trigger LANGUAGE plpgsql AS $fixture$
+        BEGIN
+          NEW."issuer" := CASE NEW."providerId" WHEN 'credential' THEN 'local:credential' ELSE NULL END;
+          IF NEW."issuer" IS NULL THEN
+            RAISE EXCEPTION 'Cannot infer Better Auth issuer for legacy provider %', NEW."providerId"
+              USING ERRCODE = '23502';
+          END IF;
+          IF NEW."providerId" = 'credential' THEN NEW."accountId" := NEW."userId"; END IF;
+          RETURN NEW;
+        END
+        $fixture$`);
+      await source.query(`CREATE TRIGGER podokit_fill_legacy_account_issuer BEFORE INSERT ON "account"
+        FOR EACH ROW WHEN (NEW."issuer" IS NULL) EXECUTE FUNCTION public.podokit_fill_legacy_account_issuer()`);
+    }
+    async function accountIdentity(): Promise<{ trigger: number; issuerNullable: number; issuerIndex: number; providerIndex: number }> {
+      return {
+        trigger: await count("SELECT count(*) FROM pg_trigger WHERE tgname = 'podokit_fill_legacy_account_issuer'"),
+        issuerNullable: await count(`SELECT count(*) FROM information_schema.columns
+          WHERE table_name = 'account' AND column_name = 'issuer' AND is_nullable = 'YES'`),
+        issuerIndex: await count("SELECT count(*) FROM pg_indexes WHERE indexname = 'account_issuer_accountId_uidx'"),
+        providerIndex: await count("SELECT count(*) FROM pg_indexes WHERE indexname = 'account_providerId_accountId_uidx'"),
+      };
+    }
+    const legacyIdentity = { trigger: 1, issuerNullable: 0, issuerIndex: 1, providerIndex: 0 };
+    const relaxedIdentity = { trigger: 0, issuerNullable: 1, issuerIndex: 0, providerIndex: 1 };
     async function snapshot(): Promise<unknown> {
       return source.query(`SELECT jsonb_build_object(
         'hosts', (SELECT jsonb_agg(to_jsonb(h) - 'connectorCapabilities' ORDER BY h.id) FROM hosts h),
@@ -69,6 +102,8 @@ describe("[TC-PDHOST-030] published migration upgrade path", () => {
       expect(await count("SELECT count(*) FROM migrations")).toBe(19);
       await expect(initializeApplicationDataSource(runtime)).rejects.toThrow("pending migrations");
       expect(runtime.isInitialized).toBe(false);
+      await recreateLegacyAccountIdentity();
+      expect(await accountIdentity()).toEqual(legacyIdentity);
 
       await source.query(`INSERT INTO hosts (id, "organizationId", label, "agentVersion", "lastHeartbeat")
         VALUES ('00000000-0000-4000-8000-000000000001', 'podokit', 'podokit', '0.1.23', '{"cpuPct":12}')`);
@@ -83,6 +118,17 @@ describe("[TC-PDHOST-030] published migration upgrade path", () => {
         VALUES ('podokit', 'podokit', 'podokit@example.com', true, now(), now())`);
       await source.query(`INSERT INTO account (id, "userId", "accountId", "providerId", issuer, password, "createdAt", "updatedAt")
         VALUES ('podokit', 'podokit', 'podokit', 'credential', 'local:credential', 'preserved-fixture-hash', now(), now())`);
+
+      // Two accounts with one (providerId, accountId) cannot both keep their identity
+      // once the issuer is gone, so the migration must stop before changing anything.
+      await source.query(`INSERT INTO account (id, "userId", "accountId", "providerId", issuer, "createdAt", "updatedAt")
+        VALUES ('podokit-duplicate', 'podokit', 'podokit', 'credential', 'legacy:duplicate', now(), now())`);
+      const duplicate = await migrate();
+      expect(duplicate.code).not.toBe(0);
+      expect(duplicate.stderr).toContain("duplicate providerId and accountId");
+      expect(await accountIdentity()).toEqual(legacyIdentity);
+      expect(await count("SELECT count(*) FROM migrations")).toBe(19);
+      await source.query(`DELETE FROM account WHERE id = 'podokit-duplicate'`);
       const before = await snapshot();
 
       // Fail after the first ALTER TABLE to prove transaction rollback, not just a nonzero exit.
@@ -98,6 +144,7 @@ describe("[TC-PDHOST-030] published migration upgrade path", () => {
 
       expect(await migrate()).toEqual({ code: 0, stderr: "" });
       expect(await snapshot()).toEqual(before);
+      expect(await accountIdentity()).toEqual(relaxedIdentity);
       expect(await count("SELECT count(*) FROM migrations")).toBe(POSTGRES_MIGRATIONS.length);
       await initializeApplicationDataSource(runtime);
       await assertMigrationsApplied(runtime);
@@ -122,9 +169,17 @@ describe("[TC-PDHOST-030] published migration upgrade path", () => {
       const oldWriter = await runtime.getRepository(Host).findOneByOrFail({ label: "localhost" });
       expect(oldWriter.connectorCapabilities).toEqual({ cloudflared: false });
       expect(oldWriter.lastSeenAt).toBeInstanceOf(Date);
+      // The serving 0.13.x API still writes an issuer; the current one writes none.
+      await source.query(`INSERT INTO account (id, "userId", "accountId", "providerId", issuer, "createdAt", "updatedAt")
+        VALUES ('podokit-old-client', 'podokit', '41', 'github', 'local:oauth:github', now(), now())`);
+      await source.query(`INSERT INTO account (id, "userId", "accountId", "providerId", "createdAt", "updatedAt")
+        VALUES ('podokit-new-client', 'podokit', '42', 'github', now(), now())`);
+      await expect(source.query(`INSERT INTO account (id, "userId", "accountId", "providerId", "createdAt", "updatedAt")
+        VALUES ('podokit-collision', 'podokit', '42', 'github', now(), now())`)).rejects.toThrow("account_providerId_accountId_uidx");
       const after = await snapshot();
       expect(await migrate()).toEqual({ code: 0, stderr: "" });
       expect(await snapshot()).toEqual(after);
+      expect(await accountIdentity()).toEqual(relaxedIdentity);
       expect(await source.showMigrations()).toBe(false);
       expect((await runtime.getRepository(FileTransfer).findOneByOrFail({ id: transfer.id })).bytes).toBe(4 * 1024 ** 3);
       expect((await runtime.getRepository(FileTransferEntry).findOneByOrFail({ transferId: transfer.id })).offset).toBe(4 * 1024 ** 3);
