@@ -1,5 +1,5 @@
 import { AppException } from "@podosoft/podokit-contracts";
-import type { AccessPolicy } from "../core/services";
+import type { AccessPolicy, RequestIdentity } from "../core/services";
 import type { SettingsService } from "../settings/settings.service";
 import { getAuth, refreshIfStale } from "./auth-provider";
 import { closeAuthDatabase } from "./db";
@@ -26,6 +26,11 @@ function defaultSessionResolver(headers: Headers): Promise<AuthSession | null> {
 export function rolesOf(user: AuthUser): string[] {
   if (Array.isArray(user.role)) return user.role;
   return (user.role ?? "").split(",").map((role) => role.trim()).filter(Boolean);
+}
+
+function activeOrganizationOf(session: AuthSession): string | undefined {
+  const value = session.session.activeOrganizationId;
+  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
 export class AuthService {
@@ -62,7 +67,7 @@ export class AuthService {
   async guard(request: Request): Promise<void> {
     if (this.accessPolicy.resolve(request) !== "session") return;
     const session = await this.requireSession(request);
-    if (!this.settings.getBool("require2fa") || session.user.twoFactorEnabled) return;
+    if (session.user.twoFactorEnabled || !(await this.settings.getBool("require2fa"))) return;
     const path = new URL(request.url).pathname;
     if (path === "/account/require-2fa" || path === "/account/settings") return;
     throw new AppException(
@@ -75,4 +80,23 @@ export class AuthService {
   async close(): Promise<void> {
     await closeAuthDatabase();
   }
+}
+
+/** Answers identity questions for other modules from the one session lookup memoized per request. */
+export function createRequestIdentity(auth: AuthService): RequestIdentity {
+  return {
+    userId: async (request) => (await auth.session(request))?.user.id,
+    isAdmin: async (request) => {
+      const session = await auth.session(request);
+      return session !== null && rolesOf(session.user).includes("admin");
+    },
+    roles: async (request) => {
+      const session = await auth.session(request);
+      return session ? rolesOf(session.user) : [];
+    },
+    activeOrganizationId: async (request) => {
+      const session = await auth.session(request);
+      return session ? activeOrganizationOf(session) : undefined;
+    },
+  };
 }

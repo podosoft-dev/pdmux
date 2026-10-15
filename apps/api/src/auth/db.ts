@@ -1,34 +1,28 @@
-import { Database as SqliteDatabase, type SQLQueryBindings } from "bun:sqlite";
-import type { Pool as PoolType } from "pg";
+import { Database as SqliteDatabase } from "bun:sqlite";
+import type { SQL } from "bun";
 import { Pool } from "pg";
+import type { AuthConfigRow, ConfigVersions } from "@podosoft/podokit-auth";
+import type { DatabaseProviderName } from "@podosoft/podokit-runtime";
 import { validateEnv } from "../config/env.validation";
+import { PROVIDERS } from "../config/providers";
 import { databaseUrl, sqliteDatabasePath } from "../database/database";
-import { runtimeProviders } from "../runtime/providers";
-
-export interface QueryRows {
-  query<Row extends Record<string, unknown>>(
-    sql: string,
-    values?: readonly unknown[],
-  ): Promise<{ rows: Row[] }>;
-}
-
-function sqliteBinding(value: unknown): SQLQueryBindings {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "bigint" ||
-    typeof value === "boolean"
-  ) return value;
-  if (ArrayBuffer.isView(value)) return value as NodeJS.TypedArray;
-  throw new TypeError(`Unsupported authentication database binding: ${typeof value}`);
-}
 
 const env = validateEnv(process.env);
-const provider = runtimeProviders(process.env).database;
-const url = databaseUrl(env, provider);
+const url = databaseUrl(env);
+function databaseProvider(): DatabaseProviderName {
+  return PROVIDERS.database;
+}
+const provider = databaseProvider();
 
-export const postgresPool = provider === "postgres" ? new Pool({ connectionString: url }) : null;
+export const postgresPool = provider === "postgres"
+  ? new Pool({
+      connectionString: url,
+      max: env.DB_AUTH_POOL_MAX,
+      connectionTimeoutMillis: env.DB_CONNECT_TIMEOUT_MS,
+      idleTimeoutMillis: env.DB_IDLE_TIMEOUT_MS,
+    })
+  : null;
+
 export const sqliteDatabase = provider === "sqlite"
   ? new SqliteDatabase(sqliteDatabasePath(url), { create: true, strict: true })
   : null;
@@ -36,30 +30,54 @@ export const sqliteDatabase = provider === "sqlite"
 export const authDatabase = postgresPool ?? sqliteDatabase;
 if (!authDatabase) throw new Error("No authentication database is configured");
 
-export const queryRows: QueryRows = {
-  query: async <Row extends Record<string, unknown>>(
-    sql: string,
-    values: readonly unknown[] = [],
-  ): Promise<{ rows: Row[] }> => {
-    if (postgresPool) {
-      const result = await postgresPool.query<Row>(sql, [...values]);
-      return { rows: result.rows };
-    }
-    if (!sqliteDatabase) throw new Error("No authentication query database is configured");
-    const statement = sqliteDatabase.prepare<Row, SQLQueryBindings[]>(sql);
-    return { rows: statement.all(...values.map(sqliteBinding)) };
-  },
-};
+let queryDatabase: SQL | undefined;
 
-/** Compatibility boundary for the currently released auth helper. Its runtime
- * contract is only query(), while the next PodoKit release exposes that shape. */
-export const authConfigQueryClient = queryRows as unknown as PoolType;
+export function configureAuthQueryDatabase(sql: SQL): void {
+  queryDatabase = sql;
+}
+
+function queries(): SQL {
+  if (!queryDatabase) throw new Error("Authentication query database is not configured");
+  return queryDatabase;
+}
 
 export async function readAppSettings(): Promise<Array<{ key: string; value: string }>> {
-  const result = await queryRows.query<{ key: string; value: string }>(
-    'SELECT "key", "value" FROM "app_setting"',
-  );
-  return result.rows;
+  const sql = queries();
+  return sql<Array<{ key: string; value: string }>>`
+    SELECT "key", "value" FROM "app_setting"
+  `;
+}
+
+export async function readAuthConfig(): Promise<AuthConfigRow[]> {
+  const sql = queries();
+  const rows = await sql<Array<Omit<AuthConfigRow, "enabled"> & { enabled: boolean | number }>>`
+    SELECT "key", "enabled", "config", "secret", "updatedAt" FROM "auth_config"
+  `;
+  return rows.map((row) => ({ ...row, enabled: row.enabled === true || row.enabled === 1 }));
+}
+
+type VersionRow = {
+  authConfigCount: number | string | bigint;
+  authConfigUpdatedAt: string | null;
+  appSettingCount: number | string | bigint;
+  appSettingUpdatedAt: string | null;
+};
+
+/** One cheap statement that changes whenever either settings table changes. The
+ *  count catches deletes; the text cast keeps PostgreSQL's microsecond precision. */
+export async function readConfigVersions(): Promise<ConfigVersions> {
+  const sql = queries();
+  const [row] = await sql<VersionRow[]>`
+    SELECT
+      (SELECT count(*) FROM "auth_config") AS "authConfigCount",
+      (SELECT CAST(max("updatedAt") AS TEXT) FROM "auth_config") AS "authConfigUpdatedAt",
+      (SELECT count(*) FROM "app_setting") AS "appSettingCount",
+      (SELECT CAST(max("updatedAt") AS TEXT) FROM "app_setting") AS "appSettingUpdatedAt"
+  `;
+  return {
+    authConfig: `${String(row?.authConfigCount ?? 0)}:${row?.authConfigUpdatedAt ?? ""}`,
+    appSettings: `${String(row?.appSettingCount ?? 0)}:${row?.appSettingUpdatedAt ?? ""}`,
+  };
 }
 
 export async function closeAuthDatabase(): Promise<void> {

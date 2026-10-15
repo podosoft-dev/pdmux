@@ -63,14 +63,47 @@ test("admin can list and revoke a user's sessions", async ({ playwright, disposa
   expect((await theirs.post("/api/auth/sign-in/email", { data: { email, password: "Podokit3e-Str0ng!pw" } })).ok()).toBeTruthy();
   await theirs.dispose();
 
-  const listed = await admin.post("/api/auth/admin/list-user-sessions", { data: { userId } });
+  // The admin console lists sessions through the app API, which never returns tokens.
+  const listed = await admin.get(`/api/admin/sessions?userId=${encodeURIComponent(userId)}`);
   expect(listed.ok()).toBeTruthy();
-  expect(((await listed.json())?.sessions ?? []).length).toBeGreaterThan(0);
+  const { items } = (await listed.json()) as { items: Array<Record<string, unknown>> };
+  expect(items.length).toBeGreaterThan(0);
+  expect(items[0]).toMatchObject({ userId, userEmail: email });
+  expect(items[0]).not.toHaveProperty("token");
 
   const revoked = await admin.post("/api/auth/admin/revoke-user-sessions", { data: { userId } });
   expect(revoked.ok()).toBeTruthy();
   await admin.post("/api/auth/admin/remove-user", { data: { userId } });
   disposableUsers.forget(userId);
+  await admin.dispose();
+});
+
+test("admin lists users one server page at a time", async ({ playwright, disposableUsers }) => {
+  const admin = await signedIn(playwright, ADMIN);
+  const prefix = `api-page-${Date.now()}`;
+  for (let i = 0; i < 3; i += 1) {
+    await disposableUsers.create({ email: `${prefix}-${i}@example.com`, name: `Page ${i}` });
+  }
+  const pendingId = await disposableUsers.create({ email: `${prefix}-pending@example.com`, name: "Page pending" });
+  expect((await admin.post("/api/auth/admin/update-user", {
+    data: { userId: pendingId, data: { signupApproved: false } },
+  })).ok()).toBeTruthy();
+
+  type UserPage = { users: Array<{ email: string }>; total: number };
+  const list = async (query: Record<string, string>): Promise<UserPage> => {
+    const params = new URLSearchParams({ searchValue: prefix, searchField: "email", searchOperator: "contains", ...query });
+    const response = await admin.get(`/api/auth/admin/list-users?${params.toString()}`);
+    expect(response.ok()).toBeTruthy();
+    return (await response.json()) as UserPage;
+  };
+
+  const first = await list({ limit: "2", offset: "0", sortBy: "email", sortDirection: "asc" });
+  expect(first.total).toBe(4);
+  expect(first.users.map((u) => u.email)).toEqual([`${prefix}-0@example.com`, `${prefix}-1@example.com`]);
+  const second = await list({ limit: "2", offset: "2", sortBy: "email", sortDirection: "asc" });
+  expect(second.users.map((u) => u.email)).toEqual([`${prefix}-2@example.com`, `${prefix}-pending@example.com`]);
+  const pending = await list({ filterField: "signupApproved", filterValue: "false", filterOperator: "eq" });
+  expect(pending.users.map((u) => u.email)).toEqual([`${prefix}-pending@example.com`]);
   await admin.dispose();
 });
 
@@ -111,6 +144,7 @@ test("account capabilities reports optional-feature flags", async ({ playwright 
   expect(Array.isArray(caps.providers)).toBe(true);
   expect(typeof caps.deleteAccount).toBe("boolean");
   expect(typeof caps.signupApprovalRequired).toBe("boolean");
+  expect(typeof caps.require2fa).toBe("boolean");
   await ctx.dispose();
 });
 

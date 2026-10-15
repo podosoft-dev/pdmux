@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
+import type { ObjectData, ObjectStore } from "@podosoft/podokit-runtime";
 import {
   AppException,
   PROFILE_IMAGE_NOT_FOUND,
@@ -7,7 +8,6 @@ import {
 } from "@podosoft/podokit-contracts";
 import { getAuth } from "../auth/auth-provider";
 import { registerUserDeletedHandler } from "../auth/user-delete-handlers";
-import type { ObjectStore } from "../storage/object-store";
 import { validateProfileImage, type ProfileImageUpload } from "./profile-image.validation";
 
 const FILE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp)$/;
@@ -21,7 +21,7 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 export interface StoredProfileImage {
-  body: Buffer;
+  object: ObjectData;
   contentType: string;
 }
 
@@ -63,7 +63,7 @@ export class ProfileImageService {
     const key = STORAGE_PREFIX + fileName;
     const image = PUBLIC_PREFIX + fileName;
 
-    await this.storage.put(key, file.buffer, metadata.contentType);
+    await this.storage.put(key, file.buffer, { contentType: metadata.contentType });
     try {
       await this.updateUser(image, headers);
     } catch (error: unknown) {
@@ -80,18 +80,13 @@ export class ProfileImageService {
     return { image: null };
   }
 
+  /** The image with its content unread. */
   async get(fileName: string): Promise<StoredProfileImage> {
     const key = this.keyFromFileName(fileName);
-    if (!key) throw new AppException(PROFILE_IMAGE_NOT_FOUND, "Profile image not found.", 404);
-    try {
-      const extension = fileName.slice(fileName.lastIndexOf(".") + 1);
-      return {
-        body: await this.storage.get(key),
-        contentType: CONTENT_TYPES[extension] ?? "application/octet-stream",
-      };
-    } catch {
-      throw new AppException(PROFILE_IMAGE_NOT_FOUND, "Profile image not found.", 404);
-    }
+    const object = key ? await this.storage.get(key) : null;
+    if (!object) throw new AppException(PROFILE_IMAGE_NOT_FOUND, "Profile image not found.", 404);
+    const extension = fileName.slice(fileName.lastIndexOf(".") + 1);
+    return { object, contentType: CONTENT_TYPES[extension] ?? "application/octet-stream" };
   }
 
   private keyFromFileName(fileName: string): string | null {

@@ -15,22 +15,34 @@ export type AuditEntry = {
   metadata?: Record<string, unknown> | null;
 };
 
-type Recorder = (entry: AuditEntry) => Promise<void>;
-let recorder: Recorder | null = null;
+export interface AuditRecorder {
+  record(entry: AuditEntry): Promise<void>;
+  recordLater(entry: AuditEntry): void;
+}
+
+let recorder: AuditRecorder | null = null;
 
 // AuditService registers the recorder during Elysia configuration. The registry
 // stays available to Better Auth hooks and background jobs.
-export function setAuditRecorder(fn: Recorder): () => void {
-  recorder = fn;
+export function setAuditRecorder(next: AuditRecorder): () => void {
+  recorder = next;
   return () => {
-    if (recorder === fn) recorder = null;
+    if (recorder === next) recorder = null;
   };
 }
 
 // Record a custom audit event from anywhere. Awaits the write; a no-op until the
-// AuditService has started. Example:
+// AuditService has started or while the admin toggle is off. Example:
 //   await recordAudit({ action: "invoice.paid", actorId, targetLabel: invoice.number,
 //                       metadata: { amount } });
 export async function recordAudit(entry: AuditEntry): Promise<void> {
-  if (recorder) await recorder(entry);
+  if (recorder) await recorder.record(entry);
+}
+
+// Queue a high-volume, non-security event and return at once. Queued entries are
+// written in batches within about 250 ms and on shutdown; a crash loses whatever
+// is still queued. Keep auth.*, user.*, and other security events on recordAudit().
+//   recordAuditLater({ action: "comment.create", actorId, targetId: comment.id });
+export function recordAuditLater(entry: AuditEntry): void {
+  recorder?.recordLater(entry);
 }

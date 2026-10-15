@@ -1,7 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { RequestGuardContext } from "../core/services";
 import type { RateLimitIdentity } from "./rate-limit.identity";
-import { RateLimiter, type RateLimitStorage } from "./rate-limit.module";
+import { CacheRateLimitStorage, RateLimiter, type RateLimitStorage } from "./rate-limit.module";
+import { MemoryCacheStore } from "@podosoft/podokit-runtime";
 
 const config = {
   keyPrefix: "podokit:test:rate-limit",
@@ -32,6 +33,15 @@ function context(path: string, method = "GET"): {
 }
 
 describe("RateLimiter", () => {
+  test("uses the selected cache fixed-window primitive", async () => {
+    let now = 1_000;
+    const storage = new CacheRateLimitStorage(new MemoryCacheStore({ now: () => now }));
+    expect(await storage.increment("user", 60)).toMatchObject({ count: 1 });
+    expect(await storage.increment("user", 60)).toMatchObject({ count: 2 });
+    now += 60_000;
+    expect(await storage.increment("user", 60)).toMatchObject({ count: 1 });
+  });
+
   test("applies general, authentication, and runtime profiles", async () => {
     const increment = mock(async (_key: string, _ttlSeconds: number) => ({
       count: 1,
@@ -39,22 +49,31 @@ describe("RateLimiter", () => {
     }));
     const limiter = new RateLimiter(
       config,
-      { resolve: async () => "user:test" } as unknown as RateLimitIdentity,
+      { resolve: async () => "session:test" } as unknown as RateLimitIdentity,
       { increment } as RateLimitStorage,
     );
     await limiter.enforce(context("/ordinary").value);
     await limiter.enforce(context("/api/auth/sign-in", "POST").value);
+    await limiter.enforce(context("/api/auth/get-session").value);
     await limiter.enforce(context("/site/settings").value);
+    await limiter.enforce(context("/api/auth/admin/list-users").value);
+    await limiter.enforce(context("/api/auth/admin/ban-user", "POST").value);
 
     expect(increment.mock.calls.map((call) => call.slice(1))).toEqual([
       [60],
       [60],
       [60],
+      [60],
+      [60],
+      [60],
     ]);
     expect(increment.mock.calls.map((call) => call[0])).toEqual([
-      "podokit:test:rate-limit:general:user:test",
-      "podokit:test:rate-limit:auth:user:test",
-      "podokit:test:rate-limit:runtime:user:test",
+      "podokit:test:rate-limit:general:session:test",
+      "podokit:test:rate-limit:auth:session:test",
+      "podokit:test:rate-limit:runtime:session:test",
+      "podokit:test:rate-limit:runtime:session:test",
+      "podokit:test:rate-limit:general:session:test",
+      "podokit:test:rate-limit:auth:session:test",
     ]);
   });
 
@@ -118,7 +137,7 @@ describe("RateLimiter", () => {
     }));
     const limiter = new RateLimiter(
       config,
-      { resolve: async () => "user:test" } as unknown as RateLimitIdentity,
+      { resolve: async () => "session:test" } as unknown as RateLimitIdentity,
       { increment },
     );
     const headers: Record<string, string> = {};

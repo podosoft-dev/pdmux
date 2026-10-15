@@ -395,7 +395,10 @@
     "empty": "No audit entries.",
     "loadFailed": "Failed to load audit log",
     "total": "{count} entries",
-    "searchField": "Actor or target"
+    "range": "Entries {from}–{to}",
+    "searchField": "Actor or target",
+    "actorHint": "Full email address",
+    "targetHint": "Full target as shown"
   },
   "users": {
     "title": "Users",
@@ -505,6 +508,8 @@
     "revoked": "Session revoked",
     "allRevoked": "All sessions revoked for user",
     "loadFailed": "Failed to load sessions",
+    "revokeFailed": "Failed to revoke the session",
+    "searchPlaceholder": "Email or name",
     "total": "{count} sessions"
   },
   "account": {

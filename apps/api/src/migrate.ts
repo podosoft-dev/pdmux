@@ -1,37 +1,49 @@
+// Keep this first: Better Auth checks the schema when ./auth/auth creates its
+// instance, and the migrations below are what make that schema match.
+import "./auth/skip-schema-validation";
 import { getMigrations } from "better-auth/db/migration";
 import { auth } from "./auth/auth";
-import { closeAuthDatabase, postgresPool } from "./auth/db";
+import { closeAuthDatabase, postgresPool, sqliteDatabase } from "./auth/db";
 import {
   migrateLegacyAccountIssuers,
+  migrateSqliteLegacyAccountIssuers,
   postgresAccountIssuerMigrationDatabase,
 } from "./auth/account-issuer-migration";
-import dataSource from "./database/data-source";
-import { Database } from "./database/database";
 import { validateEnv } from "./config/env.validation";
+import { Database } from "./database/database";
 import { initializeDesktopSchema } from "./database/desktop-schema";
-import { runtimeProviders } from "./runtime/providers";
 import { assertMigrationsApplied } from "./database/schema-readiness";
 
-async function runMigrations(): Promise<void> {
-  const providers = runtimeProviders(process.env);
+// pdmux migrations are PostgreSQL-only. On the desktop SQLite provider the module
+// tables come from initializeDesktopSchema and product tables from entity
+// synchronization, so the SQLite migration runner is not used.
+async function initializeSqliteSchema(): Promise<void> {
   const database = new Database(validateEnv(process.env));
   try {
-    if (providers.database === "sqlite") {
-      await database.connect();
-      await initializeDesktopSchema(database.sql);
-    }
-    if (postgresPool) {
-      await migrateLegacyAccountIssuers(postgresAccountIssuerMigrationDatabase(postgresPool));
-    }
+    await database.connect();
+    await initializeDesktopSchema(database.sql);
+  } finally {
+    await database.close();
+  }
+}
 
-    const authMigrations = await getMigrations(auth.options);
-    await authMigrations.runMigrations();
+async function runMigrations(): Promise<void> {
+  if (sqliteDatabase) await initializeSqliteSchema();
+  if (postgresPool) {
+    await migrateLegacyAccountIssuers(postgresAccountIssuerMigrationDatabase(postgresPool));
+  }
+  if (sqliteDatabase) migrateSqliteLegacyAccountIssuers(sqliteDatabase);
 
-    await dataSource.initialize();
+  const authMigrations = await getMigrations(auth.options);
+  await authMigrations.runMigrations();
+
+  const { appDataSource: dataSource } = await import("./database/data-source.js");
+  await dataSource.initialize();
+  try {
     if (dataSource.options.type === "postgres") await dataSource.runMigrations({ transaction: "all" });
     await assertMigrationsApplied(dataSource);
   } finally {
-    await database.close();
+    await dataSource.destroy();
   }
 }
 
@@ -41,6 +53,5 @@ runMigrations()
     process.exitCode = 1;
   })
   .finally(async (): Promise<void> => {
-    if (dataSource.isInitialized) await dataSource.destroy();
     await closeAuthDatabase();
   });

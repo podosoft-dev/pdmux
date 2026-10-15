@@ -20,6 +20,8 @@ const FORWARDED_HEADERS = [
   "origin",
   "referer",
   "user-agent",
+  "if-none-match",
+  "if-modified-since",
   // ⚠ A DOWNLOAD RESUMES ONLY IF THIS CROSSES THE PROXY. The browser retries a
   // dropped transfer with `Range: bytes=N-`; dropped here, the API answers 200
   // from byte zero and the download silently starts over — which is the failure
@@ -32,9 +34,17 @@ const FORWARDED_HEADERS = [
 ];
 const RELAYED_RESPONSE_HEADERS = [
   "content-type",
+  "content-disposition",
+  "content-range",
+  "accept-ranges",
   "location",
   "cache-control",
   "x-accel-buffering",
+  "etag",
+  "last-modified",
+  "vary",
+  "x-content-type-options",
+  "content-security-policy",
   "retry-after",
   "ratelimit-limit",
   "ratelimit-remaining",
@@ -44,20 +54,30 @@ const RELAYED_RESPONSE_HEADERS = [
   "mcp-protocol-version",
   "mcp-session-id",
   "www-authenticate",
-  // File downloads. Without `content-disposition` the browser invents a name from
-  // the URL (`download`), without `content-length` it can show no progress at all,
-  // and without the range pair a resumed transfer cannot be answered.
-  "content-disposition",
-  "content-length",
-  "content-range",
-  "accept-ranges",
-  "x-content-type-options",
-  "etag",
+  // Cursor-paged lists (such as the audit log) return the next page's cursor here.
+  "x-next-cursor",
 ];
 
-// Re-export the API target and client-IP spelling so server routes share one boundary.
-export { backendBaseUrl, normalizeClientIp } from "./backend-target.js";
-import { normalizeClientIp } from "./backend-target.js";
+// SvelteKit decodes rest params, so an encoded "%2F" or "%3F" inside a path
+// segment would reach the API as "/" or "?". Forward the raw pathname instead.
+export function rawSubpath(url: URL, prefix: string): string {
+  return url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : url.pathname;
+}
+
+export function backendBaseUrl(): string {
+  return process.env.BACKEND_INTERNAL_URL ?? "http://localhost:5002";
+}
+
+// Normalize the resolved client IP for the forwarded header. better-auth stores
+// IPv4 as-is but anonymizes IPv6 (masks the host bits), so an IPv6 loopback would
+// be recorded as "::" — map loopback to 127.0.0.1 for a clean local value, and
+// unwrap IPv4-mapped addresses.
+export function normalizeClientIp(address: string | undefined): string | undefined {
+  if (!address) return undefined;
+  if (address === "::1" || address === "::") return "127.0.0.1";
+  if (address.startsWith("::ffff:")) return address.slice("::ffff:".length);
+  return address;
+}
 
 export function resolveClientIp(getClientAddress: () => string): string | undefined {
   try {
@@ -128,12 +148,22 @@ export async function proxyRequest(
     // them as text corrupts bytes that are not valid UTF-8 before forwarding.
     body,
     redirect: "manual",
+    // Abort the upstream request when the browser disconnects. Without this, every
+    // closed EventSource or aborted request keeps its API socket open until Bun's
+    // fetch pool is exhausted and the web process stops serving requests.
+    signal: request.signal,
   });
 
   const responseHeaders = new Headers();
   for (const name of RELAYED_RESPONSE_HEADERS) {
     const value = upstream.headers.get(name);
     if (value) responseHeaders.set(name, value);
+  }
+  // Bun's fetch decodes a compressed body but keeps the upstream content-encoding
+  // and compressed content-length, which would truncate the decoded body.
+  const contentLength = upstream.headers.get("content-length");
+  if (contentLength && !upstream.headers.has("content-encoding")) {
+    responseHeaders.set("content-length", contentLength);
   }
   // Relay Set-Cookie so auth session cookies reach the browser.
   for (const cookie of upstream.headers.getSetCookie()) {

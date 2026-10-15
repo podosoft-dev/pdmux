@@ -1,6 +1,6 @@
 import { ProductLogger } from "../logging/product-logger";
 import type { CommitDetail, GitTree, WorkingDiff } from "@pdmux/protocol";
-import type { ObjectStore } from "../storage/object-store";
+import type { ObjectStore } from "@podosoft/podokit-runtime";
 import { commitDetailKey, fileTreeKey, workingDiffKey } from "./git-storage";
 
 /**
@@ -19,7 +19,7 @@ export class GitDetailService {
     await this.storage.put(
       commitDetailKey(hostId, repoId, detail.sha),
       JSON.stringify(detail),
-      "application/json",
+      { contentType: "application/json" },
     );
   }
 
@@ -38,7 +38,7 @@ export class GitDetailService {
     await this.storage.put(
       fileTreeKey(hostId, repoId, tree.sha),
       JSON.stringify(tree),
-      "application/json",
+      { contentType: "application/json" },
     );
   }
 
@@ -59,7 +59,7 @@ export class GitDetailService {
     await this.storage.put(
       workingDiffKey(hostId, repoId),
       JSON.stringify(diff),
-      "application/json",
+      { contentType: "application/json" },
     );
   }
 
@@ -99,9 +99,11 @@ export class GitDetailService {
 
   private async readJson<T>(key: string): Promise<T | null> {
     try {
-      const body = await this.storage.get(key);
+      const object = await this.storage.get(key);
+      if (!object) return null;
+      const body = await new Response(object.body).text();
       if (body.length === 0) return null;
-      return JSON.parse(body.toString("utf8")) as T;
+      return JSON.parse(body) as T;
     } catch (error) {
       this.logger.debug(`Read ${key} failed: ${String(error)}`);
       return null;

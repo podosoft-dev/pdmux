@@ -18,29 +18,35 @@ const FEATURE_PATHS: Array<{ flag: FeatureFlag; prefixes: string[] }> = [
   { flag: "oidcProvider", prefixes: ["/oauth2/", "/.well-known/openid-configuration", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource"] },
 ];
 
-const CACHE_TTL_MS = 3_000;
+export type FeatureFlags = Record<FeatureFlag, boolean>;
 
-export type SignupOpenCheck = () => Promise<boolean>;
-export type AppSettingsReader = () => Promise<Array<{ key: string; value: string }>>;
+/** Live settings the gate reads per request, normally the shared settings snapshot. */
+export interface FeatureGateSettings {
+  flags: () => Promise<FeatureFlags>;
+  signupOpen: () => Promise<boolean>;
+}
 
-/** Public registration is the default until an administrator explicitly closes
- *  it. The short cache keeps every auth flow on the same live site-setting
- *  policy without rebuilding the Better Auth instance. */
-export function createSignupOpenCheck(readSettings: AppSettingsReader): SignupOpenCheck {
-  let signupOpen = true;
-  let fetchedAt = 0;
+/** Public registration is the default until an administrator explicitly closes it. */
+export function signupOpenFrom(settings: ReadonlyMap<string, string>): boolean {
+  return settings.get("site.allowSignup") !== "false";
+}
 
-  return async (): Promise<boolean> => {
-    if (Date.now() - fetchedAt < CACHE_TTL_MS) return signupOpen;
-    try {
-      const rows = await readSettings();
-      signupOpen = rows.find((row) => row.key === "site.allowSignup")?.value !== "false";
-    } catch {
-      signupOpen = true;
-    }
-    fetchedAt = Date.now();
-    return signupOpen;
-  };
+/** A settings read failure keeps public sign-up open. */
+export async function readSignupOpen(signupOpen: () => Promise<boolean>): Promise<boolean> {
+  try {
+    return await signupOpen();
+  } catch {
+    return true;
+  }
+}
+
+/** A settings read failure applies the shipped defaults. */
+export async function readFeatureFlags(flags: () => Promise<FeatureFlags>): Promise<FeatureFlags> {
+  try {
+    return await flags();
+  } catch {
+    return { ...FLAG_DEFAULTS };
+  }
 }
 
 /** Administrator-created users are intentional and remain available when the
@@ -60,45 +66,28 @@ export function assertUserCreationAllowed(signupOpen: boolean, requestPath?: str
 
 /** Server-side enforcement for the admin Settings toggles: requests to a disabled
  *  feature's endpoints are rejected with 404, so "off" is a real boundary rather
- *  than hidden UI. Flags are read from app_setting through a small TTL cache
- *  (a toggle takes effect within ~CACHE_TTL_MS); before the migration has run,
- *  the shipped defaults apply. */
-export function createFeatureGate(
-  readSettings: AppSettingsReader,
-  isSignupOpen: SignupOpenCheck = createSignupOpenCheck(readSettings),
-) {
-  let cache: Record<FeatureFlag, boolean> = { ...FLAG_DEFAULTS };
-  let fetchedAt = 0;
-
-  async function flags(): Promise<Record<FeatureFlag, boolean>> {
-    if (Date.now() - fetchedAt < CACHE_TTL_MS) return cache;
-    try {
-      const rows = await readSettings();
-      const next = { ...FLAG_DEFAULTS };
-      for (const row of rows) {
-        if (row.key in FLAG_DEFAULTS) next[row.key as FeatureFlag] = row.value === "true";
-      }
-      cache = next;
-    } catch {
-      cache = { ...FLAG_DEFAULTS };
-    }
-    fetchedAt = Date.now();
-    return cache;
+ *  than hidden UI. Throws the API error for a rejected path. */
+export async function enforceFeatureGate(path: string, settings: FeatureGateSettings): Promise<void> {
+  // Reject explicit sign-up endpoints early. OAuth starts remain available so
+  // existing social users can sign in; their new-user callback is enforced by
+  // the database hook that uses this same policy.
+  if (path === "/sign-up/email" || path.startsWith("/sign-up/")) {
+    assertUserCreationAllowed(await readSignupOpen(settings.signupOpen), path);
+    return;
   }
+  const feature = FEATURE_PATHS.find((f) =>
+    f.prefixes.some((p) => path === p || path.startsWith(p)),
+  );
+  if (!feature) return;
+  const enabled = (await readFeatureFlags(settings.flags))[feature.flag];
+  if (!enabled) throw new APIError("NOT_FOUND", { message: "This feature is disabled." });
+}
 
+/** Better Auth middleware over {@link enforceFeatureGate}. The settings come from
+ *  the shared snapshot (a toggle takes effect within its TTL); before the
+ *  migration has run, the shipped defaults apply. */
+export function createFeatureGate(settings: FeatureGateSettings): ReturnType<typeof createAuthMiddleware> {
   return createAuthMiddleware(async (ctx) => {
-    // Reject explicit sign-up endpoints early. OAuth starts remain available so
-    // existing social users can sign in; their new-user callback is enforced by
-    // the database hook that uses this same policy.
-    if (ctx.path === "/sign-up/email" || ctx.path.startsWith("/sign-up/")) {
-      assertUserCreationAllowed(await isSignupOpen(), ctx.path);
-      return;
-    }
-    const feature = FEATURE_PATHS.find((f) =>
-      f.prefixes.some((p) => ctx.path === p || ctx.path.startsWith(p)),
-    );
-    if (!feature) return;
-    const enabled = (await flags())[feature.flag];
-    if (!enabled) throw new APIError("NOT_FOUND", { message: "This feature is disabled." });
+    await enforceFeatureGate(ctx.path, settings);
   });
 }

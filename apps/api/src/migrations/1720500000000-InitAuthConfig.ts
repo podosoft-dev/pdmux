@@ -4,6 +4,7 @@ export class InitAuthConfig1720500000000 implements MigrationInterface {
   name = "InitAuthConfig1720500000000";
 
   async up(queryRunner: QueryRunner): Promise<void> {
+    const sqlite = queryRunner.connection.options.type === "better-sqlite3";
     // Admin-managed auth configuration (OAuth providers, SMTP, server-enforced
     // toggles). Secrets (OAuth client secret, SMTP password) are stored encrypted
     // in "secret" (AES-256-GCM envelope; key derived from BETTER_AUTH_SECRET —
@@ -12,10 +13,10 @@ export class InitAuthConfig1720500000000 implements MigrationInterface {
     await queryRunner.query(`
       CREATE TABLE "auth_config" (
         "key" text NOT NULL,
-        "enabled" boolean NOT NULL DEFAULT false,
-        "config" jsonb NOT NULL DEFAULT '{}',
+        "enabled" ${sqlite ? "integer" : "boolean"} NOT NULL DEFAULT ${sqlite ? "0" : "false"},
+        "config" ${sqlite ? "text" : "jsonb"} NOT NULL DEFAULT '{}',
         "secret" text,
-        "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updatedAt" ${sqlite ? "datetime" : "TIMESTAMP WITH TIME ZONE"} NOT NULL DEFAULT ${sqlite ? "CURRENT_TIMESTAMP" : "now()"},
         CONSTRAINT "PK_auth_config_key" PRIMARY KEY ("key")
       )
     `);

@@ -395,7 +395,10 @@
     "empty": "감사 기록이 없습니다.",
     "loadFailed": "감사 로그를 불러오지 못했습니다",
     "total": "항목 {count}개",
-    "searchField": "수행자·대상"
+    "range": "{from}–{to}번째 항목",
+    "searchField": "수행자·대상",
+    "actorHint": "전체 이메일 주소",
+    "targetHint": "표시된 대상 전체"
   },
   "users": {
     "title": "회원",
@@ -505,6 +508,8 @@
     "revoked": "세션을 종료했습니다",
     "allRevoked": "사용자의 세션을 모두 종료했습니다",
     "loadFailed": "세션을 불러오지 못했습니다",
+    "revokeFailed": "세션을 종료하지 못했습니다",
+    "searchPlaceholder": "이메일 또는 이름",
     "total": "세션 {count}개"
   },
   "account": {

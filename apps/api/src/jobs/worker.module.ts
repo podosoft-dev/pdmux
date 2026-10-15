@@ -1,6 +1,8 @@
 import { Worker, type Processor } from "bullmq";
 import { DataSource } from "typeorm";
+import { auditEnabled } from "../audit/audit-enabled";
 import { AuditService } from "../audit/audit.service";
+import { configureAuthQueryDatabase } from "../auth/db";
 import { validateEnv } from "../config/env.validation";
 import { Database } from "../database/database";
 import { dataSourceOptions } from "../database/data-source";
@@ -43,7 +45,10 @@ export async function startWorkers(): Promise<WorkerRuntime> {
     new MetricsRetentionService(dataSource.getRepository(Host), settings, metrics),
   );
   const database = new Database(validateEnv(process.env));
-  const audit = new AuditService(database.sql);
+  // The audit toggle is read through the auth settings store, as in the API.
+  configureAuthQueryDatabase(database.sql);
+  // Retention pruning stays with the API; the worker only records.
+  const audit = new AuditService(database.sql, { dialect: database.provider, enabled: auditEnabled });
   audit.connect();
 
   const definitions: WorkerDefinition[] = [
@@ -58,7 +63,7 @@ export async function startWorkers(): Promise<WorkerRuntime> {
     workers,
     close: async (): Promise<void> => {
       await Promise.all(workers.map((worker) => worker.close()));
-      audit.close();
+      await audit.close();
       await Promise.all([dataSource.destroy(), database.close()]);
     },
   };

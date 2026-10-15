@@ -6,7 +6,7 @@ describe("[TC-PDDESKTOP-001] runtime provider profile", () => {
     expect(runtimeProviders({})).toEqual({
       database: "postgres",
       cache: "redis",
-      objectStorage: "s3",
+      "object-storage": "s3",
       events: "redis",
       jobs: "bullmq",
     });
@@ -16,7 +16,7 @@ describe("[TC-PDDESKTOP-001] runtime provider profile", () => {
     expect(runtimeProviders({ PDMUX_DESKTOP: "1" })).toEqual({
       database: "sqlite",
       cache: "memory",
-      objectStorage: "local",
+      "object-storage": "local",
       events: "memory",
       jobs: "local",
     });
@@ -32,7 +32,7 @@ describe("[TC-PDDESKTOP-001] runtime provider profile", () => {
     })).toEqual({
       database: "sqlite",
       cache: "memory",
-      objectStorage: "local",
+      "object-storage": "local",
       events: "memory",
       jobs: "local",
     });

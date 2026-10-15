@@ -57,6 +57,7 @@ describe("TerminalRelayService", () => {
   let relay: TerminalRelayService;
   let agent: FakeAgent;
   let audits: AuditEntry[];
+  let restoreAudit = (): void => {};
 
   beforeEach(() => {
     registry = new AgentRegistryService();
@@ -65,13 +66,15 @@ describe("TerminalRelayService", () => {
     agent = new FakeAgent();
     registry.register(HOST, agent, "token-1");
     audits = [];
-    setAuditRecorder(async (entry) => {
-      audits.push(entry);
+    restoreAudit = setAuditRecorder({
+      record: async (entry) => { audits.push(entry); },
+      recordLater: (entry) => { audits.push(entry); },
     });
   });
 
   afterEach(() => {
     relay.detach();
+    restoreAudit();
   });
 
   function connect(browser: FakeBrowser, userId = "user-1", hostId = HOST, bufferBytes = 65_536): string {

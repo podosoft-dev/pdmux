@@ -38,20 +38,22 @@ describe("StaleHostsService", () => {
   let settingRows: FakeRepository<FleetSetting>;
   let settings: FleetSettingsService;
   let audits: AuditEntry[];
+  let restoreAudit = (): void => {};
 
   beforeEach(() => {
     hosts = new FakeRepository<Host>();
     settingRows = new FakeRepository<FleetSetting>();
     settings = new FleetSettingsService(settingRows.asRepository());
     audits = [];
-    setAuditRecorder(async (entry) => {
-      audits.push(entry);
+    restoreAudit = setAuditRecorder({
+      record: async (entry) => { audits.push(entry); },
+      recordLater: (entry) => { audits.push(entry); },
     });
   });
 
   afterEach(() => {
     // Leave the shared registry as it was found — it is process-global.
-    setAuditRecorder(async () => {});
+    restoreAudit();
   });
 
   function sweeper(): StaleHostsService {

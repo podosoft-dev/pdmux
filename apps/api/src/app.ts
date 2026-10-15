@@ -8,18 +8,24 @@ import {
   appContext,
   createCoreServices,
   type AppPlugin,
+  type OpenApiContribution,
   type PodokitModule,
   type ServiceRegistry,
 } from "./core/services";
+import { isDatabaseUnavailable } from "./database/database";
 import { healthPlugin } from "./health/health.plugin";
 // podokit:begin:imports
 import { authModule } from "./auth/auth.module";
 import { storageModule } from "./storage/storage.module";
+import { storageLocalModule } from "./storage-local/storage-local.module";
 import { adminModule } from "./admin.module";
 import { auditModule } from "./audit/audit.module";
 import { redisModule } from "./redis/redis.module";
+import { cacheMemoryModule } from "./cache-memory/cache-memory.module";
 import { apiKeyModule } from "./api-key/api-key.module";
 import { rateLimitModule } from "./rate-limit/rate-limit.module";
+import { eventsRedisModule } from "./events-provider-redis/events-redis.module";
+import { eventsMemoryModule } from "./events-provider-memory/events-memory.module";
 import { eventsModule } from "./events/events.module";
 import { jobsModule } from "./jobs/jobs.module";
 import { loggingModule } from "./logging/logging.module";
@@ -62,6 +68,47 @@ function mergeOpenApi(
   return { ...base, paths, components, tags };
 }
 
+export interface OpenApiDocumentSource {
+  routeCount: () => number;
+  base: () => Promise<Response>;
+  contributions: () => Promise<OpenApiContribution[]>;
+}
+
+export type OpenApiDocumentLoader = () => Promise<Record<string, unknown> | Response>;
+
+function sameContributions(left: OpenApiContribution[], right: OpenApiContribution[]): boolean {
+  return left.length === right.length && left.every((contribution, index) =>
+    contribution.document === right[index]?.document &&
+    contribution.pathPrefix === right[index]?.pathPrefix
+  );
+}
+
+/** Contributors return the same document object while their inputs are unchanged,
+ *  so identity plus the route count (the base spec's own cache key) identifies the
+ *  merged result without a staleness window. */
+export function cachedOpenApiDocument(source: OpenApiDocumentSource): OpenApiDocumentLoader {
+  let cached: {
+    routeCount: number;
+    contributions: OpenApiContribution[];
+    document: Record<string, unknown>;
+  } | undefined;
+  return async () => {
+    const contributions = await source.contributions();
+    const routeCount = source.routeCount();
+    if (
+      cached?.routeCount === routeCount &&
+      sameContributions(cached.contributions, contributions)
+    ) {
+      return cached.document;
+    }
+    const response = await source.base();
+    if (!response.ok) return response;
+    const document = mergeOpenApi(record(await response.json()), contributions);
+    cached = { routeCount, contributions, document };
+    return document;
+  };
+}
+
 function errorEnvelope(
   code: string,
   message: string,
@@ -89,11 +136,15 @@ const buildApp = (options: CreateAppOptions = {}) => {
     // podokit:begin:modules
     authModule,
     storageModule,
+    storageLocalModule,
     adminModule,
     auditModule,
     redisModule,
+    cacheMemoryModule,
     apiKeyModule,
     rateLimitModule,
+    eventsRedisModule,
+    eventsMemoryModule,
     eventsModule,
     jobsModule,
     loggingModule,
@@ -144,6 +195,10 @@ const buildApp = (options: CreateAppOptions = {}) => {
         set.status = error.statusCode;
         return errorEnvelope(error.code, error.message, error.statusCode, path);
       }
+      if (isDatabaseUnavailable(error)) {
+        set.status = 503;
+        return errorEnvelope("DATABASE_UNAVAILABLE", "The database is temporarily unavailable", 503, path);
+      }
       const statusCode = code === "NOT_FOUND" ? 404 : code === "VALIDATION" ? 400 : 500;
       set.status = statusCode;
       const publicCode = code === "NOT_FOUND"
@@ -164,11 +219,12 @@ const buildApp = (options: CreateAppOptions = {}) => {
     ...modules.flatMap((module) => module.plugin ? [module.plugin] : []),
   ];
   for (const plugin of plugins) app.use(plugin(context));
-  app.get("/api-docs-json", async () => {
-    const response = await app.handle(new Request("http://localhost/api-docs-elysia-json"));
-    const base = record(await response.json());
-    return mergeOpenApi(base, await context.openapi.contributions());
-  }, {
+  const openApiDocument = cachedOpenApiDocument({
+    routeCount: () => app.routes.length,
+    base: () => app.handle(new Request("http://localhost/api-docs-elysia-json")),
+    contributions: () => context.openapi.contributions(),
+  });
+  app.get("/api-docs-json", () => openApiDocument(), {
     detail: { hide: true },
   });
   app.onStop(() => { void services.close(); });

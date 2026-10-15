@@ -1,10 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { ApiKeyVerifier } from "../api-key/api-key-verifier";
-import {
-  REQUEST_IDENTITY,
-  type ServiceKey,
-  type ServiceRegistry,
-} from "../core/services";
+import type { ServiceKey, ServiceRegistry } from "../core/services";
 import {
   clientAddressFromProxy,
   type RateLimitConfig,
@@ -21,7 +17,20 @@ export const RATE_LIMIT_IDENTITY_EXTENSION = Symbol(
   "rate-limit-identity-extension",
 ) as ServiceKey<RateLimitIdentityExtension>;
 
-function stableDigest(kind: "user" | "api-key" | "ip", value: string): string {
+// Better Auth's session cookie. It adds the __Secure- prefix when BETTER_AUTH_URL
+// uses HTTPS; either name only counts when its signature verifies.
+const SESSION_COOKIE_NAMES = [
+  "__Secure-better-auth.session_token",
+  "better-auth.session_token",
+] as const;
+
+// better-call signs cookies as `${token}.${base64(HMAC-SHA256(secret, token))}` and
+// accepts only the padded 44-character standard base64 signature.
+const SIGNATURE = /^[A-Za-z0-9+/]{43}=$/;
+
+type TrackerKind = "session" | "api-key" | "ip";
+
+function stableDigest(kind: TrackerKind, value: string): string {
   return createHash("sha256")
     .update("podokit-rate-limit-v1", "utf8")
     .update("\0")
@@ -31,14 +40,56 @@ function stableDigest(kind: "user" | "api-key" | "ip", value: string): string {
     .digest("hex");
 }
 
-function tracker(kind: "user" | "api-key" | "ip", value: string): string {
+function tracker(kind: TrackerKind, value: string): string {
   return `${kind}:${stableDigest(kind, value)}`;
+}
+
+function decodeComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function cookieValue(header: string | null, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const pair of header.split(";")) {
+    const separator = pair.indexOf("=");
+    if (separator === -1 || pair.slice(0, separator).trim() !== name) continue;
+    const value = pair.slice(separator + 1).trim();
+    return decodeComponent(value.startsWith('"') ? value.slice(1, -1) : value);
+  }
+  return undefined;
+}
+
+function bearerValue(header: string | null): string | undefined {
+  if (!header || header.slice(0, 7).toLowerCase() !== "bearer ") return undefined;
+  const value = header.slice(7).trim();
+  return value.includes("%") ? decodeComponent(value) : value;
+}
+
+export function verifiedSessionToken(
+  signedValue: string,
+  secret: string,
+): string | undefined {
+  const separator = signedValue.lastIndexOf(".");
+  if (separator < 1) return undefined;
+  const token = signedValue.slice(0, separator);
+  const signature = signedValue.slice(separator + 1);
+  if (!SIGNATURE.test(signature)) return undefined;
+  const expected = createHmac("sha256", secret).update(token, "utf8").digest();
+  const provided = Buffer.from(signature, "base64");
+  return provided.length === expected.length && timingSafeEqual(provided, expected)
+    ? token
+    : undefined;
 }
 
 export class RateLimitIdentity {
   constructor(
     private readonly configuredApiKeys: ApiKeyVerifier,
     private readonly services: ServiceRegistry,
+    private readonly sessionSecret: string | undefined,
   ) {}
 
   async resolve(
@@ -46,9 +97,6 @@ export class RateLimitIdentity {
     remoteAddress: string | undefined,
     config: Pick<RateLimitConfig, "proxyHeader" | "trustedProxyHops">,
   ): Promise<string> {
-    const userId = await this.services.resolve(REQUEST_IDENTITY).userId(request);
-    if (userId) return tracker("user", userId);
-
     const rawApiKey = request.headers.get("x-api-key");
     if (rawApiKey) {
       if (this.configuredApiKeys.isValid(rawApiKey)) return tracker("api-key", rawApiKey);
@@ -57,7 +105,28 @@ export class RateLimitIdentity {
       if (additionalIdentity) return tracker("api-key", additionalIdentity);
     }
 
+    const sessionToken = this.sessionToken(request.headers);
+    if (sessionToken) return tracker("session", sessionToken);
+
     const clientAddress = clientAddressFromProxy(request.headers, remoteAddress, config);
     return tracker("ip", clientAddress);
+  }
+
+  // Only the signature is checked: resolving the session would cost a database
+  // read on every request. A revoked or expired token still maps to its single
+  // counter, and a value without a valid signature falls back to the client address.
+  private sessionToken(headers: Headers): string | undefined {
+    if (!this.sessionSecret) return undefined;
+    const cookies = headers.get("cookie");
+    const candidates = [
+      bearerValue(headers.get("authorization")),
+      ...SESSION_COOKIE_NAMES.map((name) => cookieValue(cookies, name)),
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const token = verifiedSessionToken(candidate, this.sessionSecret);
+      if (token) return token;
+    }
+    return undefined;
   }
 }

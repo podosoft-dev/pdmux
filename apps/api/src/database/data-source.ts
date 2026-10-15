@@ -50,8 +50,8 @@ const entities = [
 
 export function createDataSourceOptions(env: NodeJS.ProcessEnv = process.env): DataSourceOptions {
   const providers = runtimeProviders(env);
+  const appEnv = validateEnv(env);
   if (providers.database === "sqlite") {
-    const appEnv = validateEnv(env);
     return {
       type: "better-sqlite3",
       database: sqliteDatabasePath(databaseUrl(appEnv, providers.database)),
@@ -64,11 +64,12 @@ export function createDataSourceOptions(env: NodeJS.ProcessEnv = process.env): D
   }
   return {
     type: "postgres",
-    host: env.POSTGRES_HOST ?? "localhost",
-    port: Number(env.POSTGRES_PORT ?? 5432),
-    username: env.POSTGRES_USER ?? "podokit",
-    password: env.POSTGRES_PASSWORD ?? "podokit",
-    database: env.POSTGRES_DB ?? "podokit",
+    ...(env.DATABASE_URL ? { url: env.DATABASE_URL } : {}),
+    host: appEnv.POSTGRES_HOST,
+    port: appEnv.POSTGRES_PORT,
+    username: appEnv.POSTGRES_USER,
+    password: appEnv.POSTGRES_PASSWORD,
+    database: appEnv.POSTGRES_DB,
     entities,
     migrations: POSTGRES_MIGRATIONS,
     synchronize: false,
@@ -85,4 +86,5 @@ export function createAppDataSource(options: DataSourceOptions = dataSourceOptio
 export const entityTypes = entities;
 
 // Used by the TypeORM CLI for migrations (see package.json scripts).
-export default createAppDataSource();
+export const appDataSource = createAppDataSource();
+export default appDataSource;

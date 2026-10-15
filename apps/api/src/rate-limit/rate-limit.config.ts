@@ -84,6 +84,13 @@ export function rateLimitConfig(env: NodeJS.ProcessEnv = process.env): RateLimit
   };
 }
 
+// The secret Better Auth signs session cookies with (the auth module trims it the
+// same way). Without it, sessions are not recognized and requests are counted by
+// client address.
+export function sessionSigningSecret(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.BETTER_AUTH_SECRET?.trim() || undefined;
+}
+
 function normalizeIp(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();

@@ -1,10 +1,10 @@
 import { ProductLogger } from "../logging/product-logger";
 import { agentUpstreamSchema, safeParse, type AgentUpstream } from "@pdmux/protocol";
-import { EventsService } from "../events/events.service";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { GitIngestService } from "../git/git-ingest.service";
 import { HostsService } from "../hosts/hosts.service";
 import { MetricsService } from "../metrics/metrics.service";
+import type { HostEvents } from "../pdmux/host-events";
 import { AgentAckService } from "./agent-ack.service";
 import { AgentExecService } from "./agent-exec.service";
 import { AgentFilesService, type FsAnswer } from "./agent-files.service";
@@ -29,7 +29,7 @@ export class AgentIngestService {
     private readonly metrics: MetricsService,
     private readonly git: GitIngestService,
     private readonly settings: FleetSettingsService,
-    private readonly events: EventsService,
+    private readonly events: HostEvents,
     private readonly registry: AgentRegistryService,
     private readonly ack: AgentAckService,
     private readonly exec: AgentExecService,
@@ -57,7 +57,7 @@ export class AgentIngestService {
     switch (frame.type) {
       case "hello":
         await this.hosts.applyHello(hostId, frame.hello);
-        this.events.publish({ type: "host.hello", hostId, agentVersion: frame.hello.agentVersion });
+        this.events.publish({ type: "host.hello", hostId });
         return { ok: true, type: "hello" };
 
       case "heartbeat": {
@@ -79,17 +79,9 @@ export class AgentIngestService {
         await this.hosts.applyHeartbeat(hostId, frame.heartbeat);
         const { metricStepSec } = await this.settings.resolve(host.organizationId);
         const sample = await this.metrics.recordHeartbeat(hostId, frame.heartbeat, metricStepSec);
-        // The card reads this stream: publishing the heartbeat itself (not a
-        // "something changed" ping) means the dashboard never has to poll back.
-        this.events.publish({
-          type: "host.heartbeat",
-          hostId,
-          ts: frame.heartbeat.ts,
-          resource: frame.heartbeat.resource,
-          sessions: frame.heartbeat.sessions,
-          usage: frame.heartbeat.usage,
-          services: frame.heartbeat.services,
-        });
+        // A notice, not the heartbeat: `/fleet/events` only tells authorized
+        // browsers which of their hosts changed, and they reload the REST view.
+        this.events.publish({ type: "host.heartbeat", hostId });
         return { ok: true, type: "heartbeat", sampled: sample !== null };
       }
 
@@ -99,7 +91,7 @@ export class AgentIngestService {
         // Ack right after storing: the agent's ledger is what stops it rebuilding
         // these same patches after its next restart.
         await this.ack.ackRepoPaths(hostId, summary.repoPathsWithNewDetails);
-        this.events.publish({ type: "host.repos", hostId, ...summary });
+        this.events.publish({ type: "host.repos", hostId });
         return { ok: true, type: "repos" };
       }
 
@@ -120,7 +112,7 @@ export class AgentIngestService {
         // the restored one reports `rolledBack`), which is why nothing here has to
         // infer failure from a silence.
         await this.hosts.applyUpdateStatus(hostId, frame.update);
-        this.events.publish({ type: "host.update", hostId, update: frame.update });
+        this.events.publish({ type: "host.update", hostId });
         return { ok: true, type: "updateStatus" };
 
       case "execResult":

@@ -151,7 +151,7 @@ export class StackManager {
       PDMUX_JOBS_PROVIDER: "local",
       DATABASE_URL: `sqlite://${this.layout.databasePath}`,
       PDMUX_DATA_DIR: this.layout.dataDirectory,
-      PDMUX_FILES_DIR: this.layout.filesDirectory,
+      LOCAL_STORAGE_PATH: this.layout.filesDirectory,
       FILE_TRANSFER_DIR: join(this.layout.dataDirectory, "file-transfers"),
       BODY_SIZE_LIMIT: "3M",
       AGENT_RELEASE_DIR: this.layout.agentReleaseDirectory,

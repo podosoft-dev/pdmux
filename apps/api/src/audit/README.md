@@ -12,20 +12,21 @@ which the better-auth hook (`audit-hook.ts`) maps to semantic action codes like
 `user.create` and `auth.login`. Everything else is **opt-in** — you decide what
 matters.
 
-## Audit your own routes with `@Audit`
+## Audit your own Elysia routes
 
 ```ts
-import { Audit } from "../audit/audit.decorator";
-
-@Post()
-@Audit("todo.create", (_req, todo) => ({ type: "todo", id: todo.id, label: todo.title }))
-create(@Body() dto: CreateTodoDto) {
-  return this.todos.create(dto);
-}
+const session = await auth.requireSession(request);
+const todo = await todos.create(body);
+await audit.recordRequest("todo.create", request, session, {
+  type: "todo",
+  id: todo.id,
+  label: todo.title,
+});
+return todo;
 ```
 
-The interceptor resolves the acting user (name + email), attaches the target you
-return, and writes one entry when the handler succeeds.
+Call `recordRequest` only after the operation succeeds. It attaches the actor and
+request address, then writes the target metadata through the shared pipeline.
 
 ## Record from anywhere in code
 
@@ -40,8 +41,42 @@ await recordAudit({
 });
 ```
 
-Or resolve `AuditService` from the application service registry and call `audit.record({ ... })`.
-Both never throw — a failed audit write never breaks the request.
+Resolve `AUDIT` from the application service registry to call
+`audit.record({ ... })`. Audit writes never break the request, and every write
+path checks the admin on/off toggle.
+
+## Deferred recording
+
+`recordAudit()` and `recordRequest()` await the INSERT, so the response waits for
+the write. For high-volume events that are not security relevant (comments,
+content edits, views), queue the entry instead:
+
+```ts
+import { recordAuditLater } from "../audit/audit-events";
+
+recordAuditLater({ action: "comment.create", actorId, targetType: "comment", targetId: comment.id });
+
+// or, in a route
+await audit.recordRequest("comment.create", request, session, { type: "comment", id: comment.id }, { defer: true });
+```
+
+Queued entries are written with one multi-row INSERT every 250 ms, as soon as
+100 are waiting, and when the API shuts down cleanly. **Entries still queued
+when the process crashes or is killed are lost.** The queue holds at most 1,000
+entries; past that, new deferred entries are dropped with a warning, and an
+`audit.dropped` entry (`metadata.count`) records the gap once a write succeeds.
+
+Keep `auth.*`, `user.*`, and other security events on the awaited path. The
+Better Auth hook always awaits.
+
+## Retention
+
+Entries are kept forever unless `AUDIT_LOG_RETENTION_DAYS` is set to a whole
+number of days. Then, on startup and about every hour, the API deletes older
+entries in batches of 1,000 rows and records an `audit.pruned` entry with the
+count and cutoff. Leave it unset or `0` unless a written retention policy
+requires deletion: many compliance regimes require a minimum retention period,
+and pruned entries cannot be recovered.
 
 ## Fields (`AuditEntry`)
 
@@ -52,8 +87,15 @@ survives renames/deletes), `targetType/targetId/targetLabel`, `ip`, `metadata`
 ## Customize
 
 - **Auth actions:** edit the `ACTIONS` map in `audit-hook.ts`.
-- **Your routes:** add `@Audit("your.action")` where you want a trail.
-- **Schema:** add columns to `audit-log.entity.ts` + a migration, and keep the
-  `AuditEntry` type in `audit-events.ts` in sync.
-- **Reading:** `GET /audit-logs` returns the latest 50 (admin only); extend
-  `audit.controller.ts` for filtering/pagination.
+- **Your routes:** call `AuditService.recordRequest()` after successful operations;
+  pass `{ defer: true }` only for high-volume, non-security events.
+- **Schema:** add columns with a migration, and keep the
+  `AuditEntry` type in `audit-events.ts` in sync. A new list filter needs an
+  index that starts with its column and ends with `"createdAt"`, like those in
+  `1792000000000-IndexAuditLogFilters.ts`.
+- **Reading:** `GET /audit-logs` (admin only) returns a page as an array, newest
+  first, filtered by exact `action`, `actor` (email), and `target` (label). Pass
+  the `X-Next-Cursor` response header back as `cursor` for the next page; `limit`
+  is 1 to 100 (default 50) and `order=asc` reverses the order.
+  `GET /audit-logs/actions` lists the recorded action codes. Routes live in
+  `audit.routes.ts`.

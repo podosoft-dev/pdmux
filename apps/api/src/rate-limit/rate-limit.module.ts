@@ -1,3 +1,4 @@
+import { CACHE, type CacheStore } from "@podosoft/podokit-runtime";
 import { AppException } from "../common/app-exception";
 import { API_KEY_VERIFIER } from "../api-key/api-key.module";
 import {
@@ -6,9 +7,11 @@ import {
   type RequestGuardContext,
   type ServiceKey,
 } from "../core/services";
-import { CACHE } from "../redis/redis.module";
-import type { CacheStore } from "../runtime/cache";
-import { rateLimitConfig, type RateLimitConfig } from "./rate-limit.config";
+import {
+  rateLimitConfig,
+  sessionSigningSecret,
+  type RateLimitConfig,
+} from "./rate-limit.config";
 import { RateLimitIdentity } from "./rate-limit.identity";
 
 export interface RateLimitIncrement {
@@ -24,7 +27,14 @@ export class CacheRateLimitStorage implements RateLimitStorage {
   constructor(private readonly cache: CacheStore) {}
 
   async increment(key: string, ttlSeconds: number): Promise<RateLimitIncrement> {
-    return this.cache.incrementFixedWindow(key, ttlSeconds);
+    const result = await this.cache.incrementFixedWindow(key, {
+      windowMs: ttlSeconds * 1_000,
+      limit: Number.MAX_SAFE_INTEGER,
+    });
+    return {
+      count: result.count,
+      retryAfterSeconds: Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1_000)),
+    };
   }
 }
 
@@ -89,11 +99,19 @@ export class RateLimiter {
   }
 
   private profile(method: string, path: string): LimitProfile {
+    if (
+      method === "GET" &&
+      (path === "/api/auth/get-session" || path === "/site/settings")
+    ) {
+      return { name: "runtime", ttlSeconds: this.config.ttlSeconds, limit: this.config.runtimeLimit };
+    }
+    // Admin reads need an admin session and are not credential attempts; the
+    // server-paged admin tables issue one per page, sort, or search.
+    if (method === "GET" && path.startsWith("/api/auth/admin/")) {
+      return { name: "general", ttlSeconds: this.config.ttlSeconds, limit: this.config.limit };
+    }
     if (path === "/api/auth" || path.startsWith("/api/auth/")) {
       return { name: "auth", ttlSeconds: this.config.authTtlSeconds, limit: this.config.authLimit };
-    }
-    if (method === "GET" && path === "/site/settings") {
-      return { name: "runtime", ttlSeconds: this.config.ttlSeconds, limit: this.config.runtimeLimit };
     }
     return { name: "general", ttlSeconds: this.config.ttlSeconds, limit: this.config.limit };
   }
@@ -123,7 +141,11 @@ export const rateLimitModule: PodokitModule = {
   configure: (_env, services): void => {
     const limiter = new RateLimiter(
       rateLimitConfig(),
-      new RateLimitIdentity(services.resolve(API_KEY_VERIFIER), services),
+      new RateLimitIdentity(
+        services.resolve(API_KEY_VERIFIER),
+        services,
+        sessionSigningSecret(),
+      ),
       new CacheRateLimitStorage(services.resolve(CACHE)),
     );
     services.register(RATE_LIMITER, limiter);

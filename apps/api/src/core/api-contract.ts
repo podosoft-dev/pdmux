@@ -36,9 +36,11 @@ const MODULE_ROUTES: Record<string, string[]> = {
     "POST /account/profile-image",
     "DELETE /account/profile-image",
     "GET /profile-images/{fileName}",
+    "GET /admin/sessions",
+    "DELETE /admin/sessions/{id}",
   ],
   "api-key-auth": ["GET /machine/ping"],
-  "audit-log": ["GET /audit-logs"],
+  "audit-log": ["GET /audit-logs", "GET /audit-logs/actions"],
   analytics: [
     "GET /analytics/config",
     "GET /admin/analytics/config",
@@ -71,6 +73,12 @@ const MODULE_ROUTES: Record<string, string[]> = {
   bullmq: ["POST /jobs", "GET /jobs/{id}"],
   "file-upload": ["POST /files", "GET /files/{key}/url"],
   "job-progress": ["POST /progress"],
+  "object-storage-local": [
+    "GET /files/content/*",
+    "PUT /storage/{key}",
+    "GET /storage/{key}",
+    "GET /storage/{key}/presigned",
+  ],
   "object-storage-s3": [
     "PUT /storage/{key}",
     "GET /storage/{key}",

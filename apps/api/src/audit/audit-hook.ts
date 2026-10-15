@@ -39,6 +39,8 @@ const ACTIONS: Record<string, string> = {
 export const auditAfterHook = createAuthMiddleware(async (ctx) => {
   const action = ACTIONS[ctx.path];
   if (!action) return;
+  // AuditService checks the toggle again on write; checking here as well skips
+  // the target lookup below when auditing is off.
   if (!(await auditEnabled())) return;
   const context = ctx.context as {
     session?: { user?: { id?: string; name?: string; email?: string } };

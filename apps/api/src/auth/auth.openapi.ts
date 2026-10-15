@@ -20,3 +20,25 @@ export async function generateAuthOpenApiDocument(api: unknown): Promise<Record<
   }
   return document;
 }
+
+export interface AuthWithApi {
+  api: unknown;
+}
+
+export type AuthOpenApiDocuments = (auth: AuthWithApi) => Promise<Record<string, unknown>>;
+
+/** Generating the schema rebuilds every plugin's endpoints, so reuse it until the
+ *  auth instance is rebuilt. A rejected generation is dropped so the next call retries. */
+export function cachedAuthOpenApiDocuments(): AuthOpenApiDocuments {
+  const documents = new WeakMap<AuthWithApi, Promise<Record<string, unknown>>>();
+  return (auth) => {
+    const cached = documents.get(auth);
+    if (cached) return cached;
+    const document = generateAuthOpenApiDocument(auth.api);
+    documents.set(auth, document);
+    document.catch(() => {
+      if (documents.get(auth) === document) documents.delete(auth);
+    });
+    return document;
+  };
+}

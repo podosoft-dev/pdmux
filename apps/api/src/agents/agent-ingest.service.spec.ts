@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import type { Heartbeat } from "@pdmux/protocol";
-import { ReadinessService } from "../health/readiness.service";
-import { EventsService } from "../events/events.service";
-import { MemoryEventsTransport } from "../events/events.transport";
+import { MemoryEventBus } from "@podosoft/podokit-runtime";
+import { HostEvents } from "../pdmux/host-events";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { GitIngestService } from "../git/git-ingest.service";
@@ -56,7 +55,7 @@ function build(): {
   hostRepo: FakeRepository<Host>;
   settings: FleetSettingsService;
   samples: FakeRepository<HostMetricSample>;
-  events: EventsService;
+  events: HostEvents;
   published: unknown[];
   registry: AgentRegistryService;
   exec: { settle: (result: unknown) => number; settled: unknown[] };
@@ -69,13 +68,11 @@ function build(): {
   const hosts = new HostsService(hostRepo.asRepository(), serviceRepo.asRepository(), gitRootRepo.asRepository(), settings, fakeAgentReleases(), fakeDataSource());
   const samples = new FakeRepository<HostMetricSample>();
   const metrics = new MetricsService(samples.asRepository());
-  // EventsService gained a transport and a readiness registration in PodoKit 0.16.
-  // The in-memory transport delivers locally, and connect() installs the handler
-  // synchronously, so the assertions below still see events without awaiting here.
-  const events = new EventsService(new MemoryEventsTransport(), new ReadinessService());
-  void events.connect();
+  // The memory bus adds the handler and delivers synchronously, so the assertions
+  // below see each notice without awaiting here.
+  const events = new HostEvents(new MemoryEventBus());
   const published: unknown[] = [];
-  events.subscribe((event) => published.push(event));
+  void events.subscribe((event) => { published.push(event); });
   const registry = new AgentRegistryService();
   // Git ingest is exercised in its own spec; here it must simply never be reached
   // by a malformed frame.

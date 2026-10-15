@@ -135,9 +135,16 @@ test("users list shows pagination beyond one page", async ({ page, disposableUse
   }
   await page.locator("#toolbar-search").fill(prefix);
   await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByText("16 users")).toBeVisible();
   const nav = page.getByRole("navigation", { name: "pagination" }).first();
   await expect(nav).toBeVisible();
-  await expect(nav.getByRole("button", { name: "Page 2", exact: true }).first()).toBeVisible();
+  const secondPage = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/auth/admin/list-users" && url.searchParams.get("offset") === "15";
+  });
+  await nav.getByRole("button", { name: "Page 2", exact: true }).first().click();
+  expect((await secondPage).ok()).toBeTruthy();
+  await expect(page.getByRole("table", { name: "Users" }).locator("tbody tr")).toHaveCount(1);
 });
 
 test("manage modal closes from its footer", async ({ page, disposableUsers }) => {

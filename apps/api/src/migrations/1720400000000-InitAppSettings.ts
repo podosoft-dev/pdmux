@@ -4,11 +4,12 @@ export class InitAppSettings1720400000000 implements MigrationInterface {
   name = "InitAppSettings1720400000000";
 
   async up(queryRunner: QueryRunner): Promise<void> {
+    const sqlite = queryRunner.connection.options.type === "better-sqlite3";
     await queryRunner.query(`
       CREATE TABLE "app_setting" (
         "key" text NOT NULL,
         "value" text NOT NULL,
-        "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updatedAt" ${sqlite ? "datetime" : "TIMESTAMP WITH TIME ZONE"} NOT NULL DEFAULT ${sqlite ? "CURRENT_TIMESTAMP" : "now()"},
         CONSTRAINT "PK_app_setting_key" PRIMARY KEY ("key")
       )
     `);

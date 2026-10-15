@@ -1,12 +1,13 @@
 import type { AuthService } from "../auth/auth.service";
-import type { EventsService } from "../events/events.service";
+import type { Unsubscribe } from "@podosoft/podokit-runtime";
 import { resolveScopeId } from "../fleet/session-scope";
 import type { HostsService } from "../hosts/hosts.service";
+import type { HostEvents } from "./host-events";
 
 export interface FleetEventDependencies {
   auth: Pick<AuthService, "requireSession" | "guard">;
   hosts: Pick<HostsService, "listIds">;
-  events: Pick<EventsService, "subscribe">;
+  events: Pick<HostEvents, "subscribe">;
 }
 
 /** Send bounded invalidations; host payloads still use the authorized REST view. */
@@ -19,13 +20,17 @@ export async function fleetEventResponse(request: Request, dependencies: FleetEv
   let busy = false;
   let lastHeartbeat = Date.now();
   let timer: ReturnType<typeof setInterval> | undefined;
-  let unsubscribe = (): void => {};
   let closeStream = (): void => {};
+  const unsubscribe: Unsubscribe = await dependencies.events.subscribe((event: unknown): void => {
+    if (typeof event !== "object" || event === null || !("type" in event) || !("hostId" in event)) return;
+    if (typeof event.type !== "string" || !event.type.startsWith("host.") || typeof event.hostId !== "string") return;
+    if (pending.size < 256) pending.add(event.hostId);
+  });
   const cleanup = (): void => {
     if (closed) return;
     closed = true;
     clearInterval(timer);
-    unsubscribe();
+    void Promise.resolve(unsubscribe()).catch(() => undefined);
     pending.clear();
     request.signal.removeEventListener("abort", closeStream);
   };
@@ -37,11 +42,6 @@ export async function fleetEventResponse(request: Request, dependencies: FleetEv
         if (closed || (controller.desiredSize ?? 0) <= 0) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type })}\n\n`));
       };
-      unsubscribe = dependencies.events.subscribe((event: unknown): void => {
-        if (typeof event !== "object" || event === null || !("type" in event) || !("hostId" in event)) return;
-        if (typeof event.type !== "string" || !event.type.startsWith("host.") || typeof event.hostId !== "string") return;
-        if (pending.size < 256) pending.add(event.hostId);
-      });
       const flush = async (): Promise<void> => {
         if (closed || busy || (pending.size === 0 && Date.now() - lastHeartbeat < 5_000)) return;
         busy = true;

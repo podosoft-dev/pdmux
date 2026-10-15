@@ -3,8 +3,13 @@ import {
   PROFILE_IMAGE_REQUIRED,
   PROFILE_IMAGE_TOO_LARGE,
 } from "@podosoft/podokit-contracts";
+import { OBJECT_STORAGE } from "@podosoft/podokit-runtime";
 import { Elysia, t } from "elysia";
+import { adminSessionRoutes } from "./admin-sessions/admin-sessions.routes";
+import { createSessionRevoker, type RevokeUserSessionApi } from "./admin-sessions/admin-sessions.revoker";
+import { AdminSessionsService } from "./admin-sessions/admin-sessions.service";
 import { AUTH } from "./auth/auth.module";
+import { getAuth } from "./auth/auth-provider";
 import {
   ACCESS_POLICY,
   DATABASE,
@@ -15,15 +20,16 @@ import {
 } from "./core/services";
 import { ProfileImageService } from "./profile-image/profile-image.service";
 import { PROFILE_IMAGE_POLICY } from "@podosoft/podokit-contracts";
+import { siteAssetRoutes } from "./site-assets/site-assets.routes";
 import {
   PUBLIC_SITE_KEYS,
   SiteSettingsService,
 } from "./site-settings/site-settings.service";
 import { validateSiteSetting } from "./site-settings/site-settings.validation";
-import { STORAGE } from "./storage/storage.module";
 
 export const SITE_SETTINGS = Symbol("site-settings") as ServiceKey<SiteSettingsService>;
 export const PROFILE_IMAGES = Symbol("profile-images") as ServiceKey<ProfileImageService>;
+export const ADMIN_SESSIONS = Symbol("admin-sessions") as ServiceKey<AdminSessionsService>;
 
 const ICON_TYPES = new Set([
   "image/svg+xml",
@@ -37,25 +43,25 @@ function currentImage(user: Record<string, unknown>): string | null {
   return typeof user.image === "string" ? user.image : null;
 }
 
-function responseBody(buffer: Buffer): ArrayBuffer {
-  return buffer.buffer.slice(
-    buffer.byteOffset,
-    buffer.byteOffset + buffer.byteLength,
-  ) as ArrayBuffer;
-}
-
 const adminPlugin: AppPlugin = ({ services }) => {
   const auth = services.resolve(AUTH);
   const site = services.resolve(SITE_SETTINGS);
   const profileImages = services.resolve(PROFILE_IMAGES);
 
   return new Elysia({ name: "podokit.admin" })
+    .use(adminSessionRoutes({
+      auth,
+      sessions: services.resolve(ADMIN_SESSIONS),
+      revoke: createSessionRevoker(() => getAuth().api as unknown as RevokeUserSessionApi),
+    }))
+    .use(siteAssetRoutes(site, profileImages))
     .get("/site/settings", async () => {
+      // The favicon fields are site.* rows too, so one read serves the response.
       const all = await site.getAll();
       const response: Record<string, string | boolean | null> = {};
       for (const key of PUBLIC_SITE_KEYS) response[key] = all[key] ?? null;
-      response.hasFavicon = (await site.get("faviconContentType")) !== null;
-      response.faviconVersion = await site.faviconVersion();
+      response.hasFavicon = all.faviconContentType !== undefined;
+      response.faviconVersion = all.faviconUpdatedAt ?? null;
       return response;
     }, {
       detail: { tags: ["site"], summary: "Get public site settings" },
@@ -87,15 +93,6 @@ const adminPlugin: AppPlugin = ({ services }) => {
       body: t.Object({ file: t.File() }),
       detail: { tags: ["site"], summary: "Upload the site favicon" },
     })
-    .get("/site/favicon", async () => {
-      const icon = await site.getFavicon();
-      if (!icon) throw new AppException("FAVICON_NOT_FOUND", "No favicon set", 404);
-      return new Response(responseBody(icon.body), {
-        headers: { "content-type": icon.contentType },
-      });
-    }, {
-      detail: { tags: ["site"], summary: "Get the site favicon" },
-    })
     .post("/account/profile-image", async ({ request, body, set }) => {
       const session = await auth.requireSession(request);
       const file = body.file;
@@ -122,23 +119,15 @@ const adminPlugin: AppPlugin = ({ services }) => {
       return profileImages.remove(currentImage(session.user), request.headers);
     }, {
       detail: { tags: ["account"], summary: "Remove the current user's profile image" },
-    })
-    .get("/profile-images/:fileName", async ({ params, set }) => {
-      const image = await profileImages.get(params.fileName);
-      set.headers["cache-control"] = "public, max-age=31536000, immutable";
-      return new Response(responseBody(image.body), {
-        headers: { "content-type": image.contentType },
-      });
-    }, {
-      params: t.Object({ fileName: t.String({ minLength: 1 }) }),
-      detail: { tags: ["account"], summary: "Get a public profile image" },
     });
 };
 
 export const adminModule: PodokitModule = {
   name: "admin-dashboard",
   configure: (_env, services): void => {
-    const storage = services.resolve(STORAGE);
+    const database = services.resolve(DATABASE);
+    services.register(ADMIN_SESSIONS, new AdminSessionsService(database.sql, database.provider));
+    const storage = services.resolve(OBJECT_STORAGE);
     const site = new SiteSettingsService(services.resolve(DATABASE).sql, storage);
     const profileImages = new ProfileImageService(storage, services.resolve(LOGGER));
     services.register(SITE_SETTINGS, site);

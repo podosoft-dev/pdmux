@@ -3,8 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 
 // admin storageState (project default) — the admin is the resource owner.
 const b64url = (b: Buffer): string => b.toString("base64url");
-// This front-channel test stops at consent, so use the HTTPS callback required
-// for a web client without depending on a live relying-party callback server.
+// The test intercepts the callback, so an HTTPS URL that a web client requires can
+// be used without a live relying-party server.
 const REDIRECT = "https://example.com/callback";
 
 // Verifies the provider is correctly configured end to end on the front channel:
@@ -61,9 +61,18 @@ test("OIDC provider: discovery, JWKS, client registration, authorize handoff", a
     expect(consentUrl).toContain("/oauth2/consent");
     expect(consentUrl).toContain("client_id=");
 
-    // The consent page renders (reached in a real browser navigation).
+    // The consent page renders (reached in a real browser navigation), and allowing
+    // it sends the browser back to the client with an authorization code.
+    await page.route(`${REDIRECT}**`, (route) => route.fulfill({ status: 200, body: "callback" }));
     await page.goto(consentUrl);
-    await expect(page.getByRole("button", { name: "Allow" })).toBeVisible();
+    const allow = page.getByRole("button", { name: "Allow" });
+    await expect(allow).toBeVisible();
+    const callback = page.waitForURL((url) => url.href.startsWith(REDIRECT));
+    await allow.click();
+    await callback;
+    const returned = new URL(page.url());
+    expect(returned.searchParams.get("code")).toBeTruthy();
+    expect(returned.searchParams.get("state")).toBe("st");
   } finally {
     const disabled = await page.request.put("/api/account/settings", {
       data: { oidcProvider: false },

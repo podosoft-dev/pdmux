@@ -1,170 +1,88 @@
 import { describe, expect, it } from "bun:test";
-import { SUPPORTED_SOCIAL_PROVIDERS } from "@podosoft/podokit-auth";
+import { Database } from "bun:sqlite";
 import {
-  legacyAccountIssuer,
-  legacyAccountIssuerTriggerSql,
   migrateLegacyAccountIssuers,
+  migrateSqliteLegacyAccountIssuers,
   type AccountIssuerMigrationClient,
-  type AccountIssuerMigrationDatabase,
 } from "./account-issuer-migration";
 
-type Statement = { sql: string; values?: readonly unknown[] };
-type LegacyAccountOptions = {
-  tableExists?: boolean;
-  column?: { dataType: string; isNullable: "YES" | "NO" };
-  counts?: {
-    blankIssuer?: number;
-    credentialMismatch?: number;
-    unresolvedIssuer?: number;
-    collision?: number;
-  };
-};
-
-class LegacyAccountClient implements AccountIssuerMigrationClient {
-  readonly statements: Statement[] = [];
+class AccountClient implements AccountIssuerMigrationClient {
+  readonly statements: string[] = [];
   released = false;
-
-  constructor(
-    private readonly providers: readonly string[],
-    private readonly options: LegacyAccountOptions = {},
-  ) {}
-
-  async query<Row extends Record<string, unknown>>(
-    sql: string,
-    values?: readonly unknown[],
-  ): Promise<readonly Row[]> {
-    this.statements.push({ sql, ...(values ? { values } : {}) });
-    if (sql.includes("information_schema.tables")) {
-      return [{ exists: this.options.tableExists ?? true }] as unknown as Row[];
-    }
-    if (sql.includes("information_schema.columns")) {
-      return (this.options.column ? [this.options.column] : []) as unknown as Row[];
-    }
-    if (sql.includes('SELECT DISTINCT "providerId"')) {
-      return this.providers.map((providerId) => ({ providerId })) as unknown as Row[];
-    }
-    if (sql.includes('COUNT(*)::int AS "count"')) {
-      const count = sql.includes('"accountId" <> "userId"')
-        ? this.options.counts?.credentialMismatch
-        : sql.includes("AS collisions")
-          ? this.options.counts?.collision
-          : sql.includes('"issuer" IS NULL OR')
-            ? this.options.counts?.unresolvedIssuer
-            : this.options.counts?.blankIssuer;
-      return [{ count: count ?? 0 }] as unknown as Row[];
-    }
+  constructor(private readonly table = true, private readonly issuer = true, private readonly collisions = 0) {}
+  async query<Row extends Record<string, unknown>>(sql: string): Promise<readonly Row[]> {
+    this.statements.push(sql.trim());
+    if (sql.includes("to_regclass")) return [{ exists: this.table }] as unknown as Row[];
+    if (sql.includes("pg_attribute")) return [{ exists: this.issuer }] as unknown as Row[];
+    if (sql.includes("AS collisions")) return [{ count: this.collisions }] as unknown as Row[];
     return [];
   }
-
-  release(): void {
-    this.released = true;
-  }
+  release(): void { this.released = true; }
 }
 
-function database(client: LegacyAccountClient): AccountIssuerMigrationDatabase {
-  return { connect: async (): Promise<AccountIssuerMigrationClient> => client };
+async function migrate(client: AccountClient): Promise<string> {
+  return migrateLegacyAccountIssuers({ connect: async (): Promise<AccountIssuerMigrationClient> => client });
 }
 
-describe("Better Auth account issuer migration", () => {
-  it("[TC-PDHOST-026] maps every safely derivable provider and refuses identities that need trusted external data", () => {
-    expect(legacyAccountIssuer("credential")).toBe("local:credential");
-    expect(legacyAccountIssuer("google")).toBe("https://accounts.google.com");
-    expect(legacyAccountIssuer("apple")).toBe("https://appleid.apple.com");
-    expect(legacyAccountIssuer("facebook")).toBe("https://www.facebook.com");
-    expect(legacyAccountIssuer("line")).toBe("https://access.line.me");
-    expect(legacyAccountIssuer("github")).toBe("local:oauth:github");
-    expect(legacyAccountIssuer("microsoft")).toBeUndefined();
-    expect(legacyAccountIssuer("unknown-provider")).toBeUndefined();
+function legacyDatabase(): Database {
+  const database = new Database(":memory:");
+  database.run('CREATE TABLE account (id text PRIMARY KEY, "providerId" text NOT NULL, "accountId" text NOT NULL, "userId" text NOT NULL, password text, issuer text NOT NULL)');
+  database.run('CREATE UNIQUE INDEX "account_issuer_accountId_uidx" ON account (issuer, "accountId")');
+  database.run('INSERT INTO account VALUES (\'account\', \'credential\', \'user\', \'user\', \'password-hash\', \'local:credential\')');
+  return database;
+}
 
-    for (const { id } of SUPPORTED_SOCIAL_PROVIDERS) {
-      if (id !== "microsoft") expect(legacyAccountIssuer(id), id).toBeDefined();
-    }
-  });
-
-  it("[TC-PDHOST-026] installs a fail-closed compatibility trigger for the release that is still serving", () => {
-    const sql = legacyAccountIssuerTriggerSql();
-    expect(sql).toContain("BEFORE INSERT");
-    expect(sql).toContain('WHEN (NEW."issuer" IS NULL)');
-    expect(sql).toContain("NEW.\"accountId\" := NEW.\"userId\"");
-    expect(sql).toContain("RAISE EXCEPTION");
-    expect(sql).not.toContain("WHEN 'microsoft'");
-  });
-
-  it("[TC-PDHOST-026] adds, backfills, validates, constrains, and indexes a legacy account table in one transaction", async () => {
-    const client = new LegacyAccountClient(["credential", "google", "github"]);
-
-    await expect(migrateLegacyAccountIssuers(database(client))).resolves.toBe("migrated");
-
-    const statements = client.statements.map(({ sql }) => sql.trim());
-    expect(statements[0]).toBe("BEGIN");
-    expect(statements.some((sql) => sql.includes('ADD COLUMN "issuer" text'))).toBe(true);
-    expect(
-      client.statements.some(
-        ({ sql, values }) => sql.includes('UPDATE "account"') && values?.[0] === "local:credential",
-      ),
-    ).toBe(true);
-    expect(
-      client.statements.some(
-        ({ sql, values }) => sql.includes('UPDATE "account"') && values?.[0] === "https://accounts.google.com",
-      ),
-    ).toBe(true);
-    expect(statements.some((sql) => sql.includes("CREATE TRIGGER podokit_fill_legacy_account_issuer"))).toBe(
-      true,
-    );
-    expect(statements.some((sql) => sql.includes('ALTER COLUMN "issuer" SET NOT NULL'))).toBe(true);
-    expect(statements.some((sql) => sql.includes('CREATE UNIQUE INDEX IF NOT EXISTS'))).toBe(true);
-    expect(statements.at(-1)).toBe("COMMIT");
+describe("Better Auth account identity cleanup", () => {
+  it("leaves an absent PostgreSQL table to the auth migrator", async (): Promise<void> => {
+    const client = new AccountClient(false);
+    expect(await migrate(client)).toBe("absent");
+    expect(client.statements.at(-1)).toBe("COMMIT");
     expect(client.released).toBe(true);
   });
-
-  it("[TC-PDHOST-026] rolls back instead of guessing a Microsoft or unknown issuer", async () => {
-    const client = new LegacyAccountClient(["microsoft"]);
-
-    await expect(migrateLegacyAccountIssuers(database(client))).rejects.toThrow(
-      "Cannot infer a trusted Better Auth issuer for legacy provider microsoft",
-    );
-
-    expect(client.statements.map(({ sql }) => sql.trim())).toContain("ROLLBACK");
-    expect(client.statements.some(({ sql }) => sql.includes('SET NOT NULL'))).toBe(false);
+  it("relaxes legacy PostgreSQL constraints without rewriting account data", async (): Promise<void> => {
+    const client = new AccountClient();
+    expect(await migrate(client)).toBe("migrated");
+    expect(client.statements.some((sql) => sql.includes('ALTER COLUMN "issuer" DROP NOT NULL'))).toBe(true);
+    expect(client.statements.some((sql) => sql.startsWith("UPDATE") || sql.startsWith("DELETE"))).toBe(false);
+    expect(client.statements.at(-1)).toBe("COMMIT");
     expect(client.released).toBe(true);
   });
-
-  it("[TC-PDHOST-026] leaves a fresh database to the normal migrator and protects a current schema", async () => {
-    const absent = new LegacyAccountClient([], { tableExists: false });
-    const current = new LegacyAccountClient([], {
-      column: { dataType: "text", isNullable: "NO" },
-    });
-
-    await expect(migrateLegacyAccountIssuers(database(absent))).resolves.toBe("absent");
-    await expect(migrateLegacyAccountIssuers(database(current))).resolves.toBe("current");
-
-    expect(absent.statements.some(({ sql }) => sql.includes("CREATE TRIGGER"))).toBe(false);
-    expect(current.statements.some(({ sql }) => sql.includes("CREATE TRIGGER"))).toBe(true);
-    for (const client of [absent, current]) {
-      expect(client.statements.at(-1)?.sql.trim()).toBe("COMMIT");
-      expect(client.released).toBe(true);
-    }
+  it("does not add issuer to a current PostgreSQL schema", async (): Promise<void> => {
+    const client = new AccountClient(true, false);
+    expect(await migrate(client)).toBe("current");
+    expect(client.statements.some((sql) => sql.includes("ADD COLUMN") || sql.includes("ALTER COLUMN"))).toBe(false);
   });
-
-  it("[TC-PDHOST-026] rolls back before constraints when credentials mismatch or identity keys collide", async () => {
-    const mismatch = new LegacyAccountClient(["credential"], {
-      counts: { credentialMismatch: 1 },
-    });
-    const collision = new LegacyAccountClient(["google"], {
-      counts: { collision: 1 },
-    });
-
-    await expect(migrateLegacyAccountIssuers(database(mismatch))).rejects.toThrow(
-      "accountId differs from the linked userId",
-    );
-    await expect(migrateLegacyAccountIssuers(database(collision))).rejects.toThrow(
-      "collide on the new issuer and accountId identity key",
-    );
-
-    for (const client of [mismatch, collision]) {
-      expect(client.statements.map(({ sql }) => sql.trim())).toContain("ROLLBACK");
-      expect(client.statements.some(({ sql }) => sql.includes('SET NOT NULL'))).toBe(false);
-      expect(client.released).toBe(true);
-    }
+  it("rolls back PostgreSQL identity collisions before changing constraints", async (): Promise<void> => {
+    const client = new AccountClient(true, true, 1);
+    await expect(migrate(client)).rejects.toThrow("duplicate providerId and accountId");
+    expect(client.statements.at(-1)).toBe("ROLLBACK");
+    expect(client.statements.some((sql) => sql.startsWith("ALTER") || sql.startsWith("DROP"))).toBe(false);
+    expect(client.released).toBe(true);
+  });
+  it("leaves an absent SQLite table to the auth migrator", (): void => {
+    const database = new Database(":memory:");
+    try { expect(migrateSqliteLegacyAccountIssuers(database)).toBe("absent"); }
+    finally { database.close(); }
+  });
+  it("preserves SQLite accounts, accepts new rows without issuer, and can rerun", (): void => {
+    const database = legacyDatabase();
+    try {
+      expect(migrateSqliteLegacyAccountIssuers(database)).toBe("migrated");
+      expect(database.query('SELECT "userId", password FROM account').get()).toEqual({ userId: "user", password: "password-hash" });
+      database.run('INSERT INTO account (id, "providerId", "accountId", "userId") VALUES (\'new\', \'github\', \'user\', \'user\')');
+      expect(migrateSqliteLegacyAccountIssuers(database)).toBe("current");
+      expect(database.query('SELECT count(*) AS count FROM account').get()).toEqual({ count: 2 });
+      expect(() => database.run('INSERT INTO account (id, "providerId", "accountId", "userId") VALUES (\'duplicate\', \'github\', \'user\', \'other\')')).toThrow();
+    } finally { database.close(); }
+  });
+  it("rolls back SQLite collisions without losing rows, issuer, or its index", (): void => {
+    const database = legacyDatabase();
+    try {
+      database.run('INSERT INTO account VALUES (\'collision\', \'credential\', \'user\', \'other\', \'other-hash\', \'other-issuer\')');
+      expect(() => migrateSqliteLegacyAccountIssuers(database)).toThrow("duplicate providerId and accountId");
+      expect(database.query('SELECT count(*) AS count FROM account').get()).toEqual({ count: 2 });
+      expect(database.query('SELECT issuer FROM account WHERE id = \'account\'').get()).toEqual({ issuer: "local:credential" });
+      expect(database.query('SELECT name FROM sqlite_master WHERE name = \'account_issuer_accountId_uidx\'').get()).toBeTruthy();
+    } finally { database.close(); }
   });
 });

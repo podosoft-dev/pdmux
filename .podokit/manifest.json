@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 3,
-  "podokitVersion": "1.0.2",
+  "schemaVersion": 4,
+  "podokitVersion": "1.2.0",
   "template": "fullstack",
   "toolchain": {
     "runtime": "bun",
@@ -25,7 +25,12 @@
     "rootRun": "bun run",
     "apiRun": "bun run --cwd apps/api",
     "apiWorkspaceArg": "",
-    "webRun": "bun run --cwd apps/web"
+    "webRun": "bun run --cwd apps/web",
+    "databaseProvider": "postgres",
+    "cacheProvider": "redis",
+    "objectStorageProvider": "s3",
+    "eventsProvider": "redis",
+    "jobsProvider": "bullmq"
   },
   "modules": [
     {
@@ -47,8 +52,14 @@
       "appliedMigrations": []
     },
     {
-      "name": "admin-dashboard",
+      "name": "object-storage-local",
       "order": 3,
+      "addedWith": "1.2.0",
+      "appliedMigrations": []
+    },
+    {
+      "name": "admin-dashboard",
+      "order": 4,
       "addedWith": "1.0.0",
       "appliedMigrations": [
         "admin-route-group"
@@ -56,43 +67,61 @@
     },
     {
       "name": "audit-log",
-      "order": 4,
-      "addedWith": "1.0.0",
-      "appliedMigrations": []
-    },
-    {
-      "name": "redis",
       "order": 5,
       "addedWith": "1.0.0",
       "appliedMigrations": []
     },
     {
-      "name": "api-key-auth",
+      "name": "redis",
       "order": 6,
       "addedWith": "1.0.0",
       "appliedMigrations": []
     },
     {
-      "name": "rate-limit",
+      "name": "cache-memory",
       "order": 7,
-      "addedWith": "1.0.0",
+      "addedWith": "1.2.0",
       "appliedMigrations": []
     },
     {
-      "name": "sse",
+      "name": "api-key-auth",
       "order": 8,
       "addedWith": "1.0.0",
       "appliedMigrations": []
     },
     {
-      "name": "bullmq",
+      "name": "rate-limit",
       "order": 9,
       "addedWith": "1.0.0",
       "appliedMigrations": []
     },
     {
-      "name": "logging",
+      "name": "events-redis",
       "order": 10,
+      "addedWith": "1.2.0",
+      "appliedMigrations": []
+    },
+    {
+      "name": "events-memory",
+      "order": 11,
+      "addedWith": "1.2.0",
+      "appliedMigrations": []
+    },
+    {
+      "name": "sse",
+      "order": 12,
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
+    },
+    {
+      "name": "bullmq",
+      "order": 13,
+      "addedWith": "1.0.0",
+      "appliedMigrations": []
+    },
+    {
+      "name": "logging",
+      "order": 14,
       "addedWith": "1.0.0",
       "appliedMigrations": []
     }
@@ -150,5 +179,12 @@
     "apps/web/src/routes/account/+page.server.ts",
     "apps/web/src/routes/setup-2fa/+page.server.ts",
     ".claude/skills/podokit-configure-auth/**"
-  ]
+  ],
+  "providers": {
+    "database": "postgres",
+    "cache": "redis",
+    "object-storage": "s3",
+    "events": "redis",
+    "jobs": "bullmq"
+  }
 }

@@ -1,4 +1,20 @@
-import type { ObjectStore } from "../storage/object-store";
+import type {
+  ObjectBody,
+  ObjectData,
+  ObjectInfo,
+  ObjectPage,
+  ObjectStore,
+  PutObjectOptions,
+  StoredObject,
+} from "@podosoft/podokit-runtime";
+
+async function text(body: ObjectBody): Promise<string> {
+  if (typeof body === "string") return body;
+  if (body instanceof Uint8Array) return Buffer.from(body).toString("utf8");
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of body) chunks.push(chunk);
+  return Buffer.concat(chunks).toString("utf8");
+}
 
 /**
  * In-memory object storage for unit tests, with counters.
@@ -6,21 +22,38 @@ import type { ObjectStore } from "../storage/object-store";
  * The counters are the point: "a re-sent commit detail must not be rewritten" is
  * only provable by counting writes, not by reading the result back.
  */
-export class FakeStorage {
+export class FakeStorage implements ObjectStore {
   readonly objects = new Map<string, string>();
   readonly puts: string[] = [];
   readonly deletes: string[] = [];
 
-  async put(key: string, body: Buffer | string): Promise<void> {
+  async put(key: string, body: ObjectBody, options: PutObjectOptions = {}): Promise<StoredObject> {
     this.puts.push(key);
-    this.objects.set(key, typeof body === "string" ? body : body.toString("utf8"));
+    const value = await text(body);
+    this.objects.set(key, value);
+    return { key, size: Buffer.byteLength(value), ...(options.contentType ? { contentType: options.contentType } : {}) };
   }
 
-  async get(key: string): Promise<Buffer> {
+  async get(key: string): Promise<ObjectData | null> {
+    const info = await this.stat(key);
     const value = this.objects.get(key);
-    // Mirrors S3: a missing key throws rather than returning empty.
-    if (value === undefined) throw new Error(`NoSuchKey: ${key}`);
-    return Buffer.from(value, "utf8");
+    if (!info || value === undefined) return null;
+    return { ...info, body: new Response(value).body ?? new ReadableStream() };
+  }
+
+  stat(key: string): Promise<ObjectInfo | null> {
+    const value = this.objects.get(key);
+    if (value === undefined) return Promise.resolve(null);
+    return Promise.resolve({
+      key,
+      size: Buffer.byteLength(value),
+      etag: `"${Bun.hash(value).toString(16)}"`,
+      lastModified: new Date(0),
+    });
+  }
+
+  list(prefix: string): Promise<ObjectPage> {
+    return Promise.resolve({ keys: [...this.objects.keys()].filter((key) => key.startsWith(prefix)).sort() });
   }
 
   async delete(key: string): Promise<void> {
@@ -32,7 +65,7 @@ export class FakeStorage {
     return Promise.resolve(this.objects.has(key));
   }
 
-  presignedGetUrl(key: string): Promise<string> {
+  getDownloadUrl(key: string): Promise<string> {
     return Promise.resolve(`/storage/${encodeURIComponent(key)}`);
   }
 

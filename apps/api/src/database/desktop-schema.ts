@@ -42,6 +42,11 @@ export async function initializeDesktopSchema(sql: SQL): Promise<void> {
       "createdAt" datetime NOT NULL
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS "IDX_audit_logs_action" ON "audit_logs" ("action")`;
-  await sql`CREATE INDEX IF NOT EXISTS "IDX_audit_logs_createdAt" ON "audit_logs" ("createdAt")`;
+  // Same keyset and filter indexes as the PostgreSQL IndexAuditLogFilters migration.
+  await sql`CREATE INDEX IF NOT EXISTS "IDX_audit_logs_createdAt_id" ON "audit_logs" ("createdAt", "id")`;
+  await sql`CREATE INDEX IF NOT EXISTS "IDX_audit_logs_action_createdAt" ON "audit_logs" ("action", "createdAt")`;
+  await sql`CREATE INDEX IF NOT EXISTS "IDX_audit_logs_actorEmail_createdAt" ON "audit_logs" ("actorEmail", "createdAt")`;
+  await sql`CREATE INDEX IF NOT EXISTS "IDX_audit_logs_targetLabel_createdAt" ON "audit_logs" ("targetLabel", "createdAt")`;
+  await sql`DROP INDEX IF EXISTS "IDX_audit_logs_action"`;
+  await sql`DROP INDEX IF EXISTS "IDX_audit_logs_createdAt"`;
 }

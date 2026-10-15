@@ -1,12 +1,18 @@
-import dataSource from "./data-source";
 import { assertMigrationsApplied } from "./schema-readiness";
 import { POSTGRES_MIGRATIONS } from "./migrations";
 
+// pdmux migrations are PostgreSQL-only. The desktop SQLite schema is created by
+// src/migrate.ts (desktop tables plus entity synchronization), not by migrations.
 async function migrate(): Promise<void> {
+  const { appDataSource: dataSource } = await import("./data-source.js");
   await dataSource.initialize();
   try {
-    await dataSource.runMigrations({ transaction: "all" });
-    await assertMigrationsApplied(dataSource);
+    if (process.argv.includes("--revert")) {
+      await dataSource.undoLastMigration({ transaction: "all" });
+    } else {
+      await dataSource.runMigrations({ transaction: "all" });
+      await assertMigrationsApplied(dataSource);
+    }
   } finally {
     await dataSource.destroy();
   }

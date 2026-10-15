@@ -1,18 +1,16 @@
 import { AppException } from "@podosoft/podokit-contracts";
+import { JOBS } from "@podosoft/podokit-runtime";
 import { Elysia, t } from "elysia";
-import type { AppPlugin, PodokitModule, ServiceKey } from "../core/services";
-import { DEMO_QUEUE } from "./queue";
-import { BullMqJobProvider, type JobProvider, LocalJobProvider } from "../runtime/jobs";
-import { runtimeProviders } from "../runtime/providers";
-import { processDemoJob } from "./demo.processor";
-
-export const JOBS = Symbol("jobs") as ServiceKey<JobProvider>;
+import { PROVIDERS } from "../config/providers";
+import type { AppPlugin, PodokitModule } from "../core/services";
+import { BullMqJobQueue } from "./bullmq-job.queue";
 
 const jobsPlugin: AppPlugin = ({ services }) => {
-  const jobs = services.resolve(JOBS);
+  if (PROVIDERS.jobs !== "bullmq") return new Elysia({ name: "podokit.jobs.inactive" });
+  const queue = services.resolve(JOBS);
   return new Elysia({ name: "podokit.jobs" })
     .post("/jobs", async ({ body, set }) => {
-      const job = await jobs.enqueue(DEMO_QUEUE, "demo", { text: body.text });
+      const job = await queue.enqueue("demo", { text: body.text });
       set.status = 201;
       return { id: job.id };
     }, {
@@ -20,9 +18,9 @@ const jobsPlugin: AppPlugin = ({ services }) => {
       detail: { tags: ["jobs"], summary: "Enqueue a job" },
     })
     .get("/jobs/:id", async ({ params }) => {
-      const job = await jobs.get(DEMO_QUEUE, params.id);
+      const job = await queue.get(params.id);
       if (!job) throw new AppException("JOB_NOT_FOUND", `Job ${params.id} not found`, 404);
-      return job;
+      return { id: job.id, state: job.status, result: job.result ?? null };
     }, {
       params: t.Object({ id: t.String({ minLength: 1 }) }),
       detail: { tags: ["jobs"], summary: "Read job status" },
@@ -32,11 +30,9 @@ const jobsPlugin: AppPlugin = ({ services }) => {
 export const jobsModule: PodokitModule = {
   name: "bullmq",
   configure: (_env, services): void => {
-    const jobs: JobProvider = runtimeProviders().jobs === "local"
-      ? new LocalJobProvider()
-      : new BullMqJobProvider();
-    jobs.register(DEMO_QUEUE, "demo", processDemoJob);
-    services.register(JOBS, jobs, () => jobs.close());
+    if (PROVIDERS.jobs !== "bullmq") return;
+    const queue = new BullMqJobQueue();
+    services.register(JOBS, queue, () => queue.close());
   },
   plugin: jobsPlugin,
 };

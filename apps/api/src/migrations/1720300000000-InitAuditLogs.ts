@@ -4,10 +4,11 @@ export class InitAuditLogs1720300000000 implements MigrationInterface {
   name = "InitAuditLogs1720300000000";
 
   async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`);
+    const sqlite = queryRunner.connection.options.type === "better-sqlite3";
+    if (!sqlite) await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`);
     await queryRunner.query(`
       CREATE TABLE "audit_logs" (
-        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "id" ${sqlite ? "text" : "uuid"} NOT NULL${sqlite ? "" : " DEFAULT gen_random_uuid()"},
         "action" character varying(128) NOT NULL,
         "actorId" character varying,
         "actorName" character varying,
@@ -16,8 +17,8 @@ export class InitAuditLogs1720300000000 implements MigrationInterface {
         "targetId" character varying,
         "targetLabel" character varying,
         "ip" character varying,
-        "metadata" jsonb,
-        "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "metadata" ${sqlite ? "text" : "jsonb"},
+        "createdAt" ${sqlite ? "datetime" : "TIMESTAMP WITH TIME ZONE"} NOT NULL DEFAULT ${sqlite ? "CURRENT_TIMESTAMP" : "now()"},
         CONSTRAINT "PK_audit_logs_id" PRIMARY KEY ("id")
       )
     `);

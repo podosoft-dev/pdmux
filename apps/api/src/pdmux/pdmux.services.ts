@@ -24,12 +24,12 @@ import { AUDIT } from "../audit/audit.module";
 import type { AuditService } from "../audit/audit.service";
 import type { AuthService } from "../auth/auth.service";
 import { AUTH } from "../auth/auth.module";
+import { EVENTS, OBJECT_STORAGE } from "@podosoft/podokit-runtime";
+import { PROVIDERS } from "../config/providers";
 import type { ServiceKey, ServiceRegistry } from "../core/services";
 import { READINESS } from "../core/services";
 import { createAppDataSource, dataSourceOptions } from "../database/data-source";
 import { assertMigrationsApplied, initializeApplicationDataSource } from "../database/schema-readiness";
-import { EVENTS } from "../events/events.module";
-import type { EventsService } from "../events/events.service";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { GitBlobBufferService } from "../git/git-blob-buffer.service";
@@ -51,8 +51,7 @@ import {
   STALE_HOSTS_JOB,
   STALE_HOSTS_QUEUE,
 } from "../hosts/stale-hosts.queue";
-import { JOBS } from "../jobs/jobs.module";
-import type { JobProvider } from "../runtime/jobs";
+import { BullMqJobProvider, type JobProvider, LocalJobProvider } from "../runtime/jobs";
 import { HostMcpKey } from "../mcp/host-mcp-key.entity";
 import { HostMcpKeysService } from "../mcp/host-mcp-keys.service";
 import { AgentKitController } from "../mcp/agent-kit.controller";
@@ -76,9 +75,8 @@ import { HostConnector } from "../integrations/host-connector.entity";
 import { IntegrationConnection } from "../integrations/integration-connection.entity";
 import { ServiceExposure } from "../integrations/service-exposure.entity";
 import { PrefsService } from "../prefs/prefs.service";
-import { STORAGE } from "../storage/storage.module";
-import type { ObjectStore } from "../storage/object-store";
 import { TerminalRelayService } from "../terminal/terminal-relay.service";
+import { HostEvents } from "./host-events";
 import { TerminalMuxController } from "../terminal/terminal-mux.controller";
 
 export interface PdmuxServices {
@@ -114,10 +112,12 @@ export interface PdmuxServices {
   staleHosts: StaleHostsService;
   metricsRetention: MetricsRetentionService;
   cloudflare: CloudflareService;
+  hostEvents: HostEvents;
 }
 
 export const PDMUX = Symbol("pdmux") as ServiceKey<PdmuxServices>;
 const PDMUX_LIFECYCLE = Symbol("pdmux-lifecycle") as ServiceKey<DataSource>;
+const PDMUX_JOBS = Symbol("pdmux-jobs") as ServiceKey<JobProvider>;
 
 async function scheduleMaintenance(jobs: JobProvider): Promise<void> {
   await Promise.allSettled([
@@ -137,11 +137,14 @@ async function scheduleMaintenance(jobs: JobProvider): Promise<void> {
 export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
   const dataSource = createAppDataSource(dataSourceOptions);
   services.resolve(READINESS).register("pdmux-schema", () => assertMigrationsApplied(dataSource));
-  const storage: ObjectStore = services.resolve(STORAGE);
-  const events: EventsService = services.resolve(EVENTS);
+  const storage = services.resolve(OBJECT_STORAGE);
+  const events = new HostEvents(services.resolve(EVENTS));
   const auth = services.resolve(AUTH);
   const audit = services.resolve(AUDIT);
-  const jobs = services.resolve(JOBS);
+  // Maintenance needs cron repeats, which PodoKit's job queue contract does not
+  // offer, so pdmux schedules them through its own provider.
+  const jobs: JobProvider = PROVIDERS.jobs === "local" ? new LocalJobProvider() : new BullMqJobProvider();
+  services.register(PDMUX_JOBS, jobs, () => jobs.close());
 
   const fleetSettings = new FleetSettingsService(dataSource.getRepository(FleetSetting));
   const releases = new AgentReleaseService(fileSystemAgentReleases);
@@ -309,6 +312,7 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
     staleHosts,
     metricsRetention,
     cloudflare,
+    hostEvents: events,
   };
   services.register(PDMUX, result);
   return result;

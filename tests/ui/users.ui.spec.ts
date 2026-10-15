@@ -43,6 +43,26 @@ test("admin sees the user list and can search", async ({ page }) => {
   await expect(page.getByRole("cell", { name: "admin@example.com" })).toHaveCount(0);
 });
 
+test("the user list asks the server for one page at a time", async ({ page }) => {
+  const isListUsers = (url: string): boolean => new URL(url).pathname === "/api/auth/admin/list-users";
+  const first = page.waitForResponse((response) => isListUsers(response.url()));
+  await ready(page, "/admin/users");
+  const initial = new URL((await first).url()).searchParams;
+  expect(initial.get("limit")).toBe("15");
+  expect(initial.get("sortBy")).toBe("createdAt");
+  expect(initial.get("sortDirection")).toBe("desc");
+  await expect(page.getByRole("columnheader", { name: "Joined" })).toHaveAttribute("aria-sort", "descending");
+
+  const searched = page.waitForResponse((response) => isListUsers(response.url()));
+  await page.locator("#toolbar-search").fill("Admin@Example.com");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const query = new URL((await searched).url()).searchParams;
+  expect(query.get("searchValue")).toBe("admin@example.com");
+  expect(query.get("searchField")).toBe("email");
+  expect(query.get("offset")).toBe("0");
+  await expect(page.getByRole("cell", { name: "admin@example.com" })).toBeVisible();
+});
+
 test("user list shows the joined column", async ({ page }) => {
   await ready(page, "/admin/users");
   await expect(page.getByRole("columnheader", { name: "Joined" })).toBeVisible();

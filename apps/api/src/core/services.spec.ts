@@ -1,10 +1,19 @@
 import { describe, expect, test } from "bun:test";
+import type { DatabaseProviderName } from "@podosoft/podokit-runtime";
+import { validateEnv } from "../config/env.validation";
+import { PROVIDERS } from "../config/providers";
 import {
   AccessPolicy,
+  createCoreServices,
   OpenApiRegistry,
+  REQUEST_IDENTITY,
   RequestGuardRegistry,
   ServiceRegistry,
 } from "./services";
+
+function databaseProvider(): DatabaseProviderName {
+  return PROVIDERS.database;
+}
 
 describe("ServiceRegistry", () => {
   test("awaits startup in registration order and starts only once", async () => {
@@ -86,5 +95,26 @@ describe("OpenApiRegistry", () => {
     const registry = new OpenApiRegistry();
     registry.register("auth", () => ({ document: {} }));
     expect(() => registry.register("auth", () => ({ document: {} }))).toThrow("already exists");
+  });
+});
+
+describe("RequestIdentity", () => {
+  test("treats every request as anonymous until an auth module overrides it", async () => {
+    const services = createCoreServices(validateEnv({
+      NODE_ENV: "test",
+      DATABASE_URL: databaseProvider() === "sqlite"
+        ? "sqlite://:memory:"
+        : "postgres://podokit:podokit@localhost:5432/podokit",
+    }));
+    const identity = services.resolve(REQUEST_IDENTITY);
+    const request = new Request("http://localhost/todos");
+    try {
+      expect(await identity.userId(request)).toBeUndefined();
+      expect(await identity.isAdmin(request)).toBe(false);
+      expect(await identity.roles(request)).toEqual([]);
+      expect(await identity.activeOrganizationId(request)).toBeUndefined();
+    } finally {
+      await services.close();
+    }
   });
 });

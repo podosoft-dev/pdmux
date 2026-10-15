@@ -10,7 +10,9 @@ import {
   SUPPORTED_PROVIDER_IDS,
   SUPPORTED_SOCIAL_PROVIDERS,
 } from "@podosoft/podokit-auth";
+import type { DatabaseProviderName } from "@podosoft/podokit-runtime";
 import { refreshAuthNow } from "../auth/auth-provider";
+import { authConfigParam } from "./config-param";
 
 export type SocialProviderView = {
   id: string;
@@ -78,6 +80,7 @@ interface AuthConfigRow {
   secret: string | null;
 }
 
+// SQLite returns booleans as 0 or 1.
 interface DatabaseAuthConfigRow extends Omit<AuthConfigRow, "enabled"> {
   enabled: boolean | number;
 }
@@ -110,7 +113,10 @@ function booleanField(source: Record<string, unknown>, key: string, fallback: bo
 }
 
 export class AuthConfigService {
-  constructor(private readonly sql: SQL) {}
+  constructor(
+    private readonly sql: SQL,
+    private readonly provider: DatabaseProviderName = "postgres",
+  ) {}
 
   private async rows(): Promise<AuthConfigRow[]> {
     const rows = await this.sql<DatabaseAuthConfigRow[]>`
@@ -128,10 +134,10 @@ export class AuthConfigService {
   }
 
   private async upsert(row: AuthConfigRow): Promise<void> {
-    const config = object(row.config);
+    const config = authConfigParam(this.provider, object(row.config));
     await this.sql`
       INSERT INTO "auth_config" ("key", "enabled", "config", "secret", "updatedAt")
-      VALUES (${row.key}, ${row.enabled}, ${JSON.stringify(config)}, ${row.secret}, CURRENT_TIMESTAMP)
+      VALUES (${row.key}, ${row.enabled}, ${config}, ${row.secret}, CURRENT_TIMESTAMP)
       ON CONFLICT ("key") DO UPDATE SET
         "enabled" = EXCLUDED."enabled",
         "config" = EXCLUDED."config",

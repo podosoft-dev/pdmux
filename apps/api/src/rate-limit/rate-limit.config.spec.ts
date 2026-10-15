@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   clientAddressFromProxy,
   rateLimitConfig,
+  sessionSigningSecret,
 } from "./rate-limit.config";
 
 describe("rate limit configuration", () => {
@@ -87,5 +88,13 @@ describe("rate limit configuration", () => {
         trustedProxyHops: 1,
       }),
     ).toBe("10.0.0.9");
+  });
+
+  test("reads the session signing secret the way the auth module does", () => {
+    expect(
+      sessionSigningSecret({ BETTER_AUTH_SECRET: "  session-secret-with-at-least-32-chars  " }),
+    ).toBe("session-secret-with-at-least-32-chars");
+    expect(sessionSigningSecret({ BETTER_AUTH_SECRET: "   " })).toBeUndefined();
+    expect(sessionSigningSecret({})).toBeUndefined();
   });
 });

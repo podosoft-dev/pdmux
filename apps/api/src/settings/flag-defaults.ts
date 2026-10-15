@@ -30,3 +30,13 @@ export const FLAG_DEFAULTS: Record<FeatureFlag, boolean> = {
 };
 
 export const FEATURE_FLAGS = Object.keys(FLAG_DEFAULTS) as FeatureFlag[];
+
+/** Stored values override the shipped defaults; a missing row keeps the default. */
+export function flagsFrom(settings: ReadonlyMap<string, string>): Record<FeatureFlag, boolean> {
+  const flags = { ...FLAG_DEFAULTS };
+  for (const flag of FEATURE_FLAGS) {
+    const stored = settings.get(flag);
+    if (stored !== undefined) flags[flag] = stored === "true";
+  }
+  return flags;
+}

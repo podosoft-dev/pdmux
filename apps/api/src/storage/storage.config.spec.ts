@@ -50,8 +50,9 @@ describe("[TC-PDHOST-031] bundled S3-compatible storage", () => {
       const services = record(configuration.services);
       const storage = record(services.minio);
       const initializer = record(services["minio-init"]);
-      expect(storage.image).toBe(`pgsty/silo:${release}`);
-      expect(initializer.image).toBe(`pgsty/mc:${release}`);
+      // A digest may follow the release tag; the release itself must not drift.
+      expect(String(storage.image)).toMatch(new RegExp(`^pgsty/silo:${release}(@sha256:[0-9a-f]{64})?$`));
+      expect(String(initializer.image)).toMatch(new RegExp(`^pgsty/mc:${release}(@sha256:[0-9a-f]{64})?$`));
       expect(storage.volumes).toEqual([`${volume}:/data`]);
       expect(record(configuration.volumes)).toHaveProperty(volume);
       expect(record(storage.environment)).toHaveProperty("MINIO_ROOT_USER");

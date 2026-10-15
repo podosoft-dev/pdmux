@@ -83,12 +83,7 @@ async function loadCatalog(code: string): Promise<JsonObject> {
   return catalog;
 }
 
-export async function loadMessages(
-  locale: string,
-  configuredFallback?: string | null,
-): Promise<Messages> {
-  const selected = resolveLocale(locale);
-  const fallback = resolveLocale(configuredFallback);
+async function mergeMessages(selected: Locale, fallback: Locale): Promise<Messages> {
   const candidates = [defaultLocale, fallback, selected];
   // A later catalog has higher priority. Keep the last occurrence so selecting
   // the built-in English fallback still overrides a non-English site default.
@@ -96,4 +91,26 @@ export async function loadMessages(
   let catalog: JsonObject = {};
   for (const code of chain) catalog = mergeCatalog(catalog, await loadCatalog(code));
   return catalog as Messages;
+}
+
+// Catalogs are static in a build, so each locale pair is merged once and every
+// caller shares the same object. Treat it as read-only.
+const merged = new Map<string, Promise<Messages>>();
+
+export function loadMessages(
+  locale: string,
+  configuredFallback?: string | null,
+): Promise<Messages> {
+  const selected = resolveLocale(locale);
+  const fallback = resolveLocale(configuredFallback);
+  // Development re-merges so an edited catalog shows up on the next load.
+  if (import.meta.env.DEV) return mergeMessages(selected, fallback);
+  const key = `${selected}\u0000${fallback}`;
+  let messages = merged.get(key);
+  if (!messages) {
+    messages = mergeMessages(selected, fallback);
+    messages.catch(() => merged.delete(key));
+    merged.set(key, messages);
+  }
+  return messages;
 }

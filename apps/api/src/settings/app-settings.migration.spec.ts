@@ -4,16 +4,19 @@ import { InitAppSettings1720400000000 } from "../migrations/1720400000000-InitAp
 import { AddMcpEnabledSetting1731300000000 } from "../migrations/1731300000000-AddMcpEnabledSetting";
 
 describe("app setting migration", () => {
-  it("seeds every authentication feature and policy default", async () => {
-    const queries: string[] = [];
-    const runner = {
+  function runner(type: "postgres" | "better-sqlite3", queries: string[]): QueryRunner {
+    return {
+      connection: { options: { type } },
       query: (sql: string): Promise<unknown[]> => {
         queries.push(sql);
         return Promise.resolve([]);
       },
     } as unknown as QueryRunner;
+  }
 
-    await new InitAppSettings1720400000000().up(runner);
+  it("seeds every authentication feature and policy default", async () => {
+    const queries: string[] = [];
+    await new InitAppSettings1720400000000().up(runner("postgres", queries));
 
     const seed = queries.join("\n");
     for (const key of [
@@ -33,16 +36,17 @@ describe("app setting migration", () => {
     }
   });
 
+  it("uses SQLite-compatible timestamp syntax", async () => {
+    const queries: string[] = [];
+    await new InitAppSettings1720400000000().up(runner("better-sqlite3", queries));
+    expect(queries[0]).toContain("datetime");
+    expect(queries[0]).toContain("CURRENT_TIMESTAMP");
+    expect(queries[0]).not.toContain("TIMESTAMP WITH TIME ZONE");
+  });
+
   it("preserves the product MCP policy as an opt-out setting", async () => {
     const queries: string[] = [];
-    const runner = {
-      query: (sql: string): Promise<unknown[]> => {
-        queries.push(sql);
-        return Promise.resolve([]);
-      },
-    } as unknown as QueryRunner;
-
-    await new AddMcpEnabledSetting1731300000000().up(runner);
+    await new AddMcpEnabledSetting1731300000000().up(runner("postgres", queries));
 
     expect(queries.join("\n")).toContain("('mcpEnabled', 'true')");
   });

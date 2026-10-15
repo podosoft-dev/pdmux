@@ -2,8 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { LocalObjectStore } from "../storage/local-object.store";
-import { MemoryCacheStore } from "./cache";
+import { LocalObjectStore, MemoryCacheStore } from "@podosoft/podokit-runtime";
 import { LocalJobProvider } from "./jobs";
 
 let temporaryDirectory: string | undefined;
@@ -15,19 +14,23 @@ afterEach(async () => {
 
 describe("[TC-PDDESKTOP-003] embedded runtime providers", () => {
   it("expires cache values and increments a fixed window", async () => {
-    const cache = new MemoryCacheStore(2);
-    await cache.set("value", "one", 1);
+    let now = 0;
+    const cache = new MemoryCacheStore({ maxEntries: 2, now: () => now });
+    await cache.set("value", "one", { ttlMs: 1_000 });
     expect(await cache.get("value")).toBe("one");
-    expect((await cache.incrementFixedWindow("limit", 10)).count).toBe(1);
-    expect((await cache.incrementFixedWindow("limit", 10)).count).toBe(2);
+    now = 1_001;
+    expect(await cache.get("value")).toBeNull();
+    expect((await cache.incrementFixedWindow("limit", { windowMs: 10_000, limit: 5 })).count).toBe(1);
+    expect((await cache.incrementFixedWindow("limit", { windowMs: 10_000, limit: 5 })).count).toBe(2);
     cache.close();
   });
 
   it("stores local objects atomically and rejects traversal", async () => {
     temporaryDirectory = await mkdtemp(join(tmpdir(), "pdmux-storage-"));
-    const storage = new LocalObjectStore(temporaryDirectory);
-    await storage.put("git/detail.json", '{"ok":true}');
-    expect((await storage.get("git/detail.json")).toString("utf8")).toBe('{"ok":true}');
+    const storage = new LocalObjectStore({ rootDirectory: temporaryDirectory });
+    await storage.put("git/detail.json", '{"ok":true}', { contentType: "application/json" });
+    const object = await storage.get("git/detail.json");
+    expect(object ? await new Response(object.body).text() : null).toBe('{"ok":true}');
     expect(await storage.exists("git/detail.json")).toBe(true);
     await expect(storage.put("../escape", "no")).rejects.toThrow("safe relative path");
   });

@@ -1,14 +1,27 @@
-import { describe, expect, test } from "bun:test";
-import { AccessPolicy } from "../core/services";
+import { describe, expect, mock, test } from "bun:test";
+import { AccessPolicy, type RequestIdentity } from "../core/services";
 import type { SettingsService } from "../settings/settings.service";
-import { AuthService, rolesOf, type AuthSession } from "./auth.service";
+import {
+  AuthService,
+  createRequestIdentity,
+  rolesOf,
+  type AuthSession,
+  type SessionResolver,
+} from "./auth.service";
 
 function settings(require2fa: boolean): SettingsService {
   return { getBool: () => require2fa } as unknown as SettingsService;
 }
 
-function session(overrides: Partial<AuthSession["user"]> = {}): AuthSession {
-  return { user: { id: "user-1", ...overrides }, session: {} };
+function session(
+  overrides: Partial<AuthSession["user"]> = {},
+  sessionFields: Record<string, unknown> = {},
+): AuthSession {
+  return { user: { id: "user-1", ...overrides }, session: sessionFields };
+}
+
+function identityFor(resolver: SessionResolver): RequestIdentity {
+  return createRequestIdentity(new AuthService(settings(false), new AccessPolicy(), resolver));
 }
 
 describe("AuthService", () => {
@@ -48,5 +61,68 @@ describe("AuthService", () => {
     );
     await expect(service.requireAdmin(new Request("http://localhost/account/settings")))
       .rejects.toMatchObject({ code: "ADMIN_REQUIRED", statusCode: 403 });
+  });
+});
+
+describe("createRequestIdentity", () => {
+  const request = (): Request => new Request("http://localhost/events");
+
+  test("treats a request without a session as anonymous", async () => {
+    const identity = identityFor(async () => null);
+    const anonymous = request();
+    expect(await identity.userId(anonymous)).toBeUndefined();
+    expect(await identity.isAdmin(anonymous)).toBe(false);
+    expect(await identity.roles(anonymous)).toEqual([]);
+    expect(await identity.activeOrganizationId(anonymous)).toBeUndefined();
+  });
+
+  test("reads every role from the comma-separated admin plugin format", async () => {
+    const identity = identityFor(async () => session({ role: "user,admin" }));
+    const signedIn = request();
+    expect(await identity.userId(signedIn)).toBe("user-1");
+    expect(await identity.roles(signedIn)).toEqual(["user", "admin"]);
+    expect(await identity.isAdmin(signedIn)).toBe(true);
+  });
+
+  test("reads roles stored as an array", async () => {
+    const identity = identityFor(async () => session({ role: ["moderator"] }));
+    const signedIn = request();
+    expect(await identity.roles(signedIn)).toEqual(["moderator"]);
+    expect(await identity.isAdmin(signedIn)).toBe(false);
+  });
+
+  test("returns no roles when the user has none", async () => {
+    const identity = identityFor(async () => session({ role: null }));
+    expect(await identity.roles(request())).toEqual([]);
+  });
+
+  test("reads the active organization from the session", async () => {
+    const active = identityFor(async () => session({}, { activeOrganizationId: "org-1" }));
+    expect(await active.activeOrganizationId(request())).toBe("org-1");
+
+    const cleared = identityFor(async () => session({}, { activeOrganizationId: null }));
+    expect(await cleared.activeOrganizationId(request())).toBeUndefined();
+
+    const missing = identityFor(async () => session());
+    expect(await missing.activeOrganizationId(request())).toBeUndefined();
+  });
+
+  test("resolves the session once per request across all questions", async () => {
+    const resolver = mock(async (_headers: Headers): Promise<AuthSession | null> =>
+      session({ role: "admin" }, { activeOrganizationId: "org-1" }));
+    const identity = identityFor(resolver);
+    const first = request();
+
+    await Promise.all([
+      identity.userId(first),
+      identity.isAdmin(first),
+      identity.roles(first),
+      identity.activeOrganizationId(first),
+    ]);
+    await identity.roles(first);
+    expect(resolver).toHaveBeenCalledTimes(1);
+
+    await identity.userId(request());
+    expect(resolver).toHaveBeenCalledTimes(2);
   });
 });

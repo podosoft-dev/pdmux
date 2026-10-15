@@ -1,15 +1,19 @@
 import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
 import type { Logger } from "pino";
+import type { ObjectStore } from "@podosoft/podokit-runtime";
 import { runUserDeletedHandlers } from "../auth/user-delete-handlers";
-import type { ObjectStore } from "../storage/object-store";
 import { ProfileImageService } from "./profile-image.service";
 
 describe("ProfileImageService account deletion cleanup", () => {
   const storage = {
     put: mock(async () => undefined),
-    get: mock(async () => Buffer.alloc(0)),
-    presignedGetUrl: mock(async () => "https://example.com/image"),
+    get: mock(async () => null),
+    stat: mock(async () => null),
+    list: mock(async () => ({ keys: [] })),
+    exists: mock(async () => true),
+    getDownloadUrl: mock(async () => "https://example.com/image"),
     delete: mock(async () => undefined),
+    close: mock(() => undefined),
   };
   const logger = { warn: mock(() => undefined) } as unknown as Logger;
   const service = new ProfileImageService(storage as unknown as ObjectStore, logger);

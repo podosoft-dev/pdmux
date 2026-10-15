@@ -1,20 +1,26 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { onMount } from "svelte";
   import { api } from "#lib/api.js";
 
   let { timeoutMinutes }: { timeoutMinutes: number | null } = $props();
 
   const ACTIVITY_KEY = "podokit:session-last-activity";
   const SERVER_REFRESH_INTERVAL_MS = 60_000;
+  // Every localStorage write fires a `storage` event in each other open tab.
+  const ACTIVITY_WRITE_INTERVAL_MS = 5_000;
   const activityEvents = ["pointerdown", "keydown", "touchstart", "scroll"] as const;
 
-  let mounted = $state(false);
-  let lastActivityAt = $state(Date.now());
-  let lastServerRefreshAt = $state(Date.now());
   let signingOut = false;
-  let previousTimeoutMs: number | null = null;
   const timeoutMs = $derived(timeoutMinutes === null ? null : timeoutMinutes * 60_000);
+
+  function readStoredActivity(): number {
+    try {
+      const value = Number(localStorage.getItem(ACTIVITY_KEY));
+      return Number.isFinite(value) ? value : 0;
+    } catch {
+      return 0;
+    }
+  }
 
   function storeActivity(value: number): void {
     try {
@@ -44,66 +50,85 @@
     if (error || !data) await signOutForIdleTimeout();
   }
 
-  function recordActivity(): void {
-    if (timeoutMs === null || signingOut) return;
-    const now = Date.now();
-    if (now - lastActivityAt >= timeoutMs) {
+  function trackActivity(limit: number): () => void {
+    // The policy only exists for a signed-in user, so a new tracker means a new session.
+    signingOut = false;
+    let lastActivityAt = Date.now();
+    let storedActivityAt = lastActivityAt;
+    let lastWriteAt = lastActivityAt;
+    let lastServerRefreshAt = lastActivityAt;
+    let deadlineTimer: number | undefined;
+    let flushTimer: number | undefined;
+    storeActivity(lastActivityAt);
+
+    function flush(): void {
+      window.clearTimeout(flushTimer);
+      flushTimer = undefined;
+      if (signingOut || lastActivityAt <= storedActivityAt) return;
+      storedActivityAt = lastActivityAt;
+      lastWriteAt = Date.now();
+      storeActivity(storedActivityAt);
+    }
+
+    function expire(): void {
+      window.clearTimeout(deadlineTimer);
+      window.clearTimeout(flushTimer);
       void signOutForIdleTimeout();
-      return;
     }
-    lastActivityAt = now;
-    storeActivity(now);
-    if (now - lastServerRefreshAt >= SERVER_REFRESH_INTERVAL_MS) {
-      lastServerRefreshAt = now;
-      void refreshServerSession();
+
+    // The deadline is re-read when the timer fires rather than re-armed on every
+    // event; other tabs' activity arrives through storage.
+    function check(): void {
+      if (signingOut) return;
+      const latest = Math.max(lastActivityAt, readStoredActivity());
+      const remaining = limit - (Date.now() - latest);
+      if (remaining <= 0) return expire();
+      window.clearTimeout(deadlineTimer);
+      deadlineTimer = window.setTimeout(check, remaining);
     }
-  }
 
-  function receiveActivity(event: StorageEvent): void {
-    if (event.key !== ACTIVITY_KEY || event.newValue === null) return;
-    const value = Number(event.newValue);
-    if (Number.isFinite(value) && value > lastActivityAt) lastActivityAt = value;
-  }
+    function recordActivity(): void {
+      if (signingOut) return;
+      const now = Date.now();
+      // Timers can be suspended (sleep, background throttling), so a late event may arrive past the deadline.
+      if (now - lastActivityAt >= limit && now - readStoredActivity() >= limit) return expire();
+      lastActivityAt = now;
+      const sinceWrite = now - lastWriteAt;
+      if (sinceWrite >= ACTIVITY_WRITE_INTERVAL_MS) flush();
+      else flushTimer ??= window.setTimeout(flush, ACTIVITY_WRITE_INTERVAL_MS - sinceWrite);
+      if (now - lastServerRefreshAt >= SERVER_REFRESH_INTERVAL_MS) {
+        lastServerRefreshAt = now;
+        void refreshServerSession();
+      }
+    }
 
-  onMount(() => {
-    mounted = true;
-    const now = Date.now();
-    lastActivityAt = now;
-    lastServerRefreshAt = now;
-    storeActivity(now);
+    function onVisibilityChange(): void {
+      if (document.visibilityState === "hidden") flush();
+      else check();
+    }
+
     for (const event of activityEvents) {
       document.addEventListener(event, recordActivity, { passive: true, capture: true });
     }
     window.addEventListener("focus", recordActivity);
-    window.addEventListener("storage", receiveActivity);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", flush);
+    deadlineTimer = window.setTimeout(check, limit);
+
     return () => {
       for (const event of activityEvents) {
         document.removeEventListener(event, recordActivity, { capture: true });
       }
       window.removeEventListener("focus", recordActivity);
-      window.removeEventListener("storage", receiveActivity);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", flush);
+      window.clearTimeout(deadlineTimer);
+      window.clearTimeout(flushTimer);
     };
-  });
+  }
 
   $effect(() => {
-    if (!mounted) return;
-    const currentTimeoutMs = timeoutMs;
-    if (currentTimeoutMs !== previousTimeoutMs) {
-      previousTimeoutMs = currentTimeoutMs;
-      if (currentTimeoutMs !== null) {
-        const now = Date.now();
-        lastActivityAt = now;
-        lastServerRefreshAt = now;
-        storeActivity(now);
-      }
-    }
-    if (currentTimeoutMs === null) return;
-    const remaining = currentTimeoutMs - (Date.now() - lastActivityAt);
-    if (remaining <= 0) {
-      void signOutForIdleTimeout();
-      return;
-    }
-    const timer = window.setTimeout(() => void signOutForIdleTimeout(), remaining);
-    return () => window.clearTimeout(timer);
+    if (timeoutMs === null) return;
+    return trackActivity(timeoutMs);
   });
 </script>

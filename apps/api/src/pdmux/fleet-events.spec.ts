@@ -23,7 +23,7 @@ function fixture(): {
         return { user: { id: "owner" }, session: {} };
       } },
       hosts: { listIds: async (scope: string): Promise<string[]> => scope === "personal:owner" ? ["owned"] : [] },
-      events: { subscribe: (listener: (data: unknown) => void): (() => void) => {
+      events: { subscribe: async (listener: (data: unknown) => void): Promise<() => void> => {
         listeners.add(listener);
         return (): void => { listeners.delete(listener); };
       } },

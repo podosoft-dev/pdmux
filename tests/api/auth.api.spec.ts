@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createPublicKey, verify, type JsonWebKey } from "node:crypto";
 import { ADMIN, USER } from "../helpers/accounts";
 import { clearSms, smsSinkReachable, waitForSmsOtp } from "../helpers/sms";
 import { totpCode } from "../helpers/totp";
@@ -156,6 +157,11 @@ test("require-2fa: gates an un-enrolled user until they enrol", async ({ playwri
   try {
     // Turn the policy on (admin; the toggle endpoint is allow-listed by the guard).
     await admin.put("/api/account/settings", { data: { require2fa: true } });
+    // Capabilities carry the same policy as the dedicated endpoint.
+    await expect(async () => {
+      expect((await (await admin.get("/api/account/capabilities")).json()).require2fa).toBe(true);
+      expect(await (await admin.get("/api/account/require-2fa")).json()).toEqual({ require2fa: true });
+    }).toPass({ timeout: 8000 });
     // The guard caches for a few seconds — poll until the un-enrolled user is gated.
     await expect(async () => {
       expect((await user.get("/api/account/me")).status()).toBe(403);
@@ -238,7 +244,35 @@ test("bearer token authenticates API requests without a cookie", async ({ playwr
   const authed = await api.get("/api/account/me", { headers: { Authorization: `Bearer ${token}` } });
   expect(authed.ok()).toBeTruthy();
   expect((await authed.json())?.email).toBe(email);
+  // Only the signed value authenticates; the bare token before the signature does not.
+  const unsigned = decodeURIComponent(token ?? "").split(".")[0];
+  const rejected = await api.get("/api/account/me", { headers: { Authorization: `Bearer ${unsigned}` } });
+  expect(rejected.status()).toBe(401);
   await api.dispose();
+});
+
+test("a session JWT is issued on request and verifies against the JWKS", async ({ playwright }) => {
+  const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const email = `jwt-${Date.now()}@example.com`;
+  await ctx.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "JWT" } });
+  // Session reads do not sign a JWT; a client that needs one requests it here.
+  const issued = await ctx.get("/api/auth/token");
+  expect(issued.ok(), await issued.text()).toBeTruthy();
+  const token = String((await issued.json())?.token ?? "");
+  const [header = "", payload = "", signature = ""] = token.split(".");
+  const { kid } = JSON.parse(Buffer.from(header, "base64url").toString("utf8")) as { kid?: string };
+  const jwks = (await (await ctx.get("/api/auth/jwks")).json()) as { keys: Array<JsonWebKey & { kid?: string }> };
+  const key = jwks.keys.find((candidate) => candidate.kid === kid);
+  expect(key, "the token's signing key is published").toBeTruthy();
+  const valid = verify(
+    null,
+    Buffer.from(`${header}.${payload}`),
+    createPublicKey({ key: key ?? {}, format: "jwk" }),
+    Buffer.from(signature, "base64url"),
+  );
+  expect(valid).toBe(true);
+  expect(JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))?.email).toBe(email);
+  await ctx.dispose();
 });
 
 test("a user can create, list and revoke a personal API key", async ({ playwright }) => {

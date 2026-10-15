@@ -1,9 +1,9 @@
 import "dotenv/config";
+import { PROVIDERS } from "./config/providers";
 import { startWorkers } from "./jobs/worker.module";
-import { runtimeProviders } from "./runtime/providers";
 
-if (runtimeProviders().jobs === "local") {
-  throw new Error("The local jobs provider runs processors in the API process; do not start a worker");
+if (PROVIDERS.jobs !== "bullmq") {
+  throw new Error("The BullMQ worker cannot start unless jobs=bullmq is selected");
 }
 
 const runtime = awaitRuntime();
