@@ -1,3 +1,5 @@
+import { FILE_TRANSFER_CHUNK_BYTES } from "@pdmux/protocol/transfer-limits";
+
 /**
  * Application-owned request body limits for /api requests that the web server
  * proxies to the API. An entry caps the body of every request whose path is
@@ -15,4 +17,11 @@
  * .podokit/dev.json and the deployment profile), which bypass the web server.
  * PodoKit creates this file once and never overwrites it.
  */
-export const APP_BODY_LIMITS: ReadonlyArray<{ pathPrefix: string; maxBytes: number }> = [];
+export const APP_BODY_LIMITS: ReadonlyArray<{ pathPrefix: string; maxBytes: number }> = [
+  // A transfer chunk is raw bytes, at most FILE_TRANSFER_CHUNK_BYTES (1 MiB); the
+  // API checks the same cap, this stops a larger body before it is buffered.
+  {
+    pathPrefix: "/api/hosts/:hostId/file-transfers/:transferId/entries/:entryId/chunk",
+    maxBytes: FILE_TRANSFER_CHUNK_BYTES,
+  },
+];

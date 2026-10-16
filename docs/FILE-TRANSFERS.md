@@ -121,17 +121,31 @@ replica with its agent registry. Persist the spool across API replacement:
   `file-transfers/downloads.json`; partial files live beside the chosen output.
 
 The web adapter/reverse proxy must allow a 1 MiB binary body (supplied web configurations use
-`BODY_SIZE_LIMIT=3M`). Web proxy and API independently enforce the chunk cap. Never buffer a whole
-folder/archive in the renderer or proxy.
+`BODY_SIZE_LIMIT=3M`). Web proxy and API independently enforce the chunk cap: the proxy's is the
+`APP_BODY_LIMITS` entry in `apps/web/src/lib/server/body-limits.ts` (413 `PAYLOAD_TOO_LARGE`). Never
+buffer a whole folder/archive in the renderer or proxy.
 
-Long agent operations override Bun's request idle timeout without changing the server-wide default.
-Chunk body intake still has a 60-second idle bound; agent acknowledgements have their own deadlines
-(30 seconds normally, 5 minutes for final verification). Every transfer request also waits behind
-the host's transfer lock. The web `/api` proxy therefore applies no `BACKEND_PROXY_TIMEOUT_MS`
-header deadline to transfer requests: a `504 BACKEND_TIMEOUT` would pause a transfer that the API
-then completes. It still answers `503 BACKEND_UNAVAILABLE` when the API's `GET /health` stops
-answering. Configure any external proxy's response timeout to accommodate that verification
-period.
+Agent acknowledgements have their own deadlines (30 seconds normally, 5 minutes for final
+verification), and every transfer request also waits behind the host's transfer lock, so a transfer
+request can wait more than five minutes without a byte on the wire. Each hop is set for that:
+
+- **Web proxy.** `APP_PROXY_TIMEOUTS` (`apps/web/src/lib/server/proxy-timeouts.ts`) gives
+  `/api/hosts/:hostId/file-transfers` no `BACKEND_PROXY_TIMEOUT_MS` header deadline: a
+  `504 BACKEND_TIMEOUT` would pause a transfer that the API then completes. The proxy still checks the
+  API's `GET /health` every `BACKEND_TIMEOUT_MS` while it waits and answers `503 BACKEND_UNAVAILABLE`
+  when that stops answering.
+- **Web server.** A route without a deadline needs `CONNECTION_IDLE_TIMEOUT=0`, and the proxy refuses
+  to load with any other value. The wait cannot be bounded below Bun's 255-second maximum, so the web
+  image, the desktop shell, the k3s ConfigMap and `.env.example` turn the idle timeout off. **A
+  deployment profile must set `CONNECTION_IDLE_TIMEOUT` to `"0"` in `runtimeConfig`**: otherwise
+  `podo deploy` sets 35 and the web server does not start. The web image and the desktop shell also set
+  `BUN_CONFIG_HTTP_IDLE_TIMEOUT=600`, so the proxy's own request to the API allows ten silent minutes
+  instead of Bun's five. Run a gateway in front of the web server; it closes idle client connections.
+- **API.** The transfer routes that wait for the agent or the host's lock lift Bun's idle timeout per
+  request, so `API_IDLE_TIMEOUT` keeps its default for every other route. Chunk body intake still has a
+  60-second idle bound.
+
+Configure any external proxy's response timeout to accommodate that verification period.
 
 ## Upgrade compatibility
 

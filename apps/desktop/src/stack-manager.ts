@@ -185,6 +185,10 @@ export class StackManager {
           PROTOCOL_HEADER: "x-forwarded-proto",
           HOST_HEADER: "x-forwarded-host",
           BACKEND_INTERNAL_URL: apiUrl,
+          // As in the web image: file transfers have no /api proxy deadline, so
+          // neither the server nor the proxy's fetch may close a silent request.
+          CONNECTION_IDLE_TIMEOUT: "0",
+          BUN_CONFIG_HTTP_IDLE_TIMEOUT: "600",
         },
         stdio: "inherit",
       },

@@ -43,6 +43,12 @@ FROM oven/bun:1.4.0-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV BODY_SIZE_LIMIT=3M
+# ⚠ NO IDLE TIMEOUT. File transfers have no /api proxy deadline: a commit can wait
+# five minutes for the agent behind the host's transfer lock, and Bun allows at
+# most 255 seconds. The proxy's own fetch gives up after 5 silent minutes by
+# default, so it gets 600 seconds. See docs/FILE-TRANSFERS.md.
+ENV CONNECTION_IDLE_TIMEOUT=0
+ENV BUN_CONFIG_HTTP_IDLE_TIMEOUT=600
 COPY --from=build /app/apps/web/build ./apps/web/build
 WORKDIR /app/apps/web
 USER bun

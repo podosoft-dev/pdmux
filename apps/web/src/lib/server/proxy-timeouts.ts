@@ -19,4 +19,11 @@
  * to load when CONNECTION_IDLE_TIMEOUT cannot cover an entry here.
  * PodoKit creates this file once and never overwrites it.
  */
-export const APP_PROXY_TIMEOUTS: ReadonlyArray<{ pathPrefix: string; timeoutMs: number | null }> = [];
+export const APP_PROXY_TIMEOUTS: ReadonlyArray<{ pathPrefix: string; timeoutMs: number | null }> = [
+  // ⚠ NO DEADLINE FOR FILE TRANSFERS. A commit waits up to five minutes for the
+  // agent to verify the staged file, and every transfer request queues behind the
+  // host's transfer lock, so a 504 would pause a transfer the API then completes.
+  // The wait cannot be bounded below Bun's 255-second idle cap, which is why the
+  // web server runs with CONNECTION_IDLE_TIMEOUT=0 (docs/FILE-TRANSFERS.md).
+  { pathPrefix: "/api/hosts/:hostId/file-transfers", timeoutMs: null },
+];

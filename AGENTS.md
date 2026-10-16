@@ -83,11 +83,17 @@ Merge added module settings from `.env.example` into an existing `.env`.
   API resolves it once per request from `TRUSTED_PROXY_HOPS` (1: the web proxy) and
   `TRUSTED_PROXY_HEADER`; Better Auth sessions, audit entries, and rate limits use
   the same address.
-- pdmux keeps one local edit in the managed proxy: `/file-transfers` requests
-  have neither Bun's idle timeout nor the header deadline, because the API's
-  agent deadlines (up to five minutes for a commit) own that wait. Reconcile it on
-  every `podo update`; `apps/web/test/backend-proxy-download.test.ts` fails if it
-  is lost. See `docs/FILE-TRANSFERS.md`.
+- pdmux keeps the managed proxy unchanged. File transfers
+  (`/api/hosts/:hostId/file-transfers`) have no proxy deadline in
+  `APP_PROXY_TIMEOUTS` and their chunk route a 1 MiB cap in `APP_BODY_LIMITS`,
+  because the API's agent deadlines (up to five minutes for a commit) own that
+  wait. A route without a deadline needs `CONNECTION_IDLE_TIMEOUT=0` wherever the
+  built web server runs (the web image, the desktop shell, the k3s ConfigMap, and
+  the deployment profile's `runtimeConfig`); the API instead lifts its idle
+  timeout per request on the transfer routes that wait. The origin the caller
+  reached travels to the API in `x-pdmux-caller-origin`, which the `/api` and
+  `/mcp` routes set (`apps/web/src/lib/server/caller-origin.ts`), since the proxy
+  reserves `X-Forwarded-Host`. See `docs/FILE-TRANSFERS.md`.
 - `GET /healthz` (`apps/web/src/routes/healthz/+server.ts`) is the web server's own
   health route for the Kubernetes probes, the Compose healthcheck, and the image
   `HEALTHCHECK`. Keep it free of API calls, so an API outage does not take the web

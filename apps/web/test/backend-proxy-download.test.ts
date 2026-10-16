@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { proxyRequest, reportBackendAnswer } from "../src/lib/server/backend-proxy";
+import { bodyLimitFor, proxyRequest, proxyTimeoutFor, reportBackendAnswer } from "../src/lib/server/backend-proxy";
 
 /**
  * pdmux's own proxy tests, kept apart from PodoKit's managed
- * `src/lib/server/backend-proxy.test.ts`, which `podo update` replaces. They
- * cover pdmux's local edit to the managed proxy (file transfers), so losing
- * that edit in an update fails here.
+ * `src/lib/server/backend-proxy.test.ts`, which `podo update` replaces. They run
+ * the managed proxy with pdmux's app-owned rules (`proxy-timeouts.ts`,
+ * `body-limits.ts`, `proxy-headers.ts`), so losing a rule fails here.
  */
 
 describe("[TC-PDWEB-030] the proxy carries a file download end to end", () => {
@@ -61,22 +61,32 @@ describe("[TC-PDWEB-030] the proxy carries a file download end to end", () => {
 
 describe("[TC-PDFILE-007] bounded transfer proxy", (): void => {
   afterEach((): void => vi.unstubAllGlobals());
+  const chunkPath = (hostId: string): string => `/api/hosts/${hostId}/file-transfers/job/entries/entry/chunk`;
+
   it("preserves binary chunks and refuses an oversized body before forwarding", async (): Promise<void> => {
     const fetch = vi.fn(async (_url: string, init: RequestInit): Promise<Response> => {
       expect(new Headers(init.headers).get("x-transfer-offset")).toBe("1048576");
       expect(new Headers(init.headers).get("x-transfer-sha256")).toBe("digest");
-      expect(init.body).toEqual(new Uint8Array(1_048_576).fill(255));
+      expect(new Uint8Array(init.body as ArrayBuffer)).toEqual(new Uint8Array(1_048_576).fill(255));
       return Response.json({ offset: 2097152 });
     });
     vi.stubGlobal("fetch", fetch);
-    const url = "http://localhost/api/hosts/host/file-transfers/job/entries/entry/chunk";
-    const request = (size: number): Request => new Request(url, { method: "PUT", body: new Uint8Array(size).fill(255),
-      headers: { "x-transfer-offset": "1048576", "x-transfer-sha256": "digest" } });
-    const server = { timeout: vi.fn() };
-    expect((await proxyRequest(request(1_048_576), "http://localhost/chunk", undefined, server)).status).toBe(200);
-    expect(server.timeout.mock.calls.map((call) => call[1])).toEqual([60, 0]);
-    expect((await proxyRequest(request(1_048_577), "http://localhost/chunk")).status).toBe(413);
+    const request = (size: number, hostId = "host"): Request => new Request(`http://localhost${chunkPath(hostId)}`, {
+      method: "PUT", body: new Uint8Array(size).fill(255),
+      headers: { "x-transfer-offset": "1048576", "x-transfer-sha256": "digest" },
+    });
+    expect((await proxyRequest(request(1_048_576), "http://localhost/chunk")).status).toBe(200);
+    const refused = await proxyRequest(request(1_048_577, "6f1c2b4e-8d3a-4c5b-9e7f-0a1b2c3d4e5f"), "http://localhost/chunk");
+    expect(refused.status).toBe(413);
+    expect(await refused.json()).toMatchObject({ error: { code: "PAYLOAD_TOO_LARGE" } });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps only the chunk route, under any host", (): void => {
+    expect(bodyLimitFor(chunkPath("host-1"))).toBe(1_048_576);
+    expect(bodyLimitFor(chunkPath("other"))).toBe(1_048_576);
+    expect(bodyLimitFor("/api/hosts/host-1/file-transfers/job/manifest")).toBeUndefined();
+    expect(bodyLimitFor("/api/hosts/host-1/files/upload")).toBeUndefined();
   });
 });
 
@@ -112,11 +122,9 @@ describe("[TC-PDFILE-012] a file transfer outlasts the proxy's header deadline",
 
   it("waits for a commit that answers after the deadline a page request is cut at", async (): Promise<void> => {
     vi.stubGlobal("fetch", slowApi(120, true));
-    const server = { timeout: vi.fn() };
-    const committed = await proxyRequest(commit(), "http://api:5002/hosts/h/file-transfers/t/entries/e/commit", undefined, server);
+    const committed = await proxyRequest(commit(), "http://api:5002/hosts/h/file-transfers/t/entries/e/commit");
     expect(committed.status).toBe(200);
     expect(await committed.json()).toEqual({ state: "committed" });
-    expect(server.timeout.mock.calls.map((call) => call[1])).toEqual([60, 0]);
 
     const page = await proxyRequest(new Request("http://app.localhost/api/hosts/h"), "http://api:5002/hosts/h");
     expect(page.status).toBe(504);
@@ -128,5 +136,20 @@ describe("[TC-PDFILE-012] a file transfer outlasts the proxy's header deadline",
     const response = await proxyRequest(commit(), "http://api:5002/hosts/h/file-transfers/t/entries/e/commit");
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({ error: { code: "BACKEND_UNAVAILABLE" } });
+  });
+
+  it("lifts the deadline for every transfer route under any host, and only there", (): void => {
+    for (const path of [
+      "/api/hosts/h/file-transfers",
+      "/api/hosts/6f1c2b4e-8d3a-4c5b-9e7f-0a1b2c3d4e5f/file-transfers/t",
+      "/api/hosts/h/file-transfers/t/entries/e/reconcile",
+      "/api/hosts/h/file-transfers/t/entries/e/chunk",
+      "/api/hosts/h/file-transfers/t/download",
+    ]) {
+      expect({ path, timeoutMs: proxyTimeoutFor(path) }).toEqual({ path, timeoutMs: null });
+    }
+    for (const path of ["/api/hosts/h", "/api/hosts/h/files/download", "/api/hosts/h/file-transfers-old", "/api/hosts/file-transfers"]) {
+      expect({ path, timeoutMs: proxyTimeoutFor(path) }).toEqual({ path, timeoutMs: 40 });
+    }
   });
 });
