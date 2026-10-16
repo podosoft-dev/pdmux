@@ -12,6 +12,7 @@
   import { fmt, getI18n } from "#lib/i18n/index.js";
   import type { FileTransferController } from "../file-transfers/controller.svelte";
   import { captureDrop, pickFolder, sourceFromDroppedEntries, sourceFromFiles } from "../file-transfers/source";
+  import TimerIcon from "@lucide/svelte/icons/timer";
 
   let { transfers, hostLabel }: { transfers: FileTransferController; hostLabel: (id: string) => string } = $props();
   const i18n = getI18n();
@@ -51,6 +52,17 @@
     input.value = "";
     reselect = null;
     if (job && files.length) void transfers.prepare(job.hostId, job.basePath, (progress) => sourceFromFiles(files, progress), job);
+  }
+  // Drives the countdown of uploads waiting out a refused request; idle otherwise.
+  let now = $state(Date.now());
+  $effect(() => {
+    if (Object.keys(transfers.retrying).length === 0) return;
+    now = Date.now();
+    const timer = setInterval(() => { now = Date.now(); }, 250);
+    return () => clearInterval(timer);
+  });
+  function retrySeconds(at: number): string {
+    return String(Math.max(1, Math.ceil((at - now) / 1000)));
   }
   function percent(job: FileTransferView): number | null {
     if (!job.totalEntries) return null;
@@ -97,7 +109,16 @@
               <Table.Cell class="max-w-0 whitespace-normal px-2 py-2">
                 <div class="space-y-1" data-testid="transfer-job" data-transfer-id={job.id} data-transfer-state={job.state}>
                   <p class="truncate" title={job.basePath}>{hostLabel(job.hostId)} · ~/{job.basePath}</p>
-                  <p class="text-muted-foreground">{messages.states[job.state]} · {job.direction === "upload" ? messages.uploading : messages.downloading}</p>
+                  {#if transfers.retrying[job.id] !== undefined}
+                    <p class="flex flex-wrap items-center gap-1 font-medium" data-testid="transfer-retry">
+                      <TimerIcon class="size-3.5 shrink-0" aria-hidden="true" />
+                      <span role="status">{messages.retrying}</span>
+                      <span class="tabular-nums" aria-hidden="true">· {fmt(messages.retryIn, { seconds: retrySeconds(transfers.retrying[job.id] ?? now) })}</span>
+                      <span class="text-muted-foreground">· {messages.uploading}</span>
+                    </p>
+                  {:else}
+                    <p class="text-muted-foreground">{messages.states[job.state]} · {job.direction === "upload" ? messages.uploading : messages.downloading}</p>
+                  {/if}
                   <p class="truncate" title={job.currentPath}>{job.currentPath}</p>
                   <Progress value={percent(job)} aria-label={messages.states[job.state]} />
                   <p class="flex flex-wrap justify-between gap-1 tabular-nums">

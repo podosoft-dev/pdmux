@@ -98,9 +98,10 @@ Transfer requests count against the API's request limits like any other request 
 300 a minute by default). When one is refused with 429 (a request budget is spent) or 503 (the API or
 one of its dependencies is briefly unavailable), the upload waits and continues instead of pausing: it
 waits for `Retry-After`, and at least 1 s doubling with each refusal in a row up to a minute, then
-reconciles with the agent and resumes from the durable offset. After six refusals in a row (about a
-minute without a hint) it pauses with the error, inside the API's 90-second limit for an upload
-without requests.
+reconciles with the agent and resumes from the durable offset. Meanwhile **Transfers** shows
+**Waiting to retry** with the seconds left in place of the transfer's state; **Pause** and **Cancel**
+end the wait at once. After six refusals in a row (about a minute without a hint) it pauses with the
+error, inside the API's 90-second limit for an upload without requests.
 
 Up to 250 top-level download selections and 32 active jobs per user/host are accepted. Agent pages
 contain at most 250 entries and never silently truncate a large transfer tree. ZIP **store mode**

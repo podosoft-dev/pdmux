@@ -527,6 +527,54 @@ test("[TC-PDFILE-014] an upload waits out 429 and 503 answers and finishes witho
   await testInfo.attach("retry-gaps", { body: JSON.stringify(gaps), contentType: "application/json" });
 });
 
+for (const width of [1280, 390]) {
+  test(`[TC-PDFILE-015] a refused upload shows how long it waits before retrying at ${width}px`, async ({ page }, testInfo): Promise<void> => {
+    await page.setViewportSize({ width, height: 844 });
+    const state = await fixture(page, [{ status: 429, retryAfter: "4" }]);
+    state.release();
+    await page.goto("/");
+    await page.getByTestId("files-upload-folder").click();
+    await page.getByTestId("transfer-conflict").getByRole("button", { name: "Overwrite", exact: true }).click();
+    const job = page.getByTestId("transfer-job");
+    const waiting = job.getByTestId("transfer-retry");
+    await expect(waiting).toBeVisible();
+    await expect(waiting).toHaveText(/^\s*Waiting to retry · [34] s · Upload$/);
+    await expect(job).toHaveAttribute("data-transfer-state", "running");
+    const seconds = async (): Promise<number> => Number(/· (\d+) s/.exec(await waiting.innerText())?.[1]);
+    const first = await seconds();
+    await expect.poll(seconds, { timeout: 3_000 }).toBeLessThan(first);
+
+    // The waiting line takes the status line's place inside the row and the panel.
+    const geometry = await page.evaluate(() => {
+      const box = (element: Element | null): { x: number; y: number; width: number; height: number } | null => {
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
+      };
+      const row = document.querySelector('[data-testid="transfer-job"]');
+      return {
+        line: box(document.querySelector('[data-testid="transfer-retry"]')),
+        row: box(row),
+        panel: box(document.querySelector('[data-testid="file-transfer-panel"]')),
+        rowOverflow: row ? row.scrollWidth - row.clientWidth : -1,
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+    expect(geometry.line?.height ?? 0).toBeGreaterThan(0);
+    expect((geometry.line?.x ?? 0) + (geometry.line?.width ?? 0)).toBeLessThanOrEqual((geometry.row?.x ?? 0) + (geometry.row?.width ?? 0) + 1);
+    expect(geometry.rowOverflow).toBeLessThanOrEqual(0);
+    expect(geometry.pageOverflow).toBeLessThanOrEqual(0);
+    await testInfo.attach("retry-geometry", { body: JSON.stringify(geometry), contentType: "application/json" });
+    await page.screenshot({ path: testInfo.outputPath(`transfer-retry-${width}.png`), fullPage: true, animations: "disabled" });
+
+    // The retry starts: the line goes and the transfer finishes without pausing.
+    await expect(waiting).toHaveCount(0, { timeout: 6_000 });
+    await expect(job).toHaveAttribute("data-transfer-state", "completed");
+    expect(state.controls).toEqual(["start"]);
+    await page.screenshot({ path: testInfo.outputPath(`transfer-retry-${width}-done.png`), fullPage: true, animations: "disabled" });
+  });
+}
+
 test.describe("checkbox contrast at 390px", (): void => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 

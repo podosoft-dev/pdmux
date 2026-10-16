@@ -929,6 +929,8 @@
         "uploading": "Upload",
         "downloading": "ZIP",
         "count": "{done} / {total} items",
+        "retrying": "Waiting to retry",
+        "retryIn": "{seconds} s",
         "pause": "Pause",
         "resume": "Resume",
         "reselect": "Select the original source to resume",

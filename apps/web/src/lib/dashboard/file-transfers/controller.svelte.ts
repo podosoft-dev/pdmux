@@ -46,6 +46,8 @@ export class FileTransferController {
   handedOff = $state<string[]>([]);
   nativeDownloads = $state<Record<string, NativeDownload>>({});
   removing = $state<string[]>([]);
+  /** Uploads waiting out a refused request: job id to the epoch ms when the retry starts. */
+  retrying = $state<Record<string, number>>({});
   private readonly sources = new Map<string, UploadSource>();
   private readonly running = new Set<string>();
   private readonly queued = new Set<string>();
@@ -281,11 +283,17 @@ export class FileTransferController {
     await new Promise<void>((resolve): void => {
       const wake = (): void => {
         clearTimeout(timer);
-        if (this.wakers.get(jobId) === wake) this.wakers.delete(jobId);
+        if (this.wakers.get(jobId) === wake) {
+          this.wakers.delete(jobId);
+          const waiting = { ...this.retrying };
+          delete waiting[jobId];
+          this.retrying = waiting;
+        }
         resolve();
       };
       const timer = setTimeout(wake, delayMs);
       this.wakers.set(jobId, wake);
+      this.retrying = { ...this.retrying, [jobId]: Date.now() + delayMs };
     });
     if (this.stopped.has(jobId) || this.disposed) throw new TransferStopped();
   }

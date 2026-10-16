@@ -228,3 +228,33 @@ describe("[TC-PDFILE-014] uploads wait out 429 and 503 instead of pausing", (): 
     } finally { controller.dispose(); }
   });
 });
+
+describe("[TC-PDFILE-015] the controller reports a retry wait while it lasts", (): void => {
+  it("holds the retry time during the wait and drops it when the retry starts", async (): Promise<void> => {
+    const { api, calls } = refusingApi((attempt) => attempt === 0 ? rateLimited(1) : undefined);
+    const controller = new FileTransferController(api);
+    try {
+      await controller.prepare("host", "captured", () => sourceFromFiles([new File(["payload"], "file.txt")]));
+      await vi.waitFor(() => expect(Object.keys(controller.retrying)).toHaveLength(1));
+      const id = controller.jobs[0]!.id;
+      const remaining = (controller.retrying[id] ?? 0) - Date.now();
+      expect(remaining).toBeGreaterThan(500);
+      expect(remaining).toBeLessThanOrEqual(1_000);
+      await vi.waitFor(() => expect(calls.chunk).toBe(2), { timeout: 3_000 });
+      expect(controller.retrying).toEqual({});
+      await vi.waitFor(() => expect(controller.jobs[0]?.state).toBe("completed"));
+    } finally { controller.dispose(); }
+  });
+
+  it("drops the wait at once when the user pauses", async (): Promise<void> => {
+    const { api, calls } = refusingApi(() => rateLimited(30));
+    const controller = new FileTransferController(api);
+    try {
+      await controller.prepare("host", "captured", () => sourceFromFiles([new File(["payload"], "file.txt")]));
+      await vi.waitFor(() => expect(Object.keys(controller.retrying)).toHaveLength(1));
+      await controller.pause(controller.jobs[0]!);
+      expect(controller.retrying).toEqual({});
+      expect(calls.chunk).toBe(1);
+    } finally { controller.dispose(); }
+  });
+});
