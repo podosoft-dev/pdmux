@@ -8,6 +8,7 @@ const targets = [
   { entrypoint: "src/database/migrate.ts", outdir: "dist/database" },
   { entrypoint: "src/migrate.ts", outdir: "dist" },
   { entrypoint: "src/main-worker.ts", outdir: "dist" },
+  { entrypoint: "src/bootstrap-admin-runtime.ts", outdir: "dist" },
 ].filter((target) => existsSync(target.entrypoint));
 
 for (const target of targets) {

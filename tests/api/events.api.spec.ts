@@ -119,6 +119,52 @@ test("sse: streams require a session and a valid topic list", async ({ playwrigh
   }
 });
 
+function openStream(cookie: string, controller: AbortController): Promise<Response> {
+  return fetch(`${base}/api/events/stream?topics=${uniqueTopic()}`, {
+    headers: { ...origin, cookie },
+    signal: controller.signal,
+  });
+}
+
+test("sse: a user's open streams are capped per replica", async ({ playwright }) => {
+  const member = await newContext(playwright);
+  const other = await newContext(playwright);
+  const controllers: AbortController[] = [];
+  try {
+    test.skip(!(await signUp(member)), "requires the auth module");
+    expect(await signUp(other)).toBeDefined();
+    const cookie = await cookieHeader(member);
+    // The limit is SSE_MAX_STREAMS_PER_USER on the server, so open until refused.
+    let refused: Response | undefined;
+    for (let attempt = 0; attempt < 64 && !refused; attempt += 1) {
+      const controller = new AbortController();
+      const response = await openStream(cookie, controller);
+      if (response.status === 200) controllers.push(controller);
+      else refused = response;
+    }
+    expect(controllers.length).toBeGreaterThan(0);
+    expect(refused?.status).toBe(429);
+    expect((await refused?.json()).error.code).toBe("EVENTS_STREAM_LIMIT");
+
+    // Another user is unaffected, and closing a stream frees its slot.
+    const otherController = new AbortController();
+    controllers.push(otherController);
+    expect((await openStream(await cookieHeader(other), otherController)).status).toBe(200);
+    controllers.shift()?.abort();
+    await expect.poll(async () => {
+      const controller = new AbortController();
+      const response = await openStream(cookie, controller);
+      if (response.status === 200) controllers.push(controller);
+      else controller.abort();
+      return response.status;
+    }, { timeout: 8_000 }).toBe(200);
+  } finally {
+    for (const controller of controllers) controller.abort();
+    await member.dispose();
+    await other.dispose();
+  }
+});
+
 test("sse: only administrators may publish", async ({ playwright }) => {
   const member = await newContext(playwright);
   try {

@@ -1,8 +1,9 @@
 import { AppException } from "@podosoft/podokit-contracts";
 import type { AccessPolicy, RequestIdentity } from "../core/services";
 import type { SettingsService } from "../settings/settings.service";
-import { getAuth, refreshIfStale } from "./auth-provider";
-import { closeAuthDatabase } from "./db";
+import { getAuth, refreshForRequest } from "./auth-provider";
+import { rethrowAuthError } from "./database-outage";
+import { authDatabaseReachable, closeAuthDatabase } from "./db";
 
 export interface AuthUser extends Record<string, unknown> {
   id: string;
@@ -18,9 +19,12 @@ export interface AuthSession {
 export type SessionResolver = (headers: Headers) => Promise<AuthSession | null>;
 
 function defaultSessionResolver(headers: Headers): Promise<AuthSession | null> {
-  return refreshIfStale()
+  return refreshForRequest()
     .then(() => getAuth().api.getSession({ headers }))
-    .then((session) => session as AuthSession | null);
+    .then(
+      (session) => session as AuthSession | null,
+      (error: unknown) => rethrowAuthError(error, authDatabaseReachable),
+    );
 }
 
 export function rolesOf(user: AuthUser): string[] {

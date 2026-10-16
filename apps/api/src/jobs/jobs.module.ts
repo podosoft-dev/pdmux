@@ -2,7 +2,7 @@ import { AppException } from "@podosoft/podokit-contracts";
 import { JOBS } from "@podosoft/podokit-runtime";
 import { Elysia, t } from "elysia";
 import { PROVIDERS } from "../config/providers";
-import type { AppPlugin, PodokitModule } from "../core/services";
+import { READINESS, type AppPlugin, type PodokitModule } from "../core/services";
 import { BullMqJobQueue } from "./bullmq-job.queue";
 
 const jobsPlugin: AppPlugin = ({ services }) => {
@@ -33,6 +33,8 @@ export const jobsModule: PodokitModule = {
     if (PROVIDERS.jobs !== "bullmq") return;
     const queue = new BullMqJobQueue();
     services.register(JOBS, queue, () => queue.close());
+    services.resolve(READINESS).register("jobs", () => queue.ready());
+    services.supervise("jobs", queue);
   },
   plugin: jobsPlugin,
 };

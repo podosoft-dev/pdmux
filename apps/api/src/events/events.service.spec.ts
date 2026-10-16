@@ -38,6 +38,22 @@ function user(userId: string, roles: string[] = [], organizationId?: string): Ev
   return { userId, roles, ...(organizationId ? { organizationId } : {}) };
 }
 
+/** A memory bus that can report a transport interruption, as the Redis bus does after reconnecting. */
+class InterruptibleBus extends MemoryEventBus {
+  readonly listeners = new Set<() => void>();
+
+  onInterruption(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  interrupt(): void {
+    for (const listener of this.listeners) listener();
+  }
+}
+
 const services: EventsService[] = [];
 
 async function service(
@@ -268,6 +284,23 @@ describe("per-connection safety", () => {
     expect(decoded(await stream.next())).toEqual({ topic: "t", data: 6 });
   });
 
+  it("tells every open stream to resync after a transport interruption", async () => {
+    const bus = new InterruptibleBus();
+    const events = await service({}, bus);
+    const topical = await open(events, user("a"), ["t"]);
+    const everything = await open(events, user("b"));
+    await events.publishAsync({ topic: "t", data: 1 });
+
+    bus.interrupt();
+    expect(await topical.next()).toEqual({ kind: "resync" });
+    expect(await everything.next()).toEqual({ kind: "resync" });
+    await events.publishAsync({ topic: "t", data: 2 });
+    expect(decoded(await topical.next())).toEqual({ topic: "t", data: 2 });
+
+    await events.close();
+    expect(bus.listeners.size).toBe(0);
+  });
+
   it("reuses one heartbeat timer per connection and releases it on disconnect", async () => {
     const scheduler = fakeScheduler();
     const events = await service({ scheduler });
@@ -350,6 +383,41 @@ describe("per-connection safety", () => {
     await events.close();
     expect(await stream.next()).toBeUndefined();
     expect(scheduler.active()).toBe(0);
+  });
+});
+
+describe("per-user stream limit", () => {
+  it("refuses a user's stream beyond the limit on this replica and frees slots on close", async () => {
+    const events = await service({ maxStreamsPerUser: 2 });
+    const first = await open(events, user("a"));
+    await open(events, user("a"));
+
+    const refused = await open(events, user("a")).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(AppException);
+    expect((refused as AppException).code).toBe("EVENTS_STREAM_LIMIT");
+    expect((refused as AppException).statusCode).toBe(429);
+    expect(events.streamCount).toBe(2);
+
+    // Other users keep their own allowance.
+    await open(events, user("b"));
+    first.close();
+    await open(events, user("a"));
+    expect(events.streamCount).toBe(3);
+  });
+
+  it("counts only live streams after a client disconnects", async () => {
+    const events = await service({ maxStreamsPerUser: 1 });
+    const controller = new AbortController();
+    await events.open(user("a"), undefined, controller.signal);
+    controller.abort();
+    await open(events, user("a"));
+    expect(events.streamCount).toBe(1);
+  });
+
+  it("allows eight streams per user by default", async () => {
+    const events = await service();
+    for (let index = 0; index < 8; index += 1) await open(events, user("a"));
+    await expect(open(events, user("a"))).rejects.toThrow("Too many open event streams");
   });
 });
 

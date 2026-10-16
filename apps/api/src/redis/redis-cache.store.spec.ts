@@ -1,9 +1,11 @@
+import type { RedisClient } from "bun";
 import { describe, expect, it, mock } from "bun:test";
 import {
   FIXED_WINDOW_SCRIPT,
   FIXED_WINDOW_SCRIPT_SHA,
   RedisCacheStore,
 } from "./redis-cache.store";
+import { RedisCommandTimeoutError } from "../config/redis.connection";
 import { RedisService } from "./redis.service";
 
 const redisUrl = process.env.REDIS_TEST_URL;
@@ -13,7 +15,7 @@ type Send = (command: string, args: string[]) => Promise<unknown>;
 type SetValue = (key: string, value: string, ...options: Array<string | number>) => Promise<"OK">;
 
 function storeWith(client: { send?: Send; set?: SetValue }): RedisCacheStore {
-  return new RedisCacheStore({ client } as unknown as RedisService);
+  return new RedisCacheStore(new RedisService(() => client as unknown as RedisClient));
 }
 
 function redisError(message: string): Error {
@@ -73,6 +75,17 @@ describe("RedisCacheStore set", () => {
       ["plain", "value"],
       ["expiring", "value", "PX", 1_500],
     ]);
+  });
+
+  it("fails a write Redis does not answer within the command timeout", async () => {
+    const set = mock<SetValue>(() => new Promise<"OK">(() => undefined));
+    const close = mock(() => undefined);
+    const store = new RedisCacheStore(
+      new RedisService(() => ({ set, close }) as unknown as RedisClient, 50),
+    );
+
+    await expect(store.set("key", "value")).rejects.toBeInstanceOf(RedisCommandTimeoutError);
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("rejects an invalid TTL before writing", async () => {

@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import type { TestConfig } from "@playwright/test";
+import type { PlaywrightTestConfig } from "@playwright/test";
 
-type Projects = NonNullable<TestConfig["projects"]>;
+type Projects = NonNullable<PlaywrightTestConfig["projects"]>;
 
 const requireFromTests = createRequire(__filename);
 

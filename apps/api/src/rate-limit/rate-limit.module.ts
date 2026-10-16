@@ -1,4 +1,4 @@
-import { CACHE, type CacheStore } from "@podosoft/podokit-runtime";
+import { CACHE, RATE_LIMIT_ROUTES, type CacheStore } from "@podosoft/podokit-runtime";
 import { AppException } from "../common/app-exception";
 import { API_KEY_VERIFIER } from "../api-key/api-key.module";
 import {
@@ -13,6 +13,10 @@ import {
   type RateLimitConfig,
 } from "./rate-limit.config";
 import { RateLimitIdentity } from "./rate-limit.identity";
+import { defaultRateLimitRoutes, generalProfile, type RateLimitRoutes } from "./rate-limit.routes";
+
+export { RATE_LIMIT_ROUTES } from "@podosoft/podokit-runtime";
+export type { RateLimitProfile, RateLimitRoute, RateLimitRouteRegistry } from "@podosoft/podokit-runtime";
 
 export interface RateLimitIncrement {
   count: number;
@@ -38,13 +42,12 @@ export class CacheRateLimitStorage implements RateLimitStorage {
   }
 }
 
-type LimitProfile = { name: string; ttlSeconds: number; limit: number };
-
 export class RateLimiter {
   constructor(
     private readonly config: RateLimitConfig,
     private readonly identity: RateLimitIdentity,
     private readonly storage: RateLimitStorage,
+    readonly routes: RateLimitRoutes = defaultRateLimitRoutes(config),
   ) {}
 
   async enforce(context: RequestGuardContext): Promise<void> {
@@ -55,8 +58,9 @@ export class RateLimiter {
       ["/health", "/health/ready", "/api-docs", "/api-docs-json", "/api-docs-elysia-json"].includes(path)
     ) return;
 
+    const profile = this.routes.resolve(request.method, path) ?? generalProfile(this.config);
+    if (profile === "exempt") return;
     try {
-      const profile = this.profile(request.method, path);
       const tracker = await this.identity.resolve(request, context.remoteAddress, this.config);
       await this.enforceCustom(profile.name, tracker, profile.ttlSeconds, profile.limit, context.setHeader);
     } catch (error) {
@@ -98,24 +102,6 @@ export class RateLimiter {
     }
   }
 
-  private profile(method: string, path: string): LimitProfile {
-    if (
-      method === "GET" &&
-      (path === "/api/auth/get-session" || path === "/site/settings")
-    ) {
-      return { name: "runtime", ttlSeconds: this.config.ttlSeconds, limit: this.config.runtimeLimit };
-    }
-    // Admin reads need an admin session and are not credential attempts; the
-    // server-paged admin tables issue one per page, sort, or search.
-    if (method === "GET" && path.startsWith("/api/auth/admin/")) {
-      return { name: "general", ttlSeconds: this.config.ttlSeconds, limit: this.config.limit };
-    }
-    if (path === "/api/auth" || path.startsWith("/api/auth/")) {
-      return { name: "auth", ttlSeconds: this.config.authTtlSeconds, limit: this.config.authLimit };
-    }
-    return { name: "general", ttlSeconds: this.config.ttlSeconds, limit: this.config.limit };
-  }
-
   private async withTimeout(operation: Promise<RateLimitIncrement>): Promise<RateLimitIncrement> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -149,6 +135,9 @@ export const rateLimitModule: PodokitModule = {
       new CacheRateLimitStorage(services.resolve(CACHE)),
     );
     services.register(RATE_LIMITER, limiter);
+    // Other modules may configure before this one, so they register routes
+    // from their plugin factory, and applications from configureServices.
+    services.register(RATE_LIMIT_ROUTES, limiter.routes);
     services.resolve(REQUEST_GUARDS).register((context) => limiter.enforce(context));
   },
 };

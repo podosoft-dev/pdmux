@@ -15,14 +15,17 @@ type CreateUserInput = {
   role?: string;
 };
 
+// UI specs pass the browser's create-user response; API specs pass a request response.
+type CreatedUserResponse = Pick<APIResponse, "ok" | "json">;
+
 export type DisposableUsers = {
   create(input: CreateUserInput): Promise<string>;
-  trackResponse(response: APIResponse): Promise<string>;
+  trackResponse(response: CreatedUserResponse): Promise<string>;
   track(userId: string): void;
   forget(userId: string): void;
 };
 
-async function readCreatedUserId(response: APIResponse): Promise<string> {
+async function readCreatedUserId(response: CreatedUserResponse): Promise<string> {
   expect(response.ok()).toBeTruthy();
   const body = (await response.json()) as { user?: { id?: unknown } };
   expect(typeof body.user?.id).toBe("string");
@@ -32,16 +35,16 @@ async function readCreatedUserId(response: APIResponse): Promise<string> {
 export const test = base.extend<{ disposableUsers: DisposableUsers }>({
   disposableUsers: async ({ context, playwright }, use, testInfo) => {
     // API projects do not inherit the UI project's admin storageState, while a
-    // second admin sign-in can invalidate the shared UI session. Authenticate an
-    // isolated request context only for API tests and reuse browser cookies for UI.
-    let request = context.request;
-    let ownsRequest = false;
+    // second admin sign-in can invalidate the shared UI session. API tests sign in
+    // an isolated request context. UI tests copy the browser's admin cookies into
+    // their own context once, so a test that later signs its page in as another
+    // user does not turn cleanup into that user's (forbidden) requests.
+    const request = await playwright.request.newContext({
+      baseURL,
+      extraHTTPHeaders: origin,
+      ...(testInfo.project.name === "api" ? {} : { storageState: await context.storageState() }),
+    });
     if (testInfo.project.name === "api") {
-      request = await playwright.request.newContext({
-        baseURL,
-        extraHTTPHeaders: origin,
-      });
-      ownsRequest = true;
       const signIn = await request.post("/api/auth/sign-in/email", {
         data: { email: ADMIN.email, password: ADMIN.password },
       });
@@ -91,7 +94,7 @@ export const test = base.extend<{ disposableUsers: DisposableUsers }>({
           }
         }
       } finally {
-        if (ownsRequest) await request.dispose();
+        await request.dispose();
       }
     }
   },

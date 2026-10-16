@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Update the PodoKit foundation to 1.4.0. Queries on PodoKit's Bun SQL and Better Auth pools and
+  Redis commands are bounded (`DB_QUERY_TIMEOUT_MS`, `REDIS_COMMAND_TIMEOUT_MS`), so a stalled
+  server answers 503 instead of hanging those requests; the Redis events transport resubscribes
+  after a Redis restart; `HEAD` requests to public `GET` routes answer like `GET`; proxied
+  responses and stored objects up to 2 MiB keep their `Content-Length`; and the admin session
+  list is indexed. PostgreSQL migrations run one transaction per migration so indexes can be
+  built concurrently.
+- Keep pdmux's proxy header names and the public installer path in the application-owned
+  `proxy-headers.ts` and `public-paths.ts`, so PodoKit updates leave the managed lists unchanged.
+
 ## 0.14.0
 
 - Update the PodoKit foundation to 1.2.0. Admin users, sessions, and audit pages page on the

@@ -21,26 +21,25 @@ test("client navigation keeps the server checks without resending messages", asy
   await ready(page, "/admin");
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
-  const bodies: Promise<string>[] = [];
-  page.on("response", (response) => {
-    if (new URL(response.url()).pathname.endsWith("/__data.json")) bodies.push(response.text());
-  });
   const sidebar = page.locator('[data-sidebar="sidebar"]');
-  const stops: Array<[link: string, heading: string]> = [
-    ["Users", "Users"],
-    ["Sessions", "User sessions"],
-    ["Settings", "Settings"],
-    ["Overview", "Dashboard"],
+  const stops: Array<[link: string, path: string, heading: string]> = [
+    ["Users", "/admin/users", "Users"],
+    ["Sessions", "/admin/sessions", "User sessions"],
+    ["Settings", "/admin/settings", "Settings"],
+    ["Overview", "/admin", "Dashboard"],
   ];
-  for (const [link, heading] of stops) {
+  for (const [link, path, heading] of stops) {
+    // Read each body before the next click: once the page navigates on, the
+    // previous response body is no longer available.
+    const data = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === `${path}/__data.json`,
+    );
     await sidebar.getByRole("link", { name: link, exact: true }).click();
+    const body = await (await data).text();
+    expect(body).not.toContain('"messages"');
+    expect(body.length).toBeLessThan(20_000);
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
 
-  expect(bodies.length).toBeGreaterThanOrEqual(stops.length);
-  for (const body of await Promise.all(bodies)) {
-    expect(body).not.toContain('"messages"');
-    expect(body.length).toBeLessThan(20_000);
-  }
   await expect(sidebar.getByRole("link", { name: "Back to home" })).toBeVisible();
 });

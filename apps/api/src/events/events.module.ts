@@ -22,6 +22,15 @@ import { EventsService } from "./events.service";
 
 export const SSE_EVENTS = Symbol("sse-events") as ServiceKey<EventsService>;
 
+/** `SSE_MAX_STREAMS_PER_USER`: open streams one user may hold on each API replica. */
+export function maxStreamsPerUser(env: Record<string, string | undefined> = process.env): number {
+  const value = Number(env.SSE_MAX_STREAMS_PER_USER ?? 8);
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error("SSE_MAX_STREAMS_PER_USER must be a positive integer");
+  }
+  return value;
+}
+
 /** Resolves who opens a stream. Register one in app.extensions.ts to replace the default. */
 export interface EventIdentity {
   subscriber(request: Request): Promise<EventSubscriber | undefined>;
@@ -84,7 +93,9 @@ export function eventsRoutes(
           "Signed-in users only. `topics` is a comma-separated list; without it the stream " +
           "carries every topic that has no authorizer. Each data event is a default " +
           "`message` whose data is `{ topic, data }`. A `resync` event means events were " +
-          "dropped and the client should reload its state.",
+          "dropped and the client should reload its state. A user may hold " +
+          "`SSE_MAX_STREAMS_PER_USER` streams (default 8) on each API replica; another " +
+          "answers 429 `EVENTS_STREAM_LIMIT`.",
       },
     })
     .post("/events", async ({ request, body, set }) => {
@@ -132,7 +143,9 @@ const eventsPlugin: AppPlugin = ({ services }) =>
 export const eventsModule: PodokitModule = {
   name: "sse",
   configure: (_env, services): void => {
-    const events = new EventsService(services.resolve(EVENTS), services.resolve(READINESS));
+    const events = new EventsService(services.resolve(EVENTS), services.resolve(READINESS), {
+      maxStreamsPerUser: maxStreamsPerUser(),
+    });
     services.register(SSE_EVENTS, events, () => events.close());
     services.onStart(() => events.connect());
   },

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { createHash, randomBytes } from "node:crypto";
+import { ready } from "../helpers/hydration";
 
 // admin storageState (project default) — the admin is the resource owner.
 const b64url = (b: Buffer): string => b.toString("base64url");
@@ -64,7 +65,8 @@ test("OIDC provider: discovery, JWKS, client registration, authorize handoff", a
     // The consent page renders (reached in a real browser navigation), and allowing
     // it sends the browser back to the client with an authorization code.
     await page.route(`${REDIRECT}**`, (route) => route.fulfill({ status: 200, body: "callback" }));
-    await page.goto(consentUrl);
+    // Wait for hydration: a click on the server-rendered button sends no consent.
+    await ready(page, consentUrl);
     const allow = page.getByRole("button", { name: "Allow" });
     await expect(allow).toBeVisible();
     const callback = page.waitForURL((url) => url.href.startsWith(REDIRECT));

@@ -72,6 +72,9 @@ export function createDataSourceOptions(env: NodeJS.ProcessEnv = process.env): D
     database: appEnv.POSTGRES_DB,
     entities,
     migrations: POSTGRES_MIGRATIONS,
+    // One transaction per migration, so a migration can set `transaction = false`
+    // for statements such as CREATE INDEX CONCURRENTLY.
+    migrationsTransactionMode: "each",
     synchronize: false,
   };
 }

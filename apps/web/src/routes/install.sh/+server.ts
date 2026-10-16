@@ -4,7 +4,7 @@
  *   curl -fsSL https://pdmux.example.com/install.sh | sh -s -- --code pdmxe_…
  *
  * Public by necessity: the machine being onboarded has no session, no credential
- * and nothing installed. It is listed in `PUBLIC_PATHS` (guards.ts) so a backend
+ * and nothing installed. It is listed in `APP_PUBLIC_PATHS` (public-paths.ts) so a backend
  * outage cannot turn it into a 503, and in the noindex list (search-indexing.ts)
  * because a shell script has no business in a search result.
  *

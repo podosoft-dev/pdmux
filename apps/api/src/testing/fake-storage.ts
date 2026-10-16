@@ -1,4 +1,5 @@
 import type {
+  MultipartUpload,
   ObjectBody,
   ObjectData,
   ObjectInfo,
@@ -6,11 +7,13 @@ import type {
   ObjectStore,
   PutObjectOptions,
   StoredObject,
+  UploadedPart,
 } from "@podosoft/podokit-runtime";
 
 async function text(body: ObjectBody): Promise<string> {
   if (typeof body === "string") return body;
   if (body instanceof Uint8Array) return Buffer.from(body).toString("utf8");
+  if (body instanceof Blob || body instanceof ReadableStream) return new Response(body).text();
   const chunks: Uint8Array[] = [];
   for await (const chunk of body) chunks.push(chunk);
   return Buffer.concat(chunks).toString("utf8");
@@ -67,6 +70,24 @@ export class FakeStorage implements ObjectStore {
 
   getDownloadUrl(key: string): Promise<string> {
     return Promise.resolve(`/storage/${encodeURIComponent(key)}`);
+  }
+
+  // pdmux writes whole objects only. A test that reaches multipart storage should
+  // fail loudly rather than pass against a fake that merely looks like S3.
+  createMultipartUpload(): Promise<MultipartUpload> {
+    return Promise.reject(new Error("FakeStorage does not support multipart uploads"));
+  }
+
+  uploadPart(): Promise<UploadedPart> {
+    return Promise.reject(new Error("FakeStorage does not support multipart uploads"));
+  }
+
+  completeMultipartUpload(): Promise<ObjectInfo> {
+    return Promise.reject(new Error("FakeStorage does not support multipart uploads"));
+  }
+
+  abortMultipartUpload(): Promise<void> {
+    return Promise.reject(new Error("FakeStorage does not support multipart uploads"));
   }
 
   close(): void {}

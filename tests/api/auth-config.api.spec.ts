@@ -31,6 +31,7 @@ test("admin can enable Google OAuth from the DB and it applies without a restart
   });
   expect(put.ok()).toBeTruthy();
   const view = await put.json();
+  expect(view.social.google.enabled).toBe(true);
   expect(view.social.google.hasSecret).toBe(true);
   expect(view.social.google.clientId).toBe("dummy-google-client-id");
   expect("clientSecret" in view.social.google).toBe(false); // secret is never returned

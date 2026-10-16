@@ -1,6 +1,7 @@
 // Keep this first: Better Auth checks the schema when ./auth/auth creates its
-// instance, and the migrations below are what make that schema match.
-import "./auth/skip-schema-validation";
+// instance, the migrations below are what make that schema match, and they may
+// run longer than the auth pool's query timeout.
+import "./auth/maintenance-command";
 import { getMigrations } from "better-auth/db/migration";
 import { auth } from "./auth/auth";
 import { closeAuthDatabase, postgresPool, sqliteDatabase } from "./auth/db";
@@ -40,7 +41,7 @@ async function runMigrations(): Promise<void> {
   const { appDataSource: dataSource } = await import("./database/data-source.js");
   await dataSource.initialize();
   try {
-    if (dataSource.options.type === "postgres") await dataSource.runMigrations({ transaction: "all" });
+    if (dataSource.options.type === "postgres") await dataSource.runMigrations();
     await assertMigrationsApplied(dataSource);
   } finally {
     await dataSource.destroy();

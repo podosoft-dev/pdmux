@@ -2,8 +2,11 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
+  CompletedPart,
+  CreateMultipartUploadOptions,
   DownloadUrlOptions,
   ListObjectsOptions,
+  MultipartUpload,
   ObjectBody,
   ObjectData,
   ObjectInfo,
@@ -11,6 +14,7 @@ import type {
   ObjectStore,
   PutObjectOptions,
   StoredObject,
+  UploadedPart,
 } from "@podosoft/podokit-runtime";
 
 const KEY_BYTES = 32;
@@ -151,6 +155,22 @@ export class SignedDownloadStore implements ObjectStore {
     if (objectKey === undefined) throw new Error("Local download URL does not match its base URL");
     const { expires, signature } = await this.signer.sign(objectKey, options.expiresInSeconds);
     return `${path}?${new URLSearchParams({ expires, signature }).toString()}`;
+  }
+
+  createMultipartUpload(key: string, options?: CreateMultipartUploadOptions): Promise<MultipartUpload> {
+    return this.store.createMultipartUpload(key, options);
+  }
+
+  uploadPart(key: string, uploadId: string, partNumber: number, body: ObjectBody): Promise<UploadedPart> {
+    return this.store.uploadPart(key, uploadId, partNumber, body);
+  }
+
+  completeMultipartUpload(key: string, uploadId: string, parts: readonly CompletedPart[]): Promise<ObjectInfo> {
+    return this.store.completeMultipartUpload(key, uploadId, parts);
+  }
+
+  abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    return this.store.abortMultipartUpload(key, uploadId);
   }
 
   close(): void | Promise<void> {

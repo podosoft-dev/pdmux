@@ -1,6 +1,6 @@
 {
   "schemaVersion": 4,
-  "podokitVersion": "1.2.0",
+  "podokitVersion": "1.4.0",
   "template": "fullstack",
   "toolchain": {
     "runtime": "bun",
@@ -132,6 +132,8 @@
     "apps/web/src/lib/i18n/locales/**",
     "apps/web/src/lib/i18n/catalogs/app/**",
     "apps/api/src/app.extensions.ts",
+    "apps/web/src/lib/server/proxy-headers.ts",
+    "apps/web/src/lib/server/body-limits.ts",
     "AGENTS.md",
     "CLAUDE.md",
     ".agents/**",
@@ -162,7 +164,9 @@
     "apps/web/src/lib/server/search-indexing.ts",
     "tests/ui/settings.ui.spec.ts",
     "tests/ui/smoke.ui.spec.ts",
-    "apps/web/static/favicon.svg"
+    "apps/web/static/favicon.svg",
+    "apps/web/src/lib/server/public-paths.ts",
+    "apps/web/src/lib/server/asset-paths.ts"
   ],
   "managedOverrides": [
     "apps/web/src/lib/components/ui/input/input.svelte",

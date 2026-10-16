@@ -1,6 +1,8 @@
 # Bootstrap the initial administrator
 
 Use the generated database-backed command after the API build and migrations.
+With `NODE_ENV=production` it loads the bundled `dist/bootstrap-admin-runtime.js`;
+otherwise it runs the source entry. It supports PostgreSQL and SQLite.
 Do not create the first administrator through the public sign-up page.
 
 ## Set the persistent allowlist

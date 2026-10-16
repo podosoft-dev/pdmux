@@ -1,5 +1,10 @@
 import { describe, expect, it, mock, type Mock } from "bun:test";
-import { cachedOpenApiDocument, type OpenApiDocumentLoader } from "./app";
+import {
+  cachedOpenApiDocument,
+  setRetryAfter,
+  UNAVAILABLE_RETRY_AFTER_SECONDS,
+  type OpenApiDocumentLoader,
+} from "./app";
 import type { OpenApiContribution } from "./core/services";
 
 function baseSpec(): Response {
@@ -77,5 +82,19 @@ describe("cachedOpenApiDocument", () => {
     expect(failed.status).toBe(503);
     expect(recovered).toMatchObject({ openapi: "3.1.0" });
     expect(base).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("setRetryAfter", () => {
+  it("tells clients when to retry", () => {
+    const headers: Record<string, string | number> = {};
+    setRetryAfter(headers);
+    expect(headers).toEqual({ "retry-after": String(UNAVAILABLE_RETRY_AFTER_SECONDS) });
+  });
+
+  it("keeps a value the failing code already set, in any letter case", () => {
+    const headers: Record<string, string | number> = { "Retry-After": "7" };
+    setRetryAfter(headers);
+    expect(headers).toEqual({ "Retry-After": "7" });
   });
 });

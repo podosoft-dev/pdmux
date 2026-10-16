@@ -1,7 +1,12 @@
 import type { AuthConfig } from "@podosoft/podokit-auth";
+import { validateEnv } from "../config/env.validation";
 import { auth as bootstrapAuth, buildAuth } from "./auth";
 import { authConfigStore } from "./auth-config-store";
 import { publishConfigChanged } from "./config-events";
+import { answersWithin, checkAuthResponse } from "./database-outage";
+import { authDatabaseReachable } from "./db";
+
+const REFRESH_WAIT_MS = validateEnv(process.env).READINESS_CHECK_TIMEOUT_MS;
 
 // Runtime auth instance that rebuilds when the DB config changes, so admin edits
 // (OAuth credentials, SMTP, server-enforced toggles) apply WITHOUT a restart.
@@ -52,10 +57,20 @@ export async function refreshAuthNow(): Promise<void> {
   await publishConfigChanged();
 }
 
+/**
+ * Refreshes before a request is served. While PostgreSQL does not answer, the
+ * refresh lasts as long as a query may wait, and the request would wait for
+ * Better Auth's own queries after it. Past the readiness check timeout the
+ * current instance serves the request, and the refresh finishes in the background.
+ */
+export async function refreshForRequest(): Promise<void> {
+  await answersWithin(refreshIfStale, REFRESH_WAIT_MS);
+}
+
 // Stable handler reference the adapter captures once; redispatches per request.
 const dynamicHandler: typeof bootstrapAuth.handler = async (request) => {
-  await refreshIfStale();
-  return current.handler(request);
+  await refreshForRequest();
+  return checkAuthResponse(await current.handler(request), authDatabaseReachable);
 };
 
 export const authRuntime: typeof bootstrapAuth = new Proxy(bootstrapAuth, {

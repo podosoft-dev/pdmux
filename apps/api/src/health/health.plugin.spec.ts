@@ -49,7 +49,9 @@ async function readiness(
   const app = new Elysia()
     .onError(({ error, set }) => {
       set.status = error instanceof AppException ? error.statusCode : 500;
-      return { code: error instanceof AppException ? error.code : "INTERNAL_ERROR" };
+      return error instanceof AppException
+        ? { code: error.code, message: error.message }
+        : { code: "INTERNAL_ERROR" };
     })
     .use(healthPlugin(appContext(env, services)));
   const response = await app.handle(new Request("http://localhost/health/ready"));
@@ -69,10 +71,29 @@ describe("GET /health/ready", () => {
     });
   });
 
-  it("fails when the database is down", async () => {
+  it("fails when the database is down and names it", async () => {
     const result = await readiness({ databaseUp: false });
 
-    expect(result).toEqual({ status: 503, body: { code: "READINESS_FAILED" } });
+    expect(result).toEqual({
+      status: 503,
+      body: { code: "READINESS_FAILED", message: "One or more dependencies are unavailable: db" },
+    });
+  });
+
+  it("names every module check that is down", async () => {
+    const result = await readiness({
+      databaseUp: true,
+      checks: {
+        cache: () => Promise.resolve(),
+        redis: () => Promise.reject(new Error("Connection closed")),
+        events: () => Promise.reject(new Error("Event transport is not subscribed")),
+      },
+    });
+
+    expect(result).toEqual({
+      status: 503,
+      body: { code: "READINESS_FAILED", message: "One or more dependencies are unavailable: redis, events" },
+    });
   });
 
   it("fails when a module check exceeds its timeout", async () => {
@@ -81,6 +102,9 @@ describe("GET /health/ready", () => {
       checks: { storage: () => new Promise<void>(() => {}) },
     });
 
-    expect(result).toEqual({ status: 503, body: { code: "READINESS_FAILED" } });
+    expect(result).toEqual({
+      status: 503,
+      body: { code: "READINESS_FAILED", message: "One or more dependencies are unavailable: storage" },
+    });
   });
 });

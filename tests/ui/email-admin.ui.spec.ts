@@ -3,7 +3,6 @@ import { ready } from "../helpers/hydration";
 import { clearMailpit, mailpitReachable, waitForLink } from "../helpers/mailpit";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
-const origin = { origin: base };
 
 // Verification badges/actions are gated by the emailVerification capability. The
 // seeded suite runs with verification off, so assert the gating here (nothing

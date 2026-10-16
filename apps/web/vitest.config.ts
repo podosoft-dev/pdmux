@@ -35,6 +35,8 @@ export default defineConfig({
       $lib: fileURLToPath(new URL("./src/lib", import.meta.url)),
       // The dashboard logic reads `browser` from here; see the stub for why it is false.
       "$app/env": fileURLToPath(new URL("./test/stubs/app-environment.ts", import.meta.url)),
+      // hooks.server.ts reads the route list to tell a page from an endpoint.
+      "$app/manifest": fileURLToPath(new URL("./test/stubs/app-manifest.ts", import.meta.url)),
     },
   },
 });

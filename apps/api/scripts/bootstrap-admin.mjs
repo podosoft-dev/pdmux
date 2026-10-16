@@ -1,6 +1,10 @@
 #!/usr/bin/env bun
 
+import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+
+const compiledRuntime = new URL("../dist/bootstrap-admin-runtime.js", import.meta.url);
+const sourceRuntime = new URL("../src/bootstrap-admin-runtime.ts", import.meta.url);
 
 const args = process.argv.slice(2);
 
@@ -130,34 +134,15 @@ async function main() {
   }
 
   const input = resolveBootstrapInput();
-  // Load the auth graph before importing one of its dependencies directly.
-  // Concurrent ESM imports can ask Node to link the same Better Auth submodule
-  // through two graph roots and fail before the command reaches the database.
-  const { auth } = await import("../dist/auth/auth.js");
-  const { pool } = await import("../dist/auth/db.js");
-  const { verifyPassword } = await import("better-auth/crypto");
+  // A production image runs the bundled entry; development runs the source.
+  const useCompiled = process.env.NODE_ENV === "production" && existsSync(compiledRuntime);
+  const runtime = await import((useCompiled ? compiledRuntime : sourceRuntime).href);
+  const { auth, findBootstrapUser, verifyPassword, closeAuthDatabase } = runtime;
 
   try {
     const result = await bootstrapAdmin(
       {
-        findUser: async (email) => {
-          const query = await pool.query(
-            `SELECT u.id,
-                    u.email,
-                    u.role,
-                    u."emailVerified" AS "emailVerified",
-                    u."signupApproved" AS "signupApproved",
-                    a.password AS "passwordHash"
-               FROM "user" AS u
-          LEFT JOIN "account" AS a
-                 ON a."userId" = u.id
-                AND a."providerId" = 'credential'
-              WHERE lower(u.email) = lower($1)
-              LIMIT 1`,
-            [email],
-          );
-          return query.rows[0] ?? null;
-        },
+        findUser: findBootstrapUser,
         createUser: async (user) => auth.api.createUser({ body: user }),
         verifyPassword: async (hash, password) => verifyPassword({ hash, password }),
       },
@@ -174,14 +159,24 @@ async function main() {
       console.log(`Verified existing administrator account ${result.email}.`);
     }
   } finally {
-    await pool.end();
+    await closeAuthDatabase();
   }
+}
+
+// A refused PostgreSQL connection is an AggregateError with an empty message.
+export function errorMessage(error) {
+  if (!(error instanceof Error)) return String(error);
+  if (error.message) return error.message;
+  if (error instanceof AggregateError && error.errors.length > 0) {
+    return error.errors.map(errorMessage).join("; ");
+  }
+  return error.name;
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
 if (invokedPath === import.meta.url) {
   main().catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(errorMessage(error));
     process.exitCode = 1;
   });
 }

@@ -28,9 +28,7 @@ test("forgot password: request, open the emailed link, set a new password, sign 
   await expect(page.getByText(/reset link is on its way/i)).toBeVisible();
 
   // Open the emailed link: the API validates it and redirects to the reset page.
-  await page.goto(await waitForLink(email));
-  await page.waitForLoadState("load");
-  await page.waitForTimeout(400);
+  await ready(page, await waitForLink(email));
   // `exact` because "Confirm new password" also contains "New password".
   await page.getByLabel("New password", { exact: true }).fill("Podokit3e-N3wStr0ng!pw");
   // A mismatch is refused, and the single-use token survives it: the same page

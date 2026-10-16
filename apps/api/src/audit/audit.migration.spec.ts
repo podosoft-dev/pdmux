@@ -5,15 +5,23 @@ import { revertLatestSqliteMigration, runSqliteMigrations } from "../database/sq
 import { InitAuditLogs1720300000000 } from "../migrations/1720300000000-InitAuditLogs";
 import { IndexAuditLogFilters1792000000000 } from "../migrations/1792000000000-IndexAuditLogFilters";
 
-function runner(type: "postgres" | "better-sqlite3", queries: string[]): QueryRunner {
+function runner(
+  type: "postgres" | "better-sqlite3",
+  queries: string[],
+  invalidIndexes: string[] = [],
+): QueryRunner {
   return {
     connection: { options: { type } },
-    query: (sql: string): Promise<unknown[]> => {
+    query: (sql: string, parameters: unknown[] = []): Promise<unknown[]> => {
       queries.push(sql);
-      return Promise.resolve([]);
+      const invalid = sql.includes("indisvalid") && invalidIndexes.some((name) => parameters[0] === `"${name}"`);
+      return Promise.resolve(invalid ? [{ invalid: 1 }] : []);
     },
   } as unknown as QueryRunner;
 }
+
+const INVALID_CHECK =
+  "SELECT 1 AS \"invalid\" FROM pg_index WHERE indexrelid = to_regclass($1) AND NOT indisvalid";
 
 const FILTER_INDEXES = [
   "IDX_audit_logs_action_createdAt",
@@ -61,20 +69,41 @@ describe("audit log migration", () => {
 });
 
 describe("audit filter index migration", () => {
-  it("replaces the single-column indexes on PostgreSQL and restores them on revert", async () => {
+  it("builds and drops the PostgreSQL indexes concurrently outside a transaction", async () => {
     const migration = new IndexAuditLogFilters1792000000000();
+    // A transaction block would reject CONCURRENTLY; the runner must use "each".
+    expect(migration.transaction).toBe(false);
     const up: string[] = [];
     await migration.up(runner("postgres", up));
     expect(up).toEqual([
-      'CREATE INDEX IF NOT EXISTS "IDX_audit_logs_createdAt_id" ON "audit_logs" ("createdAt", "id")',
-      'CREATE INDEX IF NOT EXISTS "IDX_audit_logs_action_createdAt" ON "audit_logs" ("action", "createdAt")',
-      'CREATE INDEX IF NOT EXISTS "IDX_audit_logs_actorEmail_createdAt" ON "audit_logs" ("actorEmail", "createdAt")',
-      'CREATE INDEX IF NOT EXISTS "IDX_audit_logs_targetLabel_createdAt" ON "audit_logs" ("targetLabel", "createdAt")',
-      'DROP INDEX IF EXISTS "IDX_audit_logs_action"',
-      'DROP INDEX IF EXISTS "IDX_audit_logs_createdAt"',
+      INVALID_CHECK,
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_audit_logs_createdAt_id" ON "audit_logs" ("createdAt", "id")',
+      INVALID_CHECK,
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_audit_logs_action_createdAt" ON "audit_logs" ("action", "createdAt")',
+      INVALID_CHECK,
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_audit_logs_actorEmail_createdAt" ON "audit_logs" ("actorEmail", "createdAt")',
+      INVALID_CHECK,
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_audit_logs_targetLabel_createdAt" ON "audit_logs" ("targetLabel", "createdAt")',
+      'DROP INDEX CONCURRENTLY IF EXISTS "IDX_audit_logs_action"',
+      'DROP INDEX CONCURRENTLY IF EXISTS "IDX_audit_logs_createdAt"',
     ]);
-    expect(up.join("\n")).not.toContain("CONCURRENTLY");
+  });
 
+  it("rebuilds an invalid index left by an interrupted concurrent build", async () => {
+    const up: string[] = [];
+    await new IndexAuditLogFilters1792000000000().up(
+      runner("postgres", up, ["IDX_audit_logs_action_createdAt"]),
+    );
+    const drop = up.indexOf('DROP INDEX CONCURRENTLY IF EXISTS "IDX_audit_logs_action_createdAt"');
+    expect(drop).toBeGreaterThan(-1);
+    expect(up[drop + 1]).toBe(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_audit_logs_action_createdAt" ON "audit_logs" ("action", "createdAt")',
+    );
+    expect(up.filter((sql) => sql.startsWith("DROP INDEX CONCURRENTLY"))).toHaveLength(3);
+  });
+
+  it("restores the single-column PostgreSQL indexes on revert inside its transaction", async () => {
+    const migration = new IndexAuditLogFilters1792000000000();
     const down: string[] = [];
     await migration.down(runner("postgres", down));
     expect(down).toEqual([
@@ -84,6 +113,19 @@ describe("audit filter index migration", () => {
       'DROP INDEX IF EXISTS "IDX_audit_logs_action_createdAt"',
       'DROP INDEX IF EXISTS "IDX_audit_logs_actorEmail_createdAt"',
       'DROP INDEX IF EXISTS "IDX_audit_logs_targetLabel_createdAt"',
+    ]);
+  });
+
+  it("keeps plain index statements on SQLite", async () => {
+    const up: string[] = [];
+    await new IndexAuditLogFilters1792000000000().up(runner("better-sqlite3", up));
+    expect(up).toEqual([
+      'CREATE INDEX IF NOT EXISTS "IDX_audit_logs_createdAt_id" ON "audit_logs" ("createdAt", "id")',
+      'CREATE INDEX IF NOT EXISTS "IDX_audit_logs_action_createdAt" ON "audit_logs" ("action", "createdAt")',
+      'CREATE INDEX IF NOT EXISTS "IDX_audit_logs_actorEmail_createdAt" ON "audit_logs" ("actorEmail", "createdAt")',
+      'CREATE INDEX IF NOT EXISTS "IDX_audit_logs_targetLabel_createdAt" ON "audit_logs" ("targetLabel", "createdAt")',
+      'DROP INDEX IF EXISTS "IDX_audit_logs_action"',
+      'DROP INDEX IF EXISTS "IDX_audit_logs_createdAt"',
     ]);
   });
 

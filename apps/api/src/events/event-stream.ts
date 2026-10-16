@@ -76,11 +76,18 @@ export class EventStream {
   offer(data: string, id: string | undefined): void {
     if (this.closed) return;
     if (this.queue.length >= this.options.queueLimit) {
-      this.queue.length = 0;
-      this.resyncPending = true;
-    } else {
-      this.queue.push({ kind: "event", id: id ?? String(++this.sequence), data });
+      this.resync();
+      return;
     }
+    this.queue.push({ kind: "event", id: id ?? String(++this.sequence), data });
+    this.wake();
+  }
+
+  /** Drops the backlog and sends one `resync` frame, telling the client to reload its state. */
+  resync(): void {
+    if (this.closed) return;
+    this.queue.length = 0;
+    this.resyncPending = true;
     this.wake();
   }
 

@@ -10,7 +10,7 @@ async function migrate(): Promise<void> {
     if (process.argv.includes("--revert")) {
       await dataSource.undoLastMigration({ transaction: "all" });
     } else {
-      await dataSource.runMigrations({ transaction: "all" });
+      await dataSource.runMigrations();
       await assertMigrationsApplied(dataSource);
     }
   } finally {

@@ -44,7 +44,9 @@ test("admin sees the user list and can search", async ({ page }) => {
 });
 
 test("the user list asks the server for one page at a time", async ({ page }) => {
-  const isListUsers = (url: string): boolean => new URL(url).pathname === "/api/auth/admin/list-users";
+  const isListUsers = (url: string): boolean => new URL(url).pathname === "/api/admin/users";
+  const requested: string[] = [];
+  page.on("request", (request) => requested.push(request.url()));
   const first = page.waitForResponse((response) => isListUsers(response.url()));
   await ready(page, "/admin/users");
   const initial = new URL((await first).url()).searchParams;
@@ -53,14 +55,16 @@ test("the user list asks the server for one page at a time", async ({ page }) =>
   expect(initial.get("sortDirection")).toBe("desc");
   await expect(page.getByRole("columnheader", { name: "Joined" })).toHaveAttribute("aria-sort", "descending");
 
+  // The server matches case-insensitively, so the search goes as typed.
   const searched = page.waitForResponse((response) => isListUsers(response.url()));
   await page.locator("#toolbar-search").fill("Admin@Example.com");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   const query = new URL((await searched).url()).searchParams;
-  expect(query.get("searchValue")).toBe("admin@example.com");
+  expect(query.get("search")).toBe("Admin@Example.com");
   expect(query.get("searchField")).toBe("email");
   expect(query.get("offset")).toBe("0");
   await expect(page.getByRole("cell", { name: "admin@example.com" })).toBeVisible();
+  expect(requested.filter((url) => url.includes("/api/auth/admin/list-users"))).toEqual([]);
 });
 
 test("user list shows the joined column", async ({ page }) => {
@@ -69,9 +73,16 @@ test("user list shows the joined column", async ({ page }) => {
 });
 
 test("row menu exposes admin actions", async ({ page }) => {
-  await page.goto("/admin/users");
+  // The list shows one server page, so the search must run before the row exists.
+  await ready(page, "/admin/users");
+  const searched = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/admin/users" &&
+      url.searchParams.get("search") === "user@example.com";
+  });
   await page.locator("#toolbar-search").fill("user@example.com");
   await page.getByRole("button", { name: "Search", exact: true }).click();
+  expect((await searched).ok()).toBeTruthy();
   const row = page.getByRole("row", { name: /user@example.com/ });
   await row.getByRole("button").click();
   await expect(page.getByRole("menuitem", { name: "Manage" })).toBeVisible();

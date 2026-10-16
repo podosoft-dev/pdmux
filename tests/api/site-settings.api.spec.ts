@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { ADMIN } from "../helpers/accounts";
+import { expectObjectLength } from "../helpers/object-response";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
@@ -101,7 +102,7 @@ test("site favicon: the versioned URL is cached for good and other URLs revalida
     expect(current.status()).toBe(200);
     expect(current.headers()["cache-control"]).toBe(IMMUTABLE);
     expect(current.headers()["content-type"]).toContain("image/png");
-    expect(current.headers()["content-length"]).toBe(String(ICON.byteLength));
+    expectObjectLength(current.headers(), ICON.byteLength);
     expect((await current.body()).equals(ICON)).toBe(true);
     const etag = current.headers()["etag"] ?? "";
     expect(etag).toMatch(/^"[^"]+"$/);

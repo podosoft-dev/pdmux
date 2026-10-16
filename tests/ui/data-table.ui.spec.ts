@@ -2,7 +2,7 @@ import { expect, test, type Response } from "@playwright/test";
 import { ready } from "../helpers/hydration";
 
 // Sorting via the shared DataTable. Users sorts on the server (manual mode
-// refetches through Better Auth listUsers), and the audit log asks the server
+// refetches GET /admin/users), and the audit log asks the server
 // for the other time order — both drive the same clickable headers + aria-sort.
 test("users table sorts by a column header (server)", async ({ page }) => {
   await ready(page, "/admin/users");
@@ -13,7 +13,7 @@ test("users table sorts by a column header (server)", async ({ page }) => {
   const firstName = (): Promise<string> => page.getByRole("row").nth(1).getByRole("cell").first().innerText();
   const sortedBy = (direction: string): Promise<Response> => page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname === "/api/auth/admin/list-users" &&
+    return url.pathname === "/api/admin/users" &&
       url.searchParams.get("sortBy") === "name" &&
       url.searchParams.get("sortDirection") === direction;
   });

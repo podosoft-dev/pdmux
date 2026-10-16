@@ -20,31 +20,36 @@ test("users toolbar applies filter + search together on Search", async ({ page }
   // Selecting a filter stages it; nothing applies until Search is pressed.
   const filtered = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname === "/api/auth/admin/list-users" && url.searchParams.get("filterField") === "role";
+    return url.pathname === "/api/admin/users" && url.searchParams.get("role") === "admin";
   });
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  expect(new URL((await filtered).url()).searchParams.get("filterValue")).toBe("admin");
+  expect((await filtered).ok()).toBeTruthy();
   await expect(main.getByRole("cell", { name: "admin@example.com" })).toBeVisible();
   await expect(main.getByRole("cell", { name: "user@example.com" })).toHaveCount(0);
 });
 
-test("users toolbar keeps one filter because the server accepts one", async ({ page }) => {
+test("users toolbar combines the role and status filters", async ({ page }) => {
   await ready(page, "/admin/users");
+  const main = page.getByRole("main");
   const roleSelect = page.locator('button[data-slot="select-trigger"]').first();
   const statusSelect = page.locator('button[data-slot="select-trigger"]').nth(1);
   await roleSelect.click();
   await page.getByRole("option", { name: "Admin", exact: true }).click();
   await statusSelect.click();
-  await page.getByRole("option", { name: "Banned", exact: true }).click();
-  await expect(roleSelect).toContainText("All");
-  await expect(statusSelect).toContainText("Banned");
+  await page.getByRole("option", { name: "Active", exact: true }).click();
+  await expect(roleSelect).toContainText("Admin");
+  await expect(statusSelect).toContainText("Active");
 
   const filtered = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname === "/api/auth/admin/list-users" && url.searchParams.get("filterField") === "banned";
+    return url.pathname === "/api/admin/users" &&
+      url.searchParams.get("role") === "admin" &&
+      url.searchParams.get("status") === "active";
   });
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  expect(new URL((await filtered).url()).searchParams.get("filterValue")).toBe("true");
+  expect((await filtered).ok()).toBeTruthy();
+  await expect(main.getByRole("cell", { name: "admin@example.com" })).toBeVisible();
+  await expect(main.getByRole("cell", { name: "user@example.com" })).toHaveCount(0);
 });
 
 test("users toolbar can pick the search field", async ({ page }) => {

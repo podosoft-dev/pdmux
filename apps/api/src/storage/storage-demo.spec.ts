@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { AppException } from "@podosoft/podokit-contracts";
+import { objectBodyChunks } from "@podosoft/podokit-runtime";
 import { Elysia } from "elysia";
 import type { RequestIdentity } from "../core/services";
 import { storageDemoRoutes, type DemoStorage } from "./storage.module";
@@ -16,9 +17,11 @@ function memoryStorage(): MemoryStorage {
     objects,
     presigned,
     put: async (key, body) => {
-      if (typeof body === "string") objects.set(key, body);
-      else if (body instanceof Blob) objects.set(key, await body.text());
-      else objects.set(key, Buffer.from(body).toString("utf8"));
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of objectBodyChunks(body)) chunks.push(chunk);
+      const content = Buffer.concat(chunks);
+      objects.set(key, content.toString("utf8"));
+      return content.byteLength;
     },
     open: async (key) => {
       const content = objects.get(key);

@@ -1,4 +1,5 @@
 import { error } from "@sveltejs/kit";
+import { APP_PUBLIC_PATHS } from "./public-paths";
 
 /** Roles that may reach the admin console. Kept as a set so custom roles can be
  *  added here (and, later, replaced by a permission check) without touching every
@@ -13,7 +14,7 @@ const PUBLIC_PATHS = [
   "/verify-email",
   "/pending-approval",
   "/maintenance",
-  "/install.sh",
+  ...APP_PUBLIC_PATHS,
   // Modules add their public (no-session) page prefixes here.
   // podokit:begin:public-paths
   // podokit:end:public-paths

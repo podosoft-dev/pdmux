@@ -27,6 +27,8 @@ export interface EventsServiceOptions {
   retryMs?: number;
   /** Streams end after this long so clients reconnect with a fresh identity. */
   maxConnectionMs?: number;
+  /** Open streams one user may hold on this replica. */
+  maxStreamsPerUser?: number;
   scheduler?: Scheduler;
   now?: () => number;
 }
@@ -35,11 +37,14 @@ export class EventsService {
   readonly topics = new TopicAuthorizers();
   readonly retryMs: number;
   private readonly streamOptions: EventStreamOptions;
+  private readonly maxStreamsPerUser: number;
   private readonly streams = new Set<EventStream>();
+  private readonly byUser = new Map<string, Set<EventStream>>();
   private readonly byTopic = new Map<string, Set<EventStream>>();
   private readonly everyTopic = new Set<EventStream>();
   private unregisterReadiness?: () => void;
   private unsubscribe?: Unsubscribe;
+  private stopResync?: () => void;
 
   constructor(
     private readonly transport: EventBus,
@@ -47,6 +52,7 @@ export class EventsService {
     options: EventsServiceOptions = {},
   ) {
     this.retryMs = options.retryMs ?? 3_000;
+    this.maxStreamsPerUser = options.maxStreamsPerUser ?? 8;
     this.streamOptions = {
       queueLimit: options.queueLimit ?? 256,
       heartbeatMs: options.heartbeatMs ?? 5_000,
@@ -68,6 +74,11 @@ export class EventsService {
         return;
       }
       this.deliver(envelope);
+    });
+    // Events published while the transport was down never arrive, so open
+    // streams are told to reload once it is back.
+    this.stopResync = this.transport.onInterruption?.(() => {
+      for (const stream of this.streams) stream.resync();
     });
     this.unregisterReadiness = this.readiness.register("events", () => this.transport.ready());
   }
@@ -93,7 +104,9 @@ export class EventsService {
 
   /**
    * Opens a stream for `subscriber`. Without `topics` the stream receives every
-   * topic that has no authorizer; guarded topics must be requested by name.
+   * topic that has no authorizer; guarded topics must be requested by name. A
+   * user beyond the per-user limit is refused rather than closing an older
+   * stream, which would make that client reconnect and refuse the next one.
    */
   async open(
     subscriber: EventSubscriber,
@@ -109,6 +122,10 @@ export class EventsService {
         );
       }
     }
+    // No await between this check and attach(), so concurrent opens cannot pass it together.
+    if ((this.byUser.get(subscriber.userId)?.size ?? 0) >= this.maxStreamsPerUser) {
+      throw new AppException("EVENTS_STREAM_LIMIT", "Too many open event streams", 429);
+    }
     const stream = new EventStream(
       subscriber,
       topics ? new Set(topics) : undefined,
@@ -122,6 +139,7 @@ export class EventsService {
 
   async close(): Promise<void> {
     this.unregisterReadiness?.();
+    this.stopResync?.();
     await this.unsubscribe?.();
     for (const stream of [...this.streams]) stream.close();
   }
@@ -142,6 +160,9 @@ export class EventsService {
 
   private attach(stream: EventStream): void {
     this.streams.add(stream);
+    const held = this.byUser.get(stream.subscriber.userId) ?? new Set<EventStream>();
+    held.add(stream);
+    this.byUser.set(stream.subscriber.userId, held);
     if (!stream.topics) {
       this.everyTopic.add(stream);
       return;
@@ -155,6 +176,9 @@ export class EventsService {
 
   private detach(stream: EventStream): void {
     this.streams.delete(stream);
+    const held = this.byUser.get(stream.subscriber.userId);
+    held?.delete(stream);
+    if (held?.size === 0) this.byUser.delete(stream.subscriber.userId);
     if (!stream.topics) {
       this.everyTopic.delete(stream);
       return;

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { keepLatestFilter, listUsersQuery, type UserListState } from "./users";
+import {
+  adminUsersQuery,
+  keepLatestFilter,
+  listAdminUsers,
+  listUsersQuery,
+  type UserListState,
+} from "./users";
 
 const base: UserListState = {
   page: 1,
@@ -11,9 +17,9 @@ const base: UserListState = {
   status: "",
 };
 
-describe("listUsersQuery", () => {
+describe("adminUsersQuery", () => {
   it("pages newest first by default", () => {
-    expect(listUsersQuery({ ...base, page: 3 })).toEqual({
+    expect(adminUsersQuery({ ...base, page: 3 })).toEqual({
       limit: 15,
       offset: 30,
       sortBy: "createdAt",
@@ -22,54 +28,75 @@ describe("listUsersQuery", () => {
   });
 
   it("sorts by a table column on the server", () => {
-    expect(listUsersQuery({ ...base, sort: { key: "name", dir: "asc" } })).toMatchObject({
+    expect(adminUsersQuery({ ...base, sort: { key: "name", dir: "asc" } })).toMatchObject({
       sortBy: "name",
       sortDirection: "asc",
     });
-    expect(listUsersQuery({ ...base, sort: { key: "status", dir: "asc" } })).toMatchObject({
+    expect(adminUsersQuery({ ...base, sort: { key: "status", dir: "asc" } })).toMatchObject({
       sortBy: "createdAt",
       sortDirection: "desc",
     });
   });
 
-  it("searches email case-insensitively and names as typed", () => {
-    expect(listUsersQuery({ ...base, search: "  Ada@Example.COM " })).toMatchObject({
-      searchValue: "ada@example.com",
+  it("searches the chosen field with the text trimmed", () => {
+    expect(adminUsersQuery({ ...base, search: "  Ada@Example.COM " })).toMatchObject({
+      search: "Ada@Example.COM",
       searchField: "email",
-      searchOperator: "contains",
     });
-    expect(listUsersQuery({ ...base, search: "Ada", searchField: "name" })).toMatchObject({
-      searchValue: "Ada",
+    expect(adminUsersQuery({ ...base, search: "Ada", searchField: "name" })).toMatchObject({
+      search: "Ada",
       searchField: "name",
     });
-    expect(listUsersQuery({ ...base, search: "   " })).not.toHaveProperty("searchValue");
+    expect(adminUsersQuery({ ...base, search: "   " })).not.toHaveProperty("search");
   });
 
-  it("maps the role and status filters to the single server filter", () => {
-    expect(listUsersQuery({ ...base, role: "admin" })).toMatchObject({
-      filterField: "role",
-      filterValue: "admin",
-      filterOperator: "eq",
+  it("sends the role and status filters together", () => {
+    expect(adminUsersQuery({ ...base, role: "admin", status: "active" })).toMatchObject({
+      role: "admin",
+      status: "active",
     });
-    expect(listUsersQuery({ ...base, status: "pending" })).toMatchObject({
-      filterField: "signupApproved",
-      filterValue: false,
-    });
-    expect(listUsersQuery({ ...base, status: "banned" })).toMatchObject({
-      filterField: "banned",
-      filterValue: true,
-    });
-    expect(listUsersQuery(base)).not.toHaveProperty("filterField");
+    expect(adminUsersQuery({ ...base, status: "pending" })).toMatchObject({ status: "pending" });
+    expect(adminUsersQuery({ ...base, status: "deleted" })).not.toHaveProperty("status");
+    expect(adminUsersQuery(base)).not.toHaveProperty("role");
   });
 });
 
-describe("keepLatestFilter", () => {
-  it("keeps whichever filter changed last", () => {
+describe("listAdminUsers", () => {
+  it("asks GET /admin/users for one page", async () => {
+    const paths: string[] = [];
+    const client = {
+      get: <T>(path: string): Promise<T> => {
+        paths.push(path);
+        return Promise.resolve({ items: [], total: 0 } as unknown as T);
+      },
+    };
+
+    await listAdminUsers(client, adminUsersQuery({ ...base, page: 2, search: "ada", role: "admin", status: "banned" }));
+    await listAdminUsers(client, adminUsersQuery(base));
+
+    expect(paths).toEqual([
+      "/admin/users?limit=15&offset=15&sortBy=createdAt&sortDirection=desc&search=ada&searchField=email&role=admin&status=banned",
+      "/admin/users?limit=15&offset=0&sortBy=createdAt&sortDirection=desc",
+    ]);
+  });
+});
+
+// Application-owned users pages from 1.2 still import these.
+describe("deprecated listUsers helpers", () => {
+  it("still builds the single-filter Better Auth query", () => {
+    expect(listUsersQuery({ ...base, page: 2, search: " Ada@Example.COM ", status: "banned" })).toEqual({
+      limit: 15,
+      offset: 15,
+      sortBy: "createdAt",
+      sortDirection: "desc",
+      searchValue: "ada@example.com",
+      searchField: "email",
+      searchOperator: "contains",
+      filterField: "banned",
+      filterValue: true,
+      filterOperator: "eq",
+    });
     expect(keepLatestFilter({ role: "admin", status: "" }, { role: "admin", status: "banned" }))
       .toEqual({ role: "", status: "banned" });
-    expect(keepLatestFilter({ role: "", status: "banned" }, { role: "user", status: "banned" }))
-      .toEqual({ role: "user", status: "" });
-    expect(keepLatestFilter({ role: "", status: "" }, { role: "user", status: "" }))
-      .toEqual({ role: "user", status: "" });
   });
 });

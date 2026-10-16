@@ -21,3 +21,10 @@ the directory if you deploy with `podo deploy`. If you do apply them by hand, re
 every `example.com` and `ghcr.io/example/...` placeholder first, and note that the
 image tags below are placeholders too: the deployment tooling rejects `latest`,
 branch tags, and empty tags, and so should you.
+
+For a hand-managed API WebSocket endpoint, add a `pathType: Exact` Ingress path to
+the API service before the existing `/` web path. Do not route a prefix or the root
+to API. Deployment profiles express the same rule with
+`exposure.webSocketPaths` and validate it before rendering. A large-upload route
+under `/api/` needs `/api` removed on the way to the API; `exposure.apiPaths`
+renders a separate Ingress with a Traefik `stripPrefix` Middleware for that.

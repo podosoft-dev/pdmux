@@ -1,5 +1,6 @@
 import { createApp } from "./app";
 import { validateEnv } from "./config/env.validation";
+import { apiServerOptions } from "./config/server-options";
 import { createCoreServices } from "./core/services";
 
 const env = validateEnv(process.env);
@@ -9,7 +10,7 @@ const app = createApp({ env, services });
 async function bootstrap(): Promise<void> {
   try {
     await services.start();
-    app.listen({ hostname: env.HOST, port: env.PORT });
+    app.listen({ ...apiServerOptions(env), hostname: env.HOST, port: env.PORT });
     process.stdout.write(`API listening on http://${env.HOST}:${env.PORT}\n`);
   } catch (error) {
     await services.close();

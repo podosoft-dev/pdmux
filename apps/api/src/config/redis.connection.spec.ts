@@ -1,5 +1,12 @@
-import { describe, expect, it } from "bun:test";
-import { redisConnectionOptions, redisConnectionUrl } from "./redis.connection";
+import { describe, expect, it, mock } from "bun:test";
+import {
+  DEFAULT_REDIS_COMMAND_TIMEOUT_MS,
+  RedisCommandTimeoutError,
+  redisCommandTimeoutMs,
+  redisConnectionOptions,
+  redisConnectionUrl,
+  withReplyTimeout,
+} from "./redis.connection";
 
 describe("redisConnectionOptions", () => {
   it("prefers an authenticated URL over individual settings", () => {
@@ -67,5 +74,44 @@ describe("redisConnectionUrl", () => {
       REDIS_PASSWORD: "p@ss",
       REDIS_TLS: "true",
     })).toBe("rediss://podokit:p%40ss@cache.example.com:6381/4");
+  });
+});
+
+describe("redisCommandTimeoutMs", () => {
+  it("defaults to one second and reads REDIS_COMMAND_TIMEOUT_MS", () => {
+    expect(redisCommandTimeoutMs({})).toBe(DEFAULT_REDIS_COMMAND_TIMEOUT_MS);
+    expect(redisCommandTimeoutMs({ REDIS_COMMAND_TIMEOUT_MS: "" })).toBe(1_000);
+    expect(redisCommandTimeoutMs({ REDIS_COMMAND_TIMEOUT_MS: "250" })).toBe(250);
+  });
+
+  it("rejects a value that is not a positive integer", () => {
+    for (const value of ["0", "-1", "1.5", "soon"]) {
+      expect(() => redisCommandTimeoutMs({ REDIS_COMMAND_TIMEOUT_MS: value }))
+        .toThrow("REDIS_COMMAND_TIMEOUT_MS must be a positive integer");
+    }
+  });
+});
+
+describe("withReplyTimeout", () => {
+  it("passes a reply or its error through and leaves the connection alone", async () => {
+    const onTimeout = mock(() => undefined);
+    const failure = new Error("WRONGTYPE");
+
+    await expect(withReplyTimeout(Promise.resolve("value"), 50, onTimeout)).resolves.toBe("value");
+    await expect(withReplyTimeout(Promise.reject(failure), 50, onTimeout)).rejects.toBe(failure);
+    await Bun.sleep(80);
+    expect(onTimeout).not.toHaveBeenCalled();
+  });
+
+  it("fails a missing reply after the timeout and closes the connection once", async () => {
+    const onTimeout = mock(() => undefined);
+    const started = Date.now();
+
+    const error = await withReplyTimeout(new Promise(() => undefined), 50, onTimeout)
+      .then(() => undefined, (reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(RedisCommandTimeoutError);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(onTimeout).toHaveBeenCalledTimes(1);
   });
 });

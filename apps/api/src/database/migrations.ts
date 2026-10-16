@@ -21,6 +21,7 @@ import { AddRepoRemoteCheck1731400000000 } from "../migrations/1731400000000-Add
 import { AddHostMetricSwap1731500000000 } from "../migrations/1731500000000-AddHostMetricSwap";
 import { AddServiceExposures1731600000000 } from "../migrations/1731600000000-AddServiceExposures";
 import { IndexAuditLogFilters1792000000000 } from "../migrations/1792000000000-IndexAuditLogFilters";
+import { IndexSessionCreatedAt1792060000000 } from "../migrations/1792060000000-IndexSessionCreatedAt";
 
 /** Static imports survive bundling; runtime directory globs can silently load zero migrations. */
 export const POSTGRES_MIGRATIONS: Array<new () => MigrationInterface> = [
@@ -46,4 +47,5 @@ export const POSTGRES_MIGRATIONS: Array<new () => MigrationInterface> = [
   AddServiceExposures1731600000000,
   AddFileTransfers1731700000000,
   IndexAuditLogFilters1792000000000,
+  IndexSessionCreatedAt1792060000000,
 ];

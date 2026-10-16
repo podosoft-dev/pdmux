@@ -12,7 +12,13 @@ import {
 } from "@podosoft/podokit-auth";
 import type { DatabaseProviderName } from "@podosoft/podokit-runtime";
 import { refreshAuthNow } from "../auth/auth-provider";
-import { authConfigParam } from "./config-param";
+import {
+  readAuthConfigRow,
+  readAuthConfigRows,
+  writeAuthConfigRow,
+  type AuthConfigRow,
+} from "./auth-config.rows";
+import { resetSessionExpirations } from "./session-expiry";
 
 export type SocialProviderView = {
   id: string;
@@ -73,22 +79,6 @@ export type AuthConfigUpdate = {
   };
 };
 
-interface AuthConfigRow {
-  key: string;
-  enabled: boolean;
-  config: unknown;
-  secret: string | null;
-}
-
-// SQLite returns booleans as 0 or 1.
-interface DatabaseAuthConfigRow extends Omit<AuthConfigRow, "enabled"> {
-  enabled: boolean | number;
-}
-
-function normalizeRow(row: DatabaseAuthConfigRow): AuthConfigRow {
-  return { ...row, enabled: row.enabled === true || row.enabled === 1 };
-}
-
 function object(value: unknown): Record<string, unknown> {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -119,31 +109,15 @@ export class AuthConfigService {
   ) {}
 
   private async rows(): Promise<AuthConfigRow[]> {
-    const rows = await this.sql<DatabaseAuthConfigRow[]>`
-      SELECT "key", "enabled", "config", "secret" FROM "auth_config"
-    `;
-    return rows.map(normalizeRow);
+    return readAuthConfigRows(this.sql);
   }
 
   private async row(key: string): Promise<AuthConfigRow | null> {
-    const rows = await this.sql<DatabaseAuthConfigRow[]>`
-      SELECT "key", "enabled", "config", "secret"
-      FROM "auth_config" WHERE "key" = ${key}
-    `;
-    return rows[0] ? normalizeRow(rows[0]) : null;
+    return readAuthConfigRow(this.sql, key);
   }
 
   private async upsert(row: AuthConfigRow): Promise<void> {
-    const config = authConfigParam(this.provider, object(row.config));
-    await this.sql`
-      INSERT INTO "auth_config" ("key", "enabled", "config", "secret", "updatedAt")
-      VALUES (${row.key}, ${row.enabled}, ${config}, ${row.secret}, CURRENT_TIMESTAMP)
-      ON CONFLICT ("key") DO UPDATE SET
-        "enabled" = EXCLUDED."enabled",
-        "config" = EXCLUDED."config",
-        "secret" = EXCLUDED."secret",
-        "updatedAt" = CURRENT_TIMESTAMP
-    `;
+    await writeAuthConfigRow(this.sql, this.provider, row);
   }
 
   async describe(): Promise<AuthConfigView> {
@@ -226,7 +200,12 @@ export class AuthConfigService {
     if (update.server) await this.upsertServer(update.server);
     await refreshAuthNow();
     if (update.server?.sessionIdleTimeoutMinutes !== undefined) {
-      await this.resetSessionExpirations(update.server.sessionIdleTimeoutMinutes);
+      const minutes = update.server.sessionIdleTimeoutMinutes;
+      await resetSessionExpirations(
+        this.sql,
+        this.provider,
+        minutes === null ? DEFAULT_SESSION_LIFETIME_SECONDS : minutes * 60,
+      );
     }
     return this.describe();
   }
@@ -294,15 +273,5 @@ export class AuthConfigService {
       config.sessionIdleTimeoutMinutes = update.sessionIdleTimeoutMinutes;
     }
     await this.upsert({ ...current, config });
-  }
-
-  private async resetSessionExpirations(minutes: number | null): Promise<void> {
-    const lifetimeSeconds = minutes === null ? DEFAULT_SESSION_LIFETIME_SECONDS : minutes * 60;
-    await this.sql`
-      UPDATE "session"
-      SET "expiresAt" = CURRENT_TIMESTAMP + (${lifetimeSeconds} * INTERVAL '1 second'),
-          "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "expiresAt" > CURRENT_TIMESTAMP
-    `;
   }
 }

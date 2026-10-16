@@ -8,6 +8,8 @@ import { Elysia, t } from "elysia";
 import { adminSessionRoutes } from "./admin-sessions/admin-sessions.routes";
 import { createSessionRevoker, type RevokeUserSessionApi } from "./admin-sessions/admin-sessions.revoker";
 import { AdminSessionsService } from "./admin-sessions/admin-sessions.service";
+import { adminUserRoutes } from "./admin-users/admin-users.routes";
+import { AdminUsersService } from "./admin-users/admin-users.service";
 import { AUTH } from "./auth/auth.module";
 import { getAuth } from "./auth/auth-provider";
 import {
@@ -30,6 +32,7 @@ import { validateSiteSetting } from "./site-settings/site-settings.validation";
 export const SITE_SETTINGS = Symbol("site-settings") as ServiceKey<SiteSettingsService>;
 export const PROFILE_IMAGES = Symbol("profile-images") as ServiceKey<ProfileImageService>;
 export const ADMIN_SESSIONS = Symbol("admin-sessions") as ServiceKey<AdminSessionsService>;
+export const ADMIN_USERS = Symbol("admin-users") as ServiceKey<AdminUsersService>;
 
 const ICON_TYPES = new Set([
   "image/svg+xml",
@@ -54,6 +57,7 @@ const adminPlugin: AppPlugin = ({ services }) => {
       sessions: services.resolve(ADMIN_SESSIONS),
       revoke: createSessionRevoker(() => getAuth().api as unknown as RevokeUserSessionApi),
     }))
+    .use(adminUserRoutes({ auth, users: services.resolve(ADMIN_USERS) }))
     .use(siteAssetRoutes(site, profileImages))
     .get("/site/settings", async () => {
       // The favicon fields are site.* rows too, so one read serves the response.
@@ -127,6 +131,7 @@ export const adminModule: PodokitModule = {
   configure: (_env, services): void => {
     const database = services.resolve(DATABASE);
     services.register(ADMIN_SESSIONS, new AdminSessionsService(database.sql, database.provider));
+    services.register(ADMIN_USERS, new AdminUsersService(database.sql, database.provider));
     const storage = services.resolve(OBJECT_STORAGE);
     const site = new SiteSettingsService(services.resolve(DATABASE).sql, storage);
     const profileImages = new ProfileImageService(storage, services.resolve(LOGGER));

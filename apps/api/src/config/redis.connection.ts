@@ -68,6 +68,51 @@ export function redisConnectionOptions(
   return { ...base, ...overrides };
 }
 
+export const DEFAULT_REDIS_COMMAND_TIMEOUT_MS = 1_000;
+
+/** How long the API waits for Redis to answer one command (`REDIS_COMMAND_TIMEOUT_MS`). */
+export function redisCommandTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const value = env.REDIS_COMMAND_TIMEOUT_MS;
+  if (value === undefined || value === "") return DEFAULT_REDIS_COMMAND_TIMEOUT_MS;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error("REDIS_COMMAND_TIMEOUT_MS must be a positive integer");
+  }
+  return parsed;
+}
+
+export class RedisCommandTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Redis did not answer within ${timeoutMs} ms`);
+    this.name = "RedisCommandTimeoutError";
+  }
+}
+
+/**
+ * Rejects with `RedisCommandTimeoutError` when `reply` has not settled within
+ * `timeoutMs`, after calling `onTimeout`. Redis answers a connection's commands
+ * in order, so a missing reply holds back every later one: `onTimeout` closes
+ * the connection, which fails those too and lets its supervisor reconnect.
+ */
+export async function withReplyTimeout<T>(
+  reply: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new RedisCommandTimeoutError(timeoutMs));
+      onTimeout();
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([reply, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Resolve the same Redis configuration as BullMQ into a URL for Bun.RedisClient. */
 export function redisConnectionUrl(env: NodeJS.ProcessEnv = process.env): string {
   if (env.REDIS_URL) {

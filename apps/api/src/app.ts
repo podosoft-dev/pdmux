@@ -109,6 +109,15 @@ export function cachedOpenApiDocument(source: OpenApiDocumentSource): OpenApiDoc
   };
 }
 
+/** Seconds a client should wait before retrying a request that failed with 503. */
+export const UNAVAILABLE_RETRY_AFTER_SECONDS = 1;
+
+/** Adds `Retry-After` to a 503 unless the code that failed the request already chose one. */
+export function setRetryAfter(headers: Record<string, string | number>): void {
+  if (Object.keys(headers).some((name) => name.toLowerCase() === "retry-after")) return;
+  headers["retry-after"] = String(UNAVAILABLE_RETRY_AFTER_SECONDS);
+}
+
 function errorEnvelope(
   code: string,
   message: string,
@@ -193,10 +202,12 @@ const buildApp = (options: CreateAppOptions = {}) => {
     .onError(({ code, error, path, set }) => {
       if (error instanceof AppException) {
         set.status = error.statusCode;
+        if (error.statusCode === 503) setRetryAfter(set.headers);
         return errorEnvelope(error.code, error.message, error.statusCode, path);
       }
       if (isDatabaseUnavailable(error)) {
         set.status = 503;
+        setRetryAfter(set.headers);
         return errorEnvelope("DATABASE_UNAVAILABLE", "The database is temporarily unavailable", 503, path);
       }
       const statusCode = code === "NOT_FOUND" ? 404 : code === "VALIDATION" ? 400 : 500;

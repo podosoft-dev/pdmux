@@ -140,7 +140,7 @@ test("users list shows pagination beyond one page", async ({ page, disposableUse
   await expect(nav).toBeVisible();
   const secondPage = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return url.pathname === "/api/auth/admin/list-users" && url.searchParams.get("offset") === "15";
+    return url.pathname === "/api/admin/users" && url.searchParams.get("offset") === "15";
   });
   await nav.getByRole("button", { name: "Page 2", exact: true }).first().click();
   expect((await secondPage).ok()).toBeTruthy();

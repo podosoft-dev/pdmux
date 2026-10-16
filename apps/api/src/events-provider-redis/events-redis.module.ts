@@ -8,9 +8,7 @@ export const eventsRedisModule: PodokitModule = {
   configure: (_env, services): void => {
     if (PROVIDERS.events !== "redis") return;
     const events = new RedisEventBus();
-    services.register(EVENTS, events, async () => {
-      await events.close();
-    });
-    services.onStart(() => events.ready());
+    services.register(EVENTS, events, () => events.close());
+    services.supervise("events", events);
   },
 };

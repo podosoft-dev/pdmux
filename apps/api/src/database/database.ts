@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { AppEnv } from "../config/env.validation";
 import { PROVIDERS } from "../config/providers";
+import { answersOnNewConnection, PoolGuard } from "./pool-guard";
 
 function isSqliteUrl(url: string): boolean {
   return url === ":memory:" || /^(?:sqlite|file):/.test(url);
@@ -64,8 +65,9 @@ export function postgresPoolOptions(env: AppEnv): PostgresPoolOptions {
   };
 }
 
-// Bun SQL and pg report a database that cannot be reached, or a connection that
-// could not be opened or taken from a full pool in time, with these shapes.
+// Bun SQL and pg report a database that cannot be reached, a connection that
+// could not be opened or taken from a full pool in time, or a query the server
+// did not answer in time, with these shapes.
 const UNAVAILABLE_SQL_CODES = new Set([
   "ERR_POSTGRES_CONNECTION_TIMEOUT",
   "ERR_POSTGRES_CONNECTION_REFUSED",
@@ -75,6 +77,7 @@ const UNAVAILABLE_SQL_CODES = new Set([
 const UNAVAILABLE_PG_MESSAGES = new Set([
   "timeout exceeded when trying to connect",
   "Connection terminated due to connection timeout",
+  "Query read timeout",
 ]);
 
 /** Whether an error, or one it wraps, means the database is unavailable rather than the request being wrong. */
@@ -88,20 +91,36 @@ export function isDatabaseUnavailable(error: unknown): boolean {
   return false;
 }
 
-function createSql(provider: DatabaseProviderName, env: AppEnv): SQL {
-  const url = databaseUrl(env);
-  return provider === "sqlite"
-    ? new SQL(url, { adapter: "sqlite", create: true, readwrite: true, strict: true })
-    : new SQL(url, postgresPoolOptions(env));
-}
-
 export class Database {
   readonly provider: DatabaseProviderName = selectedDatabaseProvider();
   readonly sql: SQL;
+  private readonly guard?: PoolGuard;
   private ready?: Promise<void>;
 
   constructor(env: AppEnv, sql?: SQL) {
-    this.sql = sql ?? createSql(this.provider, env);
+    if (sql) {
+      this.sql = sql;
+      return;
+    }
+    const url = databaseUrl(env);
+    if (this.provider === "sqlite") {
+      this.sql = new SQL(url, { adapter: "sqlite", create: true, readwrite: true, strict: true });
+      return;
+    }
+    this.guard = new PoolGuard(() => new SQL(url, postgresPoolOptions(env)), {
+      stallTimeoutMs: env.DB_QUERY_TIMEOUT_MS,
+      serverAnswers: () => answersOnNewConnection(url, env.READINESS_CHECK_TIMEOUT_MS),
+    });
+    // The supervisor's next connect() then checks the new pool.
+    this.guard.onLost(() => {
+      this.ready = undefined;
+    });
+    this.sql = this.guard.sql;
+  }
+
+  /** Takes the callback to run when the pool is replaced because PostgreSQL stopped answering. */
+  onLost(listener: (reason: unknown) => void): void {
+    this.guard?.onLost(listener);
   }
 
   connect(): Promise<void> {

@@ -14,8 +14,16 @@ export const healthPlugin: AppPlugin = ({ readiness }) =>
       "/health/ready",
       async () => {
         const { [DATABASE_READINESS_CHECK]: db, ...checks } = await readiness.run();
-        if (db !== "up" || Object.values(checks).includes("down")) {
-          throw new AppException("READINESS_FAILED", "One or more dependencies are unavailable", 503);
+        const down = [
+          ...(db === "up" ? [] : ["db"]),
+          ...Object.entries(checks).flatMap(([name, status]) => status === "down" ? [name] : []),
+        ];
+        if (down.length > 0) {
+          throw new AppException(
+            "READINESS_FAILED",
+            `One or more dependencies are unavailable: ${down.join(", ")}`,
+            503,
+          );
         }
         return { status: "ready" as const, db: "up" as const, checks };
       },

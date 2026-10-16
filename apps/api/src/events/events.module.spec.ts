@@ -4,7 +4,12 @@ import { MemoryEventBus } from "@podosoft/podokit-runtime";
 import { Elysia } from "elysia";
 import type { RequestIdentity } from "../core/services";
 import { ReadinessService } from "../health/readiness.service";
-import { eventsRoutes, requestEventIdentity, type EventIdentity } from "./events.module";
+import {
+  eventsRoutes,
+  maxStreamsPerUser,
+  requestEventIdentity,
+  type EventIdentity,
+} from "./events.module";
 import { EventsService } from "./events.service";
 
 /** Maps the `x-user`, `x-admin`, `x-roles`, and `x-org` test headers to the request identity. */
@@ -199,5 +204,47 @@ describe("default event identity", () => {
     expect(await identity.subscriber(new Request("http://localhost/events/stream", { headers: { "x-user": "u2" } })))
       .toEqual({ userId: "u2", roles: [] });
     expect(await identity.subscriber(new Request("http://localhost/events/stream"))).toBeUndefined();
+  });
+});
+
+describe("stream limit configuration", () => {
+  it("reads SSE_MAX_STREAMS_PER_USER and defaults to eight", () => {
+    expect(maxStreamsPerUser({})).toBe(8);
+    expect(maxStreamsPerUser({ SSE_MAX_STREAMS_PER_USER: "3" })).toBe(3);
+    for (const value of ["0", "-1", "1.5", "many"]) {
+      expect(() => maxStreamsPerUser({ SSE_MAX_STREAMS_PER_USER: value })).toThrow(
+        "SSE_MAX_STREAMS_PER_USER must be a positive integer",
+      );
+    }
+  });
+
+  it("answers 429 EVENTS_STREAM_LIMIT over HTTP", async () => {
+    const events = new EventsService(new MemoryEventBus(), new ReadinessService(), {
+      maxStreamsPerUser: 1,
+    });
+    await events.connect();
+    const controllers: AbortController[] = [];
+    opened.push({ events, controllers });
+    const app = new Elysia()
+      .onError(({ error, set }) => {
+        if (!(error instanceof AppException)) return undefined;
+        set.status = error.statusCode;
+        return { code: error.code };
+      })
+      .use(eventsRoutes(events, headerIdentity));
+    const send = (): Promise<Response> => {
+      const controller = new AbortController();
+      controllers.push(controller);
+      return app.handle(
+        new Request("http://localhost/events/stream", {
+          headers: { "x-user": "u1" },
+          signal: controller.signal,
+        }),
+      );
+    };
+    expect((await send()).status).toBe(200);
+    const refused = await send();
+    expect(refused.status).toBe(429);
+    expect(await refused.json()).toEqual({ code: "EVENTS_STREAM_LIMIT" });
   });
 });

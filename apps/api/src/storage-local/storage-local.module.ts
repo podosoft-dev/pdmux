@@ -27,6 +27,17 @@ import {
 } from "./storage-demo";
 
 export const DOWNLOAD_BASE_URL = "/files/content";
+const DEFAULT_MULTIPART_MAX_AGE_SECONDS = 24 * 60 * 60;
+
+/** How long an unfinished multipart upload may sit idle before its parts are removed. */
+export function multipartMaxAgeMs(value = process.env.LOCAL_STORAGE_MULTIPART_MAX_AGE): number {
+  if (value === undefined || value.trim() === "") return DEFAULT_MULTIPART_MAX_AGE_SECONDS * 1000;
+  const seconds = Number(value);
+  if (!Number.isInteger(seconds) || seconds < 1) {
+    throw new Error("LOCAL_STORAGE_MULTIPART_MAX_AGE must be a positive integer of seconds");
+  }
+  return seconds * 1000;
+}
 export const LOCAL_DOWNLOAD_URLS = Symbol("local-download-urls") as ServiceKey<DownloadUrlSigner>;
 
 async function readObject(storage: ObjectStore, key: string): Promise<ObjectData> {
@@ -124,7 +135,11 @@ export const storageLocalModule: PodokitModule = {
     const root = resolve(process.env.LOCAL_STORAGE_PATH ?? "./data/files");
     const signer = new DownloadUrlSigner(join(root, ".podokit", "download-url.key"));
     const storage = new SignedDownloadStore(
-      new LocalObjectStore({ rootDirectory: root, publicBaseUrl: DOWNLOAD_BASE_URL }),
+      new LocalObjectStore({
+        rootDirectory: root,
+        publicBaseUrl: DOWNLOAD_BASE_URL,
+        multipartMaxAgeMs: multipartMaxAgeMs(),
+      }),
       signer,
       DOWNLOAD_BASE_URL,
     );

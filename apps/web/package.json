@@ -20,7 +20,7 @@
     "@pdmux/core": "workspace:*",
     "@pdmux/protocol": "workspace:*",
     "@pdmux/ui": "workspace:*",
-    "@podosoft/podokit-api-client": "^0.8.5",
+    "@podosoft/podokit-api-client": "^0.9.0",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "mode-watcher": "^1.1.0",

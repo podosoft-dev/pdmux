@@ -1,9 +1,12 @@
-import { error } from "@sveltejs/kit";
+import { error, type RequestEvent } from "@sveltejs/kit";
 import type { Handle } from "@sveltejs/kit/hooks";
+import { building } from "$app/env";
+import { routes } from "$app/manifest";
 import { serverApiClient } from "#lib/server/api.js";
 import { resolveLocale } from "#lib/i18n/messages.js";
 import { applySearchIndexingHeaders } from "#lib/server/search-indexing.js";
 import { isPublicPath } from "#lib/server/guards.js";
+import { needsRuntimeContext } from "#lib/server/runtime-context.js";
 import type { SiteSettings } from "#lib/site.svelte.js";
 import { ApiError } from "@podosoft/podokit-api-client";
 
@@ -12,15 +15,18 @@ function isTemporaryServiceFailure(cause: unknown): boolean {
   return cause.statusCode === 408 || cause.statusCode === 429 || cause.statusCode >= 500;
 }
 
-export const handle: Handle = async ({ event, resolve }) => {
-  // Static assets and API proxy requests do not render application layouts.
-  // Avoid multiplying settings/session API calls for every asset and proxied
-  // request; page and data routes still receive the complete runtime context.
-  if (event.route.id === null || event.url.pathname.startsWith("/api/")) {
-    const response = await resolve(event);
-    return applySearchIndexingHeaders(response, event.url.pathname);
-  }
+// An anonymous visitor with no site settings, for responses that render no
+// layout. The locale still follows the visitor's cookie.
+function setEmptyRuntimeContext(event: RequestEvent): void {
+  event.locals.site = null;
+  event.locals.siteUnavailable = false;
+  event.locals.user = null;
+  event.locals.session = null;
+  event.locals.authUnavailable = false;
+  event.locals.locale = resolveLocale(event.cookies.get("locale"));
+}
 
+async function loadRuntimeContext(event: RequestEvent): Promise<void> {
   // Public site settings (branding, locale/timezone defaults, maintenance, …)
   // and the session are independent, so both requests run at once. The
   // settings are loaded once here and reused by the layout load. The async
@@ -72,6 +78,18 @@ export const handle: Handle = async ({ event, resolve }) => {
     !isPublicPath(event.url.pathname)
   ) {
     error(503, "Service temporarily unavailable");
+  }
+}
+
+export const handle: Handle = async ({ event, resolve }) => {
+  // Listed asset endpoints, missing subresources, the API proxy, and
+  // prerendering skip the two API lookups. Pages, their data, form actions,
+  // remote functions, and the 404 page get the complete runtime context.
+  const route = routes.find(({ id }) => id === event.route.id);
+  if (needsRuntimeContext(event, { building, route })) {
+    await loadRuntimeContext(event);
+  } else {
+    setEmptyRuntimeContext(event);
   }
   const response = await resolve(event, {
     transformPageChunk: ({ html }) =>

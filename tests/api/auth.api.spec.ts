@@ -291,7 +291,7 @@ test("a user can create, list and revoke a personal API key", async ({ playwrigh
   const body = (await (await ctx.get("/api/auth/api-key/list")).json()) as { apiKeys: Array<{ id: string; name: string | null }> };
   expect(body.apiKeys.some((k) => k.name === "ci")).toBeTruthy();
 
-  const del = await ctx.post("/api/auth/api-key/delete", { data: { keyId: body.apiKeys[0].id } });
+  const del = await ctx.post("/api/auth/api-key/delete", { data: { keyId: body.apiKeys[0]?.id } });
   expect(del.ok()).toBeTruthy();
   await ctx.dispose();
 });

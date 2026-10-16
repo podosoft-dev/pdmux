@@ -16,6 +16,7 @@ describe("API contract inventory", () => {
     expect(expected).toContain("POST /api/auth/sign-in/email");
     expect(expected).toContain("PUT /cache/{key}");
     expect(expected).toContain("POST /files");
+    expect(expected).toContain("PUT /files/uploads/{id}/parts/{partNumber}");
   });
 
   it("uses one structural parameter name for every public blog post route", () => {

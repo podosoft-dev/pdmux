@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type { RedisClient } from "bun";
 import type {
   CacheSetOptions,
   CacheStore,
@@ -30,26 +29,24 @@ function resultNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+/** Every command is bounded by `REDIS_COMMAND_TIMEOUT_MS` through `RedisService.command`. */
 export class RedisCacheStore implements CacheStore {
-  private readonly client: RedisClient;
-
-  constructor(private readonly redis: RedisService) {
-    this.client = redis.client;
-  }
+  constructor(private readonly redis: RedisService) {}
 
   get(key: string): Promise<string | null> {
     return this.redis.get(key);
   }
 
   async set(key: string, value: string, options: CacheSetOptions = {}): Promise<void> {
-    if (options.ttlMs === undefined) {
-      await this.client.set(key, value);
+    const ttlMs = options.ttlMs;
+    if (ttlMs === undefined) {
+      await this.redis.command((client) => client.set(key, value));
       return;
     }
-    if (!Number.isSafeInteger(options.ttlMs) || options.ttlMs < 1) {
+    if (!Number.isSafeInteger(ttlMs) || ttlMs < 1) {
       throw new Error("ttlMs must be a positive integer");
     }
-    await this.client.set(key, value, "PX", options.ttlMs);
+    await this.redis.command((client) => client.set(key, value, "PX", ttlMs));
   }
 
   async delete(key: string): Promise<boolean> {
@@ -84,11 +81,11 @@ export class RedisCacheStore implements CacheStore {
   private async runFixedWindow(key: string, windowMs: number): Promise<unknown> {
     const args = ["1", key, String(windowMs)];
     try {
-      return await this.client.send("EVALSHA", [FIXED_WINDOW_SCRIPT_SHA, ...args]);
+      return await this.redis.command((client) => client.send("EVALSHA", [FIXED_WINDOW_SCRIPT_SHA, ...args]));
     } catch (error) {
       // Redis forgets scripts on restart, failover, or SCRIPT FLUSH; EVAL reloads it.
       if (!isMissingScript(error)) throw error;
-      return this.client.send("EVAL", [FIXED_WINDOW_SCRIPT, ...args]);
+      return this.redis.command((client) => client.send("EVAL", [FIXED_WINDOW_SCRIPT, ...args]));
     }
   }
 
