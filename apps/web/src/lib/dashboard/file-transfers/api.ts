@@ -15,17 +15,10 @@ export const transferApi = {
   reconcile: (hostId: string, id: string, entryId: string): Promise<FileTransferEntryView> => api.post(root(hostId, id) + `/entries/${entryId}/reconcile`),
   decision: (hostId: string, id: string, entryId: string, action: "replace" | "skip"): Promise<FileTransferEntryView> => api.post(root(hostId, id) + `/entries/${entryId}/decision`, { action }),
   commit: (hostId: string, id: string, entryId: string): Promise<FileTransferEntryView> => api.post(root(hostId, id) + `/entries/${entryId}/commit`),
-  async chunk(hostId: string, id: string, entryId: string, offset: number, digest: string, bytes: Uint8Array): Promise<FileTransferEntryView> {
-    const response = await fetch("/api" + root(hostId, id) + `/entries/${entryId}/chunk`, {
-      method: "PUT", headers: { "Content-Type": "application/octet-stream", "X-Transfer-Offset": String(offset), "X-Transfer-Sha256": digest },
-      body: new Uint8Array(bytes),
-    });
-    const body: unknown = await response.json();
-    if (!response.ok) {
-      const code = body && typeof body === "object" && "error" in body && body.error && typeof body.error === "object" && "code" in body.error ? String(body.error.code) : "FILES_TRANSFER_IO";
-      throw Object.assign(new Error(code), { code });
-    }
-    return body as FileTransferEntryView;
-  },
+  chunk: (hostId: string, id: string, entryId: string, offset: number, digest: string, bytes: Uint8Array): Promise<FileTransferEntryView> =>
+    api.put(root(hostId, id) + `/entries/${entryId}/chunk`, new Uint8Array(bytes), {
+      contentType: "application/octet-stream",
+      headers: { "X-Transfer-Offset": String(offset), "X-Transfer-Sha256": digest },
+    }),
   url: (hostId: string, id: string): string => "/api" + root(hostId, id) + "/download",
 };

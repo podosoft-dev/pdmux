@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FileTransferEntryView, FileTransferView } from "@pdmux/protocol";
-import { FileTransferController } from "../src/lib/dashboard/file-transfers/controller.svelte";
+import { ApiError } from "@podosoft/podokit-api-client";
+import { FileTransferController, TRANSFER_RETRY_LIMIT, transferRetryDelay } from "../src/lib/dashboard/file-transfers/controller.svelte";
 import { FilesDock } from "../src/lib/dashboard/files-dock.svelte";
 import { transferApi } from "../src/lib/dashboard/file-transfers/api";
 import { chunkDigest, fingerprintSource, sourceFromDirectory, sourceFromDroppedEntries, sourceFromFiles, type DroppedEntry } from "../src/lib/dashboard/file-transfers/source";
@@ -111,6 +112,119 @@ describe("[TC-PDFILE-007] folder sources and acknowledged progress", (): void =>
       await vi.waitFor(() => expect(controller.jobs[0]?.state).toBe("completed"));
       expect(calls).toEqual([7]);
       expect(controller.jobs[0]?.bytes).toBe(7);
+    } finally { controller.dispose(); }
+  });
+});
+
+/** A one-file upload against an in-memory API whose chunk answers come from `refuse` first. */
+function refusingApi(refuse: (attempt: number) => Error | undefined): {
+  api: typeof transferApi;
+  calls: { chunk: number; reconcile: number; control: string[] };
+} {
+  let job: FileTransferView = {
+    id: crypto.randomUUID(), hostId: "host", basePath: "captured", direction: "upload", state: "draft",
+    bytes: 0, totalBytes: 0, completedEntries: 0, totalEntries: 0, currentPath: "", errorCode: "",
+    exclusions: [], archiveBytes: 0, updated: 0, created: 0,
+  };
+  const entries: FileTransferEntryView[] = [];
+  const calls = { chunk: 0, reconcile: 0, control: [] as string[] };
+  const api: typeof transferApi = {
+    ...transferApi,
+    create: async (hostId, input) => { job = { ...job, ...input, hostId }; return { ...job }; },
+    list: async () => [{ ...job }],
+    get: async () => ({ ...job }),
+    manifest: async (_hostId, _id, items) => {
+      entries.push(...items.map((item) => ({ ...item, offset: 0, state: "pending" as const, replace: false })));
+      job = { ...job, totalEntries: entries.length, totalBytes: items.reduce((sum, item) => sum + item.size, 0) };
+      return { ...job };
+    },
+    control: async (_hostId, _id, action) => {
+      calls.control.push(action);
+      job = { ...job, state: action === "start" ? "running" : "paused" };
+      return { ...job };
+    },
+    entries: async () => structuredClone(entries),
+    reconcile: async () => { calls.reconcile++; return { ...entries[0]! }; },
+    chunk: async (_hostId, _id, _entryId, offset, _digest, data) => {
+      const refusal = refuse(calls.chunk++);
+      if (refusal) throw refusal;
+      entries[0]!.offset = offset + data.length;
+      job = { ...job, bytes: entries[0]!.offset };
+      return { ...entries[0]! };
+    },
+    commit: async () => {
+      entries[0]!.state = "committed";
+      job = { ...job, state: "completed", completedEntries: 1 };
+      return { ...entries[0]! };
+    },
+  };
+  return { api, calls };
+}
+
+const rateLimited = (retryAfterSeconds?: number): ApiError =>
+  new ApiError("RATE_LIMIT_EXCEEDED", "Too many requests.", 429, undefined, retryAfterSeconds);
+const unavailable = (): ApiError => new ApiError("BACKEND_UNAVAILABLE", "Service unavailable", 503);
+
+describe("[TC-PDFILE-014] uploads wait out 429 and 503 instead of pausing", (): void => {
+  it("waits for Retry-After or a doubling backoff, and only for refusals", (): void => {
+    expect(transferRetryDelay(rateLimited(3), 0)).toBe(3_000);
+    expect(transferRetryDelay(rateLimited(3), 2)).toBe(4_000);
+    expect(transferRetryDelay(rateLimited(600), 0)).toBe(60_000);
+    expect([0, 1, 2, 3, 4, 5].map((failures) => transferRetryDelay(unavailable(), failures)))
+      .toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 32_000]);
+    expect(transferRetryDelay(unavailable(), TRANSFER_RETRY_LIMIT)).toBeNull();
+    expect(transferRetryDelay(new ApiError("FILES_TRANSFER_CONFLICT", "Conflict", 409), 0)).toBeNull();
+    expect(transferRetryDelay(new ApiError("BACKEND_TIMEOUT", "Timeout", 504), 0)).toBeNull();
+    expect(transferRetryDelay(new Error("FILES_TRANSFER_TIMEOUT"), 0)).toBeNull();
+  });
+
+  it("retries a rate-limited chunk after Retry-After from the agent's offset and completes", async (): Promise<void> => {
+    const { api, calls } = refusingApi((attempt) => attempt === 0 ? rateLimited(1) : undefined);
+    const controller = new FileTransferController(api);
+    try {
+      const started = Date.now();
+      await controller.prepare("host", "captured", () => sourceFromFiles([new File(["payload"], "file.txt")]));
+      await vi.waitFor(() => expect(controller.jobs[0]?.state).toBe("completed"), { timeout: 5_000 });
+      expect(Date.now() - started).toBeGreaterThanOrEqual(1_000);
+      expect(calls).toEqual({ chunk: 2, reconcile: 2, control: ["start"] });
+      expect(controller.error).toBe("");
+    } finally { controller.dispose(); }
+  });
+
+  it("pauses with the error once the retries run out", async (): Promise<void> => {
+    vi.useFakeTimers();
+    const { api, calls } = refusingApi(() => unavailable());
+    const controller = new FileTransferController(api);
+    try {
+      await controller.prepare("host", "captured", () => sourceFromFiles([new File(["payload"], "file.txt")]));
+      await vi.waitFor(() => expect(calls.chunk).toBe(1));
+      for (let waited = 0; waited < 70_000 && controller.jobs[0]?.state !== "paused"; waited += 1_000) {
+        await vi.advanceTimersByTimeAsync(1_000);
+      }
+      expect(controller.jobs[0]?.state).toBe("paused");
+      expect(calls.chunk).toBe(TRANSFER_RETRY_LIMIT + 1);
+      expect(calls.control).toEqual(["start", "pause"]);
+      expect(controller.error).toBe("BACKEND_UNAVAILABLE");
+    } finally {
+      controller.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops waiting when the user pauses, so resuming starts again at once", async (): Promise<void> => {
+    const { api, calls } = refusingApi((attempt) => attempt === 0 ? rateLimited(30) : undefined);
+    const controller = new FileTransferController(api);
+    try {
+      await controller.prepare("host", "captured", () => sourceFromFiles([new File(["payload"], "file.txt")]));
+      await vi.waitFor(() => expect(calls.chunk).toBe(1));
+      const pausedAt = Date.now();
+      await controller.pause(controller.jobs[0]!);
+      expect(controller.jobs[0]?.state).toBe("paused");
+      await controller.resume(controller.jobs[0]!);
+      await vi.waitFor(() => expect(controller.jobs[0]?.state).toBe("completed"), { timeout: 2_000 });
+      expect(Date.now() - pausedAt).toBeLessThan(2_000);
+      expect(calls).toEqual({ chunk: 2, reconcile: 2, control: ["start", "pause", "start"] });
+      expect(controller.error).toBe("");
     } finally { controller.dispose(); }
   });
 });

@@ -1,3 +1,4 @@
+import { ApiError } from "@podosoft/podokit-api-client";
 import { FILE_TRANSFER_CHUNK_BYTES, type FileTransferEntryView, type FileTransferView } from "@pdmux/protocol/transfer-limits";
 import { transferApi } from "./api";
 import { chunkDigest, desktopTransfers, fingerprintSource, type NativeDownload, type ScanProgress, type UploadSource } from "./source";
@@ -10,6 +11,29 @@ export function transferErrorCode(error: unknown): string {
   if (error && typeof error === "object" && "code" in error && typeof error.code === "string") return error.code;
   return error instanceof Error && /^(FILES_TRANSFER_|HOST_)/.test(error.message) ? error.message : "FILES_TRANSFER_IO";
 }
+
+/** Consecutive 429 or 503 answers an upload waits out before it pauses. */
+export const TRANSFER_RETRY_LIMIT = 6;
+const TRANSFER_RETRY_MAX_DELAY_MS = 60_000;
+
+/**
+ * How long to wait before retrying a transfer request that failed with `error`,
+ * or null when it must not be retried. Only 429 (a request budget is spent) and
+ * 503 (the API or a dependency is briefly unavailable) are retried: the request
+ * was refused before it changed anything. The wait honors `Retry-After` and
+ * doubles from one second with each consecutive failure, up to a minute, so
+ * without a hint the retries end after about a minute, inside the API's
+ * 90-second limit for an upload without requests.
+ */
+export function transferRetryDelay(error: unknown, failures: number): number | null {
+  if (!(error instanceof ApiError) || (error.statusCode !== 429 && error.statusCode !== 503)) return null;
+  if (failures >= TRANSFER_RETRY_LIMIT) return null;
+  const hinted = (error.retryAfterSeconds ?? 0) * 1_000;
+  return Math.min(TRANSFER_RETRY_MAX_DELAY_MS, Math.max(1_000 * 2 ** failures, hinted));
+}
+
+/** Thrown out of a retry wait that a pause, cancel or dispose ended. */
+class TransferStopped extends Error {}
 
 /** Independent of directory navigation and of the platform's source picker. */
 export class FileTransferController {
@@ -24,9 +48,11 @@ export class FileTransferController {
   removing = $state<string[]>([]);
   private readonly sources = new Map<string, UploadSource>();
   private readonly running = new Set<string>();
+  private readonly queued = new Set<string>();
   private readonly stopped = new Set<string>();
   private readonly refreshes = new Map<string, Promise<void>>();
   private readonly removed = new Set<string>();
+  private readonly wakers = new Map<string, () => void>();
   private resolveConflict: ((choice: Choice) => void) | undefined;
   private resolveExclusions: ((proceed: boolean) => void) | undefined;
   private allChoice: Choice | undefined;
@@ -42,6 +68,7 @@ export class FileTransferController {
     this.cancelPreparation();
     this.choose("pause");
     for (const id of this.running) this.stopped.add(id);
+    for (const wake of [...this.wakers.values()]) wake();
     if (this.timer) clearTimeout(this.timer);
     for (const source of this.sources.values()) void source.release?.().catch(() => undefined);
     this.sources.clear();
@@ -176,9 +203,13 @@ export class FileTransferController {
       const updated = await this.api.control(job.hostId, job.id, "start");
       this.remember(updated);
       this.poll();
-      if (job.direction === "upload" && !this.running.has(job.id)) {
-        this.running.add(job.id);
+      // A run that a pause is still ending would not see this resume, so another
+      // is queued behind it; it returns at once if that run finished the job.
+      if (job.direction === "upload" && !this.queued.has(job.id)) {
+        this.queued.add(job.id);
         this.uploadQueue = this.uploadQueue.catch(() => undefined).then(async (): Promise<void> => {
+          this.queued.delete(job.id);
+          this.running.add(job.id);
           this.allChoice = undefined;
           await this.upload(job);
         }).finally((): void => { this.running.delete(job.id); });
@@ -187,12 +218,14 @@ export class FileTransferController {
   }
   async pause(job: FileTransferView): Promise<void> {
     this.stopped.add(job.id);
+    this.wakers.get(job.id)?.();
     if (this.conflict?.jobId === job.id) this.choose("pause");
     try { this.remember(await this.api.control(job.hostId, job.id, "pause")); }
     catch (error: unknown) { this.error = transferErrorCode(error); }
   }
   async cancel(job: FileTransferView): Promise<void> {
     this.stopped.add(job.id);
+    this.wakers.get(job.id)?.();
     if (this.conflict?.jobId === job.id) this.choose("cancel");
     try {
       if (this.nativeDownloads[job.id]) await desktopTransfers()?.cancelDownload(job.id);
@@ -243,10 +276,34 @@ export class FileTransferController {
     this.conflict = { jobId: job.id, path: entry.path, typeConflict };
     return new Promise<Choice>((resolve): void => { this.resolveConflict = resolve; });
   }
+  /** Waits `delayMs` and then rejects with TransferStopped if the upload was stopped meanwhile. */
+  private async backOff(jobId: string, delayMs: number): Promise<void> {
+    await new Promise<void>((resolve): void => {
+      const wake = (): void => {
+        clearTimeout(timer);
+        if (this.wakers.get(jobId) === wake) this.wakers.delete(jobId);
+        resolve();
+      };
+      const timer = setTimeout(wake, delayMs);
+      this.wakers.set(jobId, wake);
+    });
+    if (this.stopped.has(jobId) || this.disposed) throw new TransferStopped();
+  }
+  /** Runs a request that changes nothing, retrying it after 429 and 503 answers. */
+  private async read<T>(jobId: string, request: () => Promise<T>): Promise<T> {
+    for (let failures = 0; ; failures++) {
+      try { return await request(); }
+      catch (error: unknown) {
+        const delay = transferRetryDelay(error, failures);
+        if (delay === null) throw error;
+        await this.backOff(jobId, delay);
+      }
+    }
+  }
   private async upload(job: FileTransferView): Promise<void> {
     try {
       while (!this.stopped.has(job.id) && !this.disposed) {
-        const state = await this.api.get(job.hostId, job.id);
+        const state = await this.read(job.id, () => this.api.get(job.hostId, job.id));
         this.remember(state);
         if (state.state === "running") break;
         if (state.state !== "queued") return;
@@ -254,8 +311,10 @@ export class FileTransferController {
       }
       const source = this.sources.get(job.id);
       if (!source) throw new Error("FILES_TRANSFER_RESELECT");
-      const entries = await this.api.entries(job.hostId, job.id);
+      const entries = await this.read(job.id, () => this.api.entries(job.hostId, job.id));
       const skipped: string[] = [];
+      // Refused requests in a row; a chunk or commit the API accepts resets it.
+      let failures = 0;
       // Parent directories must exist before a child file is staged.
       entries.sort((left, right) => left.path.localeCompare(right.path));
       for (let entry of entries) {
@@ -272,19 +331,28 @@ export class FileTransferController {
                 const bytes = await source.read(entry.path, offset, Math.min(FILE_TRANSFER_CHUNK_BYTES, entry.size - offset));
                 if (bytes.length !== Math.min(FILE_TRANSFER_CHUNK_BYTES, entry.size - offset)) throw new Error("FILES_TRANSFER_SOURCE_CHANGED");
                 entry = await this.api.chunk(job.hostId, job.id, entry.id, offset, await chunkDigest(bytes), bytes);
+                failures = 0;
                 offset = entry.offset;
                 this.remember(await this.api.get(job.hostId, job.id));
               } while (offset < entry.size);
             }
             await this.api.commit(job.hostId, job.id, entry.id);
+            failures = 0;
             this.remember(await this.api.get(job.hostId, job.id));
             break;
           } catch (error: unknown) {
             if (this.stopped.has(job.id)) return;
+            const delay = transferRetryDelay(error, failures);
+            if (delay !== null) {
+              // Reconciling again resumes from the bytes the agent holds, whichever request was refused.
+              failures++;
+              await this.backOff(job.id, delay);
+              continue;
+            }
             const choice = await this.collision(job, entry, error);
             if (choice === "pause" || this.disposed) return;
             if (choice === "cancel") { await this.cancel(job); return; }
-            entry = await this.api.decision(job.hostId, job.id, entry.id, choice);
+            entry = await this.read(job.id, () => this.api.decision(job.hostId, job.id, entry.id, choice));
             if (choice === "skip") { skipped.push(entry.path); break; }
           }
         }
@@ -293,6 +361,7 @@ export class FileTransferController {
       await source.release?.();
       this.sources.delete(job.id);
     } catch (error: unknown) {
+      if (error instanceof TransferStopped) return;
       this.error = transferErrorCode(error);
       await this.pause(job);
     }

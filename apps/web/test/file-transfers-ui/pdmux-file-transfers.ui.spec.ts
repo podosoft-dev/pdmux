@@ -1,16 +1,22 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { FileTransferEntryView, FileTransferView } from "@pdmux/protocol";
 
+interface Refusal { status: 429 | 503; retryAfter?: string }
 interface Fixture {
   jobs: FileTransferView[];
   entries: FileTransferEntryView[];
   chunks: number[];
+  /** Every chunk request, refused or not, with the time it arrived. */
+  chunkRequests: Array<{ at: number; status: number }>;
+  controls: string[];
   release: () => void;
 }
-async function fixture(page: Page): Promise<Fixture> {
+async function fixture(page: Page, refusals: Refusal[] = []): Promise<Fixture> {
   const jobs: FileTransferView[] = [];
   const entries: FileTransferEntryView[] = [];
   const chunks: number[] = [];
+  const chunkRequests: Fixture["chunkRequests"] = [];
+  const controls: string[] = [];
   let release: () => void = (): void => {};
   const delay = new Promise<void>((resolve): void => { release = resolve; });
   await page.addInitScript((): void => {
@@ -57,6 +63,7 @@ async function fixture(page: Page): Promise<Fixture> {
         job.totalEntries = entries.length;
         job.totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
       } else if (parts[2] === "control") {
+        controls.push(String(body?.action));
         job.state = body?.action === "start" ? "running" : "paused";
       } else if (parts[2] === "entries" && !parts[3]) {
         answer = entries;
@@ -67,6 +74,14 @@ async function fixture(page: Page): Promise<Fixture> {
         if (parts[4] === "chunk") {
           if (!entry.replace) {
             await route.fulfill({ status: 409, json: { success: false, error: { code: "FILES_TRANSFER_CONFLICT", message: "Conflict" } } });
+            return;
+          }
+          const refusal = refusals.shift();
+          chunkRequests.push({ at: Date.now(), status: refusal?.status ?? 200 });
+          if (refusal) {
+            const code = refusal.status === 429 ? "RATE_LIMIT_EXCEEDED" : "BACKEND_UNAVAILABLE";
+            await route.fulfill({ status: refusal.status, headers: refusal.retryAfter ? { "retry-after": refusal.retryAfter } : {},
+              json: { success: false, error: { code, message: code, statusCode: refusal.status } } });
             return;
           }
           const bytes = request.postDataBuffer()?.length ?? 0;
@@ -88,7 +103,7 @@ async function fixture(page: Page): Promise<Fixture> {
     }
     await route.fulfill({ json: answer });
   });
-  return { jobs, entries, chunks, release };
+  return { jobs, entries, chunks, chunkRequests, controls, release };
 }
 
 test("[TC-PDFILE-008] scrolls transfer history and clears finished jobs across reloads", async ({ page }, testInfo): Promise<void> => {
@@ -488,6 +503,29 @@ for (const width of [1280, 390]) {
     await expect(page.getByTestId("transfer-job")).toHaveAttribute("data-transfer-state", "completed");
   });
 }
+
+test("[TC-PDFILE-014] an upload waits out 429 and 503 answers and finishes without pausing", async ({ page }, testInfo): Promise<void> => {
+  const state = await fixture(page, [{ status: 429, retryAfter: "1" }, { status: 503 }]);
+  state.release();
+  await page.goto("/");
+  await page.getByTestId("files-upload-folder").click();
+  await page.getByTestId("transfer-conflict").getByRole("button", { name: "Overwrite", exact: true }).click();
+  const job = page.getByTestId("transfer-job");
+  await expect.poll(() => state.chunkRequests.length).toBeGreaterThanOrEqual(1);
+  // While it waits, the transfer still reads as running, not paused or failed.
+  await expect(job).toHaveAttribute("data-transfer-state", "running");
+  await expect(page.getByTestId("file-transfer-panel").getByRole("alert")).toHaveCount(0);
+  await expect(job).toHaveAttribute("data-transfer-state", "completed", { timeout: 15_000 });
+  expect(state.chunks).toEqual([1_048_576, 1_048_576, 7]);
+  expect(state.controls).toEqual(["start"]);
+  const [refused, unavailable, accepted] = state.chunkRequests;
+  expect([refused?.status, unavailable?.status, accepted?.status]).toEqual([429, 503, 200]);
+  // Retry-After: 1, then the doubled backoff for the second refusal in a row.
+  const gaps = { afterRateLimit: (unavailable?.at ?? 0) - (refused?.at ?? 0), afterUnavailable: (accepted?.at ?? 0) - (unavailable?.at ?? 0) };
+  expect(gaps.afterRateLimit).toBeGreaterThanOrEqual(1_000);
+  expect(gaps.afterUnavailable).toBeGreaterThanOrEqual(2_000);
+  await testInfo.attach("retry-gaps", { body: JSON.stringify(gaps), contentType: "application/json" });
+});
 
 test.describe("checkbox contrast at 390px", (): void => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
