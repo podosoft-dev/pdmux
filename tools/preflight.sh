@@ -55,6 +55,7 @@ lint() { bun run --workspaces --if-present lint; }
 unit() { bun run --workspaces --if-present test; }
 release_workflow() { bun run test:release-workflow; }
 migration_upgrade() { bun run test:migrations; }
+database_recovery() { bun run test:database-recovery; }
 audit() { bun run audit:generic; }
 
 # ⚠ A GENERATED FILE THAT IS COMMITTED CAN GO STALE, AND ITS STALENESS IS SILENT.
@@ -137,6 +138,7 @@ step "lint" lint
 step "unit tests" unit
 step "release workflow" release_workflow
 step "migration upgrade compatibility" migration_upgrade
+step "database outage recovery" database_recovery
 step "generated artifacts" generated
 step "generalization audit" audit
 step "agent version bump" agent_version

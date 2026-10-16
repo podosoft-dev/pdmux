@@ -1,7 +1,8 @@
 name: ci
 
-# Unit suites use fakes and fixtures. Migration checks create disposable PostgreSQL
-# containers; native image jobs also exercise the final published-image layout.
+# Unit suites use fakes and fixtures. Migration and outage-recovery checks create
+# disposable PostgreSQL containers; native image jobs also exercise the final
+# published-image layout.
 # Nothing connects to a deployed application or publishes a release from this workflow.
 on:
   push:
@@ -58,6 +59,11 @@ jobs:
 
       - name: migration upgrade compatibility
         run: bun run test:migrations
+
+      # Starts the API from source against a disposable PostgreSQL that the spec
+      # stops, pauses and starts again.
+      - name: database outage recovery
+        run: bun run test:database-recovery
 
       # ⚠ A COMMITTED GENERATED FILE GOING STALE IS SILENT, AND THIS JOB IS WHERE IT
       # STOPS. `AGENT_GO.md` used to say these two ran here; they did not, and the

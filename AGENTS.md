@@ -76,6 +76,9 @@ Merge added module settings from `.env.example` into an existing `.env`.
 - Run `bun run test:migrations` for database or migration-build changes. It builds the API and tests
   fresh install, populated legacy-schema upgrade, rollback, and rerun against disposable PostgreSQL.
   API and worker startup must refuse pending migrations; never bypass this gate to make a rollout pass.
+- Run `bun run test:database-recovery` for changes to API startup or database access. It starts the API
+  from source against disposable PostgreSQL, then stops, pauses, and restarts the database, and checks
+  that the API listens, answers 503 `DATABASE_UNAVAILABLE`, and recovers without a restart.
 - CI also builds and tests final API images on native AMD64 and ARM64 runners without publishing them.
   Both migration-image jobs must pass before merging migration or packaging changes.
 - e2e (Playwright, ships in `tests/`): `bun run test:e2e`.
