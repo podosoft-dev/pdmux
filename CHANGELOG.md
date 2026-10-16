@@ -13,8 +13,9 @@
   answers with a plain 503 page instead of the framework's default. The web server's calls to the
   API give up after `BACKEND_TIMEOUT_MS` (2 seconds), and its `/api` proxy answers 503
   `BACKEND_UNAVAILABLE` or 504 `BACKEND_TIMEOUT` with the standard error envelope when the API is
-  unreachable or sends no response headers within `BACKEND_PROXY_TIMEOUT_MS` (30 seconds). With
-  the OIDC provider turned off, its discovery documents answer 404.
+  unreachable or sends no response headers within `BACKEND_PROXY_TIMEOUT_MS` (30 seconds); file
+  transfer requests keep waiting for the agent's own deadlines. With the OIDC provider turned
+  off, its discovery documents answer 404.
 - `migrate:all` runs the source in development and the compiled bundle in a production image, so
   setting up a development database no longer needs a build. On a new database `migration:run`
   stops with a message naming `migrate:all` instead of failing on Better Auth's missing `session`

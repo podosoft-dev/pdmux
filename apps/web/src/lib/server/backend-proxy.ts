@@ -439,11 +439,18 @@ export async function proxyRequest(
   // The deadline, the health check, and the outage signal cover only the wait
   // for response headers, so streamed bodies such as server-sent events are not
   // cut off.
+  // ⚠ A FILE TRANSFER HAS NO PROXY DEADLINE, for the reason it has no idle
+  // timeout: a commit waits up to five minutes for the agent to verify the
+  // staged file, and every transfer request queues behind the host's lock, so a
+  // 504 would fail a transfer the API then completes. The health check and the
+  // outage signal still fail it when the API stops answering.
   const waiting = new AbortController();
-  const deadline = setTimeout(
-    () => waiting.abort(new DOMException("The API did not respond in time", "TimeoutError")),
-    backendProxyTimeoutMs(),
-  );
+  const deadline = transfer
+    ? undefined
+    : setTimeout(
+        () => waiting.abort(new DOMException("The API did not respond in time", "TimeoutError")),
+        backendProxyTimeoutMs(),
+      );
   const healthCheck = setTimeout(() => void checkBackend(), backendTimeoutMs());
   const outage = backendOutageSignal();
   const failOnOutage = (): void => waiting.abort(outage.reason);

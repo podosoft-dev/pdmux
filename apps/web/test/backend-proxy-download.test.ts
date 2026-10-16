@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { proxyRequest } from "../src/lib/server/backend-proxy";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { proxyRequest, reportBackendAnswer } from "../src/lib/server/backend-proxy";
 
 /**
  * ⚠ THIS FILE IS IN `test/`, NOT BESIDE THE MODULE, BECAUSE THAT IS WHERE THE
@@ -77,5 +77,56 @@ describe("[TC-PDFILE-007] bounded transfer proxy", (): void => {
     expect(server.timeout.mock.calls.map((call) => call[1])).toEqual([60, 0]);
     expect((await proxyRequest(request(1_048_577), "http://localhost/chunk")).status).toBe(413);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("[TC-PDFILE-012] a file transfer outlasts the proxy's header deadline", (): void => {
+  const saved = { proxy: process.env.BACKEND_PROXY_TIMEOUT_MS, check: process.env.BACKEND_TIMEOUT_MS };
+  beforeEach((): void => {
+    process.env.BACKEND_PROXY_TIMEOUT_MS = "40";
+    process.env.BACKEND_TIMEOUT_MS = "20";
+  });
+  afterEach((): void => {
+    for (const [name, value] of [["BACKEND_PROXY_TIMEOUT_MS", saved.proxy], ["BACKEND_TIMEOUT_MS", saved.check]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    vi.unstubAllGlobals();
+    // The outage state is module-wide; the next test starts with a reachable API.
+    reportBackendAnswer();
+  });
+
+  /** An API whose /health answers at once (or never), and whose other routes answer after `delayMs`. */
+  const slowApi = (delayMs: number, healthy: boolean) => (url: string, init?: RequestInit): Promise<Response> => {
+    if (url.endsWith("/health")) return healthy ? Promise.resolve(new Response("ok")) : Promise.reject(new TypeError("fetch failed"));
+    return new Promise<Response>((resolve, reject) => {
+      const timer = setTimeout(() => resolve(Response.json({ state: "committed" })), delayMs);
+      init?.signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(init.signal?.reason);
+      });
+    });
+  };
+  const commit = (): Request =>
+    new Request("http://app.localhost/api/hosts/h/file-transfers/t/entries/e/commit", { method: "POST" });
+
+  it("waits for a commit that answers after the deadline a page request is cut at", async (): Promise<void> => {
+    vi.stubGlobal("fetch", slowApi(120, true));
+    const server = { timeout: vi.fn() };
+    const committed = await proxyRequest(commit(), "http://api:5002/hosts/h/file-transfers/t/entries/e/commit", undefined, server);
+    expect(committed.status).toBe(200);
+    expect(await committed.json()).toEqual({ state: "committed" });
+    expect(server.timeout.mock.calls.map((call) => call[1])).toEqual([60, 0]);
+
+    const page = await proxyRequest(new Request("http://app.localhost/api/hosts/h"), "http://api:5002/hosts/h");
+    expect(page.status).toBe(504);
+    expect(await page.json()).toMatchObject({ error: { code: "BACKEND_TIMEOUT" } });
+  });
+
+  it("still fails a waiting transfer when the API stops answering", async (): Promise<void> => {
+    vi.stubGlobal("fetch", slowApi(10_000, false));
+    const response = await proxyRequest(commit(), "http://api:5002/hosts/h/file-transfers/t/entries/e/commit");
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: "BACKEND_UNAVAILABLE" } });
   });
 });

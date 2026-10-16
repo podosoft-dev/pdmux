@@ -117,8 +117,12 @@ folder/archive in the renderer or proxy.
 
 Long agent operations override Bun's request idle timeout without changing the server-wide default.
 Chunk body intake still has a 60-second idle bound; agent acknowledgements have their own deadlines
-(30 seconds normally, 5 minutes for final verification). Configure any external proxy's response
-timeout to accommodate that verification period.
+(30 seconds normally, 5 minutes for final verification). Every transfer request also waits behind
+the host's transfer lock. The web `/api` proxy therefore applies no `BACKEND_PROXY_TIMEOUT_MS`
+header deadline to transfer requests: a `504 BACKEND_TIMEOUT` would pause a transfer that the API
+then completes. It still answers `503 BACKEND_UNAVAILABLE` when the API's `GET /health` stops
+answering. Configure any external proxy's response timeout to accommodate that verification
+period.
 
 ## Upgrade compatibility
 
