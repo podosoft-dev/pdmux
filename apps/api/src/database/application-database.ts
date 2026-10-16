@@ -20,10 +20,11 @@ export const APPLICATION_DATABASE = Symbol("application-database") as ServiceKey
 // TypeORM's QueryFailedError copies the driver error's code and message, so the
 // helper sees those through it too. pdmux's pool also meets two more cases:
 // - A database host name that stops resolving, as when a Compose service is
-//   stopped.
+//   stopped. Bun reports a name that does not exist as ENOTFOUND and a temporary
+//   resolver failure as ETIMEOUT, where Node says EAI_AGAIN (Bun 1.4.0).
 // - pg's errors for a client that ended or broke while TypeORM still held it,
 //   such as inside a transaction.
-const UNRESOLVED_HOST_CODES = new Set(["ENOTFOUND", "EAI_AGAIN"]);
+const UNRESOLVED_HOST_CODES = new Set(["ENOTFOUND", "ETIMEOUT"]);
 const CLOSED_CLIENT_MESSAGES = new Set([
   "Connection terminated",
   "Client has encountered a connection error and is not queryable",
