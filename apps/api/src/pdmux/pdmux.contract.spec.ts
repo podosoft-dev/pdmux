@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Elysia } from "elysia";
+import { assertConsistentRouteParameters } from "../core/api-contract";
 import type { AppContext } from "../core/services";
 import { ServiceRegistry } from "../core/services";
 import {
@@ -17,10 +18,24 @@ interface RouteEntry {
   path: string;
 }
 
+function entries(plugin: unknown): RouteEntry[] {
+  return (plugin as Elysia).routes as RouteEntry[];
+}
+
 function routes(plugin: unknown): string[] {
-  return ((plugin as Elysia).routes as RouteEntry[])
+  return entries(plugin)
     .map((route) => `${route.method} ${route.path}`)
     .sort();
+}
+
+function registeredRoutes(): RouteEntry[] {
+  const services = new ServiceRegistry();
+  services.register(PDMUX, {} as PdmuxServices);
+  const gateway = new PdmuxGateway({} as PdmuxServices);
+  return [
+    ...entries(pdmuxHttpPlugin({ services } as AppContext)),
+    ...entries(createPdmuxWsPlugin(gateway)({} as AppContext)),
+  ];
 }
 
 describe("PDMUX API contract inventory", () => {
@@ -35,6 +50,16 @@ describe("PDMUX API contract inventory", () => {
     const gateway = new PdmuxGateway({} as PdmuxServices);
     const plugin = createPdmuxWsPlugin(gateway)({} as AppContext);
     expect(routes(plugin)).toEqual([...PDMUX_WEBSOCKET_ROUTES].sort());
+  });
+
+  it("uses one parameter name at each router position", () => {
+    const registered = registeredRoutes();
+    expect(() => assertConsistentRouteParameters(registered)).not.toThrow();
+    // The router keeps one name per position, so `/hosts/:id/…` would read `:hostId`.
+    expect(() => assertConsistentRouteParameters([
+      ...registered,
+      { method: "GET", path: "/hosts/:id/usage" },
+    ])).toThrow("must use one parameter name");
   });
 
   it("keeps only intentionally hidden transport routes out of OpenAPI", () => {

@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createApp } from "../src/app";
 import { validateEnv } from "../src/config/env.validation";
-import { assertApiContract, documentedApiRoutes } from "../src/core/api-contract";
+import {
+  assertApiContract,
+  assertConsistentRouteParameters,
+  documentedApiRoutes,
+} from "../src/core/api-contract";
 import { createCoreServices } from "../src/core/services";
 import { PDMUX_DOCUMENTED_HTTP_ROUTES } from "../src/pdmux/pdmux.contract";
 
@@ -18,6 +22,7 @@ const env = validateEnv(process.env);
 const services = createCoreServices(env);
 const app = createApp({ env, services });
 try {
+  assertConsistentRouteParameters(app.routes);
   const response = await app.handle(new Request("http://localhost/api-docs-json"));
   if (!response.ok) {
     throw new Error(`OpenAPI request failed (${response.status}): ${await response.text()}`);
