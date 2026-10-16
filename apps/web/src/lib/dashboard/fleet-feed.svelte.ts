@@ -43,7 +43,7 @@ export class FleetFeed {
   private historyTimer: ReturnType<typeof setInterval> | null = null;
   private historyBusy = false;
   private refreshPending: Promise<void> | null = null;
-  private readonly events = new FleetEvents(() => this.refresh());
+  private readonly events = new FleetEvents(() => this.refresh(), () => this.reload());
 
   constructor(options: FleetFeedOptions = {}) {
     this.hosts = options.initialHosts ?? [];
@@ -66,6 +66,12 @@ export class FleetFeed {
     if (this.historyTimer) clearInterval(this.historyTimer);
     this.hostTimer = null;
     this.historyTimer = null;
+  }
+
+  /** Reads the hosts and then their trends again, as after a page load. */
+  async reload(): Promise<void> {
+    await this.refresh();
+    await this.refreshHistory();
   }
 
   refresh(): Promise<void> {

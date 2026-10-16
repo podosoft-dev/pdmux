@@ -100,8 +100,8 @@ function replaceRedisWithAnEmptyOne(): void {
     "--publish", `127.0.0.1:${redisPort}:6379`, image as string);
 }
 
-describe("[TC-PDHOST-036] API and worker against a Redis that is down, then replaced", () => {
-  it("listens without Redis, schedules maintenance once it starts, and fails enqueues fast during outages", async () => {
+describe("[TC-PDHOST-036][TC-PDWEB-039] API and worker against a Redis that is down, then replaced", () => {
+  it("listens without Redis, schedules maintenance once it starts, fails enqueues fast, and resyncs the fleet stream", async () => {
     const scratch = mkdtempSync(join(tmpdir(), "pdmux-redis-recovery-"));
     const port = await freePort();
     const base = `http://127.0.0.1:${port}`;
@@ -159,12 +159,28 @@ describe("[TC-PDHOST-036] API and worker against a Redis that is down, then repl
       return Math.round(performance.now() - started);
     }
 
+    /** Collects the fleet stream's frames, as the dashboard's EventSource receives them. */
+    async function openFleetStream(signal: AbortSignal): Promise<() => string[]> {
+      const response = await fetch(`${base}/fleet/events`, { headers: { origin, cookie }, signal });
+      expect(response.status).toBe(200);
+      let text = "";
+      void (async (): Promise<void> => {
+        const decoder = new TextDecoder();
+        try {
+          for await (const chunk of response.body as ReadableStream<Uint8Array>) text += decoder.decode(chunk);
+        } catch { /* aborted at the end of the test */ }
+      })();
+      return () => text.split("\n\n").filter((frame) => frame.startsWith("data: ")).map((frame) => frame.slice(6));
+    }
+    const resyncs = (frames: () => string[]): number => frames().filter((frame) => frame === '{"type":"resync"}').length;
+
     const migrate = Bun.spawnSync([process.execPath, "src/migrate.ts"], { cwd: apiDirectory, env, stdout: "pipe", stderr: "pipe" });
     expect(migrate.exitCode, migrate.stderr.toString().slice(-2_000)).toBe(0);
 
     const spawnedAt = performance.now();
     const api = start("src/main.ts", env, "API listening");
     let worker: Process | undefined;
+    const closeStream = new AbortController();
     try {
       await until("the API to listen", () => ({ listening: api.readyAt() !== undefined, exitCode: api.exitCode() }),
         (state) => state.listening || state.exitCode !== undefined, 20_000);
@@ -187,12 +203,17 @@ describe("[TC-PDHOST-036] API and worker against a Redis that is down, then repl
       measured.enqueueWithoutRedisMs = refused.elapsedMs;
       expect(refused).toMatchObject({ status: 503, code: "JOBS_UNAVAILABLE" });
       expect(refused.elapsedMs).toBeLessThan(1_000);
+      const frames = await openFleetStream(closeStream.signal);
+      await until("the fleet stream", frames, (received) => received.includes('{"type":"ready"}'), 5_000);
+      expect(resyncs(frames)).toBe(0);
 
       const startedAt = performance.now();
       docker("start", container);
       await until("readiness", () => call("/health/ready"), (answer) => answer.status === 200, 30_000);
       measured.readyAfterRedisStartMs = Math.round(performance.now() - startedAt);
       expect(scheduledRepeats()).toEqual([1, 1]);
+      // Host notices published before the bus connected were lost, so the open stream resyncs.
+      await until("a resync after Redis started", () => resyncs(frames), (count) => count === 1, 5_000);
 
       worker = start("src/main-worker.ts", env);
       measured.jobCompletedMs = await completes("before the restart");
@@ -210,10 +231,12 @@ describe("[TC-PDHOST-036] API and worker against a Redis that is down, then repl
       measured.readyAfterRestartMs = Math.round(performance.now() - restartedAt);
       // The new Redis started empty, so these were applied again on reconnect.
       expect(scheduledRepeats()).toEqual([1, 1]);
+      await until("a resync after Redis was replaced", () => resyncs(frames), (count) => count === 2, 5_000);
       measured.jobAfterRestartMs = await completes("after the restart");
       expect(api.exitCode()).toBeUndefined();
       expect(worker.exitCode()).toBeUndefined();
 
+      closeStream.abort();
       const stoppingAt = performance.now();
       api.kill("SIGTERM");
       worker.kill("SIGTERM");
@@ -226,6 +249,7 @@ describe("[TC-PDHOST-036] API and worker against a Redis that is down, then repl
       if (worker) console.error(worker.output().slice(-3_000));
       throw error;
     } finally {
+      closeStream.abort();
       if (api.exitCode() === undefined) api.kill("SIGKILL");
       if (worker && worker.exitCode() === undefined) worker.kill("SIGKILL");
       rmSync(scratch, { recursive: true, force: true });

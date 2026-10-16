@@ -3,7 +3,15 @@ export class FleetEvents {
   private source: EventSource | null = null;
   private started = false;
 
-  constructor(private readonly refresh: () => Promise<void>) {}
+  /**
+   * `refresh` reloads the hosts on an invalidation. `reload` runs instead on
+   * `resync`, which the API sends after its event bus was interrupted: notices
+   * from that time were lost, so everything on screen is read again.
+   */
+  constructor(
+    private readonly refresh: () => Promise<void>,
+    private readonly reload: () => Promise<void>,
+  ) {}
 
   private readonly visibility = (): void => {
     this.disconnect();
@@ -31,6 +39,7 @@ export class FleetEvents {
         const data: unknown = JSON.parse(event.data);
         if (typeof data !== "object" || data === null || !("type" in data)) return;
         if (data.type === "hosts.changed" || data.type === "ready") void this.refresh();
+        else if (data.type === "resync") void this.reload();
       } catch { /* Invalid events do not interrupt the polling recovery path. */ }
     };
   }

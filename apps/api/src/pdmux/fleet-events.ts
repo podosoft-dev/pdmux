@@ -7,10 +7,14 @@ import type { HostEvents } from "./host-events";
 export interface FleetEventDependencies {
   auth: Pick<AuthService, "requireSession" | "guard">;
   hosts: Pick<HostsService, "listIds">;
-  events: Pick<HostEvents, "subscribe">;
+  events: Pick<HostEvents, "subscribe" | "onInterruption">;
 }
 
-/** Send bounded invalidations; host payloads still use the authorized REST view. */
+/**
+ * Send bounded invalidations; host payloads still use the authorized REST view.
+ * `resync` replaces `hosts.changed` after the event bus was interrupted: notices
+ * published meanwhile never arrived, so the client reloads everything it shows.
+ */
 export async function fleetEventResponse(request: Request, dependencies: FleetEventDependencies): Promise<Response> {
   await dependencies.auth.guard(request);
   await dependencies.auth.requireSession(request);
@@ -18,6 +22,7 @@ export async function fleetEventResponse(request: Request, dependencies: FleetEv
   const pending = new Set<string>();
   let closed = false;
   let busy = false;
+  let resync = false;
   let lastHeartbeat = Date.now();
   let timer: ReturnType<typeof setInterval> | undefined;
   let closeStream = (): void => {};
@@ -26,10 +31,12 @@ export async function fleetEventResponse(request: Request, dependencies: FleetEv
     if (typeof event.type !== "string" || !event.type.startsWith("host.") || typeof event.hostId !== "string") return;
     if (pending.size < 256) pending.add(event.hostId);
   });
+  const stopResync = dependencies.events.onInterruption((): void => { resync = true; });
   const cleanup = (): void => {
     if (closed) return;
     closed = true;
     clearInterval(timer);
+    stopResync();
     void Promise.resolve(unsubscribe()).catch(() => undefined);
     pending.clear();
     request.signal.removeEventListener("abort", closeStream);
@@ -37,13 +44,14 @@ export async function fleetEventResponse(request: Request, dependencies: FleetEv
   const stream = new ReadableStream<Uint8Array>({
     start(controller): void {
       closeStream = (): void => { cleanup(); controller.close(); };
-      const send = (type: string): void => {
+      const send = (type: string): boolean => {
         // A slow reader gets the latest REST snapshot after reconnecting.
-        if (closed || (controller.desiredSize ?? 0) <= 0) return;
+        if (closed || (controller.desiredSize ?? 0) <= 0) return false;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type })}\n\n`));
+        return true;
       };
       const flush = async (): Promise<void> => {
-        if (closed || busy || (pending.size === 0 && Date.now() - lastHeartbeat < 5_000)) return;
+        if (closed || busy || (!resync && pending.size === 0 && Date.now() - lastHeartbeat < 5_000)) return;
         busy = true;
         const changed = new Set(pending);
         pending.clear();
@@ -52,9 +60,14 @@ export async function fleetEventResponse(request: Request, dependencies: FleetEv
           const fresh = new Request(request.url, { headers: request.headers });
           await dependencies.auth.guard(fresh);
           const session = await dependencies.auth.requireSession(fresh);
-          const ids = changed.size > 0 ? await dependencies.hosts.listIds(resolveScopeId(session)) : [];
-          if (closed) return;
-          if (ids.some(id => changed.has(id))) send("hosts.changed");
+          if (resync) {
+            // Kept until a full queue has room: it covers every change since.
+            if (send("resync")) resync = false;
+          } else {
+            const ids = changed.size > 0 ? await dependencies.hosts.listIds(resolveScopeId(session)) : [];
+            if (closed) return;
+            if (ids.some(id => changed.has(id))) send("hosts.changed");
+          }
           if (Date.now() - lastHeartbeat >= 5_000) {
             send("heartbeat");
             lastHeartbeat = Date.now();

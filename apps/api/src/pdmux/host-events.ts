@@ -31,4 +31,12 @@ export class HostEvents {
   subscribe(listener: HostEventListener): Promise<Unsubscribe> {
     return this.bus.subscribe(HOST_EVENTS_TOPIC, listener);
   }
+
+  /**
+   * Calls `listener` when the bus delivers again after an interruption, during
+   * which notices may have been lost. An in-process bus loses none and never calls it.
+   */
+  onInterruption(listener: () => void): Unsubscribe {
+    return this.bus.onInterruption?.(listener) ?? ((): void => {});
+  }
 }

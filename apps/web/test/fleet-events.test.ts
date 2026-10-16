@@ -20,7 +20,7 @@ describe("[TC-PDWEB-034] fleet event lifecycle", () => {
     vi.stubGlobal("document", new TestDocument());
     vi.stubGlobal("EventSource", TestSource);
     const refresh = vi.fn(async (): Promise<void> => {});
-    const events = new FleetEvents(refresh);
+    const events = new FleetEvents(refresh, async (): Promise<void> => {});
     events.start(); events.start();
     expect(TestSource.instances).toHaveLength(1);
     const source = TestSource.instances[0]!;
@@ -38,7 +38,7 @@ describe("[TC-PDWEB-034] fleet event lifecycle", () => {
     const document = new TestDocument();
     vi.stubGlobal("document", document);
     vi.stubGlobal("EventSource", TestSource);
-    const events = new FleetEvents(async (): Promise<void> => {});
+    const events = new FleetEvents(async (): Promise<void> => {}, async (): Promise<void> => {});
     events.start();
     document.visibilityState = "hidden";
     document.dispatchEvent(new Event("visibilitychange"));
@@ -51,5 +51,26 @@ describe("[TC-PDWEB-034] fleet event lifecycle", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     expect(TestSource.instances).toHaveLength(2);
     expect(TestSource.instances[1]?.closed).toBe(true);
+  });
+});
+
+describe("[TC-PDWEB-038] fleet client after an event bus interruption", () => {
+  it("runs the full reload on resync and the host refresh on everything else", (): void => {
+    vi.stubGlobal("document", new TestDocument());
+    vi.stubGlobal("EventSource", TestSource);
+    const refresh = vi.fn(async (): Promise<void> => {});
+    const reload = vi.fn(async (): Promise<void> => {});
+    const events = new FleetEvents(refresh, reload);
+    events.start();
+    const source = TestSource.instances[0]!;
+    source.send('{"type":"resync"}');
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
+    source.send('{"type":"hosts.changed"}');
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+    events.stop();
+    source.send('{"type":"resync"}');
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });

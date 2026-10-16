@@ -53,8 +53,10 @@ REST reads. Changes are coalesced, filtered to the current scope, and the sessio
 the connection. Hidden pages close the stream. Reconnection refreshes the snapshot, while existing
 polling continues to recover when streaming is unavailable. Host change notices reach every API
 replica through the events provider (Redis on a server, in-process on the desktop) on their own bus
-topic; they never reach a browser except as this stream's scoped invalidation. See
-[`READINESS.md`](READINESS.md).
+topic; they never reach a browser except as this stream's scoped invalidation. Notices published
+while the bus was interrupted, such as during a Redis restart, never arrive, so when it delivers
+again the API sends open streams one `resync` instead, and the dashboard reads its hosts and their
+trends again without reloading the page. See [`READINESS.md`](READINESS.md).
 
 An earlier tool had the hub **SSH into each machine** and scrape its state. That makes all of
 the following prerequisites: the same network, distributed SSH keys, open inbound ports, and a
