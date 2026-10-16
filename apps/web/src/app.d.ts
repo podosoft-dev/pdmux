@@ -17,9 +17,6 @@ export type SessionUser = {
 };
 
 declare global {
-  /** Inlined from the root package version by Vite. */
-  const __PDMUX_VERSION__: string;
-
   namespace App {
     interface Locals {
       user: SessionUser | null;
