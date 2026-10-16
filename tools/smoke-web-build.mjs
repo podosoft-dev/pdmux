@@ -42,7 +42,8 @@ for (const source of requiredSources) {
 const cwd = new URL("../apps/web/", import.meta.url).pathname;
 const child = Bun.spawn(["bun", "./build"], {
   cwd,
-  env: { ...process.env, NODE_ENV: "production", PORT: "0" },
+  // Port 1 refuses at once, so the smoke never reaches an API that happens to run here.
+  env: { ...process.env, NODE_ENV: "production", PORT: "0", BACKEND_INTERNAL_URL: "http://127.0.0.1:1" },
   stdout: "pipe",
   stderr: "pipe",
 });
@@ -79,6 +80,15 @@ try {
     throw new Error(`/install.sh returned ${response.headers.get("content-type") ?? "no content type"}`);
   }
   if (!body.startsWith("#!/bin/sh")) throw new Error("/install.sh did not return a shell script");
+
+  // Without the API a protected page fails closed in the server hook, which
+  // SvelteKit answers with the app-owned src/error.html rather than a layout.
+  const page = await fetch(new URL("/hosts", origin), { headers: { accept: "text/html" } });
+  const pageBody = await page.text();
+  if (page.status !== 503) throw new Error(`/hosts without the API returned ${page.status}`);
+  if (!pageBody.includes('<p class="status">503</p>') || !pageBody.includes("<h1>Service temporarily unavailable</h1>")) {
+    throw new Error(`/hosts without the API did not serve src/error.html: ${pageBody.slice(0, 200)}`);
+  }
 } catch (error) {
   failure = error;
 } finally {
@@ -99,4 +109,7 @@ if (failure) {
   throw failure;
 }
 
-console.log("web production smoke passed: GET /install.sh returned an executable script");
+console.log(
+  "web production smoke passed: GET /install.sh returned an executable script, " +
+    "and /hosts without the API answered 503 with src/error.html",
+);
