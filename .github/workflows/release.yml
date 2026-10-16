@@ -174,14 +174,16 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # Packaging starts beside verify instead of after it: the installers are the longest
+  # path, and publish still needs verify, so nothing reaches the release unverified.
+  # The signing step itself refuses any ref that is not the running vX.Y.Z tag.
   desktop:
-    needs: verify
     permissions:
       contents: read
     uses: ./.github/workflows/desktop.yml
     with:
       signed: true
-      source_ref: ${{ needs.verify.outputs.tag }}
+      source_ref: ${{ inputs.releaseTag || github.ref_name }}
     secrets: inherit
 
   publish:
