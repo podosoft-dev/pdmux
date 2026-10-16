@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.15.0
+
 - Update the PodoKit foundation to 1.4.2. Queries on PodoKit's Bun SQL and Better Auth pools and
   Redis commands are bounded (`DB_QUERY_TIMEOUT_MS`, `REDIS_COMMAND_TIMEOUT_MS`), so a stalled
   server answers 503 instead of hanging those requests; the Redis events transport resubscribes
