@@ -9,7 +9,7 @@
     "lint": "bunx --bun tsc -p tsconfig.json --noEmit",
     "test": "bun test src",
     "contract": "bun scripts/verify-api-contract.ts",
-    "migrate:all": "bun dist/migrate.js",
+    "migrate:all": "bun scripts/run-migrations.mjs",
     "typeorm": "bunx typeorm-ts-node-commonjs -d src/database/data-source.ts",
     "migration:run": "bun src/database/migrate.ts",
     "migration:revert": "bun src/database/migrate.ts --revert",

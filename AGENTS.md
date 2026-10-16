@@ -39,7 +39,6 @@ its dependencies while it is configured.
 ```bash
 bun install
 cp .env.example .env
-bun run build                          # migrate:all runs the compiled API bundle
 bun run --cwd apps/api migrate:all
 bun run dev        # api on http://localhost:5002, web on http://localhost:5001
 ```
@@ -65,11 +64,14 @@ Merge added module settings from `.env.example` into an existing `.env`.
   uploads larger than it must use a direct API path (`apiPaths`) instead.
 - Build: `bun run build` · Type-check/lint: `bun run lint` · Unit tests: `bun run test`
 - Per workspace: `bun run --cwd apps/api build` / `bun run --cwd apps/web build`.
-- Better Auth and application migrations: `bun run --cwd apps/api migrate:all`.
-- `bun run --cwd apps/api migration:run` applies only the PostgreSQL application migrations. It
-  expects the Better Auth tables (`IndexSessionCreatedAt` indexes `session`), so a fresh database
-  needs `migrate:all`. The desktop SQLite schema is created by `migrate:all` (module tables plus
-  entity synchronization).
+- Set up the database and apply later migrations, including after adding a module, with
+  `bun run --cwd apps/api migrate:all`. It applies the Better Auth schema before the application
+  migrations, and on the desktop SQLite provider it creates the schema (module tables plus entity
+  synchronization). It runs the source in development and the compiled bundle in a production image
+  (`NODE_ENV=production`), from `apps/api` so Bun applies the API's decorator settings.
+- `bun run --cwd apps/api migration:run` runs only the PostgreSQL application migrations and never
+  creates Better Auth tables; on a new database `IndexSessionCreatedAt` stops and names `migrate:all`.
+  `bun run --cwd apps/api migration:revert` reverts the latest application migration.
 - PostgreSQL migrations are statically registered in `apps/api/src/database/migrations.ts` and
   embedded in the API bundles. Register every new migration there without renaming or editing
   historical migrations. The build rejects a missing registration; do not restore runtime globs.

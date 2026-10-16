@@ -250,8 +250,7 @@ cp .env.example .env
 docker compose --env-file .env \
   -f infra/docker/docker-compose.yml -f infra/docker/minio.compose.yml -p pdmux \
   up -d postgres redis minio minio-init
-bunx @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts
-bun run --cwd apps/api migration:run
+bun run --cwd apps/api migrate:all
 bun run dev
 ```
 

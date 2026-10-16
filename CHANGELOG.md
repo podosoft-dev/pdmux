@@ -11,6 +11,10 @@
   built concurrently. A refused, reset or shut-down database connection on PodoKit's pools
   answers 503 `DATABASE_UNAVAILABLE` instead of 500, and while the API is down a protected page
   answers with a plain 503 page instead of the framework's default.
+- `migrate:all` runs the source in development and the compiled bundle in a production image, so
+  setting up a development database no longer needs a build. On a new database `migration:run`
+  stops with a message naming `migrate:all` instead of failing on Better Auth's missing `session`
+  table.
 - Keep pdmux's proxy header names and the public installer path in the application-owned
   `proxy-headers.ts` and `public-paths.ts`, so PodoKit updates leave the managed lists unchanged.
 - Keep the API running when an agent's heartbeat or repository report cannot be stored. During a
