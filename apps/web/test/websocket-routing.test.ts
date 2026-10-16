@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string): string => readFileSync(`${root}/${path}`, "utf8");
 
+/** The directives inside each `reverse_proxy <upstream> { … }` block of a Caddyfile, by upstream. */
+const proxyBlocks = (caddyfile: string): Map<string, string> =>
+  new Map([...caddyfile.matchAll(/reverse_proxy (\S+) \{\n([\s\S]*?)\n[ \t]*\}/g)]
+    .map(([, upstream = "", body = ""]) => [upstream, body.trim()]));
+
 describe("WebSocket gateway routing", () => {
   it("registers both exact socket paths with the shared development gateway", () => {
     const config = JSON.parse(read(".podokit/dev.json")) as {
@@ -23,13 +28,18 @@ describe("WebSocket gateway routing", () => {
   it("[TC-PDTERM-107] routes only the two exact socket paths to the API in self-hosted deployments", () => {
     const caddy = read("infra/docker/Caddyfile");
     expect(caddy).toContain("@websockets path /terminal/ws /agent/ws");
-    expect(caddy).toMatch(/handle @websockets \{\s+reverse_proxy api:5002\s+\}/);
-    expect(caddy).toMatch(/handle \{\s+reverse_proxy web:3000\s+\}/);
+    expect(caddy).toMatch(/handle @websockets \{\s+reverse_proxy api:5002\b/);
+    expect(caddy).toMatch(/handle \{\s+reverse_proxy web:3000\b/);
   });
 
-  it("[TC-PDTERM-108] delegates upgrade and forwarded headers to the native reverse proxy", () => {
+  it("[TC-PDTERM-108] leaves upgrades to the native reverse proxy and sends one client address", () => {
     const caddy = read("infra/docker/Caddyfile");
-    expect(caddy).toMatch(/handle @websockets \{\s+reverse_proxy api:5002\s+\}/);
+    // The web server (XFF_DEPTH=1) and the API (TRUSTED_PROXY_HOPS=1) take the last entry, so
+    // Caddy's default of appending a trusted proxy's address would be recorded as the client.
+    expect(proxyBlocks(caddy)).toEqual(new Map([
+      ["api:5002", "header_up X-Forwarded-For {client_ip}"],
+      ["web:3000", "header_up X-Forwarded-For {client_ip}"],
+    ]));
     expect(caddy).not.toMatch(/header_up\s+-(?:Cookie|Connection|Upgrade|X-Forwarded-)/i);
   });
 

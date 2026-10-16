@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The self-host Caddyfile sends each upstream one `X-Forwarded-For` entry, the client address Caddy
+  resolved. Sessions, audit entries and rejected agents keep the client's address when Caddy trusts a
+  proxy in front of it, instead of recording that proxy. `docs/OPERATIONS.md` §1-3 describes the chain.
+
 ## 0.16.0
 
 - Update the PodoKit foundation to 1.5.0. Request limits count a signed-in user's sessions against one
