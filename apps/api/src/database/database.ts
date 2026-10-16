@@ -77,14 +77,36 @@ const UNAVAILABLE_SQL_CODES = new Set([
 const UNAVAILABLE_PG_MESSAGES = new Set([
   "timeout exceeded when trying to connect",
   "Connection terminated due to connection timeout",
+  "Connection terminated unexpectedly",
   "Query read timeout",
 ]);
+// Socket errors from a pg client whose server is gone or unreachable.
+const UNAVAILABLE_SOCKET_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EPIPE",
+]);
+// SQLSTATEs for a server shutting down or refusing connections (class 57P) and
+// for broken connections (class 08); pg reports them as `code`, Bun SQL as `errno`.
+const UNAVAILABLE_SQLSTATES = new Set(["57P01", "57P02", "57P03"]);
+
+function unavailableSqlState(value: unknown): boolean {
+  return typeof value === "string" && (UNAVAILABLE_SQLSTATES.has(value) || /^08[0-9A-Z]{3}$/.test(value));
+}
 
 /** Whether an error, or one it wraps, means the database is unavailable rather than the request being wrong. */
 export function isDatabaseUnavailable(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
-    if (current instanceof SQL.PostgresError && UNAVAILABLE_SQL_CODES.has(current.code)) return true;
+    if (current instanceof SQL.PostgresError) {
+      if (UNAVAILABLE_SQL_CODES.has(current.code) || unavailableSqlState(current.errno)) return true;
+    } else {
+      const code = (current as { code?: unknown }).code;
+      if (typeof code === "string" && (UNAVAILABLE_SOCKET_CODES.has(code) || unavailableSqlState(code))) return true;
+    }
     if (UNAVAILABLE_PG_MESSAGES.has(current.message)) return true;
     current = current.cause;
   }

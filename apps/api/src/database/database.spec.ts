@@ -183,6 +183,22 @@ describe("isDatabaseUnavailable", () => {
     expect(isDatabaseUnavailable(new Error("Failed to get session", { cause: acquire }))).toBe(true);
   });
 
+  it("recognizes refused, dropped, and shut-down connections from pg and Bun SQL", () => {
+    const socket = (code: string): Error => Object.assign(new Error(`connect ${code}`), { code });
+    const server = (code: string): Error => Object.assign(new Error("server error"), { code });
+    for (const code of ["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH", "EPIPE"]) {
+      expect(isDatabaseUnavailable(socket(code))).toBe(true);
+    }
+    expect(isDatabaseUnavailable(new Error("Connection terminated unexpectedly"))).toBe(true);
+    for (const code of ["57P01", "57P02", "57P03", "08006", "08P01"]) {
+      expect(isDatabaseUnavailable(server(code))).toBe(true);
+      expect(
+        isDatabaseUnavailable(new SQL.PostgresError("server error", { code: "ERR_POSTGRES_SERVER_ERROR", errno: code })),
+      ).toBe(true);
+    }
+    expect(isDatabaseUnavailable(new Error("Failed to save", { cause: socket("ECONNREFUSED") }))).toBe(true);
+  });
+
   it("leaves query and application errors alone", () => {
     expect(isDatabaseUnavailable(new SQL.PostgresError("syntax error", { code: "ERR_POSTGRES_SYNTAX_ERROR" })))
       .toBe(false);
@@ -190,6 +206,8 @@ describe("isDatabaseUnavailable", () => {
       isDatabaseUnavailable(new SQL.PostgresError("duplicate key", { code: "ERR_POSTGRES_SERVER_ERROR", errno: "23505" })),
     ).toBe(false);
     expect(isDatabaseUnavailable(new Error("timeout"))).toBe(false);
+    expect(isDatabaseUnavailable(Object.assign(new Error("duplicate key"), { code: "23505" }))).toBe(false);
+    expect(isDatabaseUnavailable(Object.assign(new Error("not found"), { code: "ENOENT" }))).toBe(false);
     expect(isDatabaseUnavailable("ERR_POSTGRES_CONNECTION_TIMEOUT")).toBe(false);
     expect(isDatabaseUnavailable(undefined)).toBe(false);
   });

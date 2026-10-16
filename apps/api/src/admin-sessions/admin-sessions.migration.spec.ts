@@ -4,11 +4,16 @@ import type { QueryRunner } from "typeorm";
 import { revertLatestSqliteMigration, runSqliteMigrations } from "../database/sqlite-migrator";
 import { IndexSessionCreatedAt1792060000000 } from "../migrations/1792060000000-IndexSessionCreatedAt";
 
-function runner(type: "postgres" | "better-sqlite3", queries: string[], invalid = false): QueryRunner {
+function runner(
+  type: "postgres" | "better-sqlite3",
+  queries: string[],
+  { invalid = false, session = true }: { invalid?: boolean; session?: boolean } = {},
+): QueryRunner {
   return {
     connection: { options: { type } },
     query: (sql: string): Promise<unknown[]> => {
       queries.push(sql);
+      if (sql.includes("IS NOT NULL")) return Promise.resolve([{ exists: session }]);
       return Promise.resolve(invalid && sql.includes("indisvalid") ? [{ invalid: 1 }] : []);
     },
   } as unknown as QueryRunner;
@@ -25,6 +30,7 @@ function rows<Row>(database: Database, sql: string): Row[] {
 }
 
 const CREATE = 'CREATE INDEX CONCURRENTLY IF NOT EXISTS "IDX_session_createdAt_id" ON "session" ("createdAt", "id")';
+const SESSION_EXISTS = 'SELECT to_regclass($1) IS NOT NULL AS "exists"';
 
 describe("admin session list index migration", () => {
   it("builds the PostgreSQL index concurrently outside a transaction", async () => {
@@ -33,6 +39,7 @@ describe("admin session list index migration", () => {
     const up: string[] = [];
     await migration.up(runner("postgres", up));
     expect(up).toEqual([
+      SESSION_EXISTS,
       "SELECT 1 AS \"invalid\" FROM pg_index WHERE indexrelid = to_regclass($1) AND NOT indisvalid",
       CREATE,
     ]);
@@ -44,8 +51,30 @@ describe("admin session list index migration", () => {
 
   it("rebuilds an invalid index left by an interrupted build", async () => {
     const up: string[] = [];
-    await new IndexSessionCreatedAt1792060000000().up(runner("postgres", up, true));
-    expect(up.slice(1)).toEqual(['DROP INDEX CONCURRENTLY IF EXISTS "IDX_session_createdAt_id"', CREATE]);
+    await new IndexSessionCreatedAt1792060000000().up(runner("postgres", up, { invalid: true }));
+    expect(up.slice(2)).toEqual(['DROP INDEX CONCURRENTLY IF EXISTS "IDX_session_createdAt_id"', CREATE]);
+  });
+
+  // `migration:run` runs only the application migrations, so on a new database
+  // Better Auth has not created its tables yet.
+  it("fails with the command that creates the Better Auth tables on PostgreSQL", async () => {
+    const up: string[] = [];
+    await expect(new IndexSessionCreatedAt1792060000000().up(runner("postgres", up, { session: false })))
+      .rejects.toThrow('Better Auth has not created the "session" table yet. Run "bun run --cwd apps/api migrate:all"');
+    expect(up).toEqual([SESSION_EXISTS]);
+  });
+
+  it("fails with the command that creates the Better Auth tables on SQLite and records nothing", async () => {
+    const database = new Database(":memory:");
+    try {
+      const migrations = [{ timestamp: 1792060000000, migration: new IndexSessionCreatedAt1792060000000() }];
+      await expect(runSqliteMigrations(database, migrations)).rejects.toThrow(
+        'Better Auth has not created the "session" table yet. Run "bun run --cwd apps/api migrate:all"',
+      );
+      expect(rows(database, 'SELECT "name" FROM "migrations"')).toEqual([]);
+    } finally {
+      database.close();
+    }
   });
 
   it("serves the newest-first session page on SQLite and reverts", async () => {

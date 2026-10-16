@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>%sveltekit.status% %sveltekit.error.message%</title>
+    <!-- SvelteKit serves this page when the root layout or a server hook fails,
+         so it cannot use the app's styles, scripts, assets, or components. It
+         fills in only the status and the HTML-escaped error message. -->
+    <style>
+      :root {
+        --background: oklch(1 0 0);
+        --foreground: oklch(0.141 0.005 285.823);
+        --muted-foreground: oklch(0.552 0.016 285.938);
+        --border: oklch(0.92 0.004 286.32);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: oklch(0.141 0.005 285.823);
+          --foreground: oklch(0.985 0 0);
+          --muted-foreground: oklch(0.705 0.015 286.067);
+          --border: oklch(1 0 0 / 10%);
+        }
+      }
+
+      body {
+        box-sizing: border-box;
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        padding: 1.5rem;
+        place-items: center;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        line-height: 1.5;
+      }
+
+      main {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        max-width: 32rem;
+      }
+
+      .status {
+        margin: 0;
+        color: var(--muted-foreground);
+        font-size: 2.25rem;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      h1 {
+        margin: 0;
+        padding-left: 1rem;
+        border-left: 1px solid var(--border);
+        font-size: 1rem;
+        font-weight: 500;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="status">%sveltekit.status%</p>
+      <h1>%sveltekit.error.message%</h1>
+    </main>
+  </body>
+</html>

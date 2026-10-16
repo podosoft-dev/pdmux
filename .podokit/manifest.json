@@ -1,6 +1,6 @@
 {
   "schemaVersion": 4,
-  "podokitVersion": "1.4.0",
+  "podokitVersion": "1.4.1",
   "template": "fullstack",
   "toolchain": {
     "runtime": "bun",
@@ -134,6 +134,7 @@
     "apps/api/src/app.extensions.ts",
     "apps/web/src/lib/server/proxy-headers.ts",
     "apps/web/src/lib/server/body-limits.ts",
+    "apps/web/src/error.html",
     "AGENTS.md",
     "CLAUDE.md",
     ".agents/**",
