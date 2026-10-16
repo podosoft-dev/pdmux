@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.16.0
+
 - Update the PodoKit foundation to 1.5.0. Request limits count a signed-in user's sessions against one
   budget. The API resolves a caller's address once, from `TRUSTED_PROXY_HOPS` and
   `TRUSTED_PROXY_HEADER`, for sessions, audit entries, request limits and pdmux's agent and MCP
@@ -15,6 +17,15 @@
   waits more than ten seconds no longer fails.
 - Removing a finished transfer while another transfer on the same host commits no longer fails after
   35 seconds.
+- The API starts while Redis is down: its maintenance job schedules go through a supervised producer
+  connection, enqueues fail at once with 503 until Redis answers, and every reconnect applies the
+  schedules again.
+- After an event bus interruption, such as a Redis restart, the dashboard reloads its hosts and their
+  trends without a page reload.
+- An upload that gets 429 or 503 waits for `Retry-After` (at least one second, doubling up to a minute)
+  and resumes from the agent's offset instead of pausing; six refusals in a row pause it. While it
+  waits, the transfer row shows "Waiting to retry" with the seconds left.
+- The admin users page filters by role and status together on the server and offers Active.
 
 ## 0.15.0
 
