@@ -87,16 +87,20 @@ tag, clean-runner verification of every installer against the committed agent `S
 image digests joined into one tag, and agent bytes identical across both images and the release
 assets. One link is stronger: the release assets are now the exact bytes the installers embed.
 
-## 4. Expected effect
+## 4. Effect
 
 | Workflow | Before (median) | Expected after | Why |
 |---|---:|---:|---|
 | `release.yml` | 12.5 | about 9 | agent 0.5, then macOS Intel package about 4.3, verification about 2.8, publish about 1.1 |
-| `desktop.yml` (pull request) | 10.6 | about 8.7 | agent 0.5, then macOS Intel package about 5.2, verification about 2.7 |
+| `desktop.yml` (pull request, manual) | 10.6 (10.9 on the same day) | measured 8.2 | agent 0.3, then macOS Intel package 5.5, verification 2.0 |
 | `macos-package-probe.yml` | 8.3 | removed | the same checks run in `desktop.yml` |
 
-The expected numbers are estimates from the step timings above. Confirm them with the first runs
-after the change and replace this table with measured values. With the installers shorter, the image
+Measured on 2026-10-16 with manual unsigned `desktop.yml` runs started one after the other on the
+same day: the `ci-speed` branch took 8.2 minutes (run 38899116172: agent 0.3, macOS Intel package 5.5,
+Windows 3.5, Linux 2.9, Apple Silicon 1.9, verification 1.1–2.2), and `main` before the change took
+10.9 minutes (run 38900062507: macOS Intel package 7.3, Windows 4.9, Apple Silicon 3.9, Linux 3.8,
+verification 1.2–3.2). The `release.yml` estimate is still unconfirmed: a release cannot be rehearsed
+without publishing, so replace it with the first tagged release's numbers. With the installers shorter, the image
 path (verify, then the amd64 image build, about 7 minutes) is close behind them, so it is the next
 place to look if the release needs to be faster.
 
