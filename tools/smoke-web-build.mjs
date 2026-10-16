@@ -81,6 +81,15 @@ try {
   }
   if (!body.startsWith("#!/bin/sh")) throw new Error("/install.sh did not return a shell script");
 
+  // The image HEALTHCHECK and the Compose healthcheck probe this route, so it
+  // must answer without the API.
+  const health = await fetch(new URL("/healthz", origin));
+  const healthBody = await health.text();
+  if (health.status !== 200 || healthBody !== "ok\n") {
+    throw new Error(`/healthz without the API returned ${health.status}: ${healthBody.slice(0, 200)}`);
+  }
+  if (health.headers.get("cache-control") !== "no-store") throw new Error("/healthz may be cached");
+
   // Without the API a protected page fails closed in the server hook, which
   // SvelteKit answers with the app-owned src/error.html rather than a layout.
   const page = await fetch(new URL("/hosts", origin), { headers: { accept: "text/html" } });
@@ -111,5 +120,5 @@ if (failure) {
 
 console.log(
   "web production smoke passed: GET /install.sh returned an executable script, " +
-    "and /hosts without the API answered 503 with src/error.html",
+    "/healthz answered 200 without the API, and /hosts without the API answered 503 with src/error.html",
 );
