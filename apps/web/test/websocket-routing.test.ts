@@ -59,4 +59,11 @@ describe("Web image assets", () => {
     expect(copyAgent).toBeGreaterThan(buildAgent);
     expect(buildWeb).toBeGreaterThan(copyAgent);
   });
+
+  it("probes the web server's own health route, which never calls the API", () => {
+    // `/` fails closed with 503 while the API is down, which would mark a web
+    // container that can still serve its fallbacks unhealthy.
+    const healthcheck = /^HEALTHCHECK[^\n]*\\\n\s*CMD (.*)$/m.exec(read("apps/web/Dockerfile"));
+    expect(healthcheck?.[1]).toContain("+ '/healthz')");
+  });
 });
