@@ -62,6 +62,10 @@ Merge added module settings from `.env.example` into an existing `.env`.
   `apps/web/src/lib/server/body-limits.ts` (`APP_BODY_LIMITS`, 413
   `PAYLOAD_TOO_LARGE`). `BODY_SIZE_LIMIT` is the ceiling for every web route, so
   uploads larger than it must use a direct API path (`apiPaths`) instead.
+- When the root layout or a server hook fails, such as with 503 while the API is
+  down, SvelteKit serves the app-owned `apps/web/src/error.html`. It is plain HTML
+  with inline styles: no components, app CSS, scripts, or assets, and only the
+  `%sveltekit.status%` and `%sveltekit.error.message%` placeholders.
 - Build: `bun run build` · Type-check/lint: `bun run lint` · Unit tests: `bun run test`
 - Per workspace: `bun run --cwd apps/api build` / `bun run --cwd apps/web build`.
 - Set up the database and apply later migrations, including after adding a module, with
