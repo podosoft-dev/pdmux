@@ -32,7 +32,7 @@ function legacyDatabase(): Database {
   return database;
 }
 
-describe("[TC-PDHOST-026] Better Auth account identity cleanup", () => {
+describe("Better Auth account identity cleanup", () => {
   it("leaves an absent PostgreSQL table to the auth migrator", async (): Promise<void> => {
     const client = new AccountClient(false);
     expect(await migrate(client)).toBe("absent");
