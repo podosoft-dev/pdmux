@@ -374,9 +374,7 @@
     "close": "Close",
     "back": "Back",
     "noProviders": "No providers added yet.",
-    "socialCardDesc": "Sign in with Google, GitHub, Apple and other OAuth providers.",
-    "mcpEnabled": "MCP (Model Context Protocol)",
-    "mcpEnabledDesc": "Lets a coding CLI reach pdmux over /mcp with a token. Turning this off makes /mcp answer 404 for every caller. Existing tokens work again when it is re-enabled."
+    "socialCardDesc": "Sign in with Google, GitHub, Apple and other OAuth providers."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -595,25 +593,5 @@
     "emailChangePending": "Check your current inbox to approve the change",
     "verified": "Verified",
     "unverified": "Unverified"
-  },
-  "agentAuth": {
-    "title": "Agent refusals",
-    "intro": "Agents the gateway is turning away. One row per reason, host and source address — an agent that has lost its credential retries forever, so these are counted rather than listed one attempt at a time.",
-    "reason": "Reason",
-    "host": "Host",
-    "source": "Source",
-    "count": "Attempts",
-    "firstSeen": "First seen",
-    "lastSeen": "Last seen",
-    "empty": "No agent has been refused.",
-    "loadFailed": "Failed to load agent refusals",
-    "total": "{count} refusals",
-    "unknownHost": "—",
-    "reasonMissingKey": "No key presented",
-    "reasonUnknown": "Unrecognised key",
-    "reasonRevoked": "Token revoked",
-    "reasonExpired": "Token expired",
-    "reasonHostDisabled": "Host disabled",
-    "reasonHostDeleted": "Host deleted"
   }
 }

@@ -990,5 +990,29 @@
       "deleteConfirm": "삭제",
       "queued": " · {count}개 남음"
     }
+  },
+  "settings": {
+    "mcpEnabled": "MCP (Model Context Protocol)",
+    "mcpEnabledDesc": "코딩 CLI가 토큰으로 /mcp를 통해 pdmux에 연결하도록 허용합니다. 끄면 모든 호출에 404로 응답하며, 다시 켜면 기존 토큰이 다시 동작합니다."
+  },
+  "agentAuth": {
+    "title": "에이전트 거절",
+    "intro": "게이트웨이가 돌려보내고 있는 에이전트. 사유·호스트·출발 주소마다 한 행이다 — 자격증명을 잃은 에이전트는 영원히 재시도하므로 시도마다 적지 않고 세어 둔다.",
+    "reason": "사유",
+    "host": "호스트",
+    "source": "출발 주소",
+    "count": "시도",
+    "firstSeen": "처음",
+    "lastSeen": "마지막",
+    "empty": "거절된 에이전트가 없습니다.",
+    "loadFailed": "에이전트 거절 목록을 불러오지 못했습니다",
+    "total": "거절 {count}건",
+    "unknownHost": "—",
+    "reasonMissingKey": "키 없음",
+    "reasonUnknown": "모르는 키",
+    "reasonRevoked": "폐기된 토큰",
+    "reasonExpired": "만료된 토큰",
+    "reasonHostDisabled": "비활성 호스트",
+    "reasonHostDeleted": "삭제된 호스트"
   }
 }
