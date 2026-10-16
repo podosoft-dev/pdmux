@@ -67,7 +67,10 @@ describe("[TC-PDFILE-007] bounded transfer proxy", (): void => {
     const fetch = vi.fn(async (_url: string, init: RequestInit): Promise<Response> => {
       expect(new Headers(init.headers).get("x-transfer-offset")).toBe("1048576");
       expect(new Headers(init.headers).get("x-transfer-sha256")).toBe("digest");
-      expect(new Uint8Array(init.body as ArrayBuffer)).toEqual(new Uint8Array(1_048_576).fill(255));
+      // A deep toEqual over 1 MiB walks every byte and took 2-7 s, past the 5 s test timeout under load.
+      const body = new Uint8Array(init.body as ArrayBuffer);
+      expect(body.byteLength).toBe(1_048_576);
+      expect(Buffer.from(body).equals(Buffer.alloc(1_048_576, 255))).toBe(true);
       return Response.json({ offset: 2097152 });
     });
     vi.stubGlobal("fetch", fetch);
