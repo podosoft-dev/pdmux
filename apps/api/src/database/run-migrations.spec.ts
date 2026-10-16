@@ -73,7 +73,7 @@ describe("migrate:all launcher", () => {
     expect(result.code).toBe(3);
   });
 
-  it("[TC-PDHOST-025] runs the migration in the API directory when started from elsewhere", async () => {
+  it("runs the migration in the API directory when started from elsewhere", async () => {
     const apiRoot = 'realpathSync(join(import.meta.dir, "../.."))';
     const result = await launch(
       ["src/database/migrate.ts"],
@@ -85,7 +85,7 @@ describe("migrate:all launcher", () => {
     expect(result).toMatchObject({ code: 0, stdout: "src/database/migrate.ts\ntrue" });
   });
 
-  it("[TC-PDHOST-025] applies the API's decorator settings when started from elsewhere", async () => {
+  it("applies the API's decorator settings when started from elsewhere", async () => {
     // TypeORM entities need legacy decorators, which Bun takes from the
     // tsconfig.json of the working directory rather than of the source file.
     const result = await launch(
