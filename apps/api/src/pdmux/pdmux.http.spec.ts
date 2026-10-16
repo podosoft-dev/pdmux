@@ -4,6 +4,7 @@ import { AppException } from "@podosoft/podokit-contracts";
 import { Elysia } from "elysia";
 import type { AuthSession } from "../auth/auth.service";
 import { databaseUnavailable } from "../auth/database-outage";
+import { CLIENT_ADDRESS_HEADER } from "../core/client-address";
 import type { AppContext } from "../core/services";
 import { ServiceRegistry } from "../core/services";
 import { pdmuxHttpPlugin } from "./pdmux.http";
@@ -113,13 +114,17 @@ describe("PDMUX HTTP boundary", () => {
     expect(list).toHaveBeenCalledWith("personal:user-1");
   });
 
-  it("redeems a public enrollment with the forwarded client address", async () => {
+  it("redeems a public enrollment with the client address the API resolved", async () => {
     const redeem = mock(async (code: string, ip: string | null) => ({ code, ip }));
     const response = await application({
       agentEnrollments: { redeem } as unknown as PdmuxServices["agentEnrollments"],
     }).handle(new Request("http://localhost/agent/enroll", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.7, 10.0.0.2" },
+      headers: {
+        "content-type": "application/json",
+        [CLIENT_ADDRESS_HEADER]: "203.0.113.7",
+        "x-forwarded-for": "198.51.100.66",
+      },
       body: JSON.stringify({ code: " enroll-code " }),
     }));
 

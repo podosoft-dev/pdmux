@@ -5,6 +5,7 @@ import {
 } from "@pdmux/protocol";
 import type { AuthSession } from "../auth/auth.service";
 import { AppException } from "../common/app-exception";
+import { clientAddressOf } from "../core/client-address";
 import { ProductLogger } from "../logging/product-logger";
 import { SERVER_VERSION } from "../version";
 import { isVerifyDial, VerifyDialBudget } from "../agents/agent-verify";
@@ -47,9 +48,6 @@ interface TerminalConnection {
 
 const PING_INTERVAL_MS = 30_000;
 
-function clientIp(request: Request): string | null {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-}
 
 function payload(value: unknown): unknown {
   if (typeof value !== "string") return value;
@@ -287,7 +285,7 @@ export class PdmuxGateway {
   }
 
   private noteRefusal(reason: AgentRefusalReason, hostId: string | null, request: Request): void {
-    void this.services.agentAuthFailures.record(reason, hostId, clientIp(request));
+    void this.services.agentAuthFailures.record(reason, hostId, clientAddressOf(request.headers) ?? null);
   }
 
   private send(socket: BunSocket, frame: AgentDownstream): void {

@@ -11,6 +11,7 @@ import { CreateAgentTokenDto } from "../agents/dto/create-agent-token.dto";
 import { EnrollAgentDto } from "../agents/dto/enroll-agent.dto";
 import { FleetUpdateAgentDto, UpdateAgentDto } from "../agents/dto/update-agent.dto";
 import type { AuthSession } from "../auth/auth.service";
+import { clientAddressOf } from "../core/client-address";
 import type { AppPlugin } from "../core/services";
 import { UpdateFleetSettingsDto } from "../fleet/dto/update-fleet-settings.dto";
 import {
@@ -560,7 +561,7 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
       set.status = 201;
       const result = await services.agentEnrollments.redeem(
         input.code,
-        request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+        clientAddressOf(request.headers) ?? null,
       );
       return result;
     })

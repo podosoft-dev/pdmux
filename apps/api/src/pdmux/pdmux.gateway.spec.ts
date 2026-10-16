@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { AGENT_KEY_HEADER } from "@pdmux/protocol";
 import { isVerifyDial, VerifyDialBudget, VERIFY_DIALS_PER_WINDOW } from "../agents/agent-verify";
 import { databaseUnavailable } from "../auth/database-outage";
+import { CLIENT_ADDRESS_HEADER } from "../core/client-address";
 import type { BrowserSocket } from "../terminal/terminal-relay.service";
 import { PdmuxGateway, type TerminalAcceptContext } from "./pdmux.gateway";
 import type { PdmuxServices } from "./pdmux.services";
@@ -55,7 +56,9 @@ describe("PdmuxGateway authorization", () => {
       const request = new Request("http://localhost/agent/ws", {
         headers: {
           [AGENT_KEY_HEADER]: `pdmux_agent_secret_${index}`,
-          "x-forwarded-for": "203.0.113.8, 10.0.0.2",
+          // The address the API resolved; the caller's own X-Forwarded-For is not one.
+          [CLIENT_ADDRESS_HEADER]: "203.0.113.8",
+          "x-forwarded-for": "198.51.100.66",
         },
       });
 
@@ -80,7 +83,7 @@ describe("PdmuxGateway authorization", () => {
     }));
 
     const request = new Request("http://localhost/agent/ws", {
-      headers: { "x-forwarded-for": "203.0.113.8, 10.0.0.2" },
+      headers: { [CLIENT_ADDRESS_HEADER]: "203.0.113.8", "x-forwarded-for": "198.51.100.66" },
     });
     await expect(gateway.authorizeAgent(request)).rejects.toMatchObject({ statusCode: 401 });
     expect(resolveOrReason).not.toHaveBeenCalled();

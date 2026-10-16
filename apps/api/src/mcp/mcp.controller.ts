@@ -13,6 +13,7 @@ import { MetricsService } from "../metrics/metrics.service";
 import { ApiFleetGateway } from "./fleet-gateway";
 import { ApiHostGateway } from "./host-gateway";
 import { recordAudit } from "../audit/audit-events";
+import { clientAddressOf } from "../core/client-address";
 import type { McpIdentity } from "./host-mcp-keys.service";
 import { McpAuthService } from "./mcp-auth.service";
 import { mcpEnabled } from "./mcp-enabled";
@@ -198,7 +199,7 @@ export class McpController {
       targetType: "host",
       targetId: identity.hostId,
       targetLabel: hostLabel,
-      ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ip: clientAddressOf(request.headers) ?? null,
       metadata: { via: "mcp", mode: "host", keyId: identity.keyId, scopes: identity.scopes, ...entry.metadata },
     });
   }
@@ -214,7 +215,7 @@ export class McpController {
       targetType: entry.target?.type ?? null,
       targetId: entry.target?.id ?? null,
       targetLabel: entry.target?.label ?? null,
-      ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ip: clientAddressOf(request.headers) ?? null,
       metadata: {
         via: "mcp",
         tokenId: identity.keyId,

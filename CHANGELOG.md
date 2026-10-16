@@ -4,7 +4,8 @@
 
 - Update the PodoKit foundation to 1.5.0. Request limits count a signed-in user's sessions against one
   budget. The API resolves a caller's address once, from `TRUSTED_PROXY_HOPS` and
-  `TRUSTED_PROXY_HEADER`, for sessions, audit entries and request limits; these replace `RATE_LIMIT_TRUSTED_PROXY_HOPS` and `RATE_LIMIT_PROXY_HEADER`, and the API
+  `TRUSTED_PROXY_HEADER`, for sessions, audit entries, request limits and pdmux's agent and MCP
+  records; these replace `RATE_LIMIT_TRUSTED_PROXY_HOPS` and `RATE_LIMIT_PROXY_HEADER`, and the API
   refuses to start while the old names are set. The account page lists every session, "Sign out
   other sessions" signs out all of them, and the admin tables' search box keeps its width on a phone.
 
