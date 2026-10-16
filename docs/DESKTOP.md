@@ -227,8 +227,8 @@ trust is installed on these verification VMs. This is not an interactive browser
 Pull-request runs of `desktop.yml` build the real product with disposable certificates
 (`--ci-probe`) on Intel and Tahoe ARM64, and separate fresh runners verify the artifacts without
 importing the signing identity. A separate `macos-package-probe.yml` used to repeat exactly these
-steps on the same commits; it was removed because it only doubled macOS runner time.
-Run `desktop.yml` by hand with `signed` off for the same check on a branch.
+steps on the same commits; it was removed because it only doubled macOS runner time
+(see [`CI.md`](CI.md)). Run `desktop.yml` by hand with `signed` off for the same check on a branch.
 These artifacts must not be published as product releases: their signing keys are deliberately
 destroyed and cannot sign future updates.
 

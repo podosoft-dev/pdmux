@@ -155,6 +155,14 @@ Which specs cover which change is decided by where the change lands: a component
 the agent, and one Playwright file for a screen. The `[TC-…]` tag in a test title is what
 ties it back to the requirement it was written for.
 
+**Treat work that runs for about ten minutes or more as a defect to measure, not a wait.**
+This covers a workflow run, a release, and a local sweep. Measure per-step times first
+(`gh run view <id> --json jobs`), shorten the critical path without dropping anything the
+release proves, and record the before and after numbers in `docs/CI.md`. That document
+lists what each workflow proves and the rules that keep it fast: build platform-independent
+outputs such as the agent binaries once, reuse the `ci` cache keys, never run the same
+checks twice on one commit, and keep this public repository's jobs on GitHub-hosted runners.
+
 ## Code style
 
 ### TypeScript (both apps)

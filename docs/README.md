@@ -19,6 +19,7 @@ to the rules they produced — so a future reader can weigh a rule instead of gu
 | [`DESKTOP.md`](DESKTOP.md) | the embedded SQLite/local-provider profile, desktop lifecycle, backups, remote mode, and platform packaging |
 | [`FILE-TRANSFERS.md`](FILE-TRANSFERS.md) | folder uploads, ZIP64 downloads, progress, resume, conflicts, and private spool deployment |
 | [`READINESS.md`](READINESS.md) | isolated production-runtime, browser, real-agent, and optional Cloudflare verification |
+| [`CI.md`](CI.md) | what each GitHub Actions workflow proves, measured durations, and the rules that keep the release fast |
 
 Every test title carries a `[TC-AREA-NNN]` tag, and those identifiers appear throughout these
 documents. They point into a requirements matrix that is maintained alongside this repository rather
