@@ -224,10 +224,13 @@ expiry checks run on both PR and release packages. Release verification also
 pins the package certificate to `apps/desktop/signing-certificate.pem`. No signing key or certificate
 trust is installed on these verification VMs. This is not an interactive browser-download Gatekeeper test.
 
-The separate `macos-package-probe.yml` workflow builds the real product with disposable certificates
-(`--ci-probe`) on Intel and Tahoe ARM64. Separate fresh runners verify the artifacts without importing
-the signing identity. Artifacts expire after one day and must not be published as product releases:
-their signing keys are deliberately destroyed and cannot sign future updates.
+Pull-request runs of `desktop.yml` build the real product with disposable certificates
+(`--ci-probe`) on Intel and Tahoe ARM64, and separate fresh runners verify the artifacts without
+importing the signing identity. A separate `macos-package-probe.yml` used to repeat exactly these
+steps on the same commits; it was removed because it only doubled macOS runner time.
+Run `desktop.yml` by hand with `signed` off for the same check on a branch.
+These artifacts must not be published as product releases: their signing keys are deliberately
+destroyed and cannot sign future updates.
 
 ### Production signing-key lifecycle
 
