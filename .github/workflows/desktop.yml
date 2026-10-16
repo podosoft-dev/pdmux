@@ -179,6 +179,8 @@ jobs:
             apps/desktop/release/*.zip
             apps/desktop/release/latest*.yml
           if-no-files-found: error
+          # Installers, archives, and blockmaps are already compressed.
+          compression-level: 0
 
   verify-macos:
     needs: package
