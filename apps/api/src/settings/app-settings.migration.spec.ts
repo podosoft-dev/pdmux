@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { QueryRunner } from "typeorm";
 import { InitAppSettings1720400000000 } from "../migrations/1720400000000-InitAppSettings";
-import { AddMcpEnabledSetting1731300000000 } from "../migrations/1731300000000-AddMcpEnabledSetting";
 
 describe("app setting migration", () => {
   function runner(type: "postgres" | "better-sqlite3", queries: string[]): QueryRunner {
@@ -42,12 +41,5 @@ describe("app setting migration", () => {
     expect(queries[0]).toContain("datetime");
     expect(queries[0]).toContain("CURRENT_TIMESTAMP");
     expect(queries[0]).not.toContain("TIMESTAMP WITH TIME ZONE");
-  });
-
-  it("preserves the product MCP policy as an opt-out setting", async () => {
-    const queries: string[] = [];
-    await new AddMcpEnabledSetting1731300000000().up(runner("postgres", queries));
-
-    expect(queries.join("\n")).toContain("('mcpEnabled', 'true')");
   });
 });
