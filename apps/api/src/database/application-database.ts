@@ -15,38 +15,9 @@ import {
 export const APPLICATION_DATABASE_CHECK = "pdmux-schema";
 export const APPLICATION_DATABASE = Symbol("application-database") as ServiceKey<ApplicationDatabase>;
 
-// PodoKit's `isDatabaseUnavailable` covers refused, reset and timed-out sockets,
-// the server-shutdown and connection-exception SQLSTATEs and pg's timeouts.
-// TypeORM's QueryFailedError copies the driver error's code and message, so the
-// helper sees those through it too. pdmux's pool also meets two more cases:
-// - A database host name that stops resolving, as when a Compose service is
-//   stopped. Bun reports a name that does not exist as ENOTFOUND and a temporary
-//   resolver failure as ETIMEOUT, where Node says EAI_AGAIN (Bun 1.4.0).
-// - pg's errors for a client that ended or broke while TypeORM still held it,
-//   such as inside a transaction.
-const UNRESOLVED_HOST_CODES = new Set(["ENOTFOUND", "ETIMEOUT"]);
-const CLOSED_CLIENT_MESSAGES = new Set([
-  "Connection terminated",
-  "Client has encountered a connection error and is not queryable",
-  "Client was closed and is not queryable",
-]);
-
-/** Whether an error, or one it wraps, means PostgreSQL could not be reached rather than that the query was wrong. */
-export function isDatabaseConnectionError(error: unknown): boolean {
-  if (isDatabaseUnavailable(error)) return true;
-  let current: unknown = error;
-  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
-    const code: unknown = Reflect.get(current, "code");
-    if (typeof code === "string" && UNRESOLVED_HOST_CODES.has(code)) return true;
-    if (CLOSED_CLIENT_MESSAGES.has(current.message)) return true;
-    current = current.cause;
-  }
-  return false;
-}
-
 /** `error` as DATABASE_UNAVAILABLE when it means PostgreSQL could not be reached, otherwise unchanged. */
 function asDatabaseUnavailable(error: unknown): unknown {
-  if (error instanceof AppException || !isDatabaseConnectionError(error)) return error;
+  if (error instanceof AppException || !isDatabaseUnavailable(error)) return error;
   const unavailable = databaseUnavailable();
   unavailable.cause = error;
   return unavailable;

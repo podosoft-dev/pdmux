@@ -9,9 +9,9 @@ import {
   APPLICATION_DATABASE_CHECK,
   ApplicationDatabase,
   applicationDataSourceOptions,
-  isDatabaseConnectionError,
   superviseApplicationDatabase,
 } from "./application-database";
+import { isDatabaseUnavailable } from "./database";
 import { POSTGRES_MIGRATIONS } from "./migrations";
 
 function refused(): Error {
@@ -183,6 +183,8 @@ describe("[TC-PDHOST-032] pdmux database connects in the background", () => {
 });
 
 describe("[TC-PDHOST-033] pdmux database outages answer DATABASE_UNAVAILABLE", () => {
+  // pdmux relies on PodoKit's check for every failure below; a narrower check
+  // would answer 500 for an outage.
   it("tells a lost or refused connection apart from a query the database rejected", () => {
     const pgError = (message: string, code?: string): Error => Object.assign(new Error(message), code ? { code } : {});
     const unavailable = [
@@ -195,13 +197,16 @@ describe("[TC-PDHOST-033] pdmux database outages answer DATABASE_UNAVAILABLE", (
       new QueryFailedError("SELECT 1", [], new Error("Connection terminated unexpectedly")),
       new QueryFailedError("SELECT 1", [], new Error("Query read timeout")),
       new Error("outer", { cause: refused() }),
-      // Beyond PodoKit's helper: a host name that stops resolving, as Bun reports it,
-      // and a pg client that ended or broke while a transaction still held it.
+      // A database host name that stops resolving, as when a Compose service is
+      // stopped: Bun 1.4.0 reports ENOTFOUND, and ETIMEOUT where Node says EAI_AGAIN.
       pgError("getaddrinfo ENOTFOUND postgres", "ENOTFOUND"),
       pgError("getaddrinfo ETIMEOUT postgres", "ETIMEOUT"),
+      // A pg client that ended or broke while a transaction still held it.
       new QueryFailedError("COMMIT", [], new Error("Connection terminated")),
       new Error("Client has encountered a connection error and is not queryable"),
       new Error("outer", { cause: new Error("Client was closed and is not queryable") }),
+      // A connection to localhost that tried IPv6 and IPv4.
+      new AggregateError([refused(), refused()], "connect failed"),
     ];
     const rejected = [
       new QueryFailedError("INSERT", [], pgError("duplicate key value violates unique constraint", "23505")),
@@ -210,8 +215,8 @@ describe("[TC-PDHOST-033] pdmux database outages answer DATABASE_UNAVAILABLE", (
       new Error("boom"),
       "not an error",
     ];
-    for (const error of unavailable) expect(isDatabaseConnectionError(error)).toBe(true);
-    for (const error of rejected) expect(isDatabaseConnectionError(error)).toBe(false);
+    for (const error of unavailable) expect(isDatabaseUnavailable(error)).toBe(true);
+    for (const error of rejected) expect(isDatabaseUnavailable(error)).toBe(false);
   });
 
   it("rethrows a lost connection from every query runner as DATABASE_UNAVAILABLE", async () => {
