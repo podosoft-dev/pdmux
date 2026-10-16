@@ -89,20 +89,36 @@ assets. One link is stronger: the release assets are now the exact bytes the ins
 
 ## 4. Effect
 
-| Workflow | Before (median) | Expected after | Why |
+| Workflow | Before (median) | After (measured) | Notes |
 |---|---:|---:|---|
-| `release.yml` | 12.5 | about 9 | agent 0.5, then macOS Intel package about 4.3, verification about 2.8, publish about 1.1 |
-| `desktop.yml` (pull request, manual) | 10.6 (10.9 on the same day) | measured 8.2 | agent 0.3, then macOS Intel package 5.5, verification 2.0 |
+| `release.yml` | 12.5 | 9.2 | critical path: agent 0.3, macOS Intel package 4.9, its verification 2.7, publish 0.9 |
+| `desktop.yml` (pull request, manual) | 10.6 (10.9 on the same day) | 8.2 | critical path: agent 0.3, macOS Intel package 5.5, its verification 2.0 |
 | `macos-package-probe.yml` | 8.3 | removed | the same checks run in `desktop.yml` |
 
-Measured on 2026-10-16 with manual unsigned `desktop.yml` runs started one after the other on the
+`desktop.yml` was measured on 2026-10-16 with manual unsigned runs started one after the other on the
 same day: the `ci-speed` branch took 8.2 minutes (run 38899116172: agent 0.3, macOS Intel package 5.5,
 Windows 3.5, Linux 2.9, Apple Silicon 1.9, verification 1.1–2.2), and `main` before the change took
 10.9 minutes (run 38900062507: macOS Intel package 7.3, Windows 4.9, Apple Silicon 3.9, Linux 3.8,
-verification 1.2–3.2). The `release.yml` estimate is still unconfirmed: a release cannot be rehearsed
-without publishing, so replace it with the first tagged release's numbers. With the installers shorter, the image
-path (verify, then the amd64 image build, about 7 minutes) is close behind them, so it is the next
-place to look if the release needs to be faster.
+verification 1.2–3.2).
+
+`release.yml` was measured on the first tagged release after the change, v0.16.0 on 2026-10-16
+(run 38905079032), at 9.2 minutes against the 12.5-minute median before it. Durations and finishing
+times are in minutes, the latter counted from the run's creation:
+
+| Job | Minutes | Finished at |
+|---|---:|---:|
+| verify | 1.5 | 1.6 |
+| desktop agent | 0.3 | 0.4 |
+| installers: macOS Intel, Linux, Windows, Apple Silicon | 4.9, 3.4, 3.2, 2.2 | 5.4 |
+| image builds: amd64, arm64 | 6.3, 4.4 | 8.0 |
+| clean-runner verification: macOS Intel, Windows, Apple Silicon, Linux | 2.7, 1.9, 1.8, 1.1 | 8.2 |
+| publish | 0.9 | 9.2 |
+
+The installers started beside verify, as intended. Every verification job needs the whole installer
+matrix, so all four start when the macOS Intel package finishes. The critical path is still that
+package, its verification and publish, but the image path (verify, then the amd64 image build) now
+finishes at minute 8.0, only 0.2 minutes earlier. Shortening the installers alone no longer makes the
+release faster: the next speed-up has to shorten both the macOS Intel path and the amd64 image build.
 
 ## 5. Keeping it fast
 
@@ -117,5 +133,12 @@ place to look if the release needs to be faster.
 - **One workflow per proof.** Do not run the same steps twice on the same commit under two names.
 - **Pull-request workflows cancel superseded runs.** A workflow that `release.yml` calls must never
   be cancellable from outside its own run.
+- **Keep slow assertions out of unit tests.** A unit test that takes seconds on an idle machine
+  passes the 5-second default timeout (Vitest and `bun test` alike) on a loaded runner and fails
+  there. In `apps/web/test/backend-proxy-download.test.ts`, a deep `toEqual` over a 1 MiB
+  body walked every byte: 2.1 seconds on an idle machine and more than 7 under load. It failed
+  `main`'s CI twice (runs 38870025855 and 38870813688) and stopped the first v0.16.0 tag push at the
+  local preflight. A length check and `Buffer.equals` take 29 ms and still fail on one changed byte.
+  Compare large binary values as bytes, not with a deep equal.
 - **Never trade a release proof for time**: signing, clean-runner verification, checksums, image and
   asset equality, the asset list, and the `verify` gate before `publish`.
