@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { DataSource } from "typeorm";
 import { SQL } from "bun";
+import { AuditService } from "../audit/audit.service";
 import { UserLayout } from "../prefs/user-layout.entity";
 import { initializeDesktopSchema } from "./desktop-schema";
 import { createAppDataSource, createDataSourceOptions, entityTypes } from "./data-source";
@@ -57,6 +58,26 @@ describe("[TC-PDDESKTOP-002] Bun SQLite TypeORM compatibility", () => {
         "audit_logs",
         "auth_config",
       ]);
+    } finally {
+      await sql.close();
+    }
+  });
+
+  it("persists audit dates and nested metadata in the desktop schema", async () => {
+    const sql = new SQL("sqlite://:memory:");
+    try {
+      await initializeDesktopSchema(sql);
+      const service = new AuditService(sql, { dialect: "sqlite", enabled: () => Promise.resolve(true) });
+      await service.record({
+        action: "host.create",
+        targetLabel: "example",
+        metadata: { labels: ["one"], nested: { enabled: true } },
+      });
+      const { entries } = await service.list();
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.metadata).toEqual({ labels: ["one"], nested: { enabled: true } });
+      expect(Date.parse(entries[0]?.createdAt ?? "")).not.toBeNaN();
     } finally {
       await sql.close();
     }

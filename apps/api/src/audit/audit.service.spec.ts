@@ -3,7 +3,6 @@ import { SQL } from "bun";
 import type { QueryRunner } from "typeorm";
 import type { AuthSession } from "../auth/auth.service";
 import { CLIENT_ADDRESS_HEADER } from "../core/client-address";
-import { initializeDesktopSchema } from "../database/desktop-schema";
 import { InitAuditLogs1720300000000 } from "../migrations/1720300000000-InitAuditLogs";
 import { recordAudit, recordAuditLater } from "./audit-events";
 import { AppException } from "@podosoft/podokit-contracts";
@@ -113,18 +112,6 @@ async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<voi
 }
 
 describe("AuditService", () => {
-  test("[TC-PDDESKTOP-002] persists dates and nested metadata through SQLite", async () => {
-    const sql = new SQL("sqlite://:memory:");
-    try {
-      await initializeDesktopSchema(sql);
-      const service = new AuditService(sql, { dialect: "sqlite", enabled: on });
-      await service.record({ action: "host.create", targetLabel: "example", metadata: { labels: ["one"], nested: { enabled: true } } });
-      const { entries } = await service.list();
-      expect(entries).toHaveLength(1);
-      expect(entries[0]?.metadata).toEqual({ labels: ["one"], nested: { enabled: true } });
-      expect(Date.parse(entries[0]?.createdAt ?? "")).not.toBeNaN();
-    } finally { await sql.close(); }
-  });
   test("writes global audit events through one recorder", async () => {
     const sql = await sqliteDatabase();
     const service = new AuditService(sql, { dialect: "sqlite", enabled: on });
