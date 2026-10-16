@@ -39,7 +39,8 @@ its dependencies while it is configured.
 ```bash
 bun install
 cp .env.example .env
-bun run --cwd apps/api migration:run
+bun run build                          # migrate:all runs the compiled API bundle
+bun run --cwd apps/api migrate:all
 bun run dev        # api on http://localhost:5002, web on http://localhost:5001
 ```
 
@@ -54,11 +55,21 @@ Merge added module settings from `.env.example` into an existing `.env`.
 
 - **Ports: web = 5001, api = 5002.** The web app reaches the API only through its
   SvelteKit server proxy (`/api/*`), never with a direct browser `fetch`.
+- The proxy (`apps/web/src/lib/server/backend-proxy.ts`) is managed and passes only
+  allowlisted headers. List extra request and response header names in the
+  app-owned `apps/web/src/lib/server/proxy-headers.ts`
+  (`APP_FORWARDED_REQUEST_HEADERS`, `APP_RELAYED_RESPONSE_HEADERS`); never edit the
+  managed lists. Cap a route's request body in the app-owned
+  `apps/web/src/lib/server/body-limits.ts` (`APP_BODY_LIMITS`, 413
+  `PAYLOAD_TOO_LARGE`). `BODY_SIZE_LIMIT` is the ceiling for every web route, so
+  uploads larger than it must use a direct API path (`apiPaths`) instead.
 - Build: `bun run build` · Type-check/lint: `bun run lint` · Unit tests: `bun run test`
 - Per workspace: `bun run --cwd apps/api build` / `bun run --cwd apps/web build`.
 - Better Auth and application migrations: `bun run --cwd apps/api migrate:all`.
-- `bun run --cwd apps/api migration:run` applies only the PostgreSQL application migrations. The
-  desktop SQLite schema is created by `migrate:all` (module tables plus entity synchronization).
+- `bun run --cwd apps/api migration:run` applies only the PostgreSQL application migrations. It
+  expects the Better Auth tables (`IndexSessionCreatedAt` indexes `session`), so a fresh database
+  needs `migrate:all`. The desktop SQLite schema is created by `migrate:all` (module tables plus
+  entity synchronization).
 - PostgreSQL migrations are statically registered in `apps/api/src/database/migrations.ts` and
   embedded in the API bundles. Register every new migration there without renaming or editing
   historical migrations. The build rejects a missing registration; do not restore runtime globs.
@@ -121,7 +132,7 @@ ties it back to the requirement it was written for.
 This project is managed by the `podo` CLI. Files have an ownership tier recorded
 in `.podokit/files.lock` — respect it:
 
-- **owned** (your code: `apps/web/src/routes/**`, your components/services, `apps/api/src/app.extensions.ts`, and this `AGENTS.md`) — edit freely. Add application-owned services or module descriptors through `app.extensions.ts` instead of changing toolkit registrations.
+- **owned** (your code: `apps/web/src/routes/**`, your components/services, `apps/api/src/app.extensions.ts`, and this `AGENTS.md`) — edit freely. Add application-owned services or module descriptors through `app.extensions.ts` instead of changing toolkit registrations. Set Bun server options (`maxRequestBodySize`, `idleTimeout`) with its `apiServerOptions` export rather than editing `main.ts`; `API_MAX_REQUEST_BODY_SIZE` sets the body limit when the export leaves it out.
 - **assembled** (e.g. `apps/api/src/app.ts`, `auth.ts`) — contain `// podokit:begin:… / …:end` fenced regions that the toolkit recomputes. Edit outside the fences only; **never hand-edit inside the fences**.
 - **managed** (bootstrap/config like `main.ts`) — the toolkit may update these; avoid gratuitous edits.
 
@@ -130,12 +141,19 @@ Useful commands:
 - `podo dev watch|up|ps|logs|exec|down` — run container development through the
   shared loopback gateway. `.podokit/dev.json` owns the local hostname and exact
   API WebSocket path allowlist.
+  `podo dev up` rebuilds the images from the current source so a recreated
+  container never runs code older than the files Compose Watch synced.
+  `podo dev down` also stops this project's running `podo dev watch`; do not
+  kill Compose processes by hand.
+  The containers read the untracked `.env.docker`; `podo dev` creates it from the
+  committed `.env.docker.example` with generated secrets when it is missing. Never
+  commit `.env.docker` or put secrets in the example.
 - `podo add <module>` — add a feature (auth, admin-dashboard, redis, bullmq, …). It wires itself into the app; run `podo add` with no argument to list modules.
 - `podo remove <module>` — un-apply a module (inverse of add; refuses if another module needs it, keeps files you edited).
 - `podo provider list` / `podo provider set <capability> <provider> [--apply]` — inspect or switch database, cache, object storage, events, and jobs. Set is dry-run by default and never migrates or deletes provider data. Local providers require one API process.
 - `podo status` / `podo diff` — see your local edits vs. what PodoKit generated.
 - `podo update` — pull in template/module improvements (3-way merges your edits; never touches owned files).
-- `podo deploy` — plan, apply, verify, or roll back an immutable release on Kubernetes or one Docker host. Production API WebSocket paths belong in the deployment profile's exact `exposure.webSocketPaths` allowlist; Compose trusts forwarding headers only from `exposure.trustedProxyCidrs`. Tag `vX.Y.Z` to build and push the images (`.github/workflows/release.yml`; check its runner — GitHub-hosted minutes are free for public repositories only). Use `.agents/skills/podokit-deploy`.
+- `podo deploy` — plan, apply, verify, or roll back an immutable release on Kubernetes or one Docker host. Production API WebSocket paths belong in the deployment profile's exact `exposure.webSocketPaths` allowlist, and API routes that take bodies above the web server's `BODY_SIZE_LIMIT` (file uploads) in `exposure.apiPaths` (and `.podokit/dev.json` `apiPaths` for `podo dev`; `podo add` and `podo deploy init` fill in the paths modules declare), which reach the API without the web proxy, so the API must check their size, session, and `Origin` itself; Compose trusts forwarding headers only from `exposure.trustedProxyCidrs`. Tag `vX.Y.Z` to build and push the images (`.github/workflows/release.yml`; check its runner — GitHub-hosted minutes are free for public repositories only). Use `.agents/skills/podokit-deploy`.
 - `podo deploy sync` — copy local build output into a running Compose deployment and restart it, for iterating without a release. Not a release: no image is published and the next `apply` discards it. Use `.agents/skills/podokit-deploy-fast`.
 
 **⚠ `/account` moved into the product shell.** It lives at `apps/web/src/routes/(shell)/account/` (page + loader,
@@ -167,6 +185,8 @@ Conventional Commits (`feat|fix|docs|refactor|test|chore`), imperative mood,
 ### admin-dashboard
 - Admin console lives at `/admin/*` (users, sessions, organizations, audit, settings, account). Set `ADMIN_EMAILS`, then create or verify the initial account with `bun run --cwd apps/api admin:bootstrap`; never commit or persist `ADMIN_BOOTSTRAP_PASSWORD`. When sign-up approval is enabled, self-registered users stay pending until an administrator approves them on `/admin/users`; administrator-created users bypass the queue.
 - Custom protected server layouts must call `requireBackendAvailable(locals)` from `$lib/server/guards` before redirecting anonymous users. This preserves sessions and returns 503 when authentication or maintenance policy cannot be checked.
+- Every page except the sign-in flow, `/`, and module pages requires a session, and fails closed with 503 when the API or site settings are unavailable. List the application's public pages (such as `/install.sh`) in `APP_PUBLIC_PATHS` in the app-owned `apps/web/src/lib/server/public-paths.ts`; a prefix covers its subpaths. Do not edit the `PUBLIC_PATHS` list in the managed `guards.ts`.
+- `hooks.server.ts` loads the site settings and the session for pages, page data, form actions, remote functions, and the 404 page. When a `+server.ts` endpoint serves files or feeds that need neither, list its prefix in `APP_ASSET_PATHS` in the app-owned `apps/web/src/lib/server/asset-paths.ts` to skip both API calls; such endpoints see an anonymous `locals.user`, and page requests under the prefix still get the full context.
 - **Every list/table MUST use the shared `$lib/components/data-table.svelte` (`DataTable`)** — it gives sortable headers + a footer pagination. Add search/filters with `$lib/components/table-toolbar.svelte`. Never assemble `Table.Root`/`Table.Header`/`Table.Body` by hand.
 
 <!-- podokit:end:agents-modules -->
