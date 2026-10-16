@@ -40,7 +40,7 @@ async function signInAdmin(ctx: APIRequestContext): Promise<boolean> {
   return response.ok() && ((await sessionRoles(ctx)) ?? []).includes("admin");
 }
 
-test("[TC-PDHOST-031] object storage: put, get, and download a presigned URL @smoke", async ({ playwright }) => {
+test("object storage: put, get, and presign @smoke", async ({ playwright }) => {
   const ctx = await newContext(playwright);
   const key = uniqueKey();
   try {
