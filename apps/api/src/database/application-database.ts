@@ -1,5 +1,5 @@
 import { AppException } from "@podosoft/podokit-contracts";
-import { QueryFailedError, type DataSource, type DataSourceOptions, type QueryRunner } from "typeorm";
+import type { DataSource, DataSourceOptions, QueryRunner } from "typeorm";
 import { databaseUnavailable } from "../auth/database-outage";
 import { AuthPostgresPool } from "../auth/postgres-pool";
 import type { AppEnv } from "../config/env.validation";
@@ -15,26 +15,17 @@ import {
 export const APPLICATION_DATABASE_CHECK = "pdmux-schema";
 export const APPLICATION_DATABASE = Symbol("application-database") as ServiceKey<ApplicationDatabase>;
 
-// Socket failures, PostgreSQL's connection-exception class (08) and the states a
-// server reports while it shuts down or starts (57P01-57P03), and the messages pg
-// uses for a connection that ended. PodoKit's `isDatabaseUnavailable` covers the
-// timeouts; pg reports a refused or reset connection only through these.
-const NETWORK_CODES = new Set([
-  "ECONNREFUSED",
-  "ECONNRESET",
-  "ECONNABORTED",
-  "ETIMEDOUT",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "EPIPE",
-  "ENOTFOUND",
-  "EAI_AGAIN",
-]);
-const SERVER_STATES = new Set(["57P01", "57P02", "57P03"]);
-const CONNECTION_EXCEPTION = /^08[0-9A-Z]{3}$/;
-const CONNECTION_MESSAGES = new Set([
+// PodoKit's `isDatabaseUnavailable` covers refused, reset and timed-out sockets,
+// the server-shutdown and connection-exception SQLSTATEs and pg's timeouts.
+// TypeORM's QueryFailedError copies the driver error's code and message, so the
+// helper sees those through it too. pdmux's pool also meets two more cases:
+// - A database host name that stops resolving, as when a Compose service is
+//   stopped.
+// - pg's errors for a client that ended or broke while TypeORM still held it,
+//   such as inside a transaction.
+const UNRESOLVED_HOST_CODES = new Set(["ENOTFOUND", "EAI_AGAIN"]);
+const CLOSED_CLIENT_MESSAGES = new Set([
   "Connection terminated",
-  "Connection terminated unexpectedly",
   "Client has encountered a connection error and is not queryable",
   "Client was closed and is not queryable",
 ]);
@@ -45,12 +36,9 @@ export function isDatabaseConnectionError(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
     const code: unknown = Reflect.get(current, "code");
-    if (typeof code === "string" &&
-      (NETWORK_CODES.has(code) || SERVER_STATES.has(code) || CONNECTION_EXCEPTION.test(code))) {
-      return true;
-    }
-    if (CONNECTION_MESSAGES.has(current.message)) return true;
-    current = current instanceof QueryFailedError ? current.driverError : current.cause;
+    if (typeof code === "string" && UNRESOLVED_HOST_CODES.has(code)) return true;
+    if (CLOSED_CLIENT_MESSAGES.has(current.message)) return true;
+    current = current.cause;
   }
   return false;
 }

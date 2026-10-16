@@ -195,6 +195,12 @@ describe("[TC-PDHOST-033] pdmux database outages answer DATABASE_UNAVAILABLE", (
       new QueryFailedError("SELECT 1", [], new Error("Connection terminated unexpectedly")),
       new QueryFailedError("SELECT 1", [], new Error("Query read timeout")),
       new Error("outer", { cause: refused() }),
+      // Beyond PodoKit's helper: a host name that stops resolving, and a pg client
+      // that ended or broke while a transaction still held it.
+      pgError("getaddrinfo ENOTFOUND postgres", "ENOTFOUND"),
+      new QueryFailedError("COMMIT", [], new Error("Connection terminated")),
+      new Error("Client has encountered a connection error and is not queryable"),
+      new Error("outer", { cause: new Error("Client was closed and is not queryable") }),
     ];
     const rejected = [
       new QueryFailedError("INSERT", [], pgError("duplicate key value violates unique constraint", "23505")),
