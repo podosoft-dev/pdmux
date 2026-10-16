@@ -676,8 +676,10 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
       const session = await sessionFor(services, request);
       return { ...await services.fileTransfers.get(transferOwner(session, params.hostId), params.id) };
     })
-    .delete("/hosts/:hostId/file-transfers/:id", async ({ request, params }) => {
+    .delete("/hosts/:hostId/file-transfers/:id", async ({ request, params, server }) => {
       const session = await sessionFor(services, request);
+      // Removal waits for the host's transfer lock, which a commit can hold for minutes.
+      server?.timeout(request, 0);
       return audit(services, request, session, "host.files.transfer.remove",
         () => services.fileTransfers.remove(transferOwner(session, params.hostId), params.id),
         () => ({ type: "host", id: params.hostId, metadata: { transferId: params.id } }));

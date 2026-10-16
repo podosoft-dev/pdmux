@@ -53,16 +53,35 @@ describe("PDMUX HTTP boundary", () => {
     expect(await response.json()).toEqual({ id: "job" });
     expect(remove).toHaveBeenCalledWith({ userId: "user-1", organizationId: "personal:user-1", hostId: "host-1" }, "job");
   });
-  it("[TC-PDFILE-004] keeps a slow commit alive beyond the server idle timeout", async (): Promise<void> => {
-    const commit = mock(async (): Promise<{ id: string }> => { await Bun.sleep(2100); return { id: "entry" }; });
-    const app = application({ fileTransfers: { commit } as unknown as PdmuxServices["fileTransfers"] }) as Elysia;
+  it("[TC-PDFILE-004] keeps transfer requests that wait for the host lock alive beyond the server idle timeout", async (): Promise<void> => {
+    // Bun closes a silent connection on a 4-second tick, so with idleTimeout 1 a
+    // request that answers after 5 seconds is cut unless its route lifts the timeout.
+    const slow = <T>(value: T) => mock(async (): Promise<T> => { await Bun.sleep(5_000); return value; });
+    const fileTransfers = {
+      commit: slow({ id: "entry" }),
+      reconcile: slow({ id: "entry" }),
+      decide: slow({ id: "entry" }),
+      remove: slow({ id: "job" }),
+      get: slow({ id: "job" }),
+    };
+    const app = application({ fileTransfers: fileTransfers as unknown as PdmuxServices["fileTransfers"] }) as Elysia;
     app.listen({ hostname: "127.0.0.1", port: 0, idleTimeout: 1 });
+    const base = `http://127.0.0.1:${app.server?.port}/hosts/host-1/file-transfers/job`;
+    const call = (path: string, init: RequestInit): Promise<number | string> =>
+      fetch(`${base}${path}`, init).then((response) => response.status, (error: unknown) => String(error));
     try {
-      const response = await fetch(`http://127.0.0.1:${app.server?.port}/hosts/host-1/file-transfers/job/entries/entry/commit`, { method: "POST" });
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ id: "entry" });
+      const [commit, reconcile, decision, remove, read] = await Promise.all([
+        call("/entries/entry/commit", { method: "POST" }),
+        call("/entries/entry/reconcile", { method: "POST" }),
+        call("/entries/entry/decision", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "skip" }) }),
+        call("", { method: "DELETE" }),
+        call("", { method: "GET" }),
+      ]);
+      expect({ commit, reconcile, decision, remove }).toEqual({ commit: 200, reconcile: 200, decision: 200, remove: 200 });
+      // A route that answers from the database keeps the server-wide timeout.
+      expect(read).not.toBe(200);
     } finally { await app.stop(true); }
-  });
+  }, 15_000);
   it("[TC-PDFILE-004] authorizes transfer chunks before reading and enforces the binary cap", async (): Promise<void> => {
     const owner = { userId: "user-1", organizationId: "personal:user-1", hostId: "host-1" };
     const get = mock(async (): Promise<unknown> => ({}));

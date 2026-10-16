@@ -8,6 +8,8 @@
   records; these replace `RATE_LIMIT_TRUSTED_PROXY_HOPS` and `RATE_LIMIT_PROXY_HEADER`, and the API
   refuses to start while the old names are set. The account page lists every session, "Sign out
   other sessions" signs out all of them, and the admin tables' search box keeps its width on a phone.
+- Removing a finished transfer while another transfer on the same host commits no longer fails after
+  35 seconds.
 
 ## 0.15.0
 
