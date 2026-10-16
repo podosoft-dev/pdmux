@@ -65,6 +65,11 @@ jobs:
       - name: database outage recovery
         run: bun run test:database-recovery
 
+      # Starts the API and the worker from source against a disposable PostgreSQL
+      # and a disposable Redis that the spec starts late and then replaces.
+      - name: redis outage recovery
+        run: bun run test:redis-recovery
+
       # ⚠ A COMMITTED GENERATED FILE GOING STALE IS SILENT, AND THIS JOB IS WHERE IT
       # STOPS. `AGENT_GO.md` used to say these two ran here; they did not, and the
       # conformance corpus was stale from the moment `fsPut`/`fsDelete`/`fsGet` were
