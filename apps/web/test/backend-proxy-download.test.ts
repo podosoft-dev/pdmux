@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { proxyRequest, reportBackendAnswer } from "../src/lib/server/backend-proxy";
 
 /**
- * ⚠ THIS FILE IS IN `test/`, NOT BESIDE THE MODULE, BECAUSE THAT IS WHERE THE
- * SUITE LOOKS. `vitest.config.ts` includes only the `test/` directory — a spec
- * written next to its source is collected by no one and passes forever. There is
- * such a file already: `src/lib/server/backend-proxy.test.ts`.
+ * pdmux's own proxy tests, kept apart from PodoKit's managed
+ * `src/lib/server/backend-proxy.test.ts`, which `podo update` replaces. They
+ * cover pdmux's local edit to the managed proxy (file transfers), so losing
+ * that edit in an update fails here.
  */
 
 describe("[TC-PDWEB-030] the proxy carries a file download end to end", () => {
