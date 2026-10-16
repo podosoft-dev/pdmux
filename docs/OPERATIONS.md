@@ -42,8 +42,9 @@ and takes you back to the cross-origin traps an earlier tool ran into.
 Run the web image with its default `bun ./build` command. HTTP and server-side `/api/*` proxying are
 handled by the official SvelteKit Bun adapter. The edge gateway must route the two exact WebSocket
 paths, `/terminal/ws` and `/agent/ws`, directly to the API; all other paths go to web. The supplied
-Caddyfile and k3s Ingress already encode this order. Preserve `Upgrade`, `Connection`, cookies and
-`X-Forwarded-*` headers when using another gateway.
+Caddyfile and k3s Ingress already encode this order. Preserve `Upgrade`, `Connection`, cookies,
+`X-Forwarded-Proto` and `X-Forwarded-Host` when using another gateway, and send `X-Forwarded-For` as
+a single address (§1-3).
 
 ### 1-1. ⚠ `vite dev` is not a serving path
 
@@ -138,6 +139,53 @@ Better Auth 1.7.3 returned account identity to `(providerId, accountId)`. Releas
 It is idempotent, so a repeated or interrupted migration is safe. If it reports duplicate
 identities, keep the previous release running and resolve the duplicate rows by hand with verified
 provider data before migrating again. Never infer ownership by email.
+
+### 1-3. Client addresses behind proxies
+
+Sessions, audit entries, rejected agent connections and MCP records store the address the API
+resolved for the request, and request limits count by it. Two settings choose it, and both take the
+**last** entry of `X-Forwarded-For`:
+
+| Reader | Settings | What it takes |
+|---|---|---|
+| web server (pages, `/api/*`, `/mcp`) | `ADDRESS_HEADER=x-forwarded-for`, `XFF_DEPTH=1` | the last entry the gateway sent, which it forwards to the API as the only entry |
+| API | `TRUSTED_PROXY_HOPS=1`, `TRUSTED_PROXY_HEADER=x-forwarded-for` | the last entry: the web server's, or the gateway's on `/agent/ws` and `/terminal/ws` |
+
+```text
+browser ─┐                            ┌─ web ── API    pages, /api/*, /mcp
+         ├─ [edge proxy] ── gateway ──┤
+agent  ──┘                            └──────── API    /agent/ws, /terminal/ws
+```
+
+One hop has to mean the same thing on both paths, so **the gateway sends exactly one address, the
+client it resolved, to web and to the API.** Whatever a caller writes into `X-Forwarded-For` then
+never reaches a record. The supplied Caddyfile does this with `header_up X-Forwarded-For {client_ip}`
+on each `reverse_proxy`. Behind another proxy, add that proxy, and only that proxy, to Caddy's
+trusted list, and keep the published port reachable from nothing else:
+
+```caddyfile
+{
+  servers {
+    trusted_proxies static 192.0.2.10/32
+    trusted_proxies_strict
+  }
+}
+```
+
+`{client_ip}` is the socket peer unless the peer is trusted; then strict parsing takes the first
+untrusted address from the right of the header that proxy sent.
+
+⚠ **Without `header_up`, a gateway that trusts the proxy in front appends that proxy's address.**
+Web and API receive `client, proxy`, both take `proxy`, and every session and rejected agent records
+the same private address. Raising `XFF_DEPTH` or `TRUSTED_PROXY_HOPS` does not repair it: the web
+server forwards a single address, so the API's one setting cannot suit both paths. A PodoKit Compose
+deployment renders its own gateway from the profile's `exposure.trustedProxyCidrs`; check that every
+`reverse_proxy` in the gateway service's rendered `CADDYFILE_CONTENT` carries the header before
+relying on recorded addresses.
+
+To check a running deployment, count recorded addresses by kind rather than printing them, for
+example the recent rows of Better Auth's `session.ipAddress` and of `agent_auth_failures.sourceIp`
+that equal the proxy's address. Any such row means the chain appends.
 
 ---
 
@@ -564,6 +612,7 @@ back and the worker completed a job 0.5 s after readiness.
 | clicking an old commit says "collecting" | normal — it fills newest-first within the budget and will be filled on a later pass |
 | remote branches are stale | normal — the collector **does not fetch** (not touching a working checkout is the premise) |
 | a terminal is black | the session expired: log in again and reopen. Check the relay's refusal reason in the log |
+| every session or rejected agent shows the same private address | the gateway appends the address of the proxy in front of it instead of sending the client (§1-3) |
 | `shell` opens but `session` does not | **the multiplexer was not found.** The agent runs under a service manager whose PATH is a few system directories, so something installed by hand with a package manager is invisible. It now also searches user and package-manager locations, so **upgrading to an agent with that fix resolves it**. Check it in the service's own environment: the `tmux` line of `env -i HOME="$HOME" PATH=/usr/bin:/bin pdmux-agent doctor` |
 | `mux.missing` on the card, the picker offers no sessions | that host **genuinely has no multiplexer**. Installing one is the host owner's decision, so the product does not install it — install it and session targets return at the next heartbeat; until then `shell` is the answer (it ends with the connection) |
 | `terminal limit reached (16)` in a pane | the agent's **concurrent PTY cap** (a guard protecting the host, `MAX_TERMINALS`). One screen tried to open more than 16, so reduce the pane count in the layout — this was the classic symptom back when the first screen auto-attached to all of a host's sessions (measured: `s15`–`s17` refused, 43 times in a day). If you genuinely need more, raise it with an agent option |

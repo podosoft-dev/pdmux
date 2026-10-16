@@ -225,9 +225,10 @@ production uses the checked-in Caddy rule or k3s Ingress. Both route only `/term
 `/agent/ws` to the Bun/Elysia API, while every other path goes to the SvelteKit Bun server.
 
 ⚠ **Only those two exact paths are forwarded.** A prefix or catch-all upgrade rule would expose the
-API's internal surface as a tunnel. The gateway preserves the session cookie, agent key and
-forwarded address headers; Elysia authorises each upgrade before accepting it. Failed handshakes
-remain HTTP 401/403/503 responses, which are diagnosable by the caller.
+API's internal surface as a tunnel. The gateway preserves the session cookie and agent key, and
+sends the client address it resolved as the only `X-Forwarded-For` entry
+([`OPERATIONS.md`](OPERATIONS.md) §1-3); Elysia authorises each upgrade before accepting it. Failed
+handshakes remain HTTP 401/403/503 responses, which are diagnosable by the caller.
 
 ---
 
