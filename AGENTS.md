@@ -151,7 +151,7 @@ cd tests && bunx playwright test --project=ui-mobile --workers=1 -g 'TC-PDTERM-1
 ```
 
 Which specs cover which change is decided by where the change lands: a component's own
-`test/` for a component, `apps/api`'s jest suite for an endpoint, `agent`'s `go test` for
+`test/` for a component, `apps/api`'s `bun test` suite for an endpoint, `agent`'s `go test` for
 the agent, and one Playwright file for a screen. The `[TC-…]` tag in a test title is what
 ties it back to the requirement it was written for.
 
@@ -193,6 +193,18 @@ in `.podokit/files.lock` — respect it:
 - **assembled** (e.g. `apps/api/src/app.ts`, `auth.ts`) — contain `// podokit:begin:… / …:end` fenced regions that the toolkit recomputes. Edit outside the fences only; **never hand-edit inside the fences**.
 - **managed** (bootstrap/config like `main.ts`) — the toolkit may update these; avoid gratuitous edits.
 
+pdmux keeps a managed file as PodoKit renders it whenever an app-owned place exists, so
+`podo update` can replace it without a merge:
+
+- Tests and `[TC-…]` tags go in owned specs, never in a managed spec. A managed spec
+  returns to the template at the next update and takes the tag with it, which
+  `./check.sh` in the workspace then reports as an untested requirement.
+- Product copy goes in the app-owned `apps/web/src/lib/i18n/catalogs/app/<code>.json`.
+  The loader merges namespaces, so `settings.mcpEnabled` there extends the module's
+  `settings` without editing `catalogs/admin-dashboard/*.json`.
+- Build-time globals such as `__PDMUX_VERSION__` are declared in the app-owned
+  `apps/web/src/pdmux.d.ts`, not in `app.d.ts`.
+
 Useful commands:
 
 - `podo dev watch|up|ps|logs|exec|down` — run container development through the
@@ -213,11 +225,11 @@ Useful commands:
 - `podo deploy` — plan, apply, verify, or roll back an immutable release on Kubernetes or one Docker host. Production API WebSocket paths belong in the deployment profile's exact `exposure.webSocketPaths` allowlist, and API routes that take bodies above the web server's `BODY_SIZE_LIMIT` (file uploads) in `exposure.apiPaths` (and `.podokit/dev.json` `apiPaths` for `podo dev`; `podo add` and `podo deploy init` fill in the paths modules declare), which reach the API without the web proxy, so the API must check their size, session, and `Origin` itself; Compose trusts forwarding headers only from `exposure.trustedProxyCidrs`. Tag `vX.Y.Z` to build and push the images (`.github/workflows/release.yml`; check its runner — GitHub-hosted minutes are free for public repositories only). Use `.agents/skills/podokit-deploy`.
 - `podo deploy sync` — copy local build output into a running Compose deployment and restart it, for iterating without a release. Not a release: no image is published and the next `apply` discards it. Use `.agents/skills/podokit-deploy-fast`.
 
-**⚠ `/account` moved into the product shell.** It lives at `apps/web/src/routes/(shell)/account/` (page + loader,
-the loader ejected with `podo eject` and moved) so the host sidebar stays put, exactly like `/hosts`. `podo update`
-still offers to **add** `apps/web/src/routes/account/+page.server.ts` — do not take it: SvelteKit would then have two
-routes matching `/account` and the build fails. Either drop that add or move its content into the group's loader.
-The screen itself is PodoKit's `account-page.svelte` (managed, reused whole), so updates to it arrive normally.
+**`/account` lives in the product shell.** It is at `apps/web/src/routes/(shell)/account/` (page + loader,
+the loader ejected with `podo eject` and moved) so the host sidebar stays put, exactly like `/hosts`.
+`.podokit/files.lock` keeps the template's `apps/web/src/routes/account/` files as owned entries, so `podo update`
+does not recreate them. Never restore them: SvelteKit would then have two routes matching `/account` and the build
+fails. The screen itself is PodoKit's managed `account-page.svelte`, so its updates arrive with `podo update`.
 
 ## Commit conventions
 
@@ -235,15 +247,33 @@ Conventional Commits (`feat|fix|docs|refactor|test|chore`), imperative mood,
 - The API is secure by default: every application route needs a session except health, OpenAPI, `/api/auth/*`, and routes explicitly registered in `ACCESS_POLICY`.
 - Register a public route during module configuration with `services.resolve(ACCESS_POLICY).register("GET", "/path", "public")`; use `AUTH` and `AuthService.requireSession()` or `requireAdmin()` when a handler needs the current user.
 - Configure OAuth providers, SMTP, sign-up approval, automatic logout, and server toggles on the admin Settings page. Only `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` are required environment variables.
-- Use `bun run --cwd apps/api auth:configure -- ...` and `.claude/skills/podokit-configure-auth` to apply OAuth/SMTP credentials without committing secrets. The sign-up approval gate is provider-independent; do not add provider-specific approval checks.
+- Use `bun run --cwd apps/api auth:configure -- ...` and `.claude/skills/podokit-configure-auth` to apply OAuth/SMTP credentials without committing secrets.
 - Run `bun run --cwd apps/api migrate:all` in development and production so Better Auth and application migrations use the versions installed by the app.
 - Back up existing databases before upgrading authentication. Migrations check duplicate `(providerId, accountId)` identities and clean up obsolete issuer constraints; resolve reported collisions manually rather than guessing account ownership.
 
+### object-storage-s3
+- Store files through `OBJECT_STORAGE` from `@podosoft/podokit-runtime` (`services.resolve(OBJECT_STORAGE)`), not the provider directly. `put(key, body, { contentType })` streams a `ReadableStream` such as `request.body`, a `Blob` or file, an async iterable, bytes, or a string without buffering it; a failed body leaves no partial object.
+- For uploads split across requests (resumable or chunked), use `createMultipartUpload`, `uploadPart` (parts numbered 1 to 10,000, each but the last at least `MIN_MULTIPART_PART_BYTES` = 5 MiB), `completeMultipartUpload`, and `abortMultipartUpload`. Branch on `MultipartUploadError.code` (`UPLOAD_NOT_FOUND`, `INVALID_PART`, `PART_TOO_SMALL`).
+- Multipart requests are signed with the `S3_*` (or `AWS_*`) credentials. A part passed as a stream is held in memory while it is sent, so keep parts to tens of MiB. On AWS, add an `AbortIncompleteMultipartUpload` bucket lifecycle rule.
+
+### object-storage-local
+- Store files through `OBJECT_STORAGE` from `@podosoft/podokit-runtime` (`services.resolve(OBJECT_STORAGE)`), not the provider directly. `put(key, body, { contentType })` streams a `ReadableStream` such as `request.body`, a `Blob` or file, an async iterable, bytes, or a string without buffering it; a failed body leaves no partial object.
+- For uploads split across requests (resumable or chunked), use `createMultipartUpload`, `uploadPart` (parts numbered 1 to 10,000, each but the last at least `MIN_MULTIPART_PART_BYTES` = 5 MiB), `completeMultipartUpload`, and `abortMultipartUpload`. Branch on `MultipartUploadError.code` (`UPLOAD_NOT_FOUND`, `INVALID_PART`, `PART_TOO_SMALL`).
+- Unfinished multipart uploads live under `LOCAL_STORAGE_PATH/.podokit/multipart/` and are removed after `LOCAL_STORAGE_MULTIPART_MAX_AGE` seconds without activity.
+
 ### admin-dashboard
+- The `(admin)` route group and `admin-sidebar.svelte` are the admin-console shell for `/admin/*` only. Put signed-in product pages in `(app)` or in a separate route group with its own layout; do not place them under `(admin)`.
 - Admin console lives at `/admin/*` (users, sessions, organizations, audit, settings, account). Set `ADMIN_EMAILS`, then create or verify the initial account with `bun run --cwd apps/api admin:bootstrap`; never commit or persist `ADMIN_BOOTSTRAP_PASSWORD`. When sign-up approval is enabled, self-registered users stay pending until an administrator approves them on `/admin/users`; administrator-created users bypass the queue.
-- Custom protected server layouts must call `requireBackendAvailable(locals)` from `$lib/server/guards` before redirecting anonymous users. This preserves sessions and returns 503 when authentication or maintenance policy cannot be checked.
+- Signed-in users can upload, replace, or remove their profile image from `/account` or `/admin/account`. Keep the shared policy visible in custom account UI: PNG, JPEG, or WebP; at most 2 MB and 2048 by 2048 pixels. Use the managed `/api/account/profile-image` endpoints instead of writing directly to storage or `user.image`.
+- `sidebar-user-menu.svelte` is specific to the admin sidebar. For a product shell outside `Sidebar.Provider`, use the managed `<AccountMenu {user} variant="identity" side="top" />` component.
+- Custom protected server layouts must call `requireBackendAvailable(locals)` from `#lib/server/guards.js` before redirecting anonymous users. This preserves sessions and returns 503 when authentication or maintenance policy cannot be checked.
 - Every page except the sign-in flow, `/`, and module pages requires a session, and fails closed with 503 when the API or site settings are unavailable. List the application's public pages (such as `/install.sh`) in `APP_PUBLIC_PATHS` in the app-owned `apps/web/src/lib/server/public-paths.ts`; a prefix covers its subpaths. Do not edit the `PUBLIC_PATHS` list in the managed `guards.ts`.
 - `hooks.server.ts` loads the site settings and the session for pages, page data, form actions, remote functions, and the 404 page. When a `+server.ts` endpoint serves files or feeds that need neither, list its prefix in `APP_ASSET_PATHS` in the app-owned `apps/web/src/lib/server/asset-paths.ts` to skip both API calls; such endpoints see an anonymous `locals.user`, and page requests under the prefix still get the full context.
-- **Every list/table MUST use the shared `$lib/components/data-table.svelte` (`DataTable`)** — it gives sortable headers + a footer pagination. Add search/filters with `$lib/components/table-toolbar.svelte`. Never assemble `Table.Root`/`Table.Header`/`Table.Body` by hand.
+- **Every list/table MUST use the shared `#lib/components/data-table.svelte` (`DataTable`)** — it gives sortable headers + a footer pagination. Add search/filters with `#lib/components/table-toolbar.svelte`. Never assemble `Table.Root`/`Table.Header`/`Table.Body` by hand. For responsive columns, use `hideBelow` and apply the row context's `cellClass(columnKey)` to the matching cell.
+
+### rate-limit
+- Every request counts against a per-caller budget (general, `/api/auth`, or runtime reads), keyed by API key, then signed-in user, then client address; exceeded limits return 429 `RATE_LIMIT_EXCEEDED` with `Retry-After`. A user's sessions share one budget once the API has resolved them for a request.
+- Give routes that legitimately send many requests, such as upload chunks, their own budget instead of raising `RATE_LIMIT_MAX`: `services.tryResolve(RATE_LIMIT_ROUTES)?.register({ method: "PUT", pathPrefix: "/uploads", profile: { name: "uploads", limit: 3000 } })` (`RATE_LIMIT_ROUTES` from `@podosoft/podokit-runtime`). Register from a module's `plugin` factory or `configureServices()` in `app.extensions.ts`; the most specific prefix wins (more segments, then a literal segment over a `:name` parameter), and `profile: "exempt"` skips limiting.
+- Prefixes are API paths (`/uploads`, not the web proxy's `/api/uploads`); Better Auth routes keep `/api/auth`. A `:name` segment matches one path segment, as in `/hosts/:hostId/file-transfers`.
 
 <!-- podokit:end:agents-modules -->
