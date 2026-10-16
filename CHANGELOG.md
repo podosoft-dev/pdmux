@@ -8,6 +8,8 @@
   records; these replace `RATE_LIMIT_TRUSTED_PROXY_HOPS` and `RATE_LIMIT_PROXY_HEADER`, and the API
   refuses to start while the old names are set. The account page lists every session, "Sign out
   other sessions" signs out all of them, and the admin tables' search box keeps its width on a phone.
+- File transfers have a request budget of their own, 6,000 requests a minute per caller, so a large
+  upload no longer draws on the general request limit.
 - The web server runs without an idle timeout (`CONNECTION_IDLE_TIMEOUT=0`), because file transfers
   have no proxy deadline; a deployment profile sets it in `runtimeConfig`. A transfer commit that
   waits more than ten seconds no longer fails.

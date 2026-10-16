@@ -94,9 +94,14 @@ a saved output file.
 | `FILE_TRANSFER_MAX_ENTRIES` | `10000` | Visited entries/exclusions per job; may be lowered |
 | `FILE_TRANSFER_SPOOL_BYTES` | `21474836480` (20 GiB) | Combined ready/in-progress ZIP reservations |
 
-Transfer requests count against the API's request limits like any other request (`RATE_LIMIT_MAX`,
-300 a minute by default). When one is refused with 429 (a request budget is spent) or 503 (the API or
-one of its dependencies is briefly unavailable), the upload waits and continues instead of pausing: it
+Transfer requests have a request budget of their own: every route under
+`/hosts/:hostId/file-transfers` counts against the `file-transfers` budget, 6,000 requests a minute per
+caller (API key, signed-in user, or client address), not against the general `RATE_LIMIT_MAX`. An
+upload sends one request at a time, two per 1 MiB chunk and three more per file, so the budget allows
+about 50 MiB/s of large files or 20 small files a second. The API registers it in
+`apps/api/src/app.extensions.ts` (`FILE_TRANSFER_BUDGET`). When a request is refused with 429 (a request
+budget is spent) or 503 (the API or one of its dependencies is briefly unavailable), the upload waits
+and continues instead of pausing: it
 waits for `Retry-After`, and at least 1 s doubling with each refusal in a row up to a minute, then
 reconciles with the agent and resumes from the durable offset. Meanwhile **Transfers** shows
 **Waiting to retry** with the seconds left in place of the transfer's state; **Pause** and **Cancel**
