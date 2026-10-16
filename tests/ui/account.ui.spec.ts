@@ -174,8 +174,8 @@ test("account security and sessions sub-navigation", async ({ page }) => {
 /**
  * ⚠ THE SUITE ALWAYS SIGNS IN FIRST, WHICH IS WHY THIS NEEDED A MOCK.
  *
- * better-auth guards `/list-sessions` with its freshness middleware and
- * `session.freshAge` defaults to 24 hours, so the endpoint returns 403
+ * The sessions list keeps better-auth's freshness rule, and `session.freshAge`
+ * defaults to 24 hours, so `GET /api/account/sessions` returns 403
  * `SESSION_NOT_FRESH` to anyone who signed in yesterday. The seeded session is
  * minutes old, so the test above passes for every run while the screen is broken for
  * real users — the tab showed an empty table under an untranslated "Session is not
@@ -183,11 +183,14 @@ test("account security and sessions sub-navigation", async ({ page }) => {
  * own setup prevents.
  */
 test("sessions tab explains a session that is too old to list them", async ({ page }) => {
-  await page.route("**/api/auth/list-sessions", (route) =>
+  await page.route("**/api/account/sessions?*", (route) =>
     route.fulfill({
       status: 403,
       contentType: "application/json",
-      body: JSON.stringify({ message: "Session is not fresh", code: "SESSION_NOT_FRESH" }),
+      body: JSON.stringify({
+        success: false,
+        error: { code: "SESSION_NOT_FRESH", message: "Session is not fresh", statusCode: 403 },
+      }),
     }),
   );
 

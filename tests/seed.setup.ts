@@ -63,16 +63,9 @@ async function seedSession(
     data: { email: account.email, password: account.password },
   });
   expect(res.ok(), `sign-in ${account.email}`).toBeTruthy();
-  // Keep repeated local runs from filling better-auth's 100-session response
-  // before the newly created current session can appear in account tests. The
-  // endpoint clears at most one response page, so drain several pages when a
-  // long-lived local database has accumulated them.
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const sessionsResponse = await ctx.get("/api/auth/list-sessions");
-    const sessions = sessionsResponse.ok() ? (await sessionsResponse.json()) as unknown : [];
-    if (!Array.isArray(sessions) || sessions.length <= 1) break;
-    expect((await ctx.post("/api/auth/revoke-other-sessions")).ok(), `clear old sessions for ${account.email}`).toBeTruthy();
-  }
+  // Each run signs in again, so keep a long-lived local database from piling up
+  // this account's sessions: the seeded one is the only one left.
+  expect((await ctx.post("/api/auth/revoke-other-sessions")).ok(), `clear old sessions for ${account.email}`).toBeTruthy();
   writeFileSync(path, `${JSON.stringify(withTestLocale(await ctx.storageState()), null, 2)}\n`);
   await ctx.dispose();
 }

@@ -6,13 +6,16 @@ import {
   backendReachable,
   bodyLimitFor,
   checkBackend,
+  checkIdleTimeout,
   envMilliseconds,
   IN_MEMORY_RESPONSE_BYTES,
   proxyRequest,
+  proxyTimeoutFor,
   reportBackendAnswer,
   rawSubpath,
   resolveClientIp,
   sortedBodyLimits,
+  sortedProxyTimeouts,
   withAppHeaders,
 } from "./backend-proxy";
 
@@ -550,52 +553,109 @@ describe("backend proxy application body limits", () => {
     expect(bodyLimitFor("/other", limits)).toBeUndefined();
   });
 
+  it("matches :name parameters against one non-empty segment, most specific rule first", () => {
+    const limits = sortedBodyLimits([
+      { pathPrefix: "/api/hosts", maxBytes: 100 },
+      { pathPrefix: "/api/hosts/:hostId/file-transfers", maxBytes: 1_048_576 },
+      { pathPrefix: "/api/hosts/local/:section", maxBytes: 10 },
+      { pathPrefix: "/api/hosts/:hostId/:section/:item", maxBytes: 20 },
+    ]);
+
+    expect(bodyLimitFor("/api/hosts/h1/file-transfers", limits)).toBe(1_048_576);
+    expect(bodyLimitFor("/api/hosts/h%31/file-transfers", limits)).toBe(1_048_576);
+    // More segments win, then a literal segment over a parameter from the left.
+    expect(bodyLimitFor("/api/hosts/h1/file-transfers/t1/chunk", limits)).toBe(20);
+    expect(bodyLimitFor("/api/hosts/local/file-transfers", limits)).toBe(10);
+    expect(bodyLimitFor("/api/hosts/h1/file-transfers-old", limits)).toBe(100);
+    expect(bodyLimitFor("/api/hosts/file-transfers", limits)).toBe(100);
+    expect(bodyLimitFor("/api/hosts//file-transfers", limits)).toBe(100);
+    expect(bodyLimitFor("/api/other", limits)).toBeUndefined();
+  });
+
+  it("caps the body of a route with a path parameter", async () => {
+    const proxy = await proxyWithBodyLimits([{ pathPrefix: "/api/hosts/:hostId/file-transfers", maxBytes: 8 }]);
+    const record = recordingFetch();
+
+    const capped = await proxy(
+      new Request("http://app.localhost/api/hosts/h1/file-transfers/t1/chunk", { method: "POST", body: "0123456789" }),
+      "http://api:5002/hosts/h1/file-transfers/t1/chunk",
+    );
+    const other = await proxy(
+      new Request("http://app.localhost/api/hosts/h1/notes", { method: "POST", body: "0123456789" }),
+      "http://api:5002/hosts/h1/notes",
+    );
+
+    expect(capped.status).toBe(413);
+    expect(other.status).toBe(204);
+    expect(record.bodies.map((body) => body.byteLength)).toEqual([10]);
+  });
+
   it.each<[{ pathPrefix: string; maxBytes: number }[], string]>([
-    [[{ pathPrefix: "/feedback/", maxBytes: 10 }], "must be a static path under /api/"],
-    [[{ pathPrefix: "/api/files/*", maxBytes: 10 }], "must be a static path under /api/"],
-    [[{ pathPrefix: "/api//files", maxBytes: 10 }], "must be a static path under /api/"],
-    [[{ pathPrefix: "/api/files/../admin", maxBytes: 10 }], "must be a static path under /api/"],
+    [[{ pathPrefix: "/feedback/", maxBytes: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/files/*", maxBytes: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api//files", maxBytes: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/files/../admin", maxBytes: 10 }], "must be a path under /api/"],
     [[{ pathPrefix: "/api/files", maxBytes: 0 }], "positive whole number"],
     [[{ pathPrefix: "/api/files", maxBytes: 1.5 }], "positive whole number"],
-    [[{ pathPrefix: "/api/files", maxBytes: 10 }, { pathPrefix: "/api/files/", maxBytes: 20 }], "more than once"],
+    [[{ pathPrefix: "/apix/files", maxBytes: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/files/:", maxBytes: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/files/:1st", maxBytes: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/files/:file-id", maxBytes: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/files/:a:b", maxBytes: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/files", maxBytes: 10 }, { pathPrefix: "/api/files/", maxBytes: 20 }], "lists the same paths twice"],
+    [
+      [{ pathPrefix: "/api/hosts/:hostId", maxBytes: 10 }, { pathPrefix: "/api/hosts/:id/", maxBytes: 20 }],
+      'lists the same paths twice: "/api/hosts/:hostId" and "/api/hosts/:id/"',
+    ],
   ])("rejects an invalid body limit list %#", (limits, message) => {
     expect(() => sortedBodyLimits(limits)).toThrow(message);
   });
 
   it("refuses to load with an invalid application body limit", async () => {
     await expect(proxyWithBodyLimits([{ pathPrefix: "/upload", maxBytes: 10 }])).rejects.toThrow(
-      "APP_BODY_LIMITS pathPrefix must be a static path under /api/",
+      "APP_BODY_LIMITS pathPrefix must be a path under /api/",
     );
   });
 });
 
-describe("backend proxy outages", () => {
-  type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
+// Never answers on its own, like a blackholed connection or a hung API, and
+// rejects when its signal aborts.
+const hang: Fetch = (_input, init) =>
+  new Promise((_settle, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+  });
+const refuse: Fetch = async () => {
+  throw new TypeError("Unable to connect. Is the computer able to access the url?");
+};
+// Answers after a delay unless its signal aborts first, like a slow endpoint.
+const answerAfter =
+  (ms: number): Fetch =>
+  (_input, init) =>
+    new Promise((settle, reject) => {
+      const timer = setTimeout(() => settle(Response.json({ done: true })), ms);
+      init?.signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(init.signal?.reason);
+      });
+    });
+
+// Routes the background GET /health check and the proxied request separately.
+function stubApi(health: Fetch, upstream: Fetch): ReturnType<typeof vi.fn<Fetch>> {
+  const fetch = vi.fn<Fetch>((input, init) =>
+    String(input).endsWith("/health") ? health(input, init) : upstream(input, init),
+  );
+  vi.stubGlobal("fetch", fetch);
+  return fetch;
+}
+
+describe("backend proxy outages", () => {
   afterEach(() => {
     reportBackendAnswer();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
-
-  // Never answers on its own, like a blackholed connection or a hung API, and
-  // rejects when its signal aborts.
-  const hang: Fetch = (_input, init) =>
-    new Promise((_settle, reject) => {
-      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
-    });
-  const refuse: Fetch = async () => {
-    throw new TypeError("Unable to connect. Is the computer able to access the url?");
-  };
-
-  // Routes the background GET /health check and the proxied request separately.
-  function stubApi(health: Fetch, upstream: Fetch): ReturnType<typeof vi.fn<Fetch>> {
-    const fetch = vi.fn<Fetch>((input, init) =>
-      String(input).endsWith("/health") ? health(input, init) : upstream(input, init),
-    );
-    vi.stubGlobal("fetch", fetch);
-    return fetch;
-  }
 
   async function takeApiDown(): Promise<void> {
     stubApi(refuse, refuse);
@@ -645,23 +705,35 @@ describe("backend proxy outages", () => {
     expect(backendReachable()).toBe(false);
   });
 
-  it("keeps waiting for a slow endpoint while the API answers its health check", async () => {
+  it("keeps waiting for a slow endpoint while the API answers its health checks", async () => {
     vi.stubEnv("BACKEND_INTERNAL_URL", "http://api:5002");
     vi.stubEnv("BACKEND_TIMEOUT_MS", "20");
-    const fetch = stubApi(
-      async () => new Response("ok"),
-      () => new Promise((settle) => setTimeout(() => settle(Response.json({ done: true })), 80)),
-    );
+    const fetch = stubApi(async () => new Response("ok"), answerAfter(100));
 
     const response = await proxyRequest(new Request("http://app.localhost/api/report"), "http://api:5002/report");
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ done: true });
-    expect(fetch.mock.calls.map(([input]) => String(input))).toEqual([
-      "http://api:5002/report",
-      "http://api:5002/health",
-    ]);
+    const [first, ...checks] = fetch.mock.calls.map(([input]) => String(input));
+    expect(first).toBe("http://api:5002/report");
+    expect(checks.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(checks)).toEqual(new Set(["http://api:5002/health"]));
     expect(backendReachable()).toBe(true);
+  });
+
+  it("fails a waiting request when the API stops answering after an earlier check", async () => {
+    vi.stubEnv("BACKEND_TIMEOUT_MS", "20");
+    vi.stubEnv("BACKEND_PROXY_TIMEOUT_MS", "10000");
+    let checks = 0;
+    stubApi((input, init) => (++checks <= 2 ? Promise.resolve(new Response("ok")) : hang(input, init)), hang);
+
+    const started = Date.now();
+    const response = await proxyRequest(new Request("http://app.localhost/api/report"), "http://api:5002/report");
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: "BACKEND_UNAVAILABLE" } });
+    expect(checks).toBeGreaterThanOrEqual(3);
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   it("answers at once without contacting the API while it is unreachable", async () => {
@@ -737,5 +809,188 @@ describe("backend proxy outages", () => {
     expect(envMilliseconds("BACKEND_TIMEOUT_MS", 2_000)).toBe(2_000);
     vi.stubEnv("BACKEND_TIMEOUT_MS", "1500");
     expect(envMilliseconds("BACKEND_TIMEOUT_MS", 2_000)).toBe(1_500);
+  });
+});
+
+describe("backend proxy application timeouts", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.doUnmock("./proxy-timeouts");
+    vi.resetModules();
+  });
+
+  async function proxyWithTimeouts(
+    timeouts: ReadonlyArray<{ pathPrefix: string; timeoutMs: number | null }>,
+  ): Promise<typeof proxyRequest> {
+    vi.resetModules();
+    vi.doMock("./proxy-timeouts", () => ({ APP_PROXY_TIMEOUTS: timeouts }));
+    return (await import("./backend-proxy")).proxyRequest;
+  }
+
+  it("waits longer on a route with a longer deadline", async () => {
+    vi.stubEnv("BACKEND_PROXY_TIMEOUT_MS", "20");
+    const proxy = await proxyWithTimeouts([{ pathPrefix: "/api/exports/", timeoutMs: 2_000 }]);
+    stubApi(async () => new Response("ok"), answerAfter(80));
+
+    const listed = await proxy(new Request("http://app.localhost/api/exports/42"), "http://api:5002/exports/42");
+    const other = await proxy(new Request("http://app.localhost/api/report"), "http://api:5002/report");
+
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual({ done: true });
+    expect(other.status).toBe(504);
+  });
+
+  it("answers 504 at a route's shorter deadline", async () => {
+    const proxy = await proxyWithTimeouts([{ pathPrefix: "/api/quick", timeoutMs: 20 }]);
+    stubApi(async () => new Response("ok"), hang);
+
+    const started = Date.now();
+    const response = await proxy(new Request("http://app.localhost/api/quick/check"), "http://api:5002/quick/check");
+
+    expect(response.status).toBe(504);
+    expect(await response.json()).toMatchObject({ error: { code: "BACKEND_TIMEOUT", path: "/api/quick/check" } });
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it("waits without a deadline on a null route until the API answers", async () => {
+    vi.stubEnv("BACKEND_TIMEOUT_MS", "20");
+    vi.stubEnv("BACKEND_PROXY_TIMEOUT_MS", "20");
+    const proxy = await proxyWithTimeouts([{ pathPrefix: "/api/file-transfers/", timeoutMs: null }]);
+    stubApi(async () => new Response("ok"), answerAfter(150));
+
+    const response = await proxy(
+      new Request("http://app.localhost/api/file-transfers/7/commit", { method: "POST", body: "{}" }),
+      "http://api:5002/file-transfers/7/commit",
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("still answers 503 on a null route once the API is found unreachable", async () => {
+    vi.stubEnv("BACKEND_TIMEOUT_MS", "20");
+    const proxy = await proxyWithTimeouts([{ pathPrefix: "/api/file-transfers/", timeoutMs: null }]);
+    let checks = 0;
+    stubApi((input, init) => (++checks <= 2 ? Promise.resolve(new Response("ok")) : hang(input, init)), hang);
+
+    const response = await proxy(
+      new Request("http://app.localhost/api/file-transfers/7/commit", { method: "POST", body: "{}" }),
+      "http://api:5002/file-transfers/7/commit",
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("2");
+    expect(await response.json()).toMatchObject({
+      error: { code: "BACKEND_UNAVAILABLE", path: "/api/file-transfers/7/commit" },
+    });
+    expect(checks).toBeGreaterThanOrEqual(3);
+  });
+
+  it("waits without a deadline on a route with a path parameter", async () => {
+    vi.stubEnv("BACKEND_PROXY_TIMEOUT_MS", "20");
+    const proxy = await proxyWithTimeouts([{ pathPrefix: "/api/hosts/:hostId/file-transfers", timeoutMs: null }]);
+    stubApi(async () => new Response("ok"), answerAfter(80));
+
+    const commit = await proxy(
+      new Request("http://app.localhost/api/hosts/h1/file-transfers/t1/commit", { method: "POST", body: "{}" }),
+      "http://api:5002/hosts/h1/file-transfers/t1/commit",
+    );
+    const other = await proxy(new Request("http://app.localhost/api/hosts/h1/notes"), "http://api:5002/hosts/h1/notes");
+
+    expect(commit.status).toBe(200);
+    expect(other.status).toBe(504);
+  });
+
+  it("applies the longest matching prefix on the decoded path and the default elsewhere", () => {
+    vi.stubEnv("BACKEND_PROXY_TIMEOUT_MS", "1234");
+    const timeouts = sortedProxyTimeouts([
+      { pathPrefix: "/api/", timeoutMs: 5_000 },
+      { pathPrefix: "/api/file-transfers/", timeoutMs: null },
+      { pathPrefix: "/api/file-transfers/status", timeoutMs: 100 },
+    ]);
+
+    expect(proxyTimeoutFor("/api/file-transfers/7/commit", timeouts)).toBeNull();
+    expect(proxyTimeoutFor("/api/file-transfers", timeouts)).toBeNull();
+    expect(proxyTimeoutFor("/api/file-transfers/status/7", timeouts)).toBe(100);
+    expect(proxyTimeoutFor("/api/%66ile-transfers/7", timeouts)).toBeNull();
+    expect(proxyTimeoutFor("/api/file-transfers-old/7", timeouts)).toBe(5_000);
+    expect(proxyTimeoutFor("/api/auth/get-session", sortedProxyTimeouts([]))).toBe(1234);
+    expect(proxyTimeoutFor("/other", timeouts)).toBe(1234);
+
+    const byHost = sortedProxyTimeouts([
+      { pathPrefix: "/api/hosts/:hostId/file-transfers", timeoutMs: null },
+      { pathPrefix: "/api/hosts/local/file-transfers", timeoutMs: 60_000 },
+    ]);
+    expect(proxyTimeoutFor("/api/hosts/h1/file-transfers/t1/commit", byHost)).toBeNull();
+    expect(proxyTimeoutFor("/api/hosts/local/file-transfers/t1/commit", byHost)).toBe(60_000);
+    expect(proxyTimeoutFor("/api/hosts/file-transfers", byHost)).toBe(1234);
+  });
+
+  it.each<[{ pathPrefix: string; timeoutMs: number | null }[], string]>([
+    [[{ pathPrefix: "/exports/", timeoutMs: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/exports/*", timeoutMs: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/exports/../auth", timeoutMs: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/exports", timeoutMs: 0 }], "must be null or a whole number of milliseconds"],
+    [[{ pathPrefix: "/api/exports", timeoutMs: 1.5 }], "must be null or a whole number of milliseconds"],
+    [[{ pathPrefix: "/api/exports", timeoutMs: 2_147_483_648 }], "must be null or a whole number of milliseconds"],
+    [[{ pathPrefix: "/api/exports/:", timeoutMs: 10 }], "must be a path under /api/"],
+    [[{ pathPrefix: "/api/exports", timeoutMs: null }, { pathPrefix: "/api/exports/", timeoutMs: 10 }], "lists the same paths twice"],
+    [[{ pathPrefix: "/api/:a/x", timeoutMs: null }, { pathPrefix: "/api/:b/x", timeoutMs: 10 }], "lists the same paths twice"],
+  ])("rejects an invalid timeout list %#", (timeouts, message) => {
+    expect(() => sortedProxyTimeouts(timeouts)).toThrow(message);
+  });
+
+  it.each([undefined, "0", "35", "soon"])("accepts CONNECTION_IDLE_TIMEOUT=%s with the default deadline", (idle) => {
+    expect(() => checkIdleTimeout(idle, 30_000, [])).not.toThrow();
+  });
+
+  it("requires the idle timeout to outlast the longest deadline by Bun's check interval", () => {
+    expect(() => checkIdleTimeout("34", 30_000, [])).toThrow(
+      "CONNECTION_IDLE_TIMEOUT=34 lets the web server close a silent connection before the /api proxy stops " +
+        "waiting for response headers (30000 ms, BACKEND_PROXY_TIMEOUT_MS)",
+    );
+    expect(() => checkIdleTimeout("10", 30_000, [])).toThrow("Set CONNECTION_IDLE_TIMEOUT to at least 35, or to 0");
+    expect(() => checkIdleTimeout("35", 30_500, [])).not.toThrow();
+    expect(() => checkIdleTimeout("35", 31_000, [])).toThrow("at least 36");
+
+    const routes = sortedProxyTimeouts([
+      { pathPrefix: "/api/quick/", timeoutMs: 5_000 },
+      { pathPrefix: "/api/exports/", timeoutMs: 120_000 },
+    ]);
+    expect(() => checkIdleTimeout("35", 30_000, routes)).toThrow(
+      "(120000 ms, APP_PROXY_TIMEOUTS for /api/exports); Bun closes idle connections up to 4 seconds early. " +
+        "Set CONNECTION_IDLE_TIMEOUT to at least 125, or to 0 to turn the idle timeout off.",
+    );
+    expect(() => checkIdleTimeout("125", 30_000, routes)).not.toThrow();
+    expect(() => checkIdleTimeout("0", 30_000, routes)).not.toThrow();
+  });
+
+  it("requires the idle timeout off for a route without a deadline or beyond Bun's limit", () => {
+    const unbounded = sortedProxyTimeouts([
+      { pathPrefix: "/api/exports/", timeoutMs: 120_000 },
+      { pathPrefix: "/api/file-transfers/", timeoutMs: null },
+    ]);
+    expect(() => checkIdleTimeout("255", 30_000, unbounded)).toThrow(
+      "(no deadline, APP_PROXY_TIMEOUTS for /api/file-transfers); Bun closes idle connections up to 4 seconds " +
+        "early. Set CONNECTION_IDLE_TIMEOUT to 0 to turn the idle timeout off, since Bun allows at most 255 seconds.",
+    );
+    expect(() => checkIdleTimeout("0", 30_000, unbounded)).not.toThrow();
+    expect(() => checkIdleTimeout("255", 250_999, [])).not.toThrow();
+    expect(() => checkIdleTimeout("255", 251_000, [])).toThrow("Set CONNECTION_IDLE_TIMEOUT to 0");
+  });
+
+  it("refuses to load when CONNECTION_IDLE_TIMEOUT cannot cover a route's deadline", async () => {
+    vi.stubEnv("CONNECTION_IDLE_TIMEOUT", "35");
+    await expect(proxyWithTimeouts([{ pathPrefix: "/api/file-transfers/", timeoutMs: null }])).rejects.toThrow(
+      "CONNECTION_IDLE_TIMEOUT=35 lets the web server close a silent connection",
+    );
+    vi.stubEnv("CONNECTION_IDLE_TIMEOUT", "0");
+    await expect(proxyWithTimeouts([{ pathPrefix: "/api/file-transfers/", timeoutMs: null }])).resolves.toBeDefined();
+  });
+
+  it("refuses to load with an invalid application timeout", async () => {
+    await expect(proxyWithTimeouts([{ pathPrefix: "/api/exports", timeoutMs: -1 }])).rejects.toThrow(
+      "APP_PROXY_TIMEOUTS timeoutMs for /api/exports must be null",
+    );
   });
 });

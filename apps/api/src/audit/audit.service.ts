@@ -2,6 +2,7 @@ import type { SQL } from "bun";
 import { AppException } from "@podosoft/podokit-contracts";
 import type { DatabaseProviderName } from "@podosoft/podokit-runtime";
 import type { AuthSession } from "../auth/auth.service";
+import { clientAddressOf } from "../core/client-address";
 import { setAuditRecorder, type AuditEntry } from "./audit-events";
 
 export interface AuditLogView extends AuditEntry {
@@ -412,7 +413,7 @@ export class AuditService {
       targetId: target.id ?? null,
       targetLabel: target.label ?? null,
       metadata: target.metadata ?? null,
-      ip: request.headers.get("x-forwarded-for") ?? null,
+      ip: clientAddressOf(request.headers) ?? null,
     };
     if (options.defer) this.recordLater(entry);
     else await this.record(entry);

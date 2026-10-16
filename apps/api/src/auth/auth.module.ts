@@ -8,6 +8,7 @@ import {
   OPENAPI,
   REQUEST_GUARDS,
   REQUEST_IDENTITY,
+  RESOLVED_SESSIONS,
   type AppPlugin,
   type PodokitModule,
   type ServiceKey,
@@ -161,7 +162,9 @@ export const authModule: PodokitModule = {
     setMailConfigStore(authConfigStore);
     const accessPolicy = services.resolve(ACCESS_POLICY);
     const settings = new SettingsService(database.sql, authConfigStore, publishConfigChanged);
-    const authService = new AuthService(settings, accessPolicy);
+    const authService = new AuthService(settings, accessPolicy, {
+      resolvedSessions: services.resolve(RESOLVED_SESSIONS),
+    });
     services.register(SETTINGS, settings);
     services.register(AUTH_CONFIG, new AuthConfigService(database.sql, database.provider));
     services.register(AUTH, authService, () => authService.close());

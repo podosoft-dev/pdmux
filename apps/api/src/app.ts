@@ -4,6 +4,7 @@ import { AppException, type ErrorEnvelope } from "@podosoft/podokit-contracts";
 import { Elysia } from "elysia";
 import { configureServices, extensionModules } from "./app.extensions";
 import { validateEnv, type AppEnv } from "./config/env.validation";
+import { stampClientAddress } from "./core/client-address";
 import {
   appContext,
   createCoreServices,
@@ -165,6 +166,7 @@ const buildApp = (options: CreateAppOptions = {}) => {
   services.freeze();
   const context = appContext(env, services);
   const corsOrigin = env.CORS_ORIGIN?.split(",").map((origin) => origin.trim());
+  const clientAddressConfig = { trustedProxyHops: env.TRUSTED_PROXY_HOPS, header: env.TRUSTED_PROXY_HEADER };
 
   const app = new Elysia({ name: "podokit" })
     .use(cors({ origin: corsOrigin ?? true, credentials: true }))
@@ -185,11 +187,12 @@ const buildApp = (options: CreateAppOptions = {}) => {
     .onRequest(async ({ request, server, set }) => {
       const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
       set.headers["x-request-id"] = requestId;
+      const remoteAddress = server?.requestIP(request)?.address;
+      const clientAddress = stampClientAddress(request, remoteAddress, clientAddressConfig);
       await context.requestGuards.run({
         request,
-        ...(server?.requestIP(request)?.address
-          ? { remoteAddress: server.requestIP(request)?.address }
-          : {}),
+        ...(remoteAddress ? { remoteAddress } : {}),
+        ...(clientAddress ? { clientAddress } : {}),
         setHeader: (name, value) => { set.headers[name] = value; },
       });
     })

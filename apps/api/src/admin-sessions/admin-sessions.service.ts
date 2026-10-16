@@ -30,6 +30,8 @@ export interface AdminSessionQuery {
   cursor?: string;
   search?: string;
   userId?: string;
+  /** A session to leave out, such as the caller's own. */
+  excludeId?: string;
 }
 
 interface SessionRow {
@@ -76,6 +78,20 @@ function decodeCursor(value: string): Cursor {
   throw new AppException(ADMIN_SESSION_CURSOR_INVALID, "The sessions cursor is invalid.", 400);
 }
 
+function view(row: SessionRow): AdminSessionView {
+  return {
+    id: row.id,
+    userId: row.userId,
+    userEmail: row.userEmail,
+    userName: row.userName ?? "",
+    ipAddress: row.ipAddress,
+    userAgent: row.userAgent,
+    impersonatedBy: row.impersonatedBy,
+    createdAt: iso(row.createdAt),
+    expiresAt: iso(row.expiresAt),
+  };
+}
+
 function likePattern(search: string): string {
   return `%${search.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
 }
@@ -100,6 +116,7 @@ export class AdminSessionsService {
     const filters = (): SQL.Query<unknown> => this.sql`
       WHERE s."expiresAt" > ${now}
       ${query.userId ? this.sql`AND s."userId" = ${query.userId}` : this.sql``}
+      ${query.excludeId ? this.sql`AND s."id" <> ${query.excludeId}` : this.sql``}
       ${search ? this.searchFilter(likePattern(search)) : this.sql``}
     `;
     const [rows, totals] = await Promise.all([
@@ -127,17 +144,7 @@ export class AdminSessionsService {
     const page = rows.slice(0, limit);
     const last = page.at(-1);
     return {
-      items: page.map((row) => ({
-        id: row.id,
-        userId: row.userId,
-        userEmail: row.userEmail,
-        userName: row.userName ?? "",
-        ipAddress: row.ipAddress,
-        userAgent: row.userAgent,
-        impersonatedBy: row.impersonatedBy,
-        createdAt: iso(row.createdAt),
-        expiresAt: iso(row.expiresAt),
-      })),
+      items: page.map(view),
       // The cursor keeps the database's own text form so sub-millisecond
       // timestamps cannot skip or repeat rows at a page boundary.
       nextCursor: rows.length > limit && last ? encodeCursor({ createdAt: last.cursorAt, id: last.id }) : null,
@@ -145,9 +152,25 @@ export class AdminSessionsService {
     };
   }
 
-  async tokenOf(sessionId: string): Promise<string | null> {
+  /** One active session, or null when it does not exist or has expired. */
+  async find(sessionId: string): Promise<AdminSessionView | null> {
+    const now = new Date().toISOString();
+    const rows = await this.sql<SessionRow[]>`
+      SELECT s."id", s."userId", u."email" AS "userEmail", u."name" AS "userName",
+             s."ipAddress", s."userAgent", s."impersonatedBy", s."createdAt", s."expiresAt",
+             CAST(s."createdAt" AS TEXT) AS "cursorAt"
+      FROM "session" s
+      JOIN "user" u ON u."id" = s."userId"
+      WHERE s."id" = ${sessionId} AND s."expiresAt" > ${now}
+    `;
+    return rows[0] ? view(rows[0]) : null;
+  }
+
+  /** The token of a session, only when `userId` is given and owns it. */
+  async tokenOf(sessionId: string, userId?: string): Promise<string | null> {
     const rows = await this.sql<Array<{ token: string }>>`
-      SELECT "token" FROM "session" WHERE "id" = ${sessionId}
+      SELECT "token" FROM "session"
+      WHERE "id" = ${sessionId} ${userId === undefined ? this.sql`` : this.sql`AND "userId" = ${userId}`}
     `;
     return rows[0]?.token ?? null;
   }

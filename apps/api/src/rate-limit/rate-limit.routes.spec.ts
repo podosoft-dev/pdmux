@@ -11,8 +11,6 @@ const config = {
   authTtlSeconds: 60,
   authLimit: 20,
   runtimeLimit: 1000,
-  trustedProxyHops: 0,
-  proxyHeader: "x-forwarded-for",
   storageTimeoutMs: 100,
   unavailableRetryAfterSeconds: 1,
 };
@@ -25,7 +23,7 @@ function context(path: string, method = "GET"): { value: RequestGuardContext; he
     headers,
     value: {
       request: new Request(`http://localhost${path}`, { method }),
-      remoteAddress: "127.0.0.1",
+      clientAddress: "127.0.0.1",
       setHeader: (name, value) => { headers[name.toLowerCase()] = value; },
     },
   };
@@ -50,11 +48,49 @@ describe("RateLimitRoutes", () => {
     expect(routes.resolve("GET", "/other")).toBeUndefined();
   });
 
+  test("matches a :name parameter against exactly one non-empty segment", () => {
+    const routes = new RateLimitRoutes(60);
+    const transfers = { name: "file-transfers", limit: 600 };
+    routes.register({ pathPrefix: "/hosts/:hostId/file-transfers", profile: transfers });
+
+    expect(routes.resolve("PUT", "/hosts/h1/file-transfers/t1/chunks/3")).toMatchObject(transfers);
+    expect(routes.resolve("GET", "/hosts/h1/file-transfers")).toMatchObject(transfers);
+    expect(routes.resolve("GET", "/hosts/h1/file-transfers/")).toMatchObject(transfers);
+    expect(routes.resolve("GET", "/hosts/h1/file-transfers-old")).toBeUndefined();
+    expect(routes.resolve("GET", "/hosts/file-transfers")).toBeUndefined();
+    expect(routes.resolve("GET", "/hosts//file-transfers")).toBeUndefined();
+    expect(routes.resolve("GET", "/hosts/h1/h2/file-transfers")).toBeUndefined();
+  });
+
+  test("prefers more segments, then a literal segment over a parameter from the left", () => {
+    const routes = new RateLimitRoutes(60);
+    routes.register({ pathPrefix: "/hosts/:hostId/:section/:id", profile: { name: "deep", limit: 1 } });
+    routes.register({ pathPrefix: "/hosts/:hostId/files", profile: { name: "files", limit: 2 } });
+    routes.register({ pathPrefix: "/hosts/local/:section", profile: { name: "local", limit: 3 } });
+    routes.register({ pathPrefix: "/hosts", profile: { name: "hosts", limit: 4 } });
+
+    expect(routes.resolve("GET", "/hosts/local/files/1")).toMatchObject({ name: "deep" });
+    expect(routes.resolve("GET", "/hosts/local/files")).toMatchObject({ name: "local" });
+    expect(routes.resolve("GET", "/hosts/h2/files")).toMatchObject({ name: "files" });
+    expect(routes.resolve("GET", "/hosts/h2/logs")).toMatchObject({ name: "hosts" });
+
+    // Equal specificity falls back to the method, then the latest registration.
+    routes.register({ method: "GET", pathPrefix: "/hosts/:a/logs", profile: "exempt" });
+    routes.register({ pathPrefix: "/hosts/:b/logs", profile: { name: "logs", limit: 5 } });
+    expect(routes.resolve("GET", "/hosts/h2/logs")).toBe("exempt");
+    expect(routes.resolve("POST", "/hosts/h2/logs")).toMatchObject({ name: "logs" });
+  });
+
   test("rejects invalid routes and conflicting budgets under one name", () => {
     const routes = new RateLimitRoutes(60);
     expect(() => routes.register({ pathPrefix: "uploads", profile: "exempt" })).toThrow("absolute path");
     expect(() => routes.register({ pathPrefix: "/a?b", profile: "exempt" })).toThrow("absolute path");
     expect(() => routes.register({ pathPrefix: "/a//b", profile: "exempt" })).toThrow("absolute path");
+    expect(() => routes.register({ pathPrefix: "/a/../b", profile: "exempt" })).toThrow('".." segments');
+    expect(() => routes.register({ pathPrefix: "/a/*", profile: "exempt" })).toThrow("not wildcards");
+    for (const parameter of [":", ":1st", ":host-id", ":a:b"]) {
+      expect(() => routes.register({ pathPrefix: `/hosts/${parameter}/x`, profile: "exempt" })).toThrow("parameter");
+    }
     expect(() => routes.register({ method: "GET /", pathPrefix: "/a", profile: "exempt" })).toThrow("method");
     expect(() => routes.register({ pathPrefix: "/a", profile: { name: "a:b", limit: 1 } })).toThrow("name");
     expect(() => routes.register({ pathPrefix: "/a", profile: { name: "a", limit: 0 } })).toThrow("limit");
@@ -83,6 +119,28 @@ describe("RateLimitRoutes", () => {
 });
 
 describe("RateLimiter route profiles", () => {
+  test("advertises the built-in budget of each default route", async () => {
+    const limiter = new RateLimiter(
+      config,
+      { resolve: async () => "session:test" } as unknown as RateLimitIdentity,
+      { increment: async () => ({ count: 1, retryAfterSeconds: 60 }) },
+    );
+    const ceiling = async (path: string, method = "GET"): Promise<string | undefined> => {
+      const request = context(path, method);
+      await limiter.enforce(request.value);
+      return request.headers["ratelimit-limit"];
+    };
+
+    expect(await ceiling("/api/auth/get-session")).toBe("1000");
+    expect(await ceiling("/site/settings")).toBe("1000");
+    expect(await ceiling("/api/auth/admin/list-users")).toBe("300");
+    expect(await ceiling("/api/auth/admin/ban-user", "POST")).toBe("20");
+    expect(await ceiling("/api/auth/sign-out", "POST")).toBe("20");
+    expect(await ceiling("/api/auth/sign-in/email", "POST")).toBe("20");
+    expect(await ceiling("/site/settings", "PUT")).toBe("300");
+    expect(await ceiling("/account/capabilities")).toBe("300");
+  });
+
   test("counts a registered route in its own bucket and skips exempt routes", async () => {
     const increment = mock(async (_key: string, _ttlSeconds: number) => ({ count: 1, retryAfterSeconds: 30 }));
     const limiter = new RateLimiter(

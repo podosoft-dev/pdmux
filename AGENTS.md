@@ -61,15 +61,28 @@ Merge added module settings from `.env.example` into an existing `.env`.
   managed lists. Cap a route's request body in the app-owned
   `apps/web/src/lib/server/body-limits.ts` (`APP_BODY_LIMITS`, 413
   `PAYLOAD_TOO_LARGE`). `BODY_SIZE_LIMIT` is the ceiling for every web route, so
-  uploads larger than it must use a direct API path (`apiPaths`) instead.
+  uploads larger than it must use a direct API path (`apiPaths`) instead. Give a
+  route a longer, shorter, or no response deadline in the app-owned
+  `apps/web/src/lib/server/proxy-timeouts.ts` (`APP_PROXY_TIMEOUTS`, `null` for
+  none); never edit the managed deadline. Both lists take path prefixes with
+  `:name` parameters, such as `/api/hosts/:hostId/file-transfers`, and the most
+  specific prefix wins.
 - Server-side API calls (`serverApiClient`) give up after `BACKEND_TIMEOUT_MS`
   (2000), and the proxy answers 504 `BACKEND_TIMEOUT` when the API sends no
   response headers within `BACKEND_PROXY_TIMEOUT_MS` (30000). Once the API's
   `GET /health` stops answering too, calls throw `BackendUnavailableError` and the
   proxy answers 503 `BACKEND_UNAVAILABLE` at once until it answers again. Handle
-  any non-`ApiError` failure in a load function as a temporary outage. Raising
-  the API's `apiServerOptions.idleTimeout` needs a matching
-  `BACKEND_PROXY_TIMEOUT_MS`.
+  any non-`ApiError` failure in a load function as a temporary outage. The API
+  (`API_IDLE_TIMEOUT`) and the built web server (`CONNECTION_IDLE_TIMEOUT`) close
+  a connection that sends nothing for that many seconds (35 each): raise both
+  with any longer `BACKEND_PROXY_TIMEOUT_MS` or `APP_PROXY_TIMEOUTS` entry, more
+  than 4 above it, or set `0` when a route has no deadline. The proxy refuses to
+  load when `CONNECTION_IDLE_TIMEOUT` cannot cover a deadline.
+- Read a caller's address in the API with `clientAddressOf(request.headers)` from
+  `apps/api/src/core/client-address.ts`, never from `X-Forwarded-For` directly. The
+  API resolves it once per request from `TRUSTED_PROXY_HOPS` (1: the web proxy) and
+  `TRUSTED_PROXY_HEADER`; Better Auth sessions, audit entries, and rate limits use
+  the same address.
 - pdmux keeps one local edit in the managed proxy: `/file-transfers` requests
   have neither Bun's idle timeout nor the header deadline, because the API's
   agent deadlines (up to five minutes for a commit) own that wait. Reconcile it on
@@ -162,7 +175,7 @@ ties it back to the requirement it was written for.
 This project is managed by the `podo` CLI. Files have an ownership tier recorded
 in `.podokit/files.lock` — respect it:
 
-- **owned** (your code: `apps/web/src/routes/**`, your components/services, `apps/api/src/app.extensions.ts`, and this `AGENTS.md`) — edit freely. Add application-owned services or module descriptors through `app.extensions.ts` instead of changing toolkit registrations. Set Bun server options (`maxRequestBodySize`, `idleTimeout`) with its `apiServerOptions` export rather than editing `main.ts`; `API_MAX_REQUEST_BODY_SIZE` sets the body limit when the export leaves it out.
+- **owned** (your code: `apps/web/src/routes/**`, your components/services, `apps/api/src/app.extensions.ts`, and this `AGENTS.md`) — edit freely. Add application-owned services or module descriptors through `app.extensions.ts` instead of changing toolkit registrations. Set Bun server options (`maxRequestBodySize`, `idleTimeout`) with its `apiServerOptions` export rather than editing `main.ts`; `API_MAX_REQUEST_BODY_SIZE` and `API_IDLE_TIMEOUT` apply when the export leaves them out.
 - **assembled** (e.g. `apps/api/src/app.ts`, `auth.ts`) — contain `// podokit:begin:… / …:end` fenced regions that the toolkit recomputes. Edit outside the fences only; **never hand-edit inside the fences**.
 - **managed** (bootstrap/config like `main.ts`) — the toolkit may update these; avoid gratuitous edits.
 

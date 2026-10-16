@@ -1,6 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { RequestGuardContext } from "../core/services";
-import type { RateLimitIdentity } from "./rate-limit.identity";
+import { createHmac } from "node:crypto";
+import type { ApiKeyVerifier } from "../api-key/api-key-verifier";
+import { RESOLVED_SESSIONS, ResolvedSessions, ServiceRegistry, type RequestGuardContext } from "../core/services";
+import { RateLimitIdentity, SessionUsers } from "./rate-limit.identity";
 import { CacheRateLimitStorage, RateLimiter, type RateLimitStorage } from "./rate-limit.module";
 import { MemoryCacheStore } from "@podosoft/podokit-runtime";
 
@@ -11,8 +13,6 @@ const config = {
   authTtlSeconds: 60,
   authLimit: 20,
   runtimeLimit: 1000,
-  trustedProxyHops: 0,
-  proxyHeader: "x-forwarded-for",
   storageTimeoutMs: 100,
   unavailableRetryAfterSeconds: 1,
 };
@@ -26,11 +26,49 @@ function context(path: string, method = "GET"): {
     headers,
     value: {
       request: new Request(`http://localhost${path}`, { method }),
-      remoteAddress: "127.0.0.1",
+      clientAddress: "127.0.0.1",
       setHeader: (name, value) => { headers[name.toLowerCase()] = value; },
     },
   };
 }
+
+describe("RateLimiter per-user budgets", () => {
+  const secret = "rate-limit-test-secret-with-at-least-32-characters";
+  const signed = (token: string): string =>
+    `${token}.${createHmac("sha256", secret).update(token).digest("base64")}`;
+
+  test("draws a user's sessions from one budget and another user's from its own", async () => {
+    const services = new ServiceRegistry();
+    services.register(RESOLVED_SESSIONS, new ResolvedSessions());
+    const users = new SessionUsers();
+    services.resolve(RESOLVED_SESSIONS).listen(({ token, userId, expiresAt }) => users.remember(token, userId, expiresAt));
+    const limiter = new RateLimiter(
+      config,
+      new RateLimitIdentity({ isValid: () => false } as unknown as ApiKeyVerifier, services, secret, users),
+      new CacheRateLimitStorage(new MemoryCacheStore()),
+    );
+    const expiresAt = new Date(Date.now() + 60_000);
+    for (const [token, userId] of [["laptop", "user-1"], ["phone", "user-1"], ["other", "user-2"]] as const) {
+      services.resolve(RESOLVED_SESSIONS).report({ token, userId, expiresAt });
+    }
+    const remaining = async (token: string): Promise<string | undefined> => {
+      const headers: Record<string, string> = {};
+      await limiter.enforce({
+        request: new Request("http://localhost/ordinary", { headers: { authorization: `Bearer ${signed(token)}` } }),
+        clientAddress: "127.0.0.1",
+        setHeader: (name, value) => { headers[name.toLowerCase()] = value; },
+      });
+      return headers["ratelimit-remaining"];
+    };
+
+    expect(await remaining("laptop")).toBe("299");
+    expect(await remaining("phone")).toBe("298");
+    expect(await remaining("laptop")).toBe("297");
+    expect(await remaining("other")).toBe("299");
+    // A session the API has not resolved yet keeps a counter of its own.
+    expect(await remaining("tablet")).toBe("299");
+  });
+});
 
 describe("RateLimiter", () => {
   test("uses the selected cache fixed-window primitive", async () => {

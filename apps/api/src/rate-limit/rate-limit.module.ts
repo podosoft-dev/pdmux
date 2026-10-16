@@ -3,6 +3,7 @@ import { AppException } from "../common/app-exception";
 import { API_KEY_VERIFIER } from "../api-key/api-key.module";
 import {
   REQUEST_GUARDS,
+  RESOLVED_SESSIONS,
   type PodokitModule,
   type RequestGuardContext,
   type ServiceKey,
@@ -12,7 +13,7 @@ import {
   sessionSigningSecret,
   type RateLimitConfig,
 } from "./rate-limit.config";
-import { RateLimitIdentity } from "./rate-limit.identity";
+import { RateLimitIdentity, SessionUsers } from "./rate-limit.identity";
 import { defaultRateLimitRoutes, generalProfile, type RateLimitRoutes } from "./rate-limit.routes";
 
 export { RATE_LIMIT_ROUTES } from "@podosoft/podokit-runtime";
@@ -61,7 +62,7 @@ export class RateLimiter {
     const profile = this.routes.resolve(request.method, path) ?? generalProfile(this.config);
     if (profile === "exempt") return;
     try {
-      const tracker = await this.identity.resolve(request, context.remoteAddress, this.config);
+      const tracker = await this.identity.resolve(request, context.clientAddress);
       await this.enforceCustom(profile.name, tracker, profile.ttlSeconds, profile.limit, context.setHeader);
     } catch (error) {
       if (error instanceof AppException) throw error;
@@ -125,12 +126,19 @@ export const RATE_LIMITER = Symbol("rate-limiter") as ServiceKey<RateLimiter>;
 export const rateLimitModule: PodokitModule = {
   name: "rate-limit",
   configure: (_env, services): void => {
+    // Sessions the auth module resolves for any request teach the limiter their
+    // users, so a user's sessions share one counter without another lookup.
+    const sessionUsers = new SessionUsers();
+    services.resolve(RESOLVED_SESSIONS).listen(({ token, userId, expiresAt }) =>
+      sessionUsers.remember(token, userId, expiresAt),
+    );
     const limiter = new RateLimiter(
       rateLimitConfig(),
       new RateLimitIdentity(
         services.resolve(API_KEY_VERIFIER),
         services,
         sessionSigningSecret(),
+        sessionUsers,
       ),
       new CacheRateLimitStorage(services.resolve(CACHE)),
     );

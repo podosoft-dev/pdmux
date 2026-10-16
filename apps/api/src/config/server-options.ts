@@ -11,7 +11,7 @@ export interface ApiServerOptions {
   maxRequestBodySize?: number;
   /**
    * Seconds a connection may stay idle before it is closed, from 0 (never) to
-   * 255. Defaults to Elysia's 30 seconds.
+   * 255. Defaults to `API_IDLE_TIMEOUT`.
    */
   idleTimeout?: number;
 }
@@ -31,18 +31,15 @@ const owned: { readonly [name: string]: unknown; readonly apiServerOptions?: Api
 export function apiServerOptions(
   env: AppEnv,
   source: ApiServerOptionsSource | undefined = owned.apiServerOptions,
-): ApiServerOptions & { maxRequestBodySize: number } {
+): Required<ApiServerOptions> {
   const options = typeof source === "function" ? source(env) : source ?? {};
   const maxRequestBodySize = options.maxRequestBodySize ?? env.API_MAX_REQUEST_BODY_SIZE;
   if (!Number.isSafeInteger(maxRequestBodySize) || maxRequestBodySize < 1) {
     throw new Error("apiServerOptions.maxRequestBodySize must be a positive integer of bytes");
   }
-  const { idleTimeout } = options;
-  if (
-    idleTimeout !== undefined &&
-    (!Number.isInteger(idleTimeout) || idleTimeout < 0 || idleTimeout > MAX_IDLE_TIMEOUT_SECONDS)
-  ) {
+  const idleTimeout = options.idleTimeout ?? env.API_IDLE_TIMEOUT;
+  if (!Number.isInteger(idleTimeout) || idleTimeout < 0 || idleTimeout > MAX_IDLE_TIMEOUT_SECONDS) {
     throw new Error(`apiServerOptions.idleTimeout must be an integer from 0 to ${MAX_IDLE_TIMEOUT_SECONDS} seconds`);
   }
-  return { maxRequestBodySize, ...(idleTimeout === undefined ? {} : { idleTimeout }) };
+  return { maxRequestBodySize, idleTimeout };
 }

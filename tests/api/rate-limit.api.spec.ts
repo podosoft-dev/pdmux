@@ -88,7 +88,7 @@ test("rate limit: health probes stay available while ordinary routes return 429 
   }
 });
 
-test("rate limit: each signed session has its own counter and forged sessions do not", async ({
+test("rate limit: a user's sessions share one counter and forged sessions do not get one", async ({
   playwright,
 }) => {
   const email = `rate-limit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
@@ -99,21 +99,31 @@ test("rate limit: each signed session has its own counter and forged sessions do
   test.skip(probe.status() >= 500, "throttler storage (redis) not reachable");
   const remaining = (response: APIResponse): number => Number(response.headers()["ratelimit-remaining"]);
   const ceiling = Number(probe.headers()["ratelimit-limit"]);
-  expect(remaining(probe)).toBe(ceiling - 1);
 
-  // The signed bearer form of the same session shares its counter.
+  // A second sign-in of the same user, and the signed bearer form of the first
+  // session. The probe requires a session, so each request below resolves it; a
+  // session counts under its user from the request after the API first resolves
+  // it (or from that request when authentication runs before the limiter).
+  const second = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  expect((await second.post("/api/auth/sign-in/email", { data: { email, password } })).ok()).toBeTruthy();
   const cookie = (await first.storageState()).cookies.find((c) => c.name.endsWith("session_token"));
   expect(cookie, "sign-up set a session cookie").toBeTruthy();
   const bearer = await playwright.request.newContext({
     baseURL: base,
     extraHTTPHeaders: { ...origin, authorization: `Bearer ${cookie?.value ?? ""}` },
   });
-  expect(remaining(await bearer.get("/api/cache/rate-limit-probe"))).toBe(ceiling - 2);
+  await second.get("/api/cache/rate-limit-probe");
 
-  // Counters follow the session, not the user: signing in again starts a new one.
-  const second = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-  expect((await second.post("/api/auth/sign-in/email", { data: { email, password } })).ok()).toBeTruthy();
-  expect(remaining(await second.get("/api/cache/rate-limit-probe"))).toBe(ceiling - 1);
+  // Both sessions now draw from one budget: each request lowers what the next
+  // one, from either session, has left.
+  const fromFirst = remaining(await first.get("/api/cache/rate-limit-probe"));
+  expect(remaining(await second.get("/api/cache/rate-limit-probe"))).toBe(fromFirst - 1);
+  expect(remaining(await bearer.get("/api/cache/rate-limit-probe"))).toBe(fromFirst - 2);
+  expect(remaining(await first.get("/api/cache/rate-limit-probe"))).toBe(fromFirst - 3);
+
+  // Another user has a budget of their own.
+  const other = await session(playwright);
+  expect(remaining(await other.get("/api/cache/rate-limit-probe"))).toBe(ceiling - 1);
 
   // A session cookie without a valid signature is counted with anonymous traffic
   // from the same client address instead of receiving a fresh counter. The cache
@@ -131,12 +141,13 @@ test("rate limit: each signed session has its own counter and forged sessions do
     expect(remaining(after)).toBeLessThan(remaining(before));
   }).toPass({ timeout: 10_000 });
 
-  for (const context of [first, bearer, second, forged, anonymous]) await context.dispose();
+  for (const context of [first, second, bearer, other, forged, anonymous]) await context.dispose();
 });
 
 test("rate limit: session reads do not consume the strict authentication budget", async ({
   playwright,
 }) => {
+  test.skip(authLimit > 1000, "the authentication budget is too large to exhaust here");
   const ctx = await session(playwright);
   for (let i = 0; i < authLimit + 5; i++) {
     const response = await ctx.get("/api/auth/get-session");

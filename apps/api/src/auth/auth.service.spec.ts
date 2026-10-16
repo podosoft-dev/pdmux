@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { AccessPolicy, type RequestIdentity } from "../core/services";
+import { AccessPolicy, ResolvedSessions, type RequestIdentity, type ResolvedSession } from "../core/services";
 import type { SettingsService } from "../settings/settings.service";
 import {
   AuthService,
@@ -21,7 +21,7 @@ function session(
 }
 
 function identityFor(resolver: SessionResolver): RequestIdentity {
-  return createRequestIdentity(new AuthService(settings(false), new AccessPolicy(), resolver));
+  return createRequestIdentity(new AuthService(settings(false), new AccessPolicy(), { resolveSession: resolver }));
 }
 
 describe("AuthService", () => {
@@ -33,12 +33,12 @@ describe("AuthService", () => {
   test("keeps explicitly public routes unauthenticated", async () => {
     const policy = new AccessPolicy();
     policy.register("GET", "/public", "public");
-    const service = new AuthService(settings(false), policy, async () => null);
+    const service = new AuthService(settings(false), policy, { resolveSession: async () => null });
     await expect(service.guard(new Request("http://localhost/public"))).resolves.toBeUndefined();
   });
 
   test("requires a session by default", async () => {
-    const service = new AuthService(settings(false), new AccessPolicy(), async () => null);
+    const service = new AuthService(settings(false), new AccessPolicy(), { resolveSession: async () => null });
     const result = service.guard(new Request("http://localhost/private"));
     await expect(result).rejects.toMatchObject({ code: "AUTH_REQUIRED", statusCode: 401 });
   });
@@ -47,7 +47,7 @@ describe("AuthService", () => {
     const service = new AuthService(
       settings(true),
       new AccessPolicy(),
-      async () => session({ twoFactorEnabled: false }),
+      { resolveSession: async () => session({ twoFactorEnabled: false }) },
     );
     const result = service.guard(new Request("http://localhost/private"));
     await expect(result).rejects.toMatchObject({ code: "TWO_FACTOR_REQUIRED", statusCode: 403 });
@@ -57,10 +57,58 @@ describe("AuthService", () => {
     const service = new AuthService(
       settings(false),
       new AccessPolicy(),
-      async () => session({ role: "user" }),
+      { resolveSession: async () => session({ role: "user" }) },
     );
     await expect(service.requireAdmin(new Request("http://localhost/account/settings")))
       .rejects.toMatchObject({ code: "ADMIN_REQUIRED", statusCode: 403 });
+  });
+});
+
+describe("AuthService resolved sessions", () => {
+  const expiresAt = new Date("2030-01-02T03:04:05.000Z");
+
+  function reporting(resolver: SessionResolver): { service: AuthService; reported: ResolvedSession[] } {
+    const resolvedSessions = new ResolvedSessions();
+    const reported: ResolvedSession[] = [];
+    resolvedSessions.listen((resolved) => reported.push(resolved));
+    return {
+      service: new AuthService(settings(false), new AccessPolicy(), { resolveSession: resolver, resolvedSessions }),
+      reported,
+    };
+  }
+
+  test("reports each resolved session once per request, before callers continue", async () => {
+    const resolver = mock(async () => session({}, { token: "session-token", expiresAt }));
+    const { service, reported } = reporting(resolver);
+    const request = new Request("http://localhost/private");
+
+    await service.requireSession(request);
+    expect(reported).toEqual([{ token: "session-token", userId: "user-1", expiresAt }]);
+    await service.session(request);
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(reported).toHaveLength(1);
+
+    // A serialized expiry is accepted too.
+    const serialized = reporting(async () => session({}, { token: "t2", expiresAt: expiresAt.toISOString() }));
+    await serialized.service.session(new Request("http://localhost/private"));
+    expect(serialized.reported).toEqual([{ token: "t2", userId: "user-1", expiresAt }]);
+  });
+
+  test("reports nothing without a session, a token, or a valid expiry, and keeps lookup errors", async () => {
+    for (const resolver of [
+      async () => null,
+      async () => session({}, { expiresAt }),
+      async () => session({}, { token: "session-token", expiresAt: "soon" }),
+    ]) {
+      const { service, reported } = reporting(resolver);
+      await service.session(new Request("http://localhost/private"));
+      expect(reported).toEqual([]);
+    }
+    const failing = reporting(async () => {
+      throw new Error("database down");
+    });
+    await expect(failing.service.session(new Request("http://localhost/private"))).rejects.toThrow("database down");
+    expect(failing.reported).toEqual([]);
   });
 });
 

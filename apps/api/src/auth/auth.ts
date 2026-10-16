@@ -15,6 +15,8 @@ import { SIGNUP_APPROVAL_REQUIRED } from "@podosoft/podokit-contracts";
 import { runUserDeletedHandlers } from "./user-delete-handlers";
 import { authBaseUrl, authSecret } from "./auth-environment";
 import { isMaintenanceCommand } from "./maintenance";
+import { CLIENT_ADDRESS_HEADER } from "../core/client-address";
+import { revokeEveryOtherSession } from "./revoke-other-sessions";
 // podokit:begin:auth-imports
 import { admin } from "better-auth/plugins";
 import { ac, roles } from "./permissions";
@@ -58,6 +60,8 @@ export function buildAuth(config: AuthConfig) {
     // First, so a disabled feature answers 404 before another plugin's onRequest
     // (such as the OIDC provider's discovery metadata) can answer.
     featureGatePlugin(gateSettings),
+    // "Sign out other sessions" revokes every other session, not only the first 100.
+    revokeEveryOtherSession(),
     twoFactor(),
     magicLink({
       sendMagicLink: async ({ email, url }: { email: string; url: string; token: string }) => {
@@ -240,9 +244,10 @@ export function buildAuth(config: AuthConfig) {
     baseURL: authBaseUrl(),
     advanced: {
       ipAddress: {
-        // The API sits behind the SvelteKit server proxy, which forwards the
-        // resolved client IP as x-forwarded-for; trust it so sessions record an IP.
-        ipAddressHeaders: ["x-forwarded-for"],
+        // The address the API resolved behind its trusted proxies, which it sets
+        // on every request, so sessions and Better Auth's own rate limits use the
+        // same client address as the rest of the API.
+        ipAddressHeaders: [CLIENT_ADDRESS_HEADER],
       },
       ...(isMaintenanceCommand() ? { database: { validateSchema: false } } : {}),
     },

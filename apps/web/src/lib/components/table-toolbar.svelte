@@ -86,7 +86,9 @@
       {:else}
         <Label class="text-sm" for="toolbar-search">{searchFields[0].label}</Label>
       {/if}
-      <Input id="toolbar-search" bind:value={search} placeholder={searchPlaceholder} class="max-w-xs flex-1" />
+      <!-- The minimum width makes a narrow row wrap the input to its own line
+           instead of squeezing it next to the field select. -->
+      <Input id="toolbar-search" bind:value={search} placeholder={searchPlaceholder} class="min-w-48 max-w-xs flex-1" />
       <Button type="submit">{searchButton}</Button>
     </form>
   {/if}

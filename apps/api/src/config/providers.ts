@@ -3,4 +3,4 @@ import { runtimeProviders } from "../runtime/providers";
 
 // pdmux selects providers at startup (server or desktop) instead of at generation
 // time; `.podokit/manifest.json` records the server selection for deployments.
-export const PROVIDERS: ProviderSelections = runtimeProviders(process.env);
+export const PROVIDERS: Readonly<ProviderSelections> = runtimeProviders(process.env);

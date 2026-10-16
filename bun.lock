@@ -20,7 +20,7 @@
         "@pdmux/protocol": "workspace:*",
         "@podosoft/podokit-auth": "^0.5.0",
         "@podosoft/podokit-contracts": "^0.5.0",
-        "@podosoft/podokit-runtime": "^0.4.0",
+        "@podosoft/podokit-runtime": "^0.4.1",
         "better-auth": "^1.7.7",
         "bullmq": "^5.57.0",
         "class-transformer": "^0.5.1",
@@ -411,7 +411,7 @@
 
     "@podosoft/podokit-contracts": ["@podosoft/podokit-contracts@0.5.0", "", {}, "sha512-YIMQrS0RR7sFh15TxdzScmIkj9SQeGZ0otaX1gAQLx8tGBNJ6YyPX2dNsK7EqIXkwIsTnbGGTsNZUxjYRz5x6Q=="],
 
-    "@podosoft/podokit-runtime": ["@podosoft/podokit-runtime@0.4.0", "", {}, "sha512-EYybMP8Dw9lx9CbHaa43JdR2PRyp885wDGe04iEp1ijrzYK5XJXPID6VFogSRTk/jDL4NNHkqh6zwVXrI+JXug=="],
+    "@podosoft/podokit-runtime": ["@podosoft/podokit-runtime@0.4.1", "", {}, "sha512-A5EZnfwZ6x5gC8yWzLURg96bWFJ75Hr0YYSZTSkINA8DBa3oiIatUq9DWMXmnbX5RqnkfQTBVl8zQmdZHgineQ=="],
 
     "@polka/url": ["@polka/url@1.0.0-next.29", "", {}, "sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww=="],
 

@@ -1,10 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { ApiKeyVerifier } from "../api-key/api-key-verifier";
 import type { ServiceKey, ServiceRegistry } from "../core/services";
-import {
-  clientAddressFromProxy,
-  type RateLimitConfig,
-} from "./rate-limit.config";
 
 export abstract class RateLimitIdentityExtension {
   abstract validatedApiKeyId(
@@ -28,7 +24,7 @@ const SESSION_COOKIE_NAMES = [
 // accepts only the padded 44-character standard base64 signature.
 const SIGNATURE = /^[A-Za-z0-9+/]{43}=$/;
 
-type TrackerKind = "session" | "api-key" | "ip";
+type TrackerKind = "user" | "session" | "api-key" | "ip";
 
 function stableDigest(kind: TrackerKind, value: string): string {
   return createHash("sha256")
@@ -85,18 +81,57 @@ export function verifiedSessionToken(
     : undefined;
 }
 
+/** The most sessions one API process remembers; the oldest is forgotten first. */
+const MAX_SESSION_USERS = 10_000;
+
+/**
+ * The users of the sessions this API process has resolved, so the limiter can
+ * count a signed-in caller per user without a session lookup of its own. Each
+ * entry lasts until its session expires, and is refreshed whenever the session
+ * is resolved again. A signed-out or revoked session keeps its entry: it only
+ * decides which counter its requests use, never whether they are allowed.
+ */
+export class SessionUsers {
+  private readonly users = new Map<string, { userId: string; expiresAt: number }>();
+
+  constructor(
+    private readonly maxEntries = MAX_SESSION_USERS,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  remember(sessionToken: string, userId: string, expiresAt: Date): void {
+    const key = stableDigest("session", sessionToken);
+    this.users.delete(key);
+    if (!(expiresAt.getTime() > this.now())) return;
+    this.users.set(key, { userId, expiresAt: expiresAt.getTime() });
+    if (this.users.size > this.maxEntries) {
+      const oldest = this.users.keys().next().value;
+      if (oldest !== undefined) this.users.delete(oldest);
+    }
+  }
+
+  userOf(sessionToken: string): string | undefined {
+    const key = stableDigest("session", sessionToken);
+    const entry = this.users.get(key);
+    if (!entry) return undefined;
+    if (entry.expiresAt <= this.now()) {
+      this.users.delete(key);
+      return undefined;
+    }
+    return entry.userId;
+  }
+}
+
 export class RateLimitIdentity {
   constructor(
     private readonly configuredApiKeys: ApiKeyVerifier,
     private readonly services: ServiceRegistry,
     private readonly sessionSecret: string | undefined,
+    private readonly sessionUsers: SessionUsers = new SessionUsers(),
   ) {}
 
-  async resolve(
-    request: Request,
-    remoteAddress: string | undefined,
-    config: Pick<RateLimitConfig, "proxyHeader" | "trustedProxyHops">,
-  ): Promise<string> {
+  /** clientAddress is the address the API resolved behind its trusted proxies. */
+  async resolve(request: Request, clientAddress: string | undefined): Promise<string> {
     const rawApiKey = request.headers.get("x-api-key");
     if (rawApiKey) {
       if (this.configuredApiKeys.isValid(rawApiKey)) return tracker("api-key", rawApiKey);
@@ -106,15 +141,19 @@ export class RateLimitIdentity {
     }
 
     const sessionToken = this.sessionToken(request.headers);
-    if (sessionToken) return tracker("session", sessionToken);
+    if (sessionToken) {
+      const userId = this.sessionUsers.userOf(sessionToken);
+      return userId === undefined ? tracker("session", sessionToken) : tracker("user", userId);
+    }
 
-    const clientAddress = clientAddressFromProxy(request.headers, remoteAddress, config);
-    return tracker("ip", clientAddress);
+    return tracker("ip", clientAddress ?? "unknown");
   }
 
   // Only the signature is checked: resolving the session would cost a database
-  // read on every request. A revoked or expired token still maps to its single
-  // counter, and a value without a valid signature falls back to the client address.
+  // read on every request. Once the API has resolved the session for a request,
+  // SessionUsers maps it to its user's counter; until then, and for a revoked or
+  // expired token, it keeps a counter of its own. A value without a valid
+  // signature falls back to the client address.
   private sessionToken(headers: Headers): string | undefined {
     if (!this.sessionSecret) return undefined;
     const cookies = headers.get("cookie");

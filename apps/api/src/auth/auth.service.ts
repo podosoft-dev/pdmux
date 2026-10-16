@@ -1,5 +1,5 @@
 import { AppException } from "@podosoft/podokit-contracts";
-import type { AccessPolicy, RequestIdentity } from "../core/services";
+import type { AccessPolicy, RequestIdentity, ResolvedSessions } from "../core/services";
 import type { SettingsService } from "../settings/settings.service";
 import { getAuth, refreshForRequest } from "./auth-provider";
 import { rethrowAuthError } from "./database-outage";
@@ -37,19 +37,34 @@ function activeOrganizationOf(session: AuthSession): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
+export interface AuthServiceOptions {
+  /** Looks a request's session up; Better Auth's getSession by default. */
+  resolveSession?: SessionResolver;
+  /** Receives every session this service resolves, such as for the rate limiter. */
+  resolvedSessions?: ResolvedSessions;
+}
+
 export class AuthService {
   private readonly sessions = new WeakMap<Request, Promise<AuthSession | null>>();
+  private readonly resolveSession: SessionResolver;
+  private readonly resolvedSessions: ResolvedSessions | undefined;
 
   constructor(
     private readonly settings: SettingsService,
     private readonly accessPolicy: AccessPolicy,
-    private readonly resolveSession: SessionResolver = defaultSessionResolver,
-  ) {}
+    options: AuthServiceOptions = {},
+  ) {
+    this.resolveSession = options.resolveSession ?? defaultSessionResolver;
+    this.resolvedSessions = options.resolvedSessions;
+  }
 
   session(request: Request): Promise<AuthSession | null> {
     const cached = this.sessions.get(request);
     if (cached) return cached;
-    const result = this.resolveSession(request.headers);
+    const result = this.resolveSession(request.headers).then((session) => {
+      if (session) this.report(session);
+      return session;
+    });
     this.sessions.set(request, result);
     return result;
   }
@@ -83,6 +98,13 @@ export class AuthService {
 
   async close(): Promise<void> {
     await closeAuthDatabase();
+  }
+
+  private report(session: AuthSession): void {
+    const { token, expiresAt } = session.session;
+    const expires = expiresAt instanceof Date ? expiresAt : new Date(String(expiresAt));
+    if (!this.resolvedSessions || typeof token !== "string" || Number.isNaN(expires.getTime())) return;
+    this.resolvedSessions.report({ token, userId: session.user.id, expiresAt: expires });
   }
 }
 

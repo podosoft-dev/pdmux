@@ -11,6 +11,8 @@
   import { deviceLabel } from "#lib/device-label.js";
   import { toast } from "svelte-sonner";
   import { api } from "#lib/api.js";
+  import { listAccountSessions, revokeAccountSession, type AccountSession } from "#lib/account-sessions.js";
+  import { KeysetPages } from "#lib/admin/sessions.js";
   import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
   import { untrack } from "svelte";
   import type { SessionUser } from "../../app.d.ts";
@@ -392,28 +394,34 @@
     await goto("/login", { invalidateAll: true });
   }
 
-  // Sessions — this user's own devices
-  /** better-auth's code for "this session is older than `session.freshAge`". */
+  // Sessions — this user's own devices. The API pages them, because Better Auth's
+  // /list-sessions returns at most 100 and could leave out the current one.
+  /** Better Auth's code for "this session is older than `session.freshAge`". */
   const SESSION_NOT_FRESH = "SESSION_NOT_FRESH";
-  type Session = { id: string; token: string; userAgent?: string | null; ipAddress?: string | null; createdAt: string | Date };
+  type Session = AccountSession & { current: boolean };
   const PAGE_SIZE = DEFAULT_PAGE_SIZE;
+  // The API pages newest first by keyset, so the order is fixed rather than sortable.
+  const sessionsSort: SortState = { key: "createdAt", dir: "desc" };
+  const sessionPages = new KeysetPages();
   let sessions = $state<Session[]>([]);
+  let sessionsTotal = $state(0);
+  let sessionsPagerTotal = $state(0);
   let sessionsPage = $state(1);
-  let sessionsSort = $state<SortState | null>(null);
   let busy = $state(false);
+  let latestSessionsRequest = 0;
   const sessionsColumns: DataTableColumn<Session>[] = [
-    { key: "userAgent", label: i18n.t.sessions.device, sortable: true, value: (s) => deviceLabel(s.userAgent) ?? s.userAgent ?? "" },
-    { key: "ipAddress", label: i18n.t.sessions.ip, sortable: true, value: (s) => s.ipAddress ?? "" },
-    { key: "createdAt", label: i18n.t.sessions.since, sortable: true, value: (s) => new Date(s.createdAt).getTime() },
+    { key: "userAgent", label: i18n.t.sessions.device },
+    { key: "ipAddress", label: i18n.t.sessions.ip },
+    { key: "createdAt", label: i18n.t.sessions.since },
     { key: "status", label: i18n.t.sessions.status },
     { key: "actions", label: "", class: "w-10" },
   ];
   /**
    * True when the session is too old to list sessions.
    *
-   * better-auth guards `/list-sessions` (and `/unlink-account`) with its freshness
-   * middleware, and `session.freshAge` defaults to 24 hours. So for anyone who signed
-   * in yesterday — which is most people, most of the time — this call returns 403
+   * The API keeps better-auth's freshness rule for listing sessions, and
+   * `session.freshAge` defaults to 24 hours. So for anyone who signed in yesterday —
+   * which is most people, most of the time — the list answers 403
    * `SESSION_NOT_FRESH`. It is not a failure to report as one: the tab has to say what
    * happened and what to do, or it is a blank table under an untranslated toast.
    */
@@ -423,32 +431,45 @@
     await api.auth.signOut();
     await goto("/login", { invalidateAll: true });
   }
-  async function loadSessions(): Promise<void> {
-    const { data: res, error } = await api.auth.listSessions();
-    if (error?.code === SESSION_NOT_FRESH) {
-      // Explained in the panel below, not thrown at the corner of the screen.
-      sessionsStale = true;
-      sessions = [];
-      return;
+  /** Loads one page; the current session leads the first. A newer request supersedes any in flight. */
+  async function loadSessions(target = 1): Promise<void> {
+    if (target === 1) sessionPages.reset();
+    const cursor = sessionPages.cursorFor(target);
+    if (cursor === undefined) return;
+    const request = ++latestSessionsRequest;
+    try {
+      const result = await listAccountSessions(api, { limit: PAGE_SIZE, cursor });
+      if (request !== latestSessionsRequest) return;
+      // A revoke can empty the last page; show the one before it instead.
+      if (result.items.length === 0 && target > 1) return loadSessions(target - 1);
+      sessionsStale = false;
+      sessionPages.record(target, result.nextCursor);
+      const others = result.items.map((s) => ({ ...s, current: false }));
+      sessions = target === 1 && result.current ? [{ ...result.current, current: true }, ...others] : others;
+      sessionsTotal = result.total;
+      sessionsPagerTotal = sessionPages.pagerTotal(result.total - (result.current ? 1 : 0), PAGE_SIZE);
+      sessionsPage = target;
+    } catch (error) {
+      if (request !== latestSessionsRequest) return;
+      if (error instanceof ApiError && error.code === SESSION_NOT_FRESH) {
+        // Explained in the panel below, not thrown at the corner of the screen.
+        sessionsStale = true;
+        sessions = [];
+        return;
+      }
+      toast.error(i18n.t.sessions.loadFailed);
     }
-    sessionsStale = false;
-    if (error) return void toast.error(error.message ?? i18n.t.sessions.loadFailed);
-    // Current session first (users expect it on top; also keeps it on page 1),
-    // then newest to oldest.
-    sessions = ((res ?? []) as Session[]).sort((a, b) => {
-      if (a.id === data.currentSessionId) return -1;
-      if (b.id === data.currentSessionId) return 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
   }
-  async function revoke(token: string): Promise<void> {
+  async function revoke(id: string): Promise<void> {
     busy = true;
-    const { error } = await api.auth.revokeSession({ token });
-    busy = false;
-    if (error) toast.error(error.message ?? i18n.t.sessions.revokeFailed);
-    else {
+    try {
+      await revokeAccountSession(api, id);
       toast.success(i18n.t.sessions.revoked);
-      await loadSessions();
+      await loadSessions(sessionsPage);
+    } catch {
+      toast.error(i18n.t.sessions.revokeFailed);
+    } finally {
+      busy = false;
     }
   }
   async function signOutOthers(): Promise<void> {
@@ -824,7 +845,7 @@
         <Card.Root>
           <Card.Header class="flex flex-row items-center justify-between gap-2">
             <Card.Title>{i18n.t.sessions.title}</Card.Title>
-            <Button variant="outline" size="sm" disabled={busy || sessionsStale || sessions.length <= 1} onclick={signOutOthers}>{i18n.t.sessions.signOutOthers}</Button>
+            <Button variant="outline" size="sm" disabled={busy || sessionsStale || sessionsTotal <= 1} onclick={signOutOthers}>{i18n.t.sessions.signOutOthers}</Button>
           </Card.Header>
           <Card.Content>
             {#if sessionsStale}
@@ -843,20 +864,23 @@
               columns={sessionsColumns}
               rows={sessions}
               getKey={(s) => s.id}
-              bind:sort={sessionsSort}
+              sort={sessionsSort}
+              manualSort
+              manualPagination
               bind:page={sessionsPage}
               perPage={PAGE_SIZE}
-              label={fmt(i18n.t.sessions.total, { count: sessions.length })}
+              total={sessionsPagerTotal}
+              label={fmt(i18n.t.sessions.total, { count: sessionsTotal })}
               empty={i18n.t.sessions.empty}
+              onChange={(state) => void loadSessions(state.page)}
             >
               {#snippet row(s)}
-                {@const isCurrent = s.id === data.currentSessionId}
                 <Table.Cell class="max-w-xs truncate" title={s.userAgent ?? ""}>{deviceLabel(s.userAgent) ?? s.userAgent ?? i18n.t.sessions.unknown}</Table.Cell>
                 <Table.Cell class="text-muted-foreground">{s.ipAddress ?? "—"}</Table.Cell>
                 <Table.Cell class="text-muted-foreground">{formatDateTime(s.createdAt)}</Table.Cell>
-                <Table.Cell>{#if isCurrent}<Badge>{i18n.t.sessions.current}</Badge>{/if}</Table.Cell>
+                <Table.Cell>{#if s.current}<Badge>{i18n.t.sessions.current}</Badge>{/if}</Table.Cell>
                 <Table.Cell>
-                  <Button variant="ghost" size="sm" disabled={busy || isCurrent} onclick={() => revoke(s.token)}>{i18n.t.sessions.revoke}</Button>
+                  <Button variant="ghost" size="sm" disabled={busy || s.current} onclick={() => revoke(s.id)}>{i18n.t.sessions.revoke}</Button>
                 </Table.Cell>
               {/snippet}
             </DataTable>

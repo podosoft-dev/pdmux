@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { SQL } from "bun";
 import type { QueryRunner } from "typeorm";
 import type { AuthSession } from "../auth/auth.service";
+import { CLIENT_ADDRESS_HEADER } from "../core/client-address";
 import { initializeDesktopSchema } from "../database/desktop-schema";
 import { InitAuditLogs1720300000000 } from "../migrations/1720300000000-InitAuditLogs";
 import { recordAudit, recordAuditLater } from "./audit-events";
@@ -187,6 +188,21 @@ describe("AuditService", () => {
     } finally {
       await service.close();
     }
+  });
+
+  test("records the address the API resolved, not the caller's forwarded header", async () => {
+    const capture = sqlCapture();
+    const service = new AuditService(capture.sql, { dialect: "postgres", enabled: on });
+    const session: AuthSession = { user: { id: "user-1" }, session: {} };
+    const headers = {
+      "x-forwarded-for": "198.51.100.66, 198.51.100.67",
+      [CLIENT_ADDRESS_HEADER]: "203.0.113.7",
+    };
+    await service.recordRequest("todo.create", new Request("http://localhost/todos", { headers }), session);
+    await service.recordRequest("todo.delete", new Request("http://localhost/todos", {
+      headers: { "x-forwarded-for": "198.51.100.66" },
+    }), session);
+    expect(capture.batches.map((batch) => batch[0]?.ip)).toEqual(["203.0.113.7", null]);
   });
 
   test("a failing toggle read never breaks the caller", async () => {

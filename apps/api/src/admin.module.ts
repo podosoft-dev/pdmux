@@ -5,8 +5,14 @@ import {
 } from "@podosoft/podokit-contracts";
 import { OBJECT_STORAGE } from "@podosoft/podokit-runtime";
 import { Elysia, t } from "elysia";
+import { accountSessionRoutes } from "./account-sessions/account-sessions.routes";
 import { adminSessionRoutes } from "./admin-sessions/admin-sessions.routes";
-import { createSessionRevoker, type RevokeUserSessionApi } from "./admin-sessions/admin-sessions.revoker";
+import {
+  createOwnSessionRevoker,
+  createSessionRevoker,
+  type RevokeSessionApi,
+  type RevokeUserSessionApi,
+} from "./admin-sessions/admin-sessions.revoker";
 import { AdminSessionsService } from "./admin-sessions/admin-sessions.service";
 import { adminUserRoutes } from "./admin-users/admin-users.routes";
 import { AdminUsersService } from "./admin-users/admin-users.service";
@@ -56,6 +62,12 @@ const adminPlugin: AppPlugin = ({ services }) => {
       auth,
       sessions: services.resolve(ADMIN_SESSIONS),
       revoke: createSessionRevoker(() => getAuth().api as unknown as RevokeUserSessionApi),
+    }))
+    .use(accountSessionRoutes({
+      auth,
+      sessions: services.resolve(ADMIN_SESSIONS),
+      revoke: createOwnSessionRevoker(() => getAuth().api as unknown as RevokeSessionApi),
+      freshAgeSeconds: async () => (await getAuth().$context).sessionConfig.freshAge,
     }))
     .use(adminUserRoutes({ auth, users: services.resolve(ADMIN_USERS) }))
     .use(siteAssetRoutes(site, profileImages))

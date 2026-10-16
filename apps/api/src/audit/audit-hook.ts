@@ -1,4 +1,5 @@
 import { createAuthMiddleware } from "better-auth/api";
+import { clientAddressOf } from "../core/client-address";
 import { recordAudit } from "./audit-events";
 import { auditEnabled } from "./audit-enabled";
 
@@ -71,6 +72,6 @@ export const auditAfterHook = createAuthMiddleware(async (ctx) => {
     actorEmail: actor?.email ?? null,
     targetId,
     targetLabel,
-    ip: ctx.headers?.get("x-forwarded-for") ?? null,
+    ip: clientAddressOf(ctx.headers) ?? null,
   });
 });

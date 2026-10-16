@@ -1,5 +1,6 @@
 import { expect, test } from "../helpers/disposable-users";
 import { ADMIN, USER } from "../helpers/accounts";
+import { signInOnSeparateDevices } from "../helpers/devices";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
@@ -122,6 +123,31 @@ test("revokeOtherSessions keeps the current session valid", async ({ playwright,
   expect((await ctx.post("/api/auth/revoke-other-sessions")).ok()).toBeTruthy();
   const after = await ctx.get("/api/auth/get-session");
   expect((await after.json())?.user?.email).toBe(email); // still signed in
+  await ctx.dispose();
+});
+
+test("revokeOtherSessions removes every other session, past Better Auth's page of 100", async ({
+  playwright,
+  disposableUsers,
+}) => {
+  test.slow();
+  const email = `api-revoke-many-${Date.now()}@example.com`;
+  const password = "Podokit3e-Str0ng!pw";
+  await disposableUsers.create({ email, password, name: "Many sessions" });
+
+  const statuses = await signInOnSeparateDevices(email, password, 105);
+  test.skip(statuses.includes(429), "needs an authentication rate limit above 105 sign-ins per window");
+  expect(statuses.every((status) => status === 200)).toBe(true);
+
+  const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  expect((await ctx.post("/api/auth/sign-in/email", { data: { email, password } })).ok()).toBeTruthy();
+  // Better Auth lists at most 100 sessions, so a full page shows the backlog.
+  expect(((await (await ctx.get("/api/auth/list-sessions")).json()) as unknown[]).length).toBe(100);
+
+  expect((await ctx.post("/api/auth/revoke-other-sessions")).ok()).toBeTruthy();
+  const left = (await (await ctx.get("/api/auth/list-sessions")).json()) as Array<{ token?: string }>;
+  expect(left).toHaveLength(1);
+  expect((await (await ctx.get("/api/auth/get-session")).json())?.user?.email).toBe(email);
   await ctx.dispose();
 });
 

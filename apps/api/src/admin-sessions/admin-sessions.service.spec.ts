@@ -183,5 +183,23 @@ describe("AdminSessionsService", () => {
 
     expect(await service.tokenOf("a")).toBe("token-a");
     expect(await service.tokenOf("missing")).toBeNull();
+    // With a user, only that user's session.
+    expect(await service.tokenOf("a", "alice")).toBe("token-a");
+    expect(await service.tokenOf("a", "bob")).toBeNull();
+  });
+
+  test("leaves one session out and finds an active session by id", async () => {
+    await seed(db, [
+      { id: "a", userId: "alice", createdAt: "2026-01-01T00:00:01.000Z" },
+      { id: "b", userId: "alice", createdAt: "2026-01-01T00:00:02.000Z" },
+      { id: "old", userId: "alice", createdAt: "2026-01-01T00:00:03.000Z", expiresAt: "2020-01-01T00:00:00.000Z" },
+    ]);
+
+    const page = await service.list({ userId: "alice", excludeId: "b" });
+    expect(page.items.map((item) => item.id)).toEqual(["a"]);
+    expect(page.total).toBe(1);
+    expect(await service.find("b")).toMatchObject({ id: "b", userId: "alice", ipAddress: "203.0.113.7" });
+    expect(await service.find("old")).toBeNull();
+    expect(await service.find("missing")).toBeNull();
   });
 });
