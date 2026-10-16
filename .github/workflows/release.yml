@@ -233,20 +233,27 @@ jobs:
           join '${{ needs.verify.outputs.api }}' api
           join '${{ needs.verify.outputs.web }}' web
 
-      - name: Set up Go for the agent build
-        uses: actions/setup-go@v5
+      # The desktop workflow builds the agent once for every installer and hands the
+      # same archive here, so the release assets are the bytes the installers embed.
+      # The check against both web images below still proves they are the bytes the
+      # web serves.
+      - uses: actions/download-artifact@v4
         with:
-          go-version-file: agent/go.mod
-          cache: false
+          name: agent-binaries
+          path: /tmp/agent-binaries
 
-      - name: Build the agent binaries
+      - name: Restore the agent binaries
         id: agent
         run: |
-          bun tools/build-agent-binaries.mjs
+          set -euo pipefail
+          tar -xf /tmp/agent-binaries/agent-binaries.tar -C apps/web/static
           version="$(sed -nE 's/^[[:space:]]*(var|const)[[:space:]]+AgentVersion[[:space:]]*=[[:space:]]*"([^"]*)".*/\2/p' agent/internal/cli/version.go)"
           [ -n "$version" ] || { echo "::error file=agent/internal/cli/version.go::Could not read AgentVersion."; exit 1; }
           dir="apps/web/static/agent/$version"
-          [ -d "$dir" ] || { echo "::error::build-agent-binaries.mjs produced no $dir"; exit 1; }
+          (cd "$dir" && sha256sum -c SHA256SUMS) || {
+            echo "::error::The agent-binaries artifact does not match $dir/SHA256SUMS."
+            exit 1
+          }
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Agent $version" >> "$GITHUB_STEP_SUMMARY"

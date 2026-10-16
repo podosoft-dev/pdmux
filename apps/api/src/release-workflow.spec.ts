@@ -64,7 +64,8 @@ describe("release workflow", () => {
       "docker buildx imagetools create",
       'expected 2 digests for $repo',
       "password: ${{ secrets.GITHUB_TOKEN }}",
-      "bun tools/build-agent-binaries.mjs",
+      "name: agent-binaries",
+      "sha256sum -c SHA256SUMS",
       "for arch in amd64 arm64",
       "pdmux-agent-*",
       "SHA256SUMS",
@@ -82,6 +83,9 @@ describe("release workflow", () => {
     }
 
     expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(3);
+    // The release attaches the agent bytes the installers embed instead of building them again.
+    expect(workflow).not.toContain("build-agent-binaries");
+    expect(workflow).not.toContain("actions/setup-go");
 
     expect(workflow).not.toContain("secrets.REGISTRY_USERNAME");
     expect(workflow).not.toContain("secrets.REGISTRY_PASSWORD");
@@ -104,6 +108,16 @@ describe("release workflow", () => {
       expect(desktopWorkflow).toContain(fragment);
     }
     expect(desktopWorkflow).not.toContain("path: apps/desktop/release/**");
+
+    // One agent build feeds every installer, so all packages embed the same bytes.
+    const agent = desktopWorkflow.match(/\n  agent:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:\n|$)/)?.[1] ?? "";
+    const packageJob = desktopWorkflow.match(/\n  package:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:\n|$)/)?.[1] ?? "";
+    expect(agent).toContain("bun run build:agent");
+    expect(agent).toContain("name: agent-binaries");
+    expect(desktopWorkflow.match(/bun run build:agent/g)).toHaveLength(1);
+    expect(packageJob).toContain("needs: agent");
+    expect(packageJob).toContain("name: agent-binaries");
+    expect(packageJob).not.toContain("actions/setup-go");
   });
 
   test("[TC-PDDESKTOP-009] restricts stable signing to macOS releases and independently verifies artifacts", () => {

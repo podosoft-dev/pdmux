@@ -104,9 +104,11 @@ Installers are built on their native GitHub-hosted operating systems by
 - Windows: x64 NSIS installer;
 - Linux: x64 AppImage and Debian package.
 
-The workflow builds shared packages, the API, the SvelteKit app and host-agent artifacts, copies the
-current platform's pinned Bun executable into the application resources, runs desktop tests, and
-uploads installers as architecture-specific workflow artifacts. Intel and Apple Silicon packages
+One Linux job cross-compiles the four host-agent binaries and hands them to every installer runner as
+an `agent-binaries` archive, so all installers embed the same bytes and no installer runner needs Go.
+Each installer runner then builds shared packages, the API and the SvelteKit app, copies the current
+platform's pinned Bun executable into the application resources, runs desktop tests, and uploads
+installers as architecture-specific workflow artifacts. Intel and Apple Silicon packages
 run on separate native macOS runners so their embedded Bun executable always matches the target.
 Desktop staging keeps only the API entry points and the current release of each supported host-agent
 binary, and installer packaging excludes production source maps and unused Electron locales.

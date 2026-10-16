@@ -177,8 +177,9 @@ compared against anything.
 
 ⚠ `bun run build:agent` is **not part of `bun run build`.** The root build runs on every CI
 machine and those machines have no Go toolchain — wiring them together turns a change that
-never touched the agent red. It is invoked by the release job, by the Docker builder
-stage, or by a person **on purpose**.
+never touched the agent red. It is invoked by the `agent` job of `desktop.yml` (whose
+archive every installer embeds and the release attaches), by the `agent-binaries` job of
+`ci.yml`, by the Docker builder stage, or by a person **on purpose**.
 
 ---
 

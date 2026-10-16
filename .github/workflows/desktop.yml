@@ -39,8 +39,47 @@ permissions:
   contents: read
 
 jobs:
+  # The host-agent binaries are cross-compiled, so their bytes do not depend on the
+  # runner that builds them. Building them once here, with the Go module and build
+  # cache that `ci` warms, replaces a cold Go install and four cross-compiles on every
+  # installer runner (about two minutes on the Intel macOS runner, the slowest one).
+  # The verify jobs below still check the packaged copies against the committed
+  # SHA256SUMS, and the release compares these bytes with both web images.
+  agent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      # Same action version and inputs as the `ci` agent job, so this restores the
+      # cache that `ci` saves on main instead of starting a separate one.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - run: bun run build:agent
+
+      # Artifacts drop file modes; the archive keeps the binaries executable.
+      - name: Archive the host-agent release
+        run: tar -cf agent-binaries.tar -C apps/web/static agent
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-binaries
+          path: agent-binaries.tar
+          if-no-files-found: error
+
   package:
     name: ${{ matrix.name }}
+    needs: agent
     strategy:
       fail-fast: false
       matrix:
@@ -74,10 +113,6 @@ jobs:
         with:
           bun-version: 1.4.0
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.26.5"
-
       - run: bun ci
 
       - name: Build shared packages
@@ -87,9 +122,20 @@ jobs:
           bun run --filter @pdmux/ui build
           bun run --filter @pdmux/mcp build
 
-      - name: Build embedded services and host agent
+      # A relative path keeps GNU tar on Windows from reading a drive letter as a host.
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-binaries
+          path: .agent-binaries
+
+      - name: Restore the shared host-agent binaries
+        shell: bash
         run: |
-          bun run build:agent
+          tar -xf .agent-binaries/agent-binaries.tar -C apps/web/static
+          rm -rf .agent-binaries
+
+      - name: Build embedded services
+        run: |
           bun run --filter pdmux-api build
           bun run --filter pdmux-web build
           bun run --filter pdmux-desktop build
