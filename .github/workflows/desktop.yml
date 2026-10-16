@@ -38,6 +38,13 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request supersedes the packages of the older one. A release
+# calls this workflow from a tag, so every other event gets a group of its own and is
+# never cancelled.
+concurrency:
+  group: desktop-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # The host-agent binaries are cross-compiled, so their bytes do not depend on the
   # runner that builds them. Building them once here, with the Go module and build
