@@ -1,6 +1,7 @@
 import type { RequestHandler } from "@sveltejs/kit";
 
 import { backendBaseUrl, proxyRequest } from "#lib/server/backend-proxy.js";
+import { withCallerOrigin } from "#lib/server/caller-origin.js";
 
 /**
  * The public MCP endpoint, proxied straight through to the API.
@@ -15,7 +16,7 @@ import { backendBaseUrl, proxyRequest } from "#lib/server/backend-proxy.js";
  * it an HTML error page instead.
  */
 const handler: RequestHandler = ({ request, getClientAddress }) =>
-  proxyRequest(request, `${backendBaseUrl()}/mcp`, getClientAddress());
+  proxyRequest(withCallerOrigin(request), `${backendBaseUrl()}/mcp`, getClientAddress());
 
 export const GET = handler;
 export const POST = handler;

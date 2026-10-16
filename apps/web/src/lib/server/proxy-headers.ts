@@ -1,3 +1,5 @@
+import { CALLER_ORIGIN_HEADER } from "./caller-origin";
+
 /**
  * Application-owned header names that the managed /api proxy (backend-proxy.ts)
  * passes through in addition to its built-in lists. Names are case-insensitive.
@@ -22,6 +24,8 @@ export const APP_FORWARDED_REQUEST_HEADERS: readonly string[] = [
   "content-range",
   "x-transfer-offset",
   "x-transfer-sha256",
+  // The origin the caller reached; the routes set it, see caller-origin.ts.
+  CALLER_ORIGIN_HEADER,
 ];
 export const APP_RELAYED_RESPONSE_HEADERS: readonly string[] = [
   "x-accel-buffering",

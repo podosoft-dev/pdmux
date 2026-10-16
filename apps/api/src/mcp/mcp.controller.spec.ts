@@ -9,7 +9,7 @@ import type { HostsService } from "../hosts/hosts.service";
 import type { HostServicesService } from "../hosts/host-services.service";
 import type { MetricsService } from "../metrics/metrics.service";
 import type { McpAuthService } from "./mcp-auth.service";
-import { McpController } from "./mcp.controller";
+import { McpController, publicOrigin } from "./mcp.controller";
 
 function controller(
   enabled: boolean,
@@ -88,5 +88,36 @@ describe("MCP request boundary", () => {
     expect(response.status).toBe(405);
     expect(response.headers.get("allow")).toBe("POST");
     expect(authenticate).toHaveBeenCalledWith("secret");
+  });
+});
+
+describe("[TC-PDMCP-062] the origin the caller reached", () => {
+  const proxied = (headers: Record<string, string>): Request =>
+    new Request("http://api:5002/mcp", { method: "POST", headers: { host: "api:5002", ...headers } });
+
+  it("comes from the web routes' header, not from forwarding headers a caller can send", () => {
+    expect(publicOrigin(proxied({ "x-pdmux-caller-origin": "https://dash.example.com" }))).toBe("https://dash.example.com");
+    expect(publicOrigin(proxied({ "x-forwarded-host": "evil.example.com", "x-forwarded-proto": "https" })))
+      .toBe("http://api:5002");
+    // Only a bare http(s) origin counts.
+    for (const value of ["https://dash.example.com/path", "javascript:alert(1)", "dash.example.com"]) {
+      expect(publicOrigin(proxied({ "x-pdmux-caller-origin": value }))).toBe("http://api:5002");
+    }
+  });
+
+  it("[TC-PDMCP-060] is what a browser's Origin must match", async () => {
+    const authenticate = mock(async (_key: string): Promise<never> => null as never);
+    const same = await controller(false, authenticate).handle(proxied({
+      origin: "https://dash.example.com",
+      "x-pdmux-caller-origin": "https://dash.example.com",
+    }));
+    expect(same.status).toBe(404);
+
+    await expect(controller(true, authenticate).handle(proxied({
+      origin: "https://evil.example.com",
+      "x-forwarded-host": "evil.example.com",
+      authorization: "Bearer secret",
+    }))).rejects.toMatchObject({ code: "MCP_ORIGIN_NOT_ALLOWED", statusCode: 403 } satisfies Partial<AppException>);
+    expect(authenticate).not.toHaveBeenCalled();
   });
 });

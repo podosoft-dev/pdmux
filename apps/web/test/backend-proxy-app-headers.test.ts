@@ -1,5 +1,8 @@
+import type { RequestEvent } from "@sveltejs/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { proxyRequest } from "../src/lib/server/backend-proxy";
+import { POST as proxyApi } from "../src/routes/api/[...path]/+server";
+import { POST as proxyMcp } from "../src/routes/mcp/+server";
 
 /**
  * pdmux's own header names live in the app-owned `proxy-headers.ts`, not in the
@@ -12,6 +15,10 @@ describe("[TC-PDMCP-062] the web proxy carries what MCP and resumable transfers 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
+
+  /** A route event for a request that adapter-bun has already put on the public origin. */
+  const event = (request: Request): RequestEvent =>
+    ({ request, url: new URL(request.url), getClientAddress: () => "203.0.113.7" }) as unknown as RequestEvent;
 
   it("forwards the app's request headers and the origin the caller reached, and drops the rest", async () => {
     let sent: Headers | undefined;
@@ -29,19 +36,23 @@ describe("[TC-PDMCP-062] the web proxy carries what MCP and resumable transfers 
         "last-event-id": "41",
         "content-range": "bytes 0-9/10",
         "x-unlisted": "dropped",
+        // A caller cannot choose the origin the API hands out.
+        "x-pdmux-caller-origin": "https://evil.example.com",
       },
     });
-    await proxyRequest(request, "http://api:5002/mcp");
+    await proxyMcp(event(request));
 
     expect(sent?.get("mcp-protocol-version")).toBe("2025-06-18");
     expect(sent?.get("mcp-session-id")).toBe("session-1");
     expect(sent?.get("last-event-id")).toBe("41");
     expect(sent?.get("content-range")).toBe("bytes 0-9/10");
-    // The MCP install command is built from these; without them it names the
-    // API's container, an address that resolves nowhere outside the network.
-    expect(sent?.get("x-forwarded-host")).toBe("dash.example.com");
-    expect(sent?.get("x-forwarded-proto")).toBe("https");
+    // The MCP install command is built from this; without it the API names its
+    // own container, an address that resolves nowhere outside the network.
+    expect(sent?.get("x-pdmux-caller-origin")).toBe("https://dash.example.com");
     expect(sent?.has("x-unlisted")).toBe(false);
+
+    await proxyApi(event(new Request("http://box.lan:5001/api/mcp/keys", { method: "POST", body: "{}" })));
+    expect(sent?.get("x-pdmux-caller-origin")).toBe("http://box.lan:5001");
   });
 
   it("relays the app's response headers", async () => {

@@ -21,6 +21,39 @@ import type { McpUserIdentity } from "./user-mcp-keys.service";
 
 export type McpEnabled = () => Promise<boolean>;
 
+/** Set by the web routes from the origin the caller reached; see publicOrigin. */
+export const CALLER_ORIGIN_HEADER = "x-pdmux-caller-origin";
+
+/**
+ * CALLER_ORIGIN_HEADER, which the web routes set from the URL the caller reached
+ * (apps/web/src/lib/server/caller-origin.ts), or null when it is absent or not a
+ * bare http(s) origin.
+ */
+export function callerOrigin(request: Request): URL | null {
+  const value = request.headers.get(CALLER_ORIGIN_HEADER);
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === value ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The origin a caller can actually reach, as the web server's proxy reports it.
+ *
+ * The install command this hands back is run on another machine, so it must
+ * carry the PUBLIC origin — `host` alone would emit the container's own name
+ * behind a reverse proxy, and the one-liner would fail on the target.
+ */
+export function publicOrigin(request: Request): string {
+  const reported = callerOrigin(request);
+  if (reported) return reported.origin;
+  const url = new URL(request.url);
+  return `${url.protocol}//${request.headers.get("host") ?? url.host}`;
+}
+
 /**
  * The endpoint a coding CLI on a host connects to.
  *
@@ -128,7 +161,7 @@ export class McpController {
       git: this.git,
       enrollments: this.enrollments,
       exec: this.exec,
-      origin: McpController.publicOrigin(request),
+      origin: publicOrigin(request),
     };
 
     let server;
@@ -156,7 +189,7 @@ export class McpController {
           audit: (entry) => this.recordToolAudit(request, identity, entry),
         }),
         scopeLabel: identity.organizationId.startsWith("personal:") ? "your machines" : identity.organizationId,
-        origin: McpController.publicOrigin(request),
+        origin: publicOrigin(request),
         // ⚠ EFFECTIVE, never the stored tier — a demoted owner's token weakens here.
         tier: identity.effectiveTier,
       });
@@ -236,7 +269,7 @@ export class McpController {
   private assertOrigin(request: Request): void {
     const origin = request.headers.get("origin");
     if (!origin) return;
-    const expected = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+    const expected = callerOrigin(request)?.host ?? request.headers.get("host");
     try {
       if (!expected || new URL(origin).host !== expected) {
         throw new AppException("MCP_ORIGIN_NOT_ALLOWED", "MCP origin is not allowed", 403);
@@ -253,19 +286,5 @@ export class McpController {
     if (!header?.startsWith("Bearer ")) return null;
     const value = header.slice("Bearer ".length).trim();
     return value.length > 0 ? value : null;
-  }
-
-  /**
-   * The origin a caller can actually reach, rebuilt from the proxy's headers.
-   *
-   * The install command this hands back is run on another machine, so it must
-   * carry the PUBLIC origin — `host` alone would emit the container's own name
-   * behind a reverse proxy, and the one-liner would fail on the target.
-   */
-  private static publicOrigin(request: Request): string {
-    const url = new URL(request.url);
-    const protocol = request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
-    const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? url.host;
-    return `${protocol}://${host}`;
   }
 }

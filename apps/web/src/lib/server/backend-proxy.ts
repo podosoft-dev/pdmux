@@ -532,18 +532,6 @@ export async function proxyRequest(
   // Forward the resolved client IP so the API (better-auth) can record it.
   const forwardedIp = normalizeClientIp(clientAddress);
   if (forwardedIp) headers.set("x-forwarded-for", forwardedIp);
-  // ⚠ AND THE ORIGIN THE CALLER ACTUALLY REACHED. Without these the API sees only
-  // its own container name, and anything it builds an absolute URL from — the MCP
-  // endpoint's install command is the case that caught this — hands out an address
-  // that resolves nowhere outside the compose network.
-  try {
-    const incoming = new URL(request.url);
-    headers.set("x-forwarded-host", incoming.host);
-    headers.set("x-forwarded-proto", incoming.protocol.replace(":", ""));
-  } catch {
-    // A request without a parseable URL cannot happen through SvelteKit; if it
-    // ever does, the API falls back to its own host rather than failing.
-  }
 
   const { pathname } = new URL(request.url);
   if (!backendReachable()) {
