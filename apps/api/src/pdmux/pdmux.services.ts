@@ -55,7 +55,7 @@ import {
   STALE_HOSTS_JOB,
   STALE_HOSTS_QUEUE,
 } from "../hosts/stale-hosts.queue";
-import { BullMqJobProvider, type JobProvider, LocalJobProvider } from "../runtime/jobs";
+import { type JobProvider, LocalJobProvider, superviseBullMqJobs } from "../runtime/jobs";
 import { HostMcpKey } from "../mcp/host-mcp-key.entity";
 import { HostMcpKeysService } from "../mcp/host-mcp-keys.service";
 import { AgentKitController } from "../mcp/agent-kit.controller";
@@ -124,19 +124,17 @@ export const PDMUX = Symbol("pdmux") as ServiceKey<PdmuxServices>;
 const PDMUX_LIFECYCLE = Symbol("pdmux-lifecycle") as ServiceKey<TerminalRelayService>;
 const PDMUX_JOBS = Symbol("pdmux-jobs") as ServiceKey<JobProvider>;
 
-async function scheduleMaintenance(jobs: JobProvider): Promise<void> {
-  await Promise.allSettled([
-    jobs.repeat(STALE_HOSTS_QUEUE, STALE_HOSTS_JOB, {}, {
-      id: STALE_HOSTS_JOB,
-      cron: STALE_HOSTS_CRON,
-      intervalMs: 24 * 60 * 60 * 1_000,
-    }),
-    jobs.repeat(METRICS_QUEUE, METRICS_PRUNE_JOB, {}, {
-      id: METRICS_PRUNE_JOB,
-      cron: METRICS_PRUNE_CRON,
-      intervalMs: 60 * 60 * 1_000,
-    }),
-  ]);
+function scheduleMaintenance(jobs: JobProvider): void {
+  jobs.repeat(STALE_HOSTS_QUEUE, STALE_HOSTS_JOB, {}, {
+    id: STALE_HOSTS_JOB,
+    cron: STALE_HOSTS_CRON,
+    intervalMs: 24 * 60 * 60 * 1_000,
+  });
+  jobs.repeat(METRICS_QUEUE, METRICS_PRUNE_JOB, {}, {
+    id: METRICS_PRUNE_JOB,
+    cron: METRICS_PRUNE_CRON,
+    intervalMs: 60 * 60 * 1_000,
+  });
 }
 
 export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): PdmuxServices {
@@ -146,8 +144,10 @@ export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): Pdm
   const auth = services.resolve(AUTH);
   const audit = services.resolve(AUDIT);
   // Maintenance needs cron repeats, which PodoKit's job queue contract does not
-  // offer, so pdmux schedules them through its own provider.
-  const jobs: JobProvider = PROVIDERS.jobs === "local" ? new LocalJobProvider() : new BullMqJobProvider();
+  // offer, so pdmux schedules them through its own provider. BullMQ applies the
+  // schedules once its supervised connection reaches Redis, so startup never
+  // waits for Redis.
+  const jobs: JobProvider = PROVIDERS.jobs === "local" ? new LocalJobProvider() : superviseBullMqJobs(services);
   services.register(PDMUX_JOBS, jobs, () => jobs.close());
 
   const fleetSettings = new FleetSettingsService(dataSource.getRepository(FleetSetting));
@@ -261,6 +261,7 @@ export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): Pdm
 
   jobs.register(STALE_HOSTS_QUEUE, STALE_HOSTS_JOB, () => staleHosts.runOnce());
   jobs.register(METRICS_QUEUE, METRICS_PRUNE_JOB, () => metricsRetention.runOnce());
+  scheduleMaintenance(jobs);
   // The transfer service resumes what the previous process left behind, which
   // needs the database, so it starts once the first connection is made.
   const database = new ApplicationDatabase(dataSource, {
@@ -268,7 +269,7 @@ export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): Pdm
     stop: () => fileTransfers.close(),
   });
   superviseApplicationDatabase(services, database);
-  services.onStart(async () => {
+  services.onStart(() => {
     hosts.setConnectedProbe((hostId) => agentRegistry.isConnected(hostId));
     cloudflare.connect();
     agentEnrollments.connect();
@@ -276,7 +277,6 @@ export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): Pdm
     configPush.connect();
     detailRequests.connect();
     terminalRelay.attach();
-    await scheduleMaintenance(jobs);
   });
   // Registered after the database, so it closes first.
   services.register(PDMUX_LIFECYCLE, terminalRelay, () => terminalRelay.detach());

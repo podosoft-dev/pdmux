@@ -527,9 +527,28 @@ the database returns. Nothing needs restarting.
   to start (§1-2). If the database only becomes reachable later and its schema is behind,
   `pdmux-schema` stays down and the API keeps retrying, so running the migrations recovers it.
 
-⚠ **With the BullMQ job provider the API still needs Redis to start.** It schedules its maintenance
-jobs before it listens, and that waits until Redis answers. The worker still needs PostgreSQL to
-start.
+The worker still needs PostgreSQL to start.
+
+### 4-2. While Redis is unavailable
+
+With the BullMQ job provider the API also starts and keeps running without Redis, and recovers on
+its own when Redis returns.
+
+- `/health/ready` answers 503 and names the Redis checks that are down: `jobs` (enqueueing),
+  `pdmux-maintenance` (the maintenance schedules below) and `events` with the Redis events provider.
+- pdmux schedules its maintenance jobs (stale-host removal and metric retention) over a connection
+  that it opens in the background and retries with the same backoff as the database. Each time it
+  connects it applies the schedules again, so a Redis that restarted without its data gets them back.
+  The log records the outage once, as `Dependency connection failed; retrying in the background`
+  with `"dependency":"pdmux-maintenance"`, and the recovery as `Dependency connection restored`.
+- Enqueueing fails at once with 503 `JOBS_UNAVAILABLE` while Redis is unreachable, and within
+  `REDIS_COMMAND_TIMEOUT_MS` (1 s by default) when Redis stops answering.
+- The worker's BullMQ workers reconnect by themselves and process jobs again once Redis is back.
+
+Measured against disposable PostgreSQL 16 and Redis 7.4 (`bun run test:redis-recovery`): the API
+listened in 0.96 s from launch with Redis stopped, enqueueing answered 503 in 12 ms, readiness
+returned 0.5 s after Redis started, and after Redis was replaced by an empty one the schedules were
+back and the worker completed a job 0.5 s after readiness.
 
 ---
 

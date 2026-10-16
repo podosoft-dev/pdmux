@@ -102,6 +102,10 @@ Merge added module settings from `.env.example` into an existing `.env`.
 - Run `bun run test:database-recovery` for changes to API startup or database access. It starts the API
   from source against disposable PostgreSQL, then stops, pauses, and restarts the database, and checks
   that the API listens, answers 503 `DATABASE_UNAVAILABLE`, and recovers without a restart.
+- Run `bun run test:redis-recovery` for changes to API startup, job scheduling, or Redis access. It
+  starts the API and the worker from source against disposable PostgreSQL and Redis, starts the API
+  with Redis stopped, then replaces Redis with an empty one, and checks that the API listens, answers
+  503 `JOBS_UNAVAILABLE` at once, schedules the maintenance jobs again, and that the worker runs jobs.
 - CI also builds and tests final API images on native AMD64 and ARM64 runners without publishing them.
   Both migration-image jobs must pass before merging migration or packaging changes.
 - e2e (Playwright, ships in `tests/`): `bun run test:e2e`.
