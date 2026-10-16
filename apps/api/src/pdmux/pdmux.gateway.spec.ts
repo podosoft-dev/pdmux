@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { AGENT_KEY_HEADER } from "@pdmux/protocol";
 import { isVerifyDial, VerifyDialBudget, VERIFY_DIALS_PER_WINDOW } from "../agents/agent-verify";
+import { databaseUnavailable } from "../auth/database-outage";
 import type { BrowserSocket } from "../terminal/terminal-relay.service";
 import { PdmuxGateway, type TerminalAcceptContext } from "./pdmux.gateway";
 import type { PdmuxServices } from "./pdmux.services";
@@ -155,6 +156,52 @@ describe("PdmuxGateway authorization", () => {
       hostId: "host-1",
       config: { heartbeatIntervalSec: 15 },
     });
+  });
+});
+
+describe("[TC-PDHOST-033] PdmuxGateway while pdmux's database is unavailable", () => {
+  it("keeps a connected agent and the process alive when its frames cannot be stored", async () => {
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown): void => { unhandled.push(reason); };
+    // Bun's process type declares only its own `off` event; the emitter's is the general one.
+    const emitter: NodeJS.EventEmitter = process;
+    emitter.on("unhandledRejection", listener);
+    try {
+      const failures = [databaseUnavailable(), new Error("relation \"hosts\" does not exist")];
+      const handle = mock(async (): Promise<never> => { throw failures.shift(); });
+      const gateway = new PdmuxGateway(services({
+        agentTokens: { markUsed: mock(async () => undefined) } as unknown as PdmuxServices["agentTokens"],
+        agentRegistry: { register: mock(() => undefined) } as unknown as PdmuxServices["agentRegistry"],
+        agentConfig: { build: mock(async () => ({ heartbeatIntervalSec: 15 })) } as unknown as PdmuxServices["agentConfig"],
+        agentAck: { ackAllRepos: mock(async () => 0) } as unknown as PdmuxServices["agentAck"],
+        agentIngest: { handle } as unknown as PdmuxServices["agentIngest"],
+      }));
+      const ws = socket();
+      await gateway.openAgent(ws, { hostId: "host-1", organizationId: "org-1", tokenId: "token-1", tokenExpiresAt: null, verify: false });
+
+      gateway.agentMessage(ws, { type: "heartbeat" });
+      gateway.agentMessage(ws, { type: "heartbeat" });
+      await Bun.sleep(20);
+
+      expect(handle).toHaveBeenCalledTimes(2);
+      expect(unhandled).toEqual([]);
+      expect(ws.close).not.toHaveBeenCalled();
+    } finally {
+      emitter.off("unhandledRejection", listener);
+    }
+  });
+
+  it("closes an agent socket it could not open instead of leaving it without a welcome", async () => {
+    const gateway = new PdmuxGateway(services({
+      agentTokens: { markUsed: mock(async (): Promise<never> => { throw databaseUnavailable(); }) } as unknown as PdmuxServices["agentTokens"],
+      agentRegistry: { register: mock(() => undefined) } as unknown as PdmuxServices["agentRegistry"],
+    }));
+    const ws = socket();
+
+    await gateway.openAgent(ws, { hostId: "host-1", organizationId: "org-1", tokenId: "token-1", tokenExpiresAt: null, verify: false });
+
+    expect(ws.close).toHaveBeenCalledWith(1011, "config unavailable");
+    expect(ws.send).not.toHaveBeenCalled();
   });
 });
 

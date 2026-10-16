@@ -4,6 +4,7 @@ import {
   type AgentRefusalReason,
 } from "@pdmux/protocol";
 import type { AuthSession } from "../auth/auth.service";
+import { AppException } from "../common/app-exception";
 import { ProductLogger } from "../logging/product-logger";
 import { SERVER_VERSION } from "../version";
 import { isVerifyDial, VerifyDialBudget } from "../agents/agent-verify";
@@ -120,8 +121,8 @@ export class PdmuxGateway {
       this.agentConnections.set(socket, { hostId, alive: true });
       this.services.agentRegistry.register(hostId, socket, tokenId);
     }
-    await this.services.agentTokens.markUsed(tokenId);
     try {
+      await this.services.agentTokens.markUsed(tokenId);
       const config = await this.services.agentConfig.build(hostId, organizationId);
       this.send(socket, {
         type: "welcome",
@@ -136,7 +137,7 @@ export class PdmuxGateway {
       }
       await this.services.agentAck.ackAllRepos(hostId);
     } catch (error) {
-      this.logger.error(`Build agent config failed host=${hostId}: ${String(error)}`);
+      this.logger.error(`Open agent session failed host=${hostId}: ${String(error)}`);
       socket.close(1011, "config unavailable");
     }
   }
@@ -150,7 +151,10 @@ export class PdmuxGateway {
       this.logger.warn(`Non-JSON agent frame host=${connection.hostId}`);
       return;
     }
-    void this.services.agentIngest.handle(connection.hostId, parsed);
+    // Bun exits on an unhandled rejection, and every frame that is stored fails
+    // while PostgreSQL is down. The socket stays open: terminals do not need it.
+    void this.services.agentIngest.handle(connection.hostId, parsed)
+      .catch((error: unknown) => this.ingestFailed(connection.hostId, error));
   }
 
   agentPong(socket: BunSocket): void {
@@ -267,6 +271,15 @@ export class PdmuxGateway {
       connection.alive = false;
       try { socket.ping(); } catch { /* collected on the next pass */ }
     }
+  }
+
+  private ingestFailed(hostId: string, error: unknown): void {
+    // Readiness already reports the outage; a line per frame would repeat it.
+    if (error instanceof AppException && error.code === "DATABASE_UNAVAILABLE") {
+      this.logger.debug(`Drop agent frame host=${hostId}: the database is unavailable`);
+      return;
+    }
+    this.logger.warn(`Store agent frame failed host=${hostId}: ${String(error)}`);
   }
 
   private noteRefusal(reason: AgentRefusalReason, hostId: string | null, request: Request): void {

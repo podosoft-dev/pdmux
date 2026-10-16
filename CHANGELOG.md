@@ -11,6 +11,9 @@
   built concurrently.
 - Keep pdmux's proxy header names and the public installer path in the application-owned
   `proxy-headers.ts` and `public-paths.ts`, so PodoKit updates leave the managed lists unchanged.
+- Keep the API running when an agent's heartbeat or repository report cannot be stored. During a
+  database outage the first such frame ended the process; it is now dropped and the agent stays
+  connected.
 
 ## 0.14.0
 
