@@ -17,7 +17,7 @@
   import { toast } from "svelte-sonner";
   import { api } from "#lib/api.js";
   import { listAdminSessions, revokeAdminSession, type AdminSession } from "#lib/admin/sessions.js";
-  import { DEFAULT_USER_SORT, keepLatestFilter, listUsersQuery } from "#lib/admin/users.js";
+  import { DEFAULT_USER_SORT, adminUsersQuery, listAdminUsers } from "#lib/admin/users.js";
   import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
   import { cn } from "#lib/utils.js";
   import { deviceLabel } from "#lib/device-label.js";
@@ -64,19 +64,6 @@
   let appliedSearchField = $state("email");
   let filterValues = $state<Record<string, string>>({ role: "", status: "" });
   let appliedFilters = $state<Record<string, string>>({ role: "", status: "" });
-  let stagedFilters = { role: "", status: "" };
-
-  // The list endpoint takes a single filter, so picking a role clears the status
-  // and vice versa (see keepLatestFilter).
-  $effect(() => {
-    const next = keepLatestFilter(stagedFilters, {
-      role: filterValues.role ?? "",
-      status: filterValues.status ?? "",
-    });
-    stagedFilters = next;
-    if (filterValues.role !== next.role) filterValues.role = next.role;
-    if (filterValues.status !== next.status) filterValues.status = next.status;
-  });
 
   const columns = $derived<DataTableColumn<Row>[]>([
     { key: "name", label: i18n.t.users.name, sortable: true },
@@ -103,6 +90,7 @@
       label: i18n.t.users.status,
       options: [
         { value: "", label: i18n.t.toolbar.all },
+        { value: "active", label: i18n.t.users.active },
         { value: "pending", label: i18n.t.users.pendingApproval },
         { value: "banned", label: i18n.t.users.banned },
       ],
@@ -118,7 +106,7 @@
     const request = ++latestRequest;
     const sortKey = sort ? `${sort.key}:${sort.dir}` : "";
     if (sortKey !== loadedSortKey) page = 1;
-    const query = listUsersQuery({
+    const query = adminUsersQuery({
       page,
       perPage: PAGE_SIZE,
       sort,
@@ -128,12 +116,18 @@
       status: appliedFilters.status ?? "",
     });
     loading = true;
-    const { data: res, error } = await api.auth.admin.listUsers({ query });
+    let result: { items: Row[]; total: number };
+    try {
+      result = await listAdminUsers(api, query);
+    } catch {
+      if (request !== latestRequest) return;
+      loading = false;
+      return void toast.error(i18n.t.users.loadFailed);
+    }
     if (request !== latestRequest) return;
     loading = false;
-    if (error) return void toast.error(i18n.t.users.loadFailed);
-    const rows = (res?.users ?? []) as Row[];
-    const count = res?.total ?? rows.length;
+    const rows = result.items;
+    const count = result.total;
     // An action can empty the last page; show the one before it instead.
     const lastPage = Math.max(Math.ceil(count / PAGE_SIZE), 1);
     if (rows.length === 0 && page > lastPage) {
