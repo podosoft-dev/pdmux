@@ -1,8 +1,10 @@
 import { SQL } from "bun";
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { connect, createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { QueryFailedError } from "typeorm";
 import { validateEnv } from "../config/env.validation";
 import { PROVIDERS } from "../config/providers";
 import {
@@ -199,6 +201,45 @@ describe("isDatabaseUnavailable", () => {
     expect(isDatabaseUnavailable(new Error("Failed to save", { cause: socket("ECONNREFUSED") }))).toBe(true);
   });
 
+  it("recognizes host lookup failures from Bun and Node", () => {
+    // Bun reports an unknown host as ENOTFOUND and a lookup timeout as ETIMEOUT;
+    // Node reports a lookup it could not complete as EAI_AGAIN.
+    for (const code of ["ENOTFOUND", "ETIMEOUT", "EAI_AGAIN"]) {
+      expect(isDatabaseUnavailable(Object.assign(new Error(`getaddrinfo ${code} db`), { code }))).toBe(true);
+    }
+  });
+
+  it("recognizes a pg client that was ended or broke while a query waited", () => {
+    for (const message of [
+      "Connection terminated",
+      "Client was closed and is not queryable",
+      "Client has encountered a connection error and is not queryable",
+    ]) {
+      expect(isDatabaseUnavailable(new Error(message))).toBe(true);
+    }
+  });
+
+  it("follows the per-address errors of a connection that tried several addresses", () => {
+    const refused = (address: string): Error =>
+      Object.assign(new Error(`connect ECONNREFUSED ${address}:5432`), { code: "ECONNREFUSED" });
+    expect(isDatabaseUnavailable(new AggregateError([refused("::1"), refused("127.0.0.1")]))).toBe(true);
+    expect(isDatabaseUnavailable(new AggregateError([new Error("first"), new Error("second")]))).toBe(false);
+  });
+
+  it("follows the driver error that TypeORM wraps", () => {
+    const failed = (driverError: Error): QueryFailedError => new QueryFailedError("SELECT 1", [], driverError);
+    expect(isDatabaseUnavailable(failed(new Error("Connection terminated")))).toBe(true);
+    const refused = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), { code: "ECONNREFUSED" });
+    expect(isDatabaseUnavailable(failed(new AggregateError([refused])))).toBe(true);
+    expect(isDatabaseUnavailable(failed(Object.assign(new Error("duplicate key"), { code: "23505" })))).toBe(false);
+  });
+
+  it("stops at an error that wraps itself", () => {
+    const loop = new Error("outer");
+    loop.cause = new Error("inner", { cause: loop });
+    expect(isDatabaseUnavailable(loop)).toBe(false);
+  });
+
   it("leaves query and application errors alone", () => {
     expect(isDatabaseUnavailable(new SQL.PostgresError("syntax error", { code: "ERR_POSTGRES_SYNTAX_ERROR" })))
       .toBe(false);
@@ -210,6 +251,31 @@ describe("isDatabaseUnavailable", () => {
     expect(isDatabaseUnavailable(Object.assign(new Error("not found"), { code: "ENOENT" }))).toBe(false);
     expect(isDatabaseUnavailable("ERR_POSTGRES_CONNECTION_TIMEOUT")).toBe(false);
     expect(isDatabaseUnavailable(undefined)).toBe(false);
+  });
+
+  it("recognizes a real lookup of a host that does not exist", async () => {
+    // .invalid never resolves (RFC 2606). A resolver that does not answer at all
+    // fails with ETIMEOUT after about 16 seconds, which is recognized too.
+    const error: unknown = await fetch("http://database.invalid/").then(() => undefined, (reason: unknown) => reason);
+    expect(isDatabaseUnavailable(error)).toBe(true);
+  }, 30_000);
+
+  it("recognizes a real refused connection to localhost", async () => {
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    // localhost may resolve to ::1 and 127.0.0.1; a client that tries both fails
+    // with an AggregateError of the two refusals.
+    const error = await new Promise<unknown>((resolve) => {
+      const socket = connect({ host: "localhost", port });
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve(undefined);
+      });
+      socket.once("error", resolve);
+    });
+    expect(isDatabaseUnavailable(error)).toBe(true);
   });
 
   it("recognizes a real Bun SQL connection timeout", async () => {

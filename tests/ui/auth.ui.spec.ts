@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { safeAuthRedirect, withAuthRedirect } from "../../apps/web/src/lib/auth-redirect";
 import { anonState, ADMIN } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
+import { exclusive } from "../helpers/exclusive";
 
 test.use({ storageState: anonState });
 
@@ -66,39 +67,42 @@ test("closed social registration errors explain that existing users may sign in"
 });
 
 test("configured social providers appear on the login page", async ({ page, playwright }) => {
-  const admin = await playwright.request.newContext({
-    baseURL: base,
-    extraHTTPHeaders: { origin: base },
-  });
-  await admin.post("/api/auth/sign-in/email", {
-    data: { email: ADMIN.email, password: ADMIN.password },
-  });
-  try {
-    expect(
-      (await admin.put("/api/account/auth-config", {
-        data: {
-          social: {
-            google: {
-              enabled: true,
-              clientId: "dummy-google-client-id",
-              clientSecret: "dummy-google-client-secret",
+  test.slow();
+  await exclusive("social-providers", async () => {
+    const admin = await playwright.request.newContext({
+      baseURL: base,
+      extraHTTPHeaders: { origin: base },
+    });
+    await admin.post("/api/auth/sign-in/email", {
+      data: { email: ADMIN.email, password: ADMIN.password },
+    });
+    try {
+      expect(
+        (await admin.put("/api/account/auth-config", {
+          data: {
+            social: {
+              google: {
+                enabled: true,
+                clientId: "dummy-google-client-id",
+                clientSecret: "dummy-google-client-secret",
+              },
             },
           },
-        },
-      })).ok(),
-    ).toBeTruthy();
-    await expect
-      .poll(async () => {
-        await page.goto("/login");
-        return page.getByRole("button", { name: "Continue with Google" }).count();
-      }, { timeout: 8_000 })
-      .toBe(1);
-  } finally {
-    await admin.put("/api/account/auth-config", {
-      data: { social: { google: { enabled: false } } },
-    });
-    await admin.dispose();
-  }
+        })).ok(),
+      ).toBeTruthy();
+      await expect
+        .poll(async () => {
+          await page.goto("/login");
+          return page.getByRole("button", { name: "Continue with Google" }).count();
+        }, { timeout: 8_000 })
+        .toBe(1);
+    } finally {
+      await admin.put("/api/account/auth-config", {
+        data: { social: { google: { enabled: false } } },
+      });
+      await admin.dispose();
+    }
+  });
 });
 
 test("forgot-password shows a sent confirmation", async ({ page }) => {

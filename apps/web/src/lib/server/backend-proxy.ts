@@ -218,6 +218,135 @@ export function backendBaseUrl(): string {
   return process.env.BACKEND_INTERNAL_URL ?? "http://localhost:5002";
 }
 
+/**
+ * Milliseconds one server-side API call may take, response body included, and
+ * how long the proxy waits for response headers before it checks whether the
+ * API still answers at all.
+ */
+const DEFAULT_BACKEND_TIMEOUT_MS = 2_000;
+/**
+ * Milliseconds the proxy waits for the API's response headers, matching the
+ * API's default idle timeout. Streamed bodies are not cut off once they start.
+ */
+const DEFAULT_BACKEND_PROXY_TIMEOUT_MS = 30_000;
+/** Seconds between checks while the API is unreachable, also sent as Retry-After. */
+const BACKEND_RETRY_AFTER_SECONDS = 2;
+const MAX_TIMER_MS = 2_147_483_647;
+
+/** A whole number of milliseconds from the environment, or the default when unset or empty. */
+export function envMilliseconds(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_TIMER_MS) {
+    throw new Error(
+      `${name} must be a whole number of milliseconds from 1 to ${MAX_TIMER_MS}: ${JSON.stringify(raw)}`,
+    );
+  }
+  return value;
+}
+
+export function backendTimeoutMs(): number {
+  return envMilliseconds("BACKEND_TIMEOUT_MS", DEFAULT_BACKEND_TIMEOUT_MS);
+}
+
+function backendProxyTimeoutMs(): number {
+  return envMilliseconds("BACKEND_PROXY_TIMEOUT_MS", DEFAULT_BACKEND_PROXY_TIMEOUT_MS);
+}
+
+// An invalid value stops the server when this module loads instead of failing
+// every request that reads it.
+backendTimeoutMs();
+backendProxyTimeoutMs();
+
+// The API counts as unreachable only when GET /health gets no HTTP answer
+// within BACKEND_TIMEOUT_MS. It is checked when a request gets no answer, or
+// when the proxy waits longer than that for response headers, so one slow
+// endpoint does not fail every request in the process. Once the API is found
+// unreachable, requests still waiting for it fail, new ones fail at once instead
+// of each waiting for a refused connection, a DNS lookup, or a hung server, and
+// a background check runs at most every BACKEND_RETRY_AFTER_SECONDS. Any HTTP
+// answer, including an error status, means the API is reachable.
+let unreachable = false;
+let answers = 0;
+let lastCheckEnded = 0;
+let pendingCheck: Promise<void> | undefined;
+let outage = new AbortController();
+
+/** Aborts when the API is found unreachable, failing the requests that still wait for it. */
+export function backendOutageSignal(): AbortSignal {
+  return outage.signal;
+}
+
+/** Check whether the API answers at all. Concurrent callers share one check. */
+export function checkBackend(): Promise<void> {
+  if (!pendingCheck) {
+    const answersBefore = answers;
+    pendingCheck = fetch(`${backendBaseUrl()}/health`, { signal: AbortSignal.timeout(backendTimeoutMs()) })
+      .then(
+        (response) => {
+          reportBackendAnswer();
+          return response.body?.cancel().catch(() => undefined);
+        },
+        () => {
+          if (answers !== answersBefore) return;
+          unreachable = true;
+          outage.abort(new DOMException("The API is unavailable", "AbortError"));
+          outage = new AbortController();
+        },
+      )
+      .finally(() => {
+        lastCheckEnded = Date.now();
+        pendingCheck = undefined;
+      });
+  }
+  return pendingCheck;
+}
+
+/** Record an HTTP answer from the API, whatever its status. */
+export function reportBackendAnswer(): void {
+  answers += 1;
+  unreachable = false;
+}
+
+/** Record a request that got no HTTP answer, and check the API unless it is already known to be down. */
+export function reportBackendFailure(): Promise<void> {
+  return unreachable ? Promise.resolve() : checkBackend();
+}
+
+/**
+ * False while the API is known to be unreachable. Such a call also starts a
+ * background check when none ran in the last BACKEND_RETRY_AFTER_SECONDS.
+ */
+export function backendReachable(now = Date.now()): boolean {
+  if (!unreachable) return true;
+  if (!pendingCheck && now - lastCheckEnded >= BACKEND_RETRY_AFTER_SECONDS * 1000) void checkBackend();
+  return false;
+}
+
+function backendFailure(path: string, statusCode: 503 | 504): Response {
+  const timedOut = statusCode === 504;
+  return Response.json(
+    {
+      success: false,
+      error: {
+        code: timedOut ? "BACKEND_TIMEOUT" : "BACKEND_UNAVAILABLE",
+        message: timedOut ? "The API did not respond in time" : "The API is unavailable",
+        statusCode,
+        path,
+        timestamp: new Date().toISOString(),
+      },
+    },
+    {
+      status: statusCode,
+      headers: {
+        "cache-control": "no-store",
+        ...(timedOut ? {} : { "retry-after": String(BACKEND_RETRY_AFTER_SECONDS) }),
+      },
+    },
+  );
+}
+
 // Normalize the resolved client IP for the forwarded header. better-auth stores
 // IPv4 as-is but anonymizes IPv6 (masks the host bits), so an IPv6 loopback would
 // be recorded as "::" — map loopback to 127.0.0.1 for a clean local value, and
@@ -265,8 +394,12 @@ export async function proxyRequest(
     // ever does, the API falls back to its own host rather than failing.
   }
 
-  const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const { pathname } = new URL(request.url);
+  if (!backendReachable()) {
+    request.body?.cancel().catch(() => undefined);
+    return backendFailure(pathname, 503);
+  }
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const transfer = /\/file-transfers(?:\/|$)/.test(pathname);
   if (transfer) server?.timeout(request, 60);
   let body: ArrayBuffer | Uint8Array<ArrayBuffer> | undefined;
@@ -303,16 +436,42 @@ export async function proxyRequest(
   // The API's agent deadline owns this wait. Bun's default ten-second idle
   // timeout must not reset a request that is verifying a large staged file.
   if (transfer) server?.timeout(request, 0);
-  const upstream = await fetch(targetUrl, {
-    method: request.method,
-    headers,
-    body,
-    redirect: "manual",
-    // Abort the upstream request when the browser disconnects. Without this, every
-    // closed EventSource or aborted request keeps its API socket open until Bun's
-    // fetch pool is exhausted and the web process stops serving requests.
-    signal: request.signal,
-  });
+  // The deadline, the health check, and the outage signal cover only the wait
+  // for response headers, so streamed bodies such as server-sent events are not
+  // cut off.
+  const waiting = new AbortController();
+  const deadline = setTimeout(
+    () => waiting.abort(new DOMException("The API did not respond in time", "TimeoutError")),
+    backendProxyTimeoutMs(),
+  );
+  const healthCheck = setTimeout(() => void checkBackend(), backendTimeoutMs());
+  const outage = backendOutageSignal();
+  const failOnOutage = (): void => waiting.abort(outage.reason);
+  outage.addEventListener("abort", failOnOutage);
+  let upstream: Response;
+  try {
+    upstream = await fetch(targetUrl, {
+      method: request.method,
+      headers,
+      body,
+      redirect: "manual",
+      // Abort the upstream request when the browser disconnects. Without this, every
+      // closed EventSource or aborted request keeps its API socket open until Bun's
+      // fetch pool is exhausted and the web process stops serving requests.
+      signal: AbortSignal.any([request.signal, waiting.signal]),
+    });
+  } catch (cause: unknown) {
+    // Nobody waits for an answer to a request the browser abandoned.
+    if (request.signal.aborted) throw cause;
+    if (outage.aborted) return backendFailure(pathname, 503);
+    void reportBackendFailure();
+    return backendFailure(pathname, waiting.signal.aborted ? 504 : 503);
+  } finally {
+    clearTimeout(deadline);
+    clearTimeout(healthCheck);
+    outage.removeEventListener("abort", failOnOutage);
+  }
+  reportBackendAnswer();
 
   const responseHeaders = new Headers();
   for (const name of relayedResponseHeaders) {

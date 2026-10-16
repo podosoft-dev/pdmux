@@ -1,6 +1,7 @@
 import { ApiError } from "@podosoft/podokit-api-client";
 import type { RequestEvent } from "@sveltejs/kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BackendUnavailableError } from "#lib/server/api.js";
 import { handle } from "./hooks.server";
 
 type SessionResult = {
@@ -13,7 +14,8 @@ const client = vi.hoisted(() => ({
   getSession: vi.fn<() => Promise<SessionResult>>(),
 }));
 
-vi.mock("#lib/server/api.js", () => ({
+vi.mock("#lib/server/api.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("#lib/server/api.js")>()),
   serverApiClient: () => ({ get: client.get, auth: { getSession: client.getSession } }),
 }));
 
@@ -98,6 +100,16 @@ describe("handle", () => {
     });
   });
 
+  it("treats an API known to be unreachable as an outage", async () => {
+    client.get.mockRejectedValue(new BackendUnavailableError());
+    client.getSession.mockRejectedValue(new BackendUnavailableError());
+
+    await expect(handle({ event: requestEvent("/account"), resolve })).rejects.toMatchObject({ status: 503 });
+    const event = requestEvent("/");
+    await handle({ event, resolve });
+    expect(event.locals).toMatchObject({ site: null, siteUnavailable: true, authUnavailable: true, user: null });
+  });
+
   it("confirms an anonymous visitor on a 401 session response", async () => {
     client.get.mockResolvedValue({ locale: null });
     client.getSession.mockResolvedValue({ data: null, error: { status: 401 } });
@@ -120,5 +132,16 @@ describe("handle", () => {
 
     expect(client.get).not.toHaveBeenCalled();
     expect(client.getSession).not.toHaveBeenCalled();
+  });
+
+  it("answers the health route without runtime lookups", async () => {
+    client.get.mockRejectedValue(new BackendUnavailableError());
+    client.getSession.mockRejectedValue(new BackendUnavailableError());
+
+    await handle({ event: requestEvent("/healthz"), resolve });
+
+    expect(client.get).not.toHaveBeenCalled();
+    expect(client.getSession).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledTimes(1);
   });
 });

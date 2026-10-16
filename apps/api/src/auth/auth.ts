@@ -3,7 +3,7 @@ import { APIError } from "better-auth/api";
 import { twoFactor, haveIBeenPwned, magicLink, emailOTP, username, multiSession, phoneNumber, organization, jwt, bearer, openAPI } from "better-auth/plugins";
 import { actionEmail, sendMail } from "../mail/mailer";
 import { sendSms } from "../sms/sms";
-import { assertUserCreationAllowed, createFeatureGate, readSignupOpen } from "./feature-gate";
+import { assertUserCreationAllowed, createFeatureGate, featureGatePlugin, readSignupOpen, type FeatureGateSettings } from "./feature-gate";
 import { featureFlags, isSignupOpen } from "./auth-config-store";
 import { orgAc, orgRoles } from "./org-permissions";
 import { authDatabase } from "./db";
@@ -51,7 +51,13 @@ function buildSocial(config: AuthConfig): NonNullable<BetterAuthOptions["socialP
 // server-enforced toggles) apply without a restart. Everything below the injection
 // markers is contributed by other PodoKit modules (admin-dashboard, audit-log).
 export function buildAuth(config: AuthConfig) {
+  // The feature gate reads the process-wide settings snapshot, so a rebuild does
+  // not start a new cache.
+  const gateSettings: FeatureGateSettings = { flags: featureFlags, signupOpen: isSignupOpen };
   const plugins: BetterAuthPlugin[] = [
+    // First, so a disabled feature answers 404 before another plugin's onRequest
+    // (such as the OIDC provider's discovery metadata) can answer.
+    featureGatePlugin(gateSettings),
     twoFactor(),
     magicLink({
       sendMagicLink: async ({ email, url }: { email: string; url: string; token: string }) => {
@@ -183,11 +189,11 @@ export function buildAuth(config: AuthConfig) {
   };
 
   // Request-time hooks. The feature gate turns the admin Settings toggles into a
-  // real server boundary (disabled features 404). It reads the process-wide
-  // settings snapshot, so a rebuild does not start a new cache. Other PodoKit
-  // modules add their own hooks below the marker.
+  // real server boundary (disabled features 404) for endpoint calls, including
+  // in-process auth.api calls the plugin above never sees. Other PodoKit modules
+  // add their own hooks below the marker.
   const hooks: NonNullable<BetterAuthOptions["hooks"]> = {
-    before: createFeatureGate({ flags: featureFlags, signupOpen: isSignupOpen }),
+    before: createFeatureGate(gateSettings),
   };
   // podokit:begin:auth-hooks
   hooks.after = auditAfterHook;

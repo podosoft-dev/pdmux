@@ -1,5 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { createHash, randomBytes } from "node:crypto";
+import { exclusive } from "../helpers/exclusive";
 import { ready } from "../helpers/hydration";
 
 // admin storageState (project default) — the admin is the resource owner.
@@ -14,6 +15,12 @@ const REDIRECT = "https://example.com/callback";
 // back-channel token exchange is driven by an OIDC client SDK / real RP — see
 // docs/modules.md for the manual round-trip checklist.
 test("OIDC provider: discovery, JWKS, client registration, authorize handoff", async ({ page, baseURL }) => {
+  // tests/api/auth.api.spec.ts also toggles the provider; the lock keeps the two apart.
+  test.slow();
+  await exclusive("oidc-provider", () => frontChannel(page, baseURL));
+});
+
+async function frontChannel(page: Page, baseURL: string | undefined): Promise<void> {
   const headers = { origin: baseURL ?? "" };
   const enabled = await page.request.put("/api/account/settings", {
     data: { oidcProvider: true },
@@ -30,7 +37,14 @@ test("OIDC provider: discovery, JWKS, client registration, authorize handoff", a
       expect(typeof disc[field]).toBe("string");
     }
     // JWKS exposes at least one signing key (the OAuth provider needs it for id_tokens).
-    const jwks = await (await page.request.get(disc.jwks_uri)).json();
+    // Discovery names BETTER_AUTH_URL's origin, which can be a public tunnel
+    // (publicUrl in .podokit/dev.json) that this runner cannot reach, so read the
+    // key set's path from the app under test.
+    const jwksUri = new URL(disc.jwks_uri);
+    expect(jwksUri.origin).toBe(new URL(disc.issuer).origin);
+    const jwksResponse = await page.request.get(`${jwksUri.pathname}${jwksUri.search}`);
+    expect(jwksResponse.ok(), await jwksResponse.text()).toBeTruthy();
+    const jwks = await jwksResponse.json();
     expect(Array.isArray(jwks.keys) && jwks.keys.length).toBeTruthy();
 
     // Dynamic client registration returns usable credentials. Retry: right after
@@ -82,4 +96,4 @@ test("OIDC provider: discovery, JWKS, client registration, authorize handoff", a
     });
     expect(disabled.ok(), await disabled.text()).toBeTruthy();
   }
-});
+}

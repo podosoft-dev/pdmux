@@ -61,6 +61,12 @@ describe("needsRuntimeContext", () => {
     expect(needsRuntimeContext(request("/apiary", { headers: { accept: NAVIGATION } }))).toBe(true);
   });
 
+  it("skips them for the web server's health route, which must answer while the API is down", () => {
+    expect(needsRuntimeContext(request("/healthz", { headers: { accept: "*/*" } }))).toBe(false);
+    expect(needsRuntimeContext(request("/healthz", { headers: { accept: NAVIGATION } }))).toBe(false);
+    expect(needsRuntimeContext(request("/healthz/extra", { routeId: null, headers: { accept: NAVIGATION } }))).toBe(true);
+  });
+
   it("skips them while prerendering", () => {
     expect(needsRuntimeContext(request("/pricing", { headers: { accept: NAVIGATION } }), { building: true })).toBe(false);
   });

@@ -1,10 +1,13 @@
+import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { FLAG_DEFAULTS, type FeatureFlag } from "../settings/flag-defaults";
 
 export const PUBLIC_SIGNUP_DISABLED = "PUBLIC_SIGNUP_DISABLED" as const;
 
 /** Auth-relative path prefixes owned by each admin-toggleable feature. A path is
- *  gated when it equals a prefix or starts with a prefix ending in "/". */
+ *  gated when it starts with one of its feature's prefixes. The OIDC provider's
+ *  JWKS (`/jwks`) and session JWT (`/token`) belong to the always-on `jwt`
+ *  plugin, so they stay available while the provider is off. */
 const FEATURE_PATHS: Array<{ flag: FeatureFlag; prefixes: string[] }> = [
   { flag: "twoFactor", prefixes: ["/two-factor/"] },
   { flag: "magicLink", prefixes: ["/sign-in/magic-link", "/magic-link/"] },
@@ -15,8 +18,36 @@ const FEATURE_PATHS: Array<{ flag: FeatureFlag; prefixes: string[] }> = [
   { flag: "apiKey", prefixes: ["/api-key/"] },
   { flag: "passkey", prefixes: ["/passkey/", "/sign-in/passkey"] },
   { flag: "organization", prefixes: ["/organization"] },
-  { flag: "oidcProvider", prefixes: ["/oauth2/", "/.well-known/openid-configuration", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource"] },
+  {
+    flag: "oidcProvider",
+    prefixes: [
+      "/oauth2/",
+      "/admin/oauth2/",
+      "/.well-known/openid-configuration",
+      // Also matches the RFC 8414 form outside the base path,
+      // /.well-known/oauth-authorization-server/api/auth.
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/oauth-protected-resource",
+    ],
+  },
 ];
+
+/** The admin-toggleable feature that owns an auth-relative path, if any. */
+export function featureForPath(path: string): FeatureFlag | undefined {
+  return FEATURE_PATHS.find((f) => f.prefixes.some((p) => path.startsWith(p)))?.flag;
+}
+
+/** A request's path relative to Better Auth's base URL. A path outside the base
+ *  path is returned whole. */
+export function authRequestPath(requestUrl: string, baseURL: string): string {
+  const pathname = new URL(requestUrl).pathname;
+  const basePath = new URL(baseURL).pathname.replace(/\/+$/, "");
+  return basePath && pathname.startsWith(`${basePath}/`) ? pathname.slice(basePath.length) : pathname;
+}
+
+function featureDisabled(): APIError {
+  return new APIError("NOT_FOUND", { message: "This feature is disabled." });
+}
 
 export type FeatureFlags = Record<FeatureFlag, boolean>;
 
@@ -75,12 +106,9 @@ export async function enforceFeatureGate(path: string, settings: FeatureGateSett
     assertUserCreationAllowed(await readSignupOpen(settings.signupOpen), path);
     return;
   }
-  const feature = FEATURE_PATHS.find((f) =>
-    f.prefixes.some((p) => path === p || path.startsWith(p)),
-  );
+  const feature = featureForPath(path);
   if (!feature) return;
-  const enabled = (await readFeatureFlags(settings.flags))[feature.flag];
-  if (!enabled) throw new APIError("NOT_FOUND", { message: "This feature is disabled." });
+  if (!(await readFeatureFlags(settings.flags))[feature]) throw featureDisabled();
 }
 
 /** Better Auth middleware over {@link enforceFeatureGate}. The settings come from
@@ -90,4 +118,20 @@ export function createFeatureGate(settings: FeatureGateSettings): ReturnType<typ
   return createAuthMiddleware(async (ctx) => {
     await enforceFeatureGate(ctx.path, settings);
   });
+}
+
+/** Rejects HTTP requests to a disabled feature before any plugin's `onRequest`
+ *  runs. `hooks.before` alone is not enough: the OAuth provider answers its
+ *  discovery metadata from `onRequest`, which Better Auth runs before endpoint
+ *  hooks. Register this plugin ahead of every other plugin. */
+export function featureGatePlugin(settings: FeatureGateSettings): BetterAuthPlugin {
+  return {
+    id: "podokit-feature-gate",
+    onRequest: async (request, ctx) => {
+      const feature = featureForPath(authRequestPath(request.url, ctx.baseURL));
+      if (!feature || (await readFeatureFlags(settings.flags))[feature]) return undefined;
+      const error = featureDisabled();
+      return { response: Response.json(error.body, { status: error.statusCode }) };
+    },
+  };
 }

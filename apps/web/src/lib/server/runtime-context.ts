@@ -1,5 +1,8 @@
 import { APP_ASSET_PATHS } from "./asset-paths";
 
+/** The web server's own health route (`routes/healthz/+server.ts`), which never calls the API. */
+const WEB_HEALTH_PATH = "/healthz";
+
 /** The request fields that decide whether a response can use the session and site settings. */
 export interface RuntimeContextRequest {
   url: URL;
@@ -92,6 +95,8 @@ export function needsRuntimeContext(
   const { pathname } = event.url;
   // The backend proxy forwards the cookies; the API resolves the session itself.
   if (underPrefix(pathname, "/api")) return false;
+  // The web server's health route answers the probes even while the API is down.
+  if (pathname === WEB_HEALTH_PATH) return false;
   // Remote functions run application code that may read the session.
   if (event.isRemoteRequest) return true;
   if (event.route.id === null) {

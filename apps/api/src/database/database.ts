@@ -78,9 +78,14 @@ const UNAVAILABLE_PG_MESSAGES = new Set([
   "timeout exceeded when trying to connect",
   "Connection terminated due to connection timeout",
   "Connection terminated unexpectedly",
+  // The client was ended, for example by a pool replacement, while a query waited.
+  "Connection terminated",
+  "Client was closed and is not queryable",
+  "Client has encountered a connection error and is not queryable",
   "Query read timeout",
 ]);
-// Socket errors from a pg client whose server is gone or unreachable.
+// Socket and host lookup errors from a pg client whose server is gone or
+// unreachable. Bun reports a lookup timeout as ETIMEOUT, Node as EAI_AGAIN.
 const UNAVAILABLE_SOCKET_CODES = new Set([
   "ECONNREFUSED",
   "ECONNRESET",
@@ -88,6 +93,9 @@ const UNAVAILABLE_SOCKET_CODES = new Set([
   "EHOSTUNREACH",
   "ENETUNREACH",
   "EPIPE",
+  "ENOTFOUND",
+  "ETIMEOUT",
+  "EAI_AGAIN",
 ]);
 // SQLSTATEs for a server shutting down or refusing connections (class 57P) and
 // for broken connections (class 08); pg reports them as `code`, Bun SQL as `errno`.
@@ -97,18 +105,33 @@ function unavailableSqlState(value: unknown): boolean {
   return typeof value === "string" && (UNAVAILABLE_SQLSTATES.has(value) || /^08[0-9A-Z]{3}$/.test(value));
 }
 
+function signalsUnavailable(error: Error): boolean {
+  if (error instanceof SQL.PostgresError) {
+    if (UNAVAILABLE_SQL_CODES.has(error.code) || unavailableSqlState(error.errno)) return true;
+  } else {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && (UNAVAILABLE_SOCKET_CODES.has(code) || unavailableSqlState(code))) return true;
+  }
+  return UNAVAILABLE_PG_MESSAGES.has(error.message);
+}
+
+// Bounds the walk over wrapped errors, which may form a cycle.
+const MAX_WRAPPED_ERRORS = 16;
+
 /** Whether an error, or one it wraps, means the database is unavailable rather than the request being wrong. */
 export function isDatabaseUnavailable(error: unknown): boolean {
-  let current: unknown = error;
-  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
-    if (current instanceof SQL.PostgresError) {
-      if (UNAVAILABLE_SQL_CODES.has(current.code) || unavailableSqlState(current.errno)) return true;
-    } else {
-      const code = (current as { code?: unknown }).code;
-      if (typeof code === "string" && (UNAVAILABLE_SOCKET_CODES.has(code) || unavailableSqlState(code))) return true;
-    }
-    if (UNAVAILABLE_PG_MESSAGES.has(current.message)) return true;
-    current = current.cause;
+  const pending: unknown[] = [error];
+  const seen = new Set<Error>();
+  while (pending.length > 0 && seen.size < MAX_WRAPPED_ERRORS) {
+    const current = pending.shift();
+    if (!(current instanceof Error) || seen.has(current)) continue;
+    seen.add(current);
+    if (signalsUnavailable(current)) return true;
+    // TypeORM's QueryFailedError keeps the driver's error as `driverError`, and
+    // a connection that tried several addresses, such as IPv6 and IPv4 for
+    // localhost, fails with an AggregateError of the per-address errors.
+    pending.push(current.cause, (current as { driverError?: unknown }).driverError);
+    if (current instanceof AggregateError) pending.push(...current.errors);
   }
   return false;
 }

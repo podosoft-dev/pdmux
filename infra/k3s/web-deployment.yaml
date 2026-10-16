@@ -21,10 +21,13 @@ spec:
           envFrom:
             - configMapRef: { name: app-config }
           # Without these a rolling update sends traffic to a process that has not
-          # bound its port yet.
+          # bound its port yet. /healthz never calls the API, so an API outage does
+          # not take the web pods out of service.
           readinessProbe:
-            httpGet: { path: /, port: 3000 }
+            httpGet: { path: /healthz, port: 3000 }
             initialDelaySeconds: 5
+            timeoutSeconds: 2
           livenessProbe:
-            httpGet: { path: /, port: 3000 }
+            httpGet: { path: /healthz, port: 3000 }
             initialDelaySeconds: 15
+            timeoutSeconds: 2

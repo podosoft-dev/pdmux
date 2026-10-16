@@ -9,25 +9,21 @@ function entry(name) {
   return existsSync(source) ? source : null;
 }
 
-/** Keep Bun's TypeScript loader anchored to the API tsconfig for legacy decorators. */
-export function migrationWorkingDirectory(scriptUrl = import.meta.url) {
-  return fileURLToPath(new URL("..", scriptUrl));
+// The auth module adds src/migrate.ts, which applies the Better Auth schema
+// before it runs the application migrations.
+const target = entry("migrate") ?? entry("database/migrate");
+if (!target) {
+  process.stderr.write("Run database migrations failed: no migration entry in src or dist\n");
+  process.exit(1);
 }
+// Run in the API directory wherever this was started from: Bun reads decorator
+// settings from the tsconfig.json of the working directory, and the data source
+// finds .env and the migrations relative to it.
+const subprocess = Bun.spawn([process.execPath, fileURLToPath(target)], {
+  cwd: fileURLToPath(new URL("..", import.meta.url)),
+  stdin: "inherit",
+  stdout: "inherit",
+  stderr: "inherit",
+});
 
-if (import.meta.main) {
-  // The auth module adds src/migrate.ts, which applies the Better Auth schema
-  // before it runs the application migrations.
-  const target = entry("migrate") ?? entry("database/migrate");
-  if (!target) {
-    process.stderr.write("Run database migrations failed: no migration entry in src or dist\n");
-    process.exit(1);
-  }
-  const subprocess = Bun.spawn([process.execPath, fileURLToPath(target)], {
-    cwd: migrationWorkingDirectory(),
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-
-  process.exitCode = await subprocess.exited;
-}
+process.exitCode = await subprocess.exited;

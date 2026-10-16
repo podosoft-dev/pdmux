@@ -1,6 +1,6 @@
 {
   "schemaVersion": 4,
-  "podokitVersion": "1.4.1",
+  "podokitVersion": "1.4.2",
   "template": "fullstack",
   "toolchain": {
     "runtime": "bun",

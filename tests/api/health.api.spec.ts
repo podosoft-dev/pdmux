@@ -12,3 +12,11 @@ test("GET /health/ready reports the database", async ({ request }) => {
   expect(res.status()).toBe(200);
   expect((await res.json()).status).toBe("ready");
 });
+
+test("GET /healthz answers from the web server without caching or indexing @smoke", async ({ request }) => {
+  const res = await request.get("/healthz");
+  expect(res.status()).toBe(200);
+  expect(await res.text()).toBe("ok\n");
+  expect(res.headers()["cache-control"]).toBe("no-store");
+  expect(res.headers()["x-robots-tag"]).toBe("noindex, nofollow");
+});

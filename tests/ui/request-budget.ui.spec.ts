@@ -18,6 +18,19 @@ test("the first render does not embed the message catalogs", async ({ page }) =>
 });
 
 test("client navigation keeps the server checks without resending messages", async ({ page }) => {
+  // Read each page-data body on its way to the page. Chromium reports a
+  // __data.json fetch as aborted (net::ERR_ABORTED) once SvelteKit has consumed
+  // its body, and then keeps no body for response.text() to return.
+  const pending = new Map<string, (body: string) => void>();
+  await page.route(
+    (url) => url.pathname.endsWith("/__data.json"),
+    async (route) => {
+      const response = await route.fetch();
+      const body = await response.text();
+      pending.get(new URL(route.request().url()).pathname)?.(body);
+      await route.fulfill({ response, body });
+    },
+  );
   await ready(page, "/admin");
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
@@ -29,13 +42,9 @@ test("client navigation keeps the server checks without resending messages", asy
     ["Overview", "/admin", "Dashboard"],
   ];
   for (const [link, path, heading] of stops) {
-    // Read each body before the next click: once the page navigates on, the
-    // previous response body is no longer available.
-    const data = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === `${path}/__data.json`,
-    );
+    const data = new Promise<string>((resolve) => pending.set(`${path}/__data.json`, resolve));
     await sidebar.getByRole("link", { name: link, exact: true }).click();
-    const body = await (await data).text();
+    const body = await data;
     expect(body).not.toContain('"messages"');
     expect(body.length).toBeLessThan(20_000);
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
