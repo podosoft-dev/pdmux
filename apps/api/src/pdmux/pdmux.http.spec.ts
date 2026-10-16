@@ -3,6 +3,7 @@ import { FS_CHUNK_BYTES, FILE_TRANSFER_CHUNK_BYTES } from "@pdmux/protocol";
 import { AppException } from "@podosoft/podokit-contracts";
 import { Elysia } from "elysia";
 import type { AuthSession } from "../auth/auth.service";
+import { databaseUnavailable } from "../auth/database-outage";
 import type { AppContext } from "../core/services";
 import { ServiceRegistry } from "../core/services";
 import { pdmuxHttpPlugin } from "./pdmux.http";
@@ -19,6 +20,7 @@ interface TestApplication {
 
 function application(overrides: Partial<PdmuxServices>): TestApplication {
   const pdmux = {
+    database: { assertReady: (): void => undefined },
     auth: {
       requireSession: mock(async () => session),
       requireAdmin: mock(async () => session),
@@ -235,5 +237,41 @@ describe("PDMUX HTTP boundary", () => {
     expect(response.headers.get("www-authenticate")).toBe("Bearer");
     expect(await response.json()).toEqual({ method: "DELETE" });
     expect(handle).toHaveBeenCalledTimes(1);
+  });
+
+  it("[TC-PDHOST-033] answers 503 before pdmux's database connects and keeps serving the agent kit", async () => {
+    const list = mock(async () => []);
+    const redeem = mock(async () => ({}));
+    const handle = mock(async () => Response.json({}));
+    const manifest = mock(async () => Response.json({ version: "kit" }));
+    const app = application({
+      database: { assertReady: (): void => { throw databaseUnavailable(); } } as unknown as PdmuxServices["database"],
+      hosts: { list } as unknown as PdmuxServices["hosts"],
+      agentEnrollments: { redeem } as unknown as PdmuxServices["agentEnrollments"],
+      mcp: { handle } as unknown as PdmuxServices["mcp"],
+      agentKit: { manifest } as unknown as PdmuxServices["agentKit"],
+    });
+
+    for (const request of [
+      new Request("http://localhost/hosts"),
+      new Request("http://localhost/fleet/events"),
+      new Request("http://localhost/agent/enroll", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "pdmxe_ABCDE-FGHJK-MNPQR-STVWX" }),
+      }),
+      new Request("http://localhost/mcp", { method: "POST" }),
+    ]) {
+      const response = await app.handle(request);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: { code: "DATABASE_UNAVAILABLE" } });
+    }
+    expect(list).not.toHaveBeenCalled();
+    expect(redeem).not.toHaveBeenCalled();
+    expect(handle).not.toHaveBeenCalled();
+
+    const kit = await app.handle(new Request("http://localhost/agent-kit/manifest"));
+    expect(kit.status).toBe(200);
+    expect(manifest).toHaveBeenCalledTimes(1);
   });
 });

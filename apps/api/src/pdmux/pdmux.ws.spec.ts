@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { AGENT_WS_PATH, TERMINAL_WS_PATH } from "@pdmux/protocol";
 import { Elysia } from "elysia";
+import { databaseUnavailable } from "../auth/database-outage";
 import type { AppContext } from "../core/services";
 import type { PdmuxGateway } from "./pdmux.gateway";
 import { createPdmuxWsPlugin } from "./pdmux.ws";
@@ -151,5 +152,29 @@ describe("PDMUX WebSocket transport", () => {
       socket.close();
       await app.stop(true);
     }
+  });
+
+  it("[TC-PDHOST-033] refuses an upgrade during a database outage with 503 and its code", async () => {
+    const outage = mock(async (): Promise<never> => {
+      throw databaseUnavailable();
+    });
+    const gateway = { authorizeAgent: outage, authorizeTerminal: outage } as unknown as PdmuxGateway;
+    const app = new Elysia().use(createPdmuxWsPlugin(gateway)({} as AppContext));
+    const upgrade = {
+      upgrade: "websocket",
+      connection: "Upgrade",
+      "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+      "sec-websocket-version": "13",
+    };
+
+    for (const path of [AGENT_WS_PATH, `${TERMINAL_WS_PATH}?hostId=host-1`]) {
+      const response = await app.handle(new Request(`http://localhost${path}`, { headers: upgrade }));
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        success: false,
+        error: { code: "DATABASE_UNAVAILABLE" },
+      });
+    }
+    expect(outage).toHaveBeenCalledTimes(2);
   });
 });

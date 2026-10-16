@@ -8,8 +8,8 @@ import { PDMUX_GATEWAY, pdmuxWsPlugin } from "./pdmux.ws";
 
 export const pdmuxModule: PodokitModule = {
   name: "pdmux",
-  configure: (_env, services): void => {
-    const pdmux = createPdmuxServices(services);
+  configure: (env, services): void => {
+    const pdmux = createPdmuxServices(services, env);
     const gateway = new PdmuxGateway(pdmux);
     services.register(PDMUX_GATEWAY, gateway, () => gateway.close());
     services.onStart(() => gateway.start());

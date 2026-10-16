@@ -501,6 +501,36 @@ screen shows what remains as "still collecting (N)".
 Recovery: restore the database → confirm migrations → start API and web → agents **reconnect
 automatically** and cards fill within minutes (if storage was empty, details rebuild progressively).
 
+### 4-1. While PostgreSQL is unavailable
+
+The API starts and keeps running while PostgreSQL cannot be reached, and recovers on its own when
+the database returns. Nothing needs restarting.
+
+- `/health` answers 200. `/health/ready` answers 503 and names the checks that are down, such as
+  `One or more dependencies are unavailable: db, pdmux-schema`, so an orchestrator takes the API out
+  of rotation without restarting it.
+- pdmux opens its own database connection in the background and retries it with backoff (250 ms,
+  doubling up to 5 s). Until that connection has checked the schema, every route that needs the
+  database answers 503 `DATABASE_UNAVAILABLE` with `Retry-After: 1`. The agent kit download
+  (`/agent-kit`) does not need the database and stays available.
+- Agent and terminal WebSocket upgrades are refused with 503 `DATABASE_UNAVAILABLE`. An agent treats
+  that as an ordinary failure and retries on its normal backoff (1 s, doubling up to 30 s), not on
+  the longer schedule it uses for a refused token. An agent that is already connected stays
+  connected and its terminals keep working; heartbeats and repository reports are dropped until the
+  database answers again.
+- The first connection also resumes file transfers: transfers interrupted by the previous process
+  are marked paused, and the spool cleanup starts. This runs once per process and stops at shutdown.
+- A request that reaches PostgreSQL after it stops answering fails with 503 within
+  `DB_QUERY_TIMEOUT_MS` (10 s by default) for a query, or `DB_CONNECT_TIMEOUT_MS` for a new
+  connection. A connection that timed out is closed instead of being reused.
+- If the API reaches a database whose schema is behind the release when it starts, it still refuses
+  to start (§1-2). If the database only becomes reachable later and its schema is behind,
+  `pdmux-schema` stays down and the API keeps retrying, so running the migrations recovers it.
+
+⚠ **With the BullMQ job provider the API still needs Redis to start.** It schedules its maintenance
+jobs before it listens, and that waits until Redis answers. The worker still needs PostgreSQL to
+start.
+
 ---
 
 ## 5. Common states

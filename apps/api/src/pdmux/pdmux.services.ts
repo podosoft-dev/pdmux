@@ -25,11 +25,15 @@ import type { AuditService } from "../audit/audit.service";
 import type { AuthService } from "../auth/auth.service";
 import { AUTH } from "../auth/auth.module";
 import { EVENTS, OBJECT_STORAGE } from "@podosoft/podokit-runtime";
+import type { AppEnv } from "../config/env.validation";
 import { PROVIDERS } from "../config/providers";
 import type { ServiceKey, ServiceRegistry } from "../core/services";
-import { READINESS } from "../core/services";
+import {
+  ApplicationDatabase,
+  applicationDataSourceOptions,
+  superviseApplicationDatabase,
+} from "../database/application-database";
 import { createAppDataSource, dataSourceOptions } from "../database/data-source";
-import { assertMigrationsApplied, initializeApplicationDataSource } from "../database/schema-readiness";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { GitBlobBufferService } from "../git/git-blob-buffer.service";
@@ -81,6 +85,7 @@ import { TerminalMuxController } from "../terminal/terminal-mux.controller";
 
 export interface PdmuxServices {
   dataSource: DataSource;
+  database: ApplicationDatabase;
   auth: AuthService;
   audit: AuditService;
   fleetSettings: FleetSettingsService;
@@ -116,7 +121,7 @@ export interface PdmuxServices {
 }
 
 export const PDMUX = Symbol("pdmux") as ServiceKey<PdmuxServices>;
-const PDMUX_LIFECYCLE = Symbol("pdmux-lifecycle") as ServiceKey<DataSource>;
+const PDMUX_LIFECYCLE = Symbol("pdmux-lifecycle") as ServiceKey<TerminalRelayService>;
 const PDMUX_JOBS = Symbol("pdmux-jobs") as ServiceKey<JobProvider>;
 
 async function scheduleMaintenance(jobs: JobProvider): Promise<void> {
@@ -134,9 +139,8 @@ async function scheduleMaintenance(jobs: JobProvider): Promise<void> {
   ]);
 }
 
-export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
-  const dataSource = createAppDataSource(dataSourceOptions);
-  services.resolve(READINESS).register("pdmux-schema", () => assertMigrationsApplied(dataSource));
+export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): PdmuxServices {
+  const dataSource = createAppDataSource(applicationDataSourceOptions(dataSourceOptions, env));
   const storage = services.resolve(OBJECT_STORAGE);
   const events = new HostEvents(services.resolve(EVENTS));
   const auth = services.resolve(AUTH);
@@ -257,9 +261,14 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
 
   jobs.register(STALE_HOSTS_QUEUE, STALE_HOSTS_JOB, () => staleHosts.runOnce());
   jobs.register(METRICS_QUEUE, METRICS_PRUNE_JOB, () => metricsRetention.runOnce());
+  // The transfer service resumes what the previous process left behind, which
+  // needs the database, so it starts once the first connection is made.
+  const database = new ApplicationDatabase(dataSource, {
+    start: () => fileTransfers.initialize(),
+    stop: () => fileTransfers.close(),
+  });
+  superviseApplicationDatabase(services, database);
   services.onStart(async () => {
-    await initializeApplicationDataSource(dataSource);
-    await fileTransfers.initialize();
     hosts.setConnectedProbe((hostId) => agentRegistry.isConnected(hostId));
     cloudflare.connect();
     agentEnrollments.connect();
@@ -269,18 +278,12 @@ export function createPdmuxServices(services: ServiceRegistry): PdmuxServices {
     terminalRelay.attach();
     await scheduleMaintenance(jobs);
   });
-  services.register(
-    PDMUX_LIFECYCLE,
-    dataSource,
-    async () => {
-      terminalRelay.detach();
-      await fileTransfers.close();
-      if (dataSource.isInitialized) await dataSource.destroy();
-    },
-  );
+  // Registered after the database, so it closes first.
+  services.register(PDMUX_LIFECYCLE, terminalRelay, () => terminalRelay.detach());
 
   const result: PdmuxServices = {
     dataSource,
+    database,
     auth,
     audit,
     fleetSettings,

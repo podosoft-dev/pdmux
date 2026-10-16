@@ -231,6 +231,16 @@ async function fileUpload(
 export const pdmuxHttpPlugin: AppPlugin = (context) => {
   const services = context.services.resolve(PDMUX);
   return new Elysia({ name: "pdmux.http" })
+    // The agent kit is read from the image, so it is served while the database is down.
+    .get("/agent-kit/manifest", () => services.agentKit.manifest(), {
+      detail: { hide: true },
+    })
+    .get("/agent-kit", () => services.agentKit.download(), {
+      detail: { hide: true },
+    })
+    // Every route below needs pdmux's database. Elysia applies this hook only to
+    // routes registered after it, in this plugin.
+    .onBeforeHandle(() => services.database.assertReady())
     .get("/fleet/events", ({ request, server }) => {
       server?.timeout(request, 0);
       return fleetEventResponse(request, { auth: services.auth, hosts: services.hosts, events: services.hostEvents });
@@ -817,12 +827,6 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
       (result) => ({ type: "mcp-token", id: result.id, label: result.label, metadata: { tier: result.tier } }));
     })
     .all("/mcp", ({ request }) => services.mcp.handle(request), {
-      detail: { hide: true },
-    })
-    .get("/agent-kit/manifest", () => services.agentKit.manifest(), {
-      detail: { hide: true },
-    })
-    .get("/agent-kit", () => services.agentKit.download(), {
       detail: { hide: true },
     });
 };

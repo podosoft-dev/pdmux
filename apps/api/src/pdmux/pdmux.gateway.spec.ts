@@ -7,7 +7,10 @@ import { PdmuxGateway, type TerminalAcceptContext } from "./pdmux.gateway";
 import type { PdmuxServices } from "./pdmux.services";
 
 function services(overrides: Partial<PdmuxServices>): PdmuxServices {
-  return overrides as PdmuxServices;
+  return {
+    database: { assertReady: (): void => undefined },
+    ...overrides,
+  } as unknown as PdmuxServices;
 }
 
 function socket(sendResult = 1) {
@@ -160,6 +163,29 @@ describe("PdmuxGateway authorization", () => {
 });
 
 describe("[TC-PDHOST-033] PdmuxGateway while pdmux's database is unavailable", () => {
+  const notReady = { assertReady: (): void => { throw databaseUnavailable(); } } as unknown as PdmuxServices["database"];
+
+  it("refuses agent and terminal upgrades with 503 before looking anything up", async () => {
+    const resolveOrReason = mock(async () => ({ refusal: "unknown" as const, hostId: null }));
+    const record = mock(async () => undefined);
+    const session = mock(async () => null);
+    const gateway = new PdmuxGateway(services({
+      database: notReady,
+      agentTokens: { resolveOrReason } as unknown as PdmuxServices["agentTokens"],
+      agentAuthFailures: { record } as unknown as PdmuxServices["agentAuthFailures"],
+      auth: { session } as unknown as PdmuxServices["auth"],
+    }));
+    const agent = new Request("http://localhost/agent/ws", { headers: { [AGENT_KEY_HEADER]: "pdmux_agent_key" } });
+
+    await expect(gateway.authorizeAgent(agent)).rejects.toMatchObject({ code: "DATABASE_UNAVAILABLE", statusCode: 503 });
+    await expect(gateway.authorizeTerminal(new Request("http://localhost/terminal/ws?hostId=host-1")))
+      .rejects.toMatchObject({ code: "DATABASE_UNAVAILABLE", statusCode: 503 });
+    expect(resolveOrReason).not.toHaveBeenCalled();
+    // A refusal for an outage is not a credential failure, and recording it would need the database.
+    expect(record).not.toHaveBeenCalled();
+    expect(session).not.toHaveBeenCalled();
+  });
+
   it("keeps a connected agent and the process alive when its frames cannot be stored", async () => {
     const unhandled: unknown[] = [];
     const listener = (reason: unknown): void => { unhandled.push(reason); };

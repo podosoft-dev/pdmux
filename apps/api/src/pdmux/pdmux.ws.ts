@@ -1,5 +1,6 @@
 import { AGENT_WS_PATH, TERMINAL_WS_PATH } from "@pdmux/protocol";
 import { Elysia } from "elysia";
+import { AppException } from "../common/app-exception";
 import type { AppPlugin, ServiceKey } from "../core/services";
 import {
   PdmuxGateway,
@@ -22,10 +23,11 @@ function pongSocket(socket: PongSocket): GatewaySocket {
 function rejection(error: unknown): Response {
   const candidate = error as UpgradeError;
   const status = typeof candidate.statusCode === "number" ? candidate.statusCode : 500;
-  return Response.json(
-    { success: false, error: { code: "WEBSOCKET_UPGRADE_REJECTED", message: candidate.message } },
-    { status },
-  );
+  // A dependency outage keeps its own code, such as DATABASE_UNAVAILABLE.
+  const code = error instanceof AppException && error.statusCode === 503
+    ? error.code
+    : "WEBSOCKET_UPGRADE_REJECTED";
+  return Response.json({ success: false, error: { code, message: candidate.message } }, { status });
 }
 
 export function createPdmuxWsPlugin(gateway: PdmuxGateway): AppPlugin {

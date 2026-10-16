@@ -83,6 +83,9 @@ export class PdmuxGateway {
   }
 
   async authorizeAgent(request: Request): Promise<AgentAcceptContext> {
+    // Refused with 503 rather than a 401 the agent would wait out as a revoked
+    // token: it retries an ordinary failure on its normal backoff.
+    this.services.database.assertReady();
     const presented = request.headers.get(AGENT_KEY_HEADER);
     if (!presented) {
       this.noteRefusal("missing_key", null, request);
@@ -170,6 +173,7 @@ export class PdmuxGateway {
   }
 
   async authorizeTerminal(request: Request): Promise<TerminalAcceptContext> {
+    this.services.database.assertReady();
     let session: AuthSession | null;
     try {
       session = await this.services.auth.session(request);

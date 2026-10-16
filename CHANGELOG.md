@@ -14,6 +14,11 @@
 - Keep the API running when an agent's heartbeat or repository report cannot be stored. During a
   database outage the first such frame ended the process; it is now dropped and the agent stays
   connected.
+- Start the API while PostgreSQL is unreachable and connect pdmux's database in the background
+  through PodoKit's connection supervision. Until it connects, database routes answer 503
+  `DATABASE_UNAVAILABLE`, agent and terminal upgrades are refused with 503, and readiness reports
+  `pdmux-schema`. A stopped or stalled database now answers 503 within `DB_QUERY_TIMEOUT_MS`
+  instead of 500 or a request that never ends.
 
 ## 0.14.0
 

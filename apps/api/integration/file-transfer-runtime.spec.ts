@@ -81,6 +81,7 @@ describe.skipIf(!executable)("[TC-PDFILE-010] local HTTP and Go WebSocket runtim
     let transfers = new FileTransfersService(db, files, hosts, runtimeEnv);
     await transfers.initialize();
     const services = {
+      database: { assertReady: (): void => undefined },
       hosts, agentRegistry: registry, agentFiles: files, fileTransfers: transfers,
       auth: { requireSession: async (request: Request): Promise<AuthSession> => {
         if (request.headers.get("cookie") !== "transfer-fixture=1") throw new AppException("UNAUTHORIZED", "No fixture session", 401);
