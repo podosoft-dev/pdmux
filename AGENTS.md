@@ -62,6 +62,23 @@ Merge added module settings from `.env.example` into an existing `.env`.
   `apps/web/src/lib/server/body-limits.ts` (`APP_BODY_LIMITS`, 413
   `PAYLOAD_TOO_LARGE`). `BODY_SIZE_LIMIT` is the ceiling for every web route, so
   uploads larger than it must use a direct API path (`apiPaths`) instead.
+- Server-side API calls (`serverApiClient`) give up after `BACKEND_TIMEOUT_MS`
+  (2000), and the proxy answers 504 `BACKEND_TIMEOUT` when the API sends no
+  response headers within `BACKEND_PROXY_TIMEOUT_MS` (30000). Once the API's
+  `GET /health` stops answering too, calls throw `BackendUnavailableError` and the
+  proxy answers 503 `BACKEND_UNAVAILABLE` at once until it answers again. Handle
+  any non-`ApiError` failure in a load function as a temporary outage. Raising
+  the API's `apiServerOptions.idleTimeout` needs a matching
+  `BACKEND_PROXY_TIMEOUT_MS`.
+- pdmux keeps one local edit in the managed proxy: `/file-transfers` requests
+  have neither Bun's idle timeout nor the header deadline, because the API's
+  agent deadlines (up to five minutes for a commit) own that wait. Reconcile it on
+  every `podo update`; `apps/web/test/backend-proxy-download.test.ts` fails if it
+  is lost. See `docs/FILE-TRANSFERS.md`.
+- `GET /healthz` (`apps/web/src/routes/healthz/+server.ts`) is the web server's own
+  health route for the Kubernetes probes, the Compose healthcheck, and the image
+  `HEALTHCHECK`. Keep it free of API calls, so an API outage does not take the web
+  out of service.
 - When the root layout or a server hook fails, such as with 503 while the API is
   down, SvelteKit serves the app-owned `apps/web/src/error.html`. It is plain HTML
   with inline styles: no components, app CSS, scripts, or assets, and only the
