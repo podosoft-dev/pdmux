@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { RequestEvent } from "@sveltejs/kit";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkIdleTimeout } from "../src/lib/server/backend-proxy";
+import { checkIdleTimeout, upstreamFetchOptions } from "../src/lib/server/backend-proxy";
 import { APP_PROXY_TIMEOUTS } from "../src/lib/server/proxy-timeouts";
 import { POST as proxyApi } from "../src/routes/api/[...path]/+server";
 import { POST as proxyMcp } from "../src/routes/mcp/+server";
@@ -28,9 +28,12 @@ describe("[TC-PDFILE-012] the built web server keeps a waiting transfer open", (
     }
     // Compose takes the image's value; a second, different one would win over it.
     expect(read("infra/docker/selfhost.compose.yml")).not.toMatch(/CONNECTION_IDLE_TIMEOUT/);
-    // The proxy's own fetch gives up after 5 silent minutes by default, which a
-    // commit can reach behind the host's lock.
-    expect(read("apps/web/Dockerfile")).toMatch(/^ENV BUN_CONFIG_HTTP_IDLE_TIMEOUT=600$/m);
+    // The proxy's own fetch would give up after 5 silent minutes, which a commit can
+    // reach behind the host's lock; without a deadline the proxy turns that off itself.
+    const transfers = APP_PROXY_TIMEOUTS.find((entry) => entry.pathPrefix === "/api/hosts/:hostId/file-transfers");
+    expect(transfers?.timeoutMs).toBeNull();
+    expect(upstreamFetchOptions(transfers ? transfers.timeoutMs : 0)).toEqual({ timeout: false });
+    expect(read("apps/web/Dockerfile")).not.toMatch(/BUN_CONFIG_HTTP_IDLE_TIMEOUT/);
   });
 
   it("would refuse to load with any finite idle timeout", () => {

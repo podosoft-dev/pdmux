@@ -101,7 +101,6 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
     // Unset, Bun closes a silent request after 10 seconds: a transfer commit or an
     // MCP call before its first keep-alive.
     expect(calls[2]?.options.env.CONNECTION_IDLE_TIMEOUT).toBe("0");
-    expect(calls[2]?.options.env.BUN_CONFIG_HTTP_IDLE_TIMEOUT).toBe("600");
     expect(calls[1]?.options.env.CORS_ORIGIN).toBe("http://127.0.0.1:51001");
     if (process.platform !== "win32") {
       expect((await stat(layout.secretPath)).mode & 0o777).toBe(0o600);

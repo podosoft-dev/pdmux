@@ -143,9 +143,9 @@ request can wait more than five minutes without a byte on the wire. Each hop is 
   to load with any other value. The wait cannot be bounded below Bun's 255-second maximum, so the web
   image, the desktop shell, the k3s ConfigMap and `.env.example` turn the idle timeout off. **A
   deployment profile must set `CONNECTION_IDLE_TIMEOUT` to `"0"` in `runtimeConfig`**: otherwise
-  `podo deploy` sets 35 and the web server does not start. The web image and the desktop shell also set
-  `BUN_CONFIG_HTTP_IDLE_TIMEOUT=600`, so the proxy's own request to the API allows ten silent minutes
-  instead of Bun's five. Run a gateway in front of the web server; it closes idle client connections.
+  `podo deploy` sets 35 and the web server does not start. The proxy's own request to the API has no
+  idle timeout either: PodoKit's proxy turns Bun's five-minute fetch idle timeout off for a route
+  without a deadline. Run a gateway in front of the web server; it closes idle client connections.
 - **API.** The transfer routes that wait for the agent or the host's lock lift Bun's idle timeout per
   request, so `API_IDLE_TIMEOUT` keeps its default for every other route. Chunk body intake still has a
   60-second idle bound.
