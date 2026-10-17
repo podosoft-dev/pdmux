@@ -10,6 +10,9 @@ import {
   type JobSnapshot,
   type JobStatus,
   type RepeatOptions,
+  type ScheduleOptions,
+  type ScheduleRetention,
+  scheduleRetention,
   type Unsubscribe,
 } from "@podosoft/podokit-runtime";
 import type { SupervisedConnection } from "../core/services";
@@ -56,6 +59,7 @@ interface Schedule {
   name: string;
   payload: unknown;
   repeat: RepeatOptions;
+  retention: ScheduleRetention;
 }
 
 /** Rejects a schedule BullMQ could not run, before it is kept. */
@@ -141,13 +145,20 @@ export class BullMqJobQueue implements JobQueue, SupervisedConnection {
     };
   }
 
-  async schedule(id: string, name: string, payload: unknown, repeat: RepeatOptions): Promise<void> {
+  async schedule(
+    id: string,
+    name: string,
+    payload: unknown,
+    repeat: RepeatOptions,
+    options?: ScheduleOptions,
+  ): Promise<void> {
     assertSchedule(repeat);
+    const retention = scheduleRetention(options);
     const previous = this.schedules.get(id);
     // A scheduler lives in its queue, so a schedule that moves leaves the old one.
     if (previous && previous.name !== name) this.removals.set(id, previous.name);
     if (this.removals.get(id) === name) this.removals.delete(id);
-    this.schedules.set(id, { name, payload, repeat });
+    this.schedules.set(id, { name, payload, repeat, retention });
     await this.whenConnected(async (client) => {
       if (this.removals.has(id)) await this.removeSchedule(client, id);
       await this.applySchedule(client, id);
@@ -196,10 +207,19 @@ export class BullMqJobQueue implements JobQueue, SupervisedConnection {
     const schedule = this.schedules.get(id);
     if (!schedule) return;
     const { cron, everyMs, timezone } = schedule.repeat;
+    // A count above 0 trims the queue's whole completed or failed set to that
+    // many jobs; 0 removes only the finished run.
     await this.queue(schedule.name, client).upsertJobScheduler(
       id,
       cron !== undefined ? { pattern: cron, tz: timezone ?? "UTC" } : { every: everyMs },
-      { name: schedule.name, data: schedule.payload },
+      {
+        name: schedule.name,
+        data: schedule.payload,
+        opts: {
+          removeOnComplete: { count: schedule.retention.keepCompleted },
+          removeOnFail: { count: schedule.retention.keepFailed },
+        },
+      },
     );
   }
 

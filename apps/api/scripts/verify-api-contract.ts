@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createApp } from "../src/app";
 import { validateEnv } from "../src/config/env.validation";
+import { PROVIDERS } from "../src/config/providers";
 import {
   assertApiContract,
   assertApplicationRoutes,
@@ -10,7 +11,6 @@ import {
 } from "../src/core/api-contract";
 import { APP_DOCUMENTED_ROUTES } from "../src/core/api-contract.extensions";
 import { createCoreServices } from "../src/core/services";
-import { PROVIDERS } from "../src/config/providers";
 
 interface ProjectManifest {
   template: string;
@@ -30,12 +30,8 @@ try {
     throw new Error(`OpenAPI request failed (${response.status}): ${await response.text()}`);
   }
   const document: unknown = await response.json();
-  // A provider module such as object-storage-local registers its routes only
-  // while its provider is selected, so the contract expects them only then.
-  const modules = manifest.modules.map((module) => module.name).filter((name) =>
-    Object.entries(PROVIDERS).every(([capability, provider]) =>
-      !name.startsWith(`${capability}-`) || name === `${capability}-${provider}`));
-  assertApiContract(document, manifest.template, modules);
+  const modules = manifest.modules.map((module) => module.name);
+  assertApiContract(document, manifest.template, modules, PROVIDERS);
   assertApplicationRoutes(document, app.routes, APP_DOCUMENTED_ROUTES);
   process.stdout.write(
     `Verified ${documentedApiRoutes(document).size} documented API operations for ${manifest.template}, ` +

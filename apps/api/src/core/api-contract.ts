@@ -1,3 +1,5 @@
+import type { ProviderCapability, ProviderSelections } from "@podosoft/podokit-runtime";
+
 const OPERATIONS = new Set(["get", "post", "put", "patch", "delete", "options", "head"]);
 
 const CORE_ROUTES = [
@@ -81,6 +83,7 @@ const MODULE_ROUTES: Record<string, string[]> = {
     "DELETE /files/uploads/{id}",
   ],
   "job-progress": ["POST /progress"],
+  "jobs-local": ["POST /jobs", "GET /jobs/{id}"],
   "object-storage-local": [
     "GET /files/content/*",
     "PUT /storage/{key}",
@@ -94,6 +97,22 @@ const MODULE_ROUTES: Record<string, string[]> = {
   ],
   redis: ["PUT /cache/{key}", "GET /cache/{key}"],
   sse: ["GET /events/stream", "POST /events"],
+};
+
+/**
+ * The provider each provider module implements. Such a module registers its
+ * routes only while its provider is selected, so an app may keep, say, both
+ * object-storage modules installed and serve the routes of one.
+ */
+export const MODULE_PROVIDERS: Readonly<Record<string, readonly [ProviderCapability, string]>> = {
+  bullmq: ["jobs", "bullmq"],
+  "cache-memory": ["cache", "memory"],
+  "events-memory": ["events", "memory"],
+  "events-redis": ["events", "redis"],
+  "jobs-local": ["jobs", "local"],
+  "object-storage-local": ["object-storage", "local"],
+  "object-storage-s3": ["object-storage", "s3"],
+  redis: ["cache", "redis"],
 };
 
 interface RuntimeRoute {
@@ -195,10 +214,20 @@ export function documentedApiRoutes(document: unknown): Set<string> {
   return routes;
 }
 
-export function expectedApiRoutes(template: string, modules: string[]): Set<string> {
+/**
+ * The routes the template and the installed modules serve. A provider module
+ * counts only when `providers`, the app's PROVIDERS, selects its provider.
+ */
+export function expectedApiRoutes(
+  template: string,
+  modules: string[],
+  providers: Readonly<ProviderSelections>,
+): Set<string> {
   const routes = new Set(CORE_ROUTES);
   for (const route of TEMPLATE_ROUTES[template] ?? []) routes.add(route);
   for (const module of modules) {
+    const provider = MODULE_PROVIDERS[module];
+    if (provider && providers[provider[0]] !== provider[1]) continue;
     for (const route of MODULE_ROUTES[module] ?? []) routes.add(route);
   }
   return routes;
@@ -208,15 +237,21 @@ export function missingApiRoutes(
   document: unknown,
   template: string,
   modules: string[],
+  providers: Readonly<ProviderSelections>,
 ): string[] {
   const documented = documentedApiRoutes(document);
-  return [...expectedApiRoutes(template, modules)]
+  return [...expectedApiRoutes(template, modules, providers)]
     .filter((route) => !documented.has(route))
     .sort();
 }
 
-export function assertApiContract(document: unknown, template: string, modules: string[]): void {
-  const missing = missingApiRoutes(document, template, modules);
+export function assertApiContract(
+  document: unknown,
+  template: string,
+  modules: string[],
+  providers: Readonly<ProviderSelections>,
+): void {
+  const missing = missingApiRoutes(document, template, modules, providers);
   if (missing.length > 0) {
     throw new Error(`OpenAPI contract is missing routes:\n${missing.join("\n")}`);
   }

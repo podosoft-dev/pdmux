@@ -26,7 +26,7 @@
     "@pdmux/mcp": "workspace:*",
     "@pdmux/protocol": "workspace:*",
     "@podosoft/podokit-contracts": "^0.6.0",
-    "@podosoft/podokit-runtime": "^0.5.0",
+    "@podosoft/podokit-runtime": "^0.5.1",
     "@elysia/cors": "^1.4.2",
     "@elysia/openapi": "^1.4.15",
     "dotenv": "^16.4.5",

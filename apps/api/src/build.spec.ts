@@ -4,14 +4,17 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const BUILD = join(__dirname, "../scripts/build.mjs");
-const EXTENSIONS = join(__dirname, "../scripts/build.extensions.mjs");
+// The application's own build.extensions.mjs names entry points this temporary
+// layout does not contain, so each build starts without application targets. A
+// test that needs some passes its own scripts/build.extensions.mjs.
+const NO_APP_TARGETS = "export const appBuildTargets = [];\n";
 
 /** Builds an API layout made of `files` with the app's build script. */
 async function build(files: Record<string, string>): Promise<{ root: string; code: number; stderr: string }> {
   const root = mkdtempSync(join(tmpdir(), "api-build-"));
   mkdirSync(join(root, "scripts"));
   cpSync(BUILD, join(root, "scripts/build.mjs"));
-  cpSync(EXTENSIONS, join(root, "scripts/build.extensions.mjs"));
+  writeFileSync(join(root, "scripts/build.extensions.mjs"), NO_APP_TARGETS);
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), content);

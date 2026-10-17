@@ -1,14 +1,9 @@
 import { expect, test, type APIRequestContext, type PlaywrightWorkerArgs } from "@playwright/test";
+import { seededAdmin } from "../helpers/seeded-admin";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const secondaryApi = process.env.E2E_SECONDARY_API_URL;
 const origin = { origin: base };
-// The administrator seeded by the admin-dashboard Playwright setup. Inlined so this
-// spec also compiles in apps that do not install that module.
-const admin = {
-  email: process.env.E2E_ADMIN_EMAIL || "admin@example.com",
-  password: process.env.E2E_ADMIN_PASSWORD || "Podokit3e-Str0ng!pw",
-};
 
 type Playwright = PlaywrightWorkerArgs["playwright"];
 
@@ -39,6 +34,8 @@ async function signUp(ctx: APIRequestContext): Promise<SessionUser | undefined> 
 
 /** Resolves false when no administrator session is available. */
 async function signInAdmin(ctx: APIRequestContext): Promise<boolean> {
+  const admin = await seededAdmin();
+  if (!admin) return false;
   const response = await ctx.post("/api/auth/sign-in/email", { data: admin });
   return response.ok() && ((await sessionUser(ctx))?.roles ?? []).includes("admin");
 }

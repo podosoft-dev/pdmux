@@ -136,6 +136,9 @@ describe("BullMqJobQueue schedules", () => {
       await expect(queue.schedule("bad", "report", {}, { cron: "61 * * * *" })).rejects.toThrow();
       await expect(queue.schedule("bad", "report", {}, { cron: "0 3 * * *", timezone: "Mars/Olympus" })).rejects.toThrow();
       await expect(queue.schedule("bad", "report", {}, { everyMs: 10 })).rejects.toThrow("at least 1000");
+      await expect(queue.schedule("bad", "report", {}, { everyMs: 1_000 }, { keepFailed: 1.5 })).rejects.toThrow(
+        "keepFailed must be a whole number of at least 0",
+      );
     } finally {
       await queue.close();
     }
@@ -183,4 +186,51 @@ describe.skipIf(!process.env.REDIS_URL && !process.env.REDIS_HOST)("BullMqJobQue
       await inspect.close();
     }
   });
+
+  it("limits the finished jobs a schedule's runs leave, 100 completed and 1000 failed by default", async () => {
+    const name = `schedule-test-${crypto.randomUUID()}`;
+    const queue = new BullMqJobQueue(producerConnection(REDIS));
+    const inspect = new Queue(name, { connection: redisConnection(REDIS) });
+    try {
+      await queue.connect();
+      await queue.schedule("default", name, {}, { cron: "0 3 * * *" });
+      await queue.schedule("custom", name, {}, { everyMs: 3_600_000 }, { keepCompleted: 0, keepFailed: 20 });
+      expect((await inspect.getJobScheduler("default"))?.template?.opts).toMatchObject({
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 1_000 },
+      });
+      expect((await inspect.getJobScheduler("custom"))?.template?.opts).toMatchObject({
+        removeOnComplete: { count: 0 },
+        removeOnFail: { count: 20 },
+      });
+    } finally {
+      await queue.close();
+      await inspect.obliterate({ force: true });
+      await inspect.close();
+    }
+  });
+
+  it("removes finished runs beyond the schedule's limits", async () => {
+    const name = `schedule-test-${crypto.randomUUID()}`;
+    const queue = new BullMqJobQueue(producerConnection(REDIS));
+    const inspect = new Queue(name, { connection: redisConnection(REDIS) });
+    let runs = 0;
+    try {
+      await queue.connect();
+      await queue.process(name, () => {
+        runs += 1;
+        if (runs % 2 === 0) throw new Error("expected failure");
+      });
+      await queue.schedule("tick", name, {}, { everyMs: 1_000 }, { keepCompleted: 1, keepFailed: 1 });
+      for (let waited = 0; runs < 4 && waited < 10_000; waited += 100) await Bun.sleep(100);
+      expect(runs).toBeGreaterThanOrEqual(4);
+      // The last run's job moves to its finished set just after the handler returns.
+      await Bun.sleep(200);
+      expect(await inspect.getJobCounts("completed", "failed")).toEqual({ completed: 1, failed: 1 });
+    } finally {
+      await queue.close();
+      await inspect.obliterate({ force: true });
+      await inspect.close();
+    }
+  }, 15_000);
 });

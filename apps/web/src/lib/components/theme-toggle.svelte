@@ -13,7 +13,7 @@
 <DropdownMenu.Root>
   <DropdownMenu.Trigger>
     {#snippet child({ props })}
-      <Button {...props} variant="ghost" size="icon" aria-label={i18n.t.theme.toggle}>
+      <Button {...props} variant="ghost" size="icon" aria-label={i18n.t.theme.toggle} data-testid="theme-toggle">
         <SunIcon class="size-4 dark:hidden" />
         <MoonIcon class="hidden size-4 dark:block" />
       </Button>

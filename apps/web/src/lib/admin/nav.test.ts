@@ -13,8 +13,20 @@ vi.mock("./app-nav", async () => {
   };
 });
 
+// Stands in for the entries installed modules add to registry.svelte.ts, so the
+// expected order does not depend on which modules an application installs.
+vi.mock("./registry.svelte.js", async () => {
+  const { default: icon } = await import("@lucide/svelte/icons/newspaper");
+  return {
+    moduleNavEntries: [
+      { href: "/admin/blog", label: () => "Blog", icon, adminOnly: true },
+      { href: "/admin/reports", label: () => "Reports", icon },
+    ],
+  };
+});
+
 describe("admin navigation", () => {
-  it("places the application's entries before Settings", () => {
+  it("places the application's entries, then module entries, before Settings", () => {
     const hrefs = adminNavEntries({ auditLog: true }, "admin").map((entry) => entry.href);
 
     expect(hrefs).toEqual([
@@ -24,6 +36,8 @@ describe("admin navigation", () => {
       "/admin/audit",
       "/admin/specs",
       "/admin/help",
+      "/admin/blog",
+      "/admin/reports",
       "/admin/settings",
     ]);
     expect(adminNavEntries(undefined, "admin").find((entry) => entry.href === "/admin/specs")?.icon).toBe(
@@ -31,9 +45,9 @@ describe("admin navigation", () => {
     );
   });
 
-  it("hides admin-only application entries from other roles", () => {
+  it("hides admin-only application and module entries from other roles", () => {
     const hrefs = adminNavEntries(undefined, "moderator").map((entry) => entry.href);
 
-    expect(hrefs).toEqual(["/admin", "/admin/help"]);
+    expect(hrefs).toEqual(["/admin", "/admin/help", "/admin/reports"]);
   });
 });

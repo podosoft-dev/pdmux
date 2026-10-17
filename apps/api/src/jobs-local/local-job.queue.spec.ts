@@ -149,6 +149,93 @@ describe("local job schedules", () => {
     await expect(queue.schedule("bad", "report", {}, { cron: "61 * * * *" })).rejects.toThrow();
     await expect(queue.schedule("bad", "report", {}, { cron: "0 3 * * *", timezone: "Mars/Olympus" })).rejects.toThrow();
     await expect(queue.schedule("bad", "report", {}, { everyMs: 10 })).rejects.toThrow("at least 1000");
+    await expect(queue.schedule("bad", "report", {}, { everyMs: 1_000 }, { keepCompleted: -1 })).rejects.toThrow(
+      "keepCompleted must be a whole number of at least 0",
+    );
+    queue.close();
+  });
+});
+
+/** Moves the clock to each time and runs the job the schedule added then. */
+async function runScheduled(queue: LocalJobQueue, time: ReturnType<typeof manualTime>, times: number[]): Promise<void> {
+  for (const at of times) {
+    time.advance(at);
+    // The schedule adds its job without waiting; let the insert finish.
+    await Bun.sleep(1);
+    expect(await queue.runOnce()).toBe(true);
+  }
+}
+
+async function finishedJobs(database: SQL): Promise<string[]> {
+  const rows = await database<Array<{ id: string; status: string }>>`
+    SELECT "id", "status" FROM "podokit_job" ORDER BY "updatedAt", "id"
+  `;
+  return rows.map((row) => `${row.id} ${row.status}`);
+}
+
+describe("local job schedule cleanup", () => {
+  it("keeps the newest finished jobs of a scheduled run's name up to the schedule's limits", async () => {
+    sql = new SQL(":memory:");
+    const time = manualTime(0);
+    const queue = new LocalJobQueue(sql, { pollIntervalMs: 60_000, now: time.now, timer: time.timer });
+    await queue.process("report", (_payload, job) => {
+      if (job.id.endsWith(":3000") || job.id.endsWith(":5000")) throw new Error("expected failure");
+    });
+    await queue.process("other", () => undefined);
+    const other = await queue.enqueue("other", {});
+    const adHoc = await queue.enqueue("report", {});
+    while (await queue.runOnce());
+    await queue.schedule("tick", "report", {}, { everyMs: 1_000 }, { keepCompleted: 2, keepFailed: 1 });
+    await queue.start();
+    await Bun.sleep(5);
+
+    await runScheduled(queue, time, [1_000, 2_000, 3_000, 4_000, 5_000, 6_000]);
+
+    // As BullMQ trims a queue: the job enqueue() added goes too, another name's stays.
+    expect(await finishedJobs(sql)).toEqual([
+      `${other.id} completed`,
+      "report:schedule:tick:4000 completed",
+      "report:schedule:tick:5000 failed",
+      "report:schedule:tick:6000 completed",
+    ]);
+    expect(await queue.get(adHoc.id)).toBeNull();
+    queue.close();
+  });
+
+  it("removes only the run itself when a limit is 0", async () => {
+    sql = new SQL(":memory:");
+    const time = manualTime(0);
+    const queue = new LocalJobQueue(sql, { pollIntervalMs: 60_000, now: time.now, timer: time.timer });
+    await queue.process("report", (_payload, job) => {
+      if (job.id.endsWith(":2000")) throw new Error("expected failure");
+    });
+    const adHoc = await queue.enqueue("report", {});
+    while (await queue.runOnce());
+    await queue.schedule("tick", "report", {}, { everyMs: 1_000 }, { keepCompleted: 0, keepFailed: 0 });
+    await queue.start();
+    await Bun.sleep(5);
+
+    await runScheduled(queue, time, [1_000, 2_000, 3_000]);
+
+    expect(await finishedJobs(sql)).toEqual([`${adHoc.id} completed`]);
+    queue.close();
+  });
+
+  it("keeps 100 completed runs of a schedule by default", async () => {
+    sql = new SQL(":memory:");
+    const time = manualTime(0);
+    const queue = new LocalJobQueue(sql, { pollIntervalMs: 60_000, now: time.now, timer: time.timer });
+    await queue.process("report", () => undefined);
+    await queue.schedule("tick", "report", {}, { everyMs: 1_000 });
+    await queue.start();
+    await Bun.sleep(5);
+
+    await runScheduled(queue, time, Array.from({ length: 105 }, (_, index) => (index + 1) * 1_000));
+
+    const kept = await finishedJobs(sql);
+    expect(kept).toHaveLength(100);
+    expect(kept[0]).toBe("report:schedule:tick:6000 completed");
+    expect(kept.at(-1)).toBe("report:schedule:tick:105000 completed");
     queue.close();
   });
 });

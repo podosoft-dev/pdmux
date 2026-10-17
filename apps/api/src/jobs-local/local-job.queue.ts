@@ -9,6 +9,9 @@ import {
   type JobSnapshot,
   type JobStatus,
   type RepeatOptions,
+  type ScheduleOptions,
+  type ScheduleRetention,
+  scheduleRetention,
   type Unsubscribe,
 } from "@podosoft/podokit-runtime";
 
@@ -42,8 +45,14 @@ interface Schedule {
   name: string;
   payload: unknown;
   repeat: RepeatOptions;
+  retention: ScheduleRetention;
   cancel?: () => void;
 }
+
+type FinishedStatus = "completed" | "failed";
+
+// A scheduled job's deduplication key: this prefix, the schedule id, ":", and the time.
+const SCHEDULE_KEY = "schedule:";
 
 // setTimeout fires at once for a delay above 2^31 - 1 ms, so longer waits are split.
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
@@ -160,13 +169,20 @@ export class LocalJobQueue implements JobQueue {
     });
   }
 
-  async schedule(id: string, name: string, payload: unknown, repeat: RepeatOptions): Promise<void> {
+  async schedule(
+    id: string,
+    name: string,
+    payload: unknown,
+    repeat: RepeatOptions,
+    options?: ScheduleOptions,
+  ): Promise<void> {
     assertRepeatOptions(repeat);
+    const retention = scheduleRetention(options);
     // Rejects an invalid cron expression or time zone now rather than at the first run.
     nextScheduledTime(repeat, this.now());
     if (JSON.stringify(payload) === undefined) throw new Error("Job payload must be JSON serializable");
     this.schedules.get(id)?.cancel?.();
-    const schedule: Schedule = { id, name, payload, repeat };
+    const schedule: Schedule = { id, name, payload, repeat, retention };
     this.schedules.set(id, schedule);
     if (this.started) this.arm(schedule);
   }
@@ -205,6 +221,7 @@ export class LocalJobQueue implements JobQueue {
         SET "status" = 'completed', "updatedAt" = ${completedAt}, "error" = NULL
         WHERE "id" = ${row.id}
       `;
+      await this.removeFinished(row, "completed");
     } catch (error) {
       await this.fail(row, error);
     }
@@ -227,7 +244,7 @@ export class LocalJobQueue implements JobQueue {
     const at = nextScheduledTime(schedule.repeat, after);
     schedule.cancel = this.waitUntil(at, () => {
       if (!this.started || this.schedules.get(schedule.id) !== schedule) return;
-      void this.enqueue(schedule.name, schedule.payload, { deduplicationKey: `schedule:${schedule.id}:${at}` })
+      void this.enqueue(schedule.name, schedule.payload, { deduplicationKey: `${SCHEDULE_KEY}${schedule.id}:${at}` })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
           process.stderr.write(`Add scheduled job failed: ${schedule.id} ${message}\n`);
@@ -269,6 +286,45 @@ export class LocalJobQueue implements JobQueue {
       CREATE INDEX IF NOT EXISTS "podokit_job_pending"
       ON "podokit_job" ("status", "availableAt", "createdAt")
     `;
+    await this.sql`
+      CREATE INDEX IF NOT EXISTS "podokit_job_finished"
+      ON "podokit_job" ("name", "status", "updatedAt")
+    `;
+  }
+
+  /** The schedule whose job id `row` has, while that schedule is kept. */
+  private scheduleOf(row: JobRow): Schedule | undefined {
+    for (const schedule of this.schedules.values()) {
+      const prefix = `${schedule.name}:${SCHEDULE_KEY}${schedule.id}:`;
+      if (schedule.name === row.name && row.id.startsWith(prefix) && /^\d+$/.test(row.id.slice(prefix.length))) {
+        return schedule;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * After a scheduled run finishes, keeps the newest finished jobs of its name
+   * up to the schedule's limit, as BullMQ trims a queue, or removes only the
+   * run when the limit is 0.
+   */
+  private async removeFinished(row: JobRow, status: FinishedStatus): Promise<void> {
+    const schedule = this.scheduleOf(row);
+    if (!schedule) return;
+    const keep = status === "completed" ? schedule.retention.keepCompleted : schedule.retention.keepFailed;
+    if (keep === 0) {
+      await this.sql`DELETE FROM "podokit_job" WHERE "id" = ${row.id}`;
+      return;
+    }
+    await this.sql`
+      DELETE FROM "podokit_job"
+      WHERE "name" = ${row.name} AND "status" = ${status} AND "id" NOT IN (
+        SELECT "id" FROM "podokit_job"
+        WHERE "name" = ${row.name} AND "status" = ${status}
+        ORDER BY "updatedAt" DESC, "id" DESC
+        LIMIT ${keep}
+      )
+    `;
   }
 
   private poll(delay: number): void {
@@ -296,6 +352,7 @@ export class LocalJobQueue implements JobQueue {
           "error" = ${message.slice(0, 2_000)}
       WHERE "id" = ${row.id}
     `;
+    if (!retry) await this.removeFinished(row, "failed");
   }
 
   private snapshot(row: JobRow): JobSnapshot {
