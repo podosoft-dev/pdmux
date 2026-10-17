@@ -99,6 +99,13 @@
   // would fight it.
   const stacked = new MediaQuery(`max-width: ${SHELL_STACK_MAX_WIDTH - 1}px`, untrack(() => data.phoneHint));
   const coarse = new MediaQuery("pointer: coarse");
+  /**
+   * Whether the commit panel is mounted in the dock region. On a desktop that is the dock
+   * toggle. A phone has no toggle — its Git tab IS the dock region — so there the panel is
+   * always mounted; following the desktop toggle left the tab blank for every account
+   * that had not opened the dock on a desktop (`dockOpen` defaults to false).
+   */
+  const commitsMounted = $derived(layout.dockOpen || stacked.current);
   /** Cursor override, so the pager can sit on an EMPTY cell (which has no slot to focus). */
   let cursor = $state<number | null>(null);
   const soloAt = $derived(cursor ?? soloIndex(layout));
@@ -433,10 +440,10 @@
 <div
   class="pdmux pdmux-dock-column"
   data-pdmux-region="dock"
-  data-pdmux-split={layout.dockOpen && layout.filesOpen ? "both" : "single"}
+  data-pdmux-split={commitsMounted && layout.filesOpen ? "both" : "single"}
   bind:this={dockColumn}
 >
-  {#if layout.dockOpen}
+  {#if commitsMounted}
     <div class="pdmux-dock-slot" style:flex-basis={`${layout.filesOpen ? 100 - layout.filesShare : 100}%`}>
       <CommitDock
         dock={shell.dock}
@@ -454,7 +461,7 @@
     </div>
   {/if}
 
-  {#if layout.dockOpen && layout.filesOpen}
+  {#if commitsMounted && layout.filesOpen}
     <SplitHandle
       axis="y"
       invert
@@ -465,7 +472,7 @@
   {/if}
 
   {#if layout.filesOpen}
-    <div class="pdmux-dock-slot" style:flex-basis={`${layout.dockOpen ? layout.filesShare : 100}%`}>
+    <div class="pdmux-dock-slot" style:flex-basis={`${commitsMounted ? layout.filesShare : 100}%`}>
       <FilesDockPanel
         files={shell.files}
         hosts={shell.feed.hosts}
