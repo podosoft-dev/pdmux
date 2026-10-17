@@ -119,6 +119,14 @@ describe("[TC-PDWEB-016] the dev server never hands out immutable caching", () =
     expect(isViteModuleUrl("/api/storage/key?version=2")).toBe(false);
   });
 
+  it("keeps the versioned favicon immutable, whose ?v= looks like Vite's hash", () => {
+    // The managed site settings spec expects `immutable` for the favicon's current version.
+    const { set, seen } = headersAfterMiddleware("/api/site/favicon?v=1792252164531");
+    set("Cache-Control", PRODUCTION_STYLE);
+    expect(seen.get("cache-control")).toBe(PRODUCTION_STYLE);
+    expect(isViteModuleUrl("/api/site/favicon?v=1792252164531")).toBe(false);
+  });
+
   it("only applies while serving, never to a build", () => {
     // A built container SHOULD serve fingerprinted assets as immutable — that is the
     // deployment users actually reach. `apply: "serve"` is what keeps this dev-only.

@@ -61,6 +61,8 @@ const inDocker = process.env.VITE_DOCKER === "1";
  */
 /** Optimized dependencies (`?v=<hash>`) and the paths Vite serves modules from. */
 export function isViteModuleUrl(url: string): boolean {
+  // An API route's own `?v=` (the versioned favicon) is not Vite's hash.
+  if (url.startsWith("/api/")) return false;
   return /[?&]v=[0-9a-f]+(?:&|$)/.test(url) || url.startsWith("/node_modules/") || url.startsWith("/@");
 }
 
