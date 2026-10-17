@@ -116,12 +116,19 @@ test.use({ storageState: e2eAdminState });
 
 
 test.describe("pdmux terminal on a phone", () => {
-  test("[TC-PDTERM-124] one pane fills the screen and the stored split is untouched", async ({ page, request }) => {
+  test("[TC-PDTERM-124] one pane fills the screen and the stored split is untouched", async ({ page, request, baseURL }) => {
     const saved = await readLayout(request);
     // A desktop split of nine on a 390px screen is nine panes about twelve characters
     // wide. The phone renders a projection instead — and must not write it back, because
-    // this document is shared with the user's desktop.
-    await writeLayout(request, saved ? { ...saved, payload: { ...saved.payload, mode: "split9" } } : null);
+    // this document is shared with the user's desktop. An account that has never saved a
+    // layout gets one here, or there would be no stored split to protect.
+    const desktop = saved ?? { name: "default", payload: {}, isDefault: true };
+    // Paging needs somewhere to go: a stored terminal and the spare empty cell after it.
+    const stored = Array.isArray(desktop.payload.slots) && desktop.payload.slots.length > 0;
+    const host = stored ? null : await paneHost(request);
+    test.skip(!stored && !host, "no host in the fleet — nothing to page between");
+    const slots = host ? { slots: [{ id: "phone-pager", hostId: host.id, kind: "shell", session: null }] } : {};
+    await writeLayout(request, { ...desktop, payload: { ...desktop.payload, mode: "split9", ...slots } });
     await ready(page, "/");
 
     // CELLS, not panes: a cell may be empty (a first visit opens four and joins at most one
@@ -147,7 +154,8 @@ test.describe("pdmux terminal on a phone", () => {
     // …and the desktop's split is still nine.
     const after = await readLayout(request);
     expect(after?.payload.mode, "a phone rewrote the layout everyone's desktop reads").toBe("split9");
-    await writeLayout(request, saved);
+    if (saved) await writeLayout(request, saved);
+    else await request.delete(`/api/prefs/layouts/${desktop.name}`, { headers: { origin: new URL(baseURL ?? "").origin } });
   });
 
   test("[TC-PDTERM-125] a tab switch does not unmount the terminals", async ({ page, request }) => {
