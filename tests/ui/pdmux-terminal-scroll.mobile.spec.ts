@@ -101,6 +101,15 @@ async function recordSocket(page: Page): Promise<void> {
 // account with a person rearranges their screen mid-session.
 test.use({ storageState: e2eAdminState });
 
+/**
+ * The multiplexer session the alternate-buffer cases scroll in. A scroll gesture over such a
+ * pane asks the agent to put the session in copy-mode, and the session keeps that mode after
+ * the test; in the shared `pdmux-e2e` session the next spec that typed there sent its keys
+ * to copy-mode instead of the shell (`[TC-PDTERM-126]`, measured on a second run against one
+ * agent). As with the mouse case below, a test that changes a terminal's mode owns it.
+ */
+const SCROLL_SESSION = "pdmux-e2e-scroll";
+
 test.describe("reaching a pane's scrollback from a phone", () => {
   test("[TC-PDTERM-129] a pane with history behind it shows this product's own thumb", async ({ page, request }) => {
     const host = await onlineHost(request);
@@ -214,7 +223,7 @@ test.describe("reaching a pane's scrollback from a phone", () => {
       ).toEqual([]);
 
       // --- the ALTERNATE buffer: tmux, where xterm has no scrollback to scroll -------------
-      await seedSoloPane(request, saved, { id: "scroll3", hostId: host.id, kind: "new", session: "pdmux-e2e" });
+      await seedSoloPane(request, saved, { id: "scroll3", hostId: host.id, kind: "new", session: SCROLL_SESSION });
       await page.reload();
       await ready(page, "/");
       const tmux = page.locator("[data-pdmux-surface]").first();
@@ -455,7 +464,7 @@ test.describe("reaching a pane's scrollback from a phone", () => {
     await recordSocket(page);
     try {
       // The ALTERNATE buffer, which is what nearly every pane on this dashboard is showing.
-      await seedSoloPane(request, saved, { id: "scroll4", hostId: host.id, kind: "new", session: "pdmux-e2e" });
+      await seedSoloPane(request, saved, { id: "scroll4", hostId: host.id, kind: "new", session: SCROLL_SESSION });
       await ready(page, "/");
       const surface = page.locator("[data-pdmux-surface]").first();
       await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 30_000 });
