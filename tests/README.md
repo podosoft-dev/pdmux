@@ -125,3 +125,12 @@ against the containerized loop, with the exclusive tests' report in
 ```bash
 E2E_BASE_URL=http://pdmux.localhost E2E_WORKERS=2 bun run test:e2e
 ```
+
+Before a whole run, remove the accounts and hosts earlier runs left behind with
+`bun run e2e:reset` from the repository root. It runs psql in the PostgreSQL
+container, `pdmux-postgres-1` by default; on the `podo dev` stack, load the
+database settings from `.env.docker` and name that stack's container:
+
+```bash
+(set -a && . ./.env.docker && set +a && E2E_POSTGRES_CONTAINER=pdmux-dev-postgres-1 bun run e2e:reset)
+```

@@ -17,6 +17,10 @@
  *
  * Usage (repo root, with .env loaded):
  *   bun tools/reset-e2e-data.mjs [--dry-run]
+ *
+ * It runs psql inside the PostgreSQL container: `pdmux-postgres-1` for the
+ * infra/docker stack, `pdmux-dev-postgres-1` for `podo dev`. Set
+ * E2E_POSTGRES_CONTAINER for the latter.
  */
 import { spawnSync } from 'node:child_process';
 
@@ -28,6 +32,7 @@ const PG = {
 	user: process.env.POSTGRES_USER ?? 'pdmux',
 	password: process.env.POSTGRES_PASSWORD ?? 'pdmux',
 	db: process.env.POSTGRES_DB ?? 'pdmux',
+	container: process.env.E2E_POSTGRES_CONTAINER ?? 'pdmux-postgres-1',
 };
 
 /** Accounts the seeded sessions belong to — everything else is disposable. */
@@ -54,7 +59,7 @@ const STATEMENTS = [
 function psql(sql) {
 	const result = spawnSync(
 		'docker',
-		['exec', '-e', `PGPASSWORD=${PG.password}`, 'pdmux-postgres-1', 'psql', '-U', PG.user, '-d', PG.db, '-tAc', sql],
+		['exec', '-e', `PGPASSWORD=${PG.password}`, PG.container, 'psql', '-U', PG.user, '-d', PG.db, '-tAc', sql],
 		{ encoding: 'utf8' },
 	);
 	if (result.status !== 0) {
