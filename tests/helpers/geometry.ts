@@ -111,3 +111,25 @@ export async function expectViewportBound(page: Page): Promise<void> {
 	});
 	expect(scrolls, "the page scrolls — the layout is not bound to the viewport").toBe(false);
 }
+
+/**
+ * Every control inside `container` lies within its box.
+ *
+ * A container that clips (`overflow: hidden`) hides a control that runs past its edge,
+ * and Playwright still clicks it, because it scrolls the clipped box first — so a
+ * header whose last buttons sit outside the panel passes every click-based spec while
+ * a pointer cannot reach them.
+ */
+export async function expectControlsInside(container: Locator, label = "container"): Promise<void> {
+	const outside = await container.evaluate((root: HTMLElement) => {
+		const box = root.getBoundingClientRect();
+		return [...root.querySelectorAll<HTMLElement>("button, [role='button'], [role='combobox'], input, select")]
+			.filter((control) => {
+				const rect = control.getBoundingClientRect();
+				if (rect.width === 0 && rect.height === 0) return false;
+				return rect.left < box.left - 0.5 || rect.right > box.right + 0.5 || rect.top < box.top - 0.5 || rect.bottom > box.bottom + 0.5;
+			})
+			.map((control) => control.dataset.testid ?? control.getAttribute("aria-label") ?? control.textContent?.trim() ?? control.tagName);
+	});
+	expect(outside, `${label}: controls outside the box`).toEqual([]);
+}

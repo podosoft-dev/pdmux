@@ -1,5 +1,5 @@
 import { type Page, expect, test } from "@playwright/test";
-import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
+import { expectControlsInside, expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { e2eAdminState } from "../helpers/pdmux-accounts";
 import { readLayout, seedSoloPane, writeLayout } from "../helpers/pdmux-layout";
@@ -179,6 +179,9 @@ test.describe("pdmux on a phone", () => {
     const refs = page.locator("[data-pdmux-refs]");
     const list = page.locator(".pdmux-graph-list");
     await expect(list).toBeVisible();
+    // The header wraps rather than running its rescan, remote, refs and detach buttons
+    // off the right edge of the phone.
+    await expectControlsInside(page.locator("[data-testid='commit-dock'] > header"), "commit dock header on a phone");
     // Beside the graph, the panel took a third of a 390px dock and left the graph 240px —
     // the width the container query itself calls unreadable. On a phone it goes ABOVE.
     if ((await refs.count()) > 0) {

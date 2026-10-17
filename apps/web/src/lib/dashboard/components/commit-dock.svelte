@@ -312,7 +312,10 @@
      and the file explorer — wearing the name here as well would mean two elements
      answering to the region that decides what a phone shows. -->
 <div class="pdmux pdmux-graph" data-pdmux-region="graph" data-testid="commit-dock">
-  <header class="flex items-center gap-2 border-b px-2 py-1.5 text-xs">
+  <!-- Wraps: the controls are about 570px in one row, wider than the default 420px dock
+       and a phone, and the panel clips what runs past its edge — the four buttons on the
+       right could not be reached at all. -->
+  <header class="flex flex-wrap items-center gap-2 border-b px-2 py-1.5 text-xs">
     {#if hosts.length}
       <Select.Root
         type="single"

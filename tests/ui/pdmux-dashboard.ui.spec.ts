@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { expectOnScreen, expectScrollable, expectViewportBound } from "../helpers/geometry";
+import { expectControlsInside, expectOnScreen, expectScrollable, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
 import { openSidebar } from "../helpers/shell";
@@ -395,6 +395,9 @@ test.describe.serial("pdmux dashboard", () => {
     await expect(panel).toBeVisible();
     await expectOnScreen(panel, "refs panel in the dock");
     await expectViewportBound(page);
+    // The header's controls are reachable, not only present: in one row they ran 148px
+    // past a 420px dock, and the panel clipped the buttons a click spec still pressed.
+    await expectControlsInside(page.locator("[data-testid='commit-dock'] > header"), "commit dock header at the default dock width");
 
     // Hiding it is the deliberate act, and the choice is the user's, so it survives a
     // reload (debounced write).
