@@ -43,8 +43,7 @@ describe("release workflow", () => {
     expect(workflow.indexOf("Verify migrations in the final API image"))
       .toBeLessThan(workflow.indexOf("Hand the digests to the publish job"));
     const buildScript = readFileSync(repositoryFile("apps/api/scripts/build.mjs"), "utf8");
-    expect(buildScript).toContain("checkMigrations()");
-    expect(buildScript).not.toContain('outdir: "dist/migrations"');
+    expect(buildScript).toContain("migrations.json");
   });
   test("[TC-PDHOST-024] preserves multi-architecture images and agent assets", () => {
     for (const fragment of [

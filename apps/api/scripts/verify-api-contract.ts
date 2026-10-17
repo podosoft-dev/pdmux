@@ -4,11 +4,13 @@ import { createApp } from "../src/app";
 import { validateEnv } from "../src/config/env.validation";
 import {
   assertApiContract,
+  assertApplicationRoutes,
   assertConsistentRouteParameters,
   documentedApiRoutes,
 } from "../src/core/api-contract";
+import { APP_DOCUMENTED_ROUTES } from "../src/core/api-contract.extensions";
 import { createCoreServices } from "../src/core/services";
-import { PDMUX_DOCUMENTED_HTTP_ROUTES } from "../src/pdmux/pdmux.contract";
+import { PROVIDERS } from "../src/config/providers";
 
 interface ProjectManifest {
   template: string;
@@ -28,15 +30,16 @@ try {
     throw new Error(`OpenAPI request failed (${response.status}): ${await response.text()}`);
   }
   const document: unknown = await response.json();
-  const modules = manifest.modules.map((module) => module.name);
+  // A provider module such as object-storage-local registers its routes only
+  // while its provider is selected, so the contract expects them only then.
+  const modules = manifest.modules.map((module) => module.name).filter((name) =>
+    Object.entries(PROVIDERS).every(([capability, provider]) =>
+      !name.startsWith(`${capability}-`) || name === `${capability}-${provider}`));
   assertApiContract(document, manifest.template, modules);
-  const documented = documentedApiRoutes(document);
-  const missingProductRoutes = PDMUX_DOCUMENTED_HTTP_ROUTES.filter((route) => !documented.has(route));
-  if (missingProductRoutes.length > 0) {
-    throw new Error(`OpenAPI is missing pdmux routes:\n${missingProductRoutes.join("\n")}`);
-  }
+  assertApplicationRoutes(document, app.routes, APP_DOCUMENTED_ROUTES);
   process.stdout.write(
-    `Verified ${documented.size} documented API operations, including ${PDMUX_DOCUMENTED_HTTP_ROUTES.length} pdmux operations.\n`,
+    `Verified ${documentedApiRoutes(document).size} documented API operations for ${manifest.template}, ` +
+      `including ${APP_DOCUMENTED_ROUTES.length} application operations.\n`,
   );
 } finally {
   await services.close();

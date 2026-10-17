@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Plugin } from "vite";
-import config from "../vite.config";
+import { appViteConfig, isViteModuleUrl } from "../vite.extensions";
+
+const config = appViteConfig;
 
 /**
  * The dev server may never tell a browser to cache something it cannot be told to drop.
@@ -35,7 +37,7 @@ function devCachePlugin(): Plugin {
   const plugins = (config as { plugins?: unknown }).plugins;
   const flat = (Array.isArray(plugins) ? plugins : []).flat(Infinity) as Plugin[];
   const found = flat.find((plugin) => plugin?.name === "pdmux-no-immutable-dev-cache");
-  expect(found, "the dev cache-header plugin is gone from vite.config.ts").toBeTruthy();
+  expect(found, "the dev cache-header plugin is gone from vite.extensions.ts").toBeTruthy();
   return found as Plugin;
 }
 
@@ -43,7 +45,9 @@ function devCachePlugin(): Plugin {
  * Run the plugin's `configureServer` and hand back the middleware it installed, plus a
  * response object whose `setHeader` calls are recorded.
  */
-function headersAfterMiddleware(): { set: (name: string, value: string) => void; seen: Map<string, unknown> } {
+function headersAfterMiddleware(
+  url = "/node_modules/.vite-2/deps/svelte.js?v=1a2b3c4d",
+): { set: (name: string, value: string) => void; seen: Map<string, unknown> } {
   const seen = new Map<string, unknown>();
   let middleware: ((req: unknown, res: unknown, next: () => void) => void) | null = null;
   const server = {
@@ -68,7 +72,7 @@ function headersAfterMiddleware(): { set: (name: string, value: string) => void;
     },
   };
   let nexted = false;
-  (middleware as unknown as (req: unknown, res: unknown, next: () => void) => void)({}, res, () => {
+  (middleware as unknown as (req: unknown, res: unknown, next: () => void) => void)({ url }, res, () => {
     nexted = true;
   });
   expect(nexted, "the middleware never called next() — every dev request would hang").toBe(true);
@@ -102,6 +106,17 @@ describe("[TC-PDWEB-016] the dev server never hands out immutable caching", () =
     expect(seen.get("content-type")).toBe("application/javascript");
     expect(seen.get("etag")).toBe('W/"abc"');
     expect(seen.get("cache-control")).toBe("no-cache");
+  });
+
+  it("rewrites only Vite's module responses, never an API response", () => {
+    // A profile image is served `immutable` on purpose, and the managed profile image
+    // spec asserts that through the dev server too.
+    const { set, seen } = headersAfterMiddleware("/api/profile-images/user.png");
+    set("Cache-Control", PRODUCTION_STYLE);
+    expect(seen.get("cache-control")).toBe(PRODUCTION_STYLE);
+    expect(isViteModuleUrl("/@fs/repo/packages/ui/dist/index.js?v=1a2b3c4d")).toBe(true);
+    expect(isViteModuleUrl("/src/lib/version.ts?v=1a2b3c4d&import")).toBe(true);
+    expect(isViteModuleUrl("/api/storage/key?version=2")).toBe(false);
   });
 
   it("only applies while serving, never to a build", () => {

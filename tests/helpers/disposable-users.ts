@@ -34,17 +34,19 @@ async function readCreatedUserId(response: CreatedUserResponse): Promise<string>
 
 export const test = base.extend<{ disposableUsers: DisposableUsers }>({
   disposableUsers: async ({ context, playwright }, use, testInfo) => {
-    // API projects do not inherit the UI project's admin storageState, while a
+    // API projects (`api` and its `api-exclusive` twin) do not inherit the UI
+    // project's admin storageState, while a
     // second admin sign-in can invalidate the shared UI session. API tests sign in
     // an isolated request context. UI tests copy the browser's admin cookies into
     // their own context once, so a test that later signs its page in as another
     // user does not turn cleanup into that user's (forbidden) requests.
+    const requestOnly = testInfo.project.name.replace(/-exclusive$/, "") === "api";
     const request = await playwright.request.newContext({
       baseURL,
       extraHTTPHeaders: origin,
-      ...(testInfo.project.name === "api" ? {} : { storageState: await context.storageState() }),
+      ...(requestOnly ? {} : { storageState: await context.storageState() }),
     });
-    if (testInfo.project.name === "api") {
+    if (requestOnly) {
       const signIn = await request.post("/api/auth/sign-in/email", {
         data: { email: ADMIN.email, password: ADMIN.password },
       });

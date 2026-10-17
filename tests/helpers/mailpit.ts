@@ -1,5 +1,7 @@
 // Helpers for the local Mailpit catcher (docker-compose / CI service). Tests that
-// exercise email flows skip when it isn't reachable (see MAILPIT_URL).
+// exercise email flows skip when it isn't reachable (see MAILPIT_URL). Each test
+// mails an address of its own and reads the newest message to it; the inbox is
+// shared with tests on other workers, so no test empties it.
 const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
 
 export async function mailpitReachable(): Promise<boolean> {
@@ -7,14 +9,6 @@ export async function mailpitReachable(): Promise<boolean> {
     return (await fetch(`${MAILPIT}/readyz`)).ok;
   } catch {
     return false;
-  }
-}
-
-export async function clearMailpit(): Promise<void> {
-  try {
-    await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
-  } catch {
-    /* ignore */
   }
 }
 

@@ -1,6 +1,6 @@
 import { expect, test } from "../helpers/disposable-users";
 import { ready } from "../helpers/hydration";
-import { clearMailpit, mailpitReachable, waitForLink } from "../helpers/mailpit";
+import { mailpitReachable, waitForLink } from "../helpers/mailpit";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 
@@ -21,7 +21,6 @@ test("admin sends a password reset email to a user", async ({ page, disposableUs
   await ready(page, "/admin/users");
   const email = `admin-reset-${Date.now()}@example.com`;
   await disposableUsers.create({ email, name: "AR" });
-  await clearMailpit();
   await page.locator("#toolbar-search").fill(email);
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.getByRole("row", { name: new RegExp(email) }).getByRole("button").click();

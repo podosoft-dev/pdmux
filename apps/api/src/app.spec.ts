@@ -1,6 +1,8 @@
 import { describe, expect, it, mock, type Mock } from "bun:test";
+import { AppException } from "@podosoft/podokit-contracts";
 import {
   cachedOpenApiDocument,
+  renderError,
   setRetryAfter,
   UNAVAILABLE_RETRY_AFTER_SECONDS,
   type OpenApiDocumentLoader,
@@ -96,5 +98,25 @@ describe("setRetryAfter", () => {
     const headers: Record<string, string | number> = { "Retry-After": "7" };
     setRetryAfter(headers);
     expect(headers).toEqual({ "Retry-After": "7" });
+  });
+});
+
+describe("renderError", () => {
+  it("puts an AppException's details in the envelope", () => {
+    const set = { headers: {} as Record<string, string | number>, status: undefined as number | string | undefined };
+    const details = { fields: [{ path: "email", code: "taken" }] };
+    const body = renderError("UNKNOWN", new AppException("SIGNUP_INVALID", "Invalid sign-up", 422, details), "/signup", set);
+    expect(set.status).toBe(422);
+    expect(body.error).toMatchObject({ code: "SIGNUP_INVALID", statusCode: 422, path: "/signup", details });
+    expect(renderError("UNKNOWN", new AppException("GONE", "Gone", 410), "/x", set).error).not.toHaveProperty("details");
+  });
+
+  it("hides the message of an unexpected error", () => {
+    const set = { headers: {} as Record<string, string | number>, status: undefined as number | string | undefined };
+    expect(renderError("UNKNOWN", new Error("secret detail"), "/x", set).error).toMatchObject({
+      code: "INTERNAL_ERROR",
+      message: "Internal server error",
+      statusCode: 500,
+    });
   });
 });

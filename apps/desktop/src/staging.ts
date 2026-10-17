@@ -35,7 +35,7 @@ export function parseAgentVersion(source: string): string {
 async function stageApi(repositoryRoot: string, destination: string): Promise<void> {
   const source = join(repositoryRoot, "apps", "api", "dist");
   await mkdir(destination, { recursive: true });
-  for (const entry of ["main.js", "migrate.js"] as const) {
+  for (const entry of ["main.js", "desktop-migrate.js"] as const) {
     await copyFile(join(source, entry), join(destination, entry));
   }
 }

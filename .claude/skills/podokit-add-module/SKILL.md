@@ -23,5 +23,5 @@ runtime settings, requires auth), `redis`, `bullmq` (queue + worker),
 Notes:
 - A module auto-adds its required modules (e.g. `admin-dashboard` adds `auth`).
 - After adding, follow the printed next steps (often DB migrations, e.g.
-  `bunx --bun @better-auth/cli migrate -y --config apps/api/src/auth/auth.ts`).
+  `bun run --cwd apps/api migrate:all`).
 - Module wiring lands inside `// podokit:` fenced regions — don't hand-edit those.

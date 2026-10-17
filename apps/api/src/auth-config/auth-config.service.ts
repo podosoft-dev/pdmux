@@ -11,6 +11,7 @@ import {
   SUPPORTED_SOCIAL_PROVIDERS,
 } from "@podosoft/podokit-auth";
 import type { DatabaseProviderName } from "@podosoft/podokit-runtime";
+import { AUTH_CONFIG_DEFAULTS } from "../auth/auth-config-store";
 import { refreshAuthNow } from "../auth/auth-provider";
 import {
   readAuthConfigRow,
@@ -123,7 +124,7 @@ export class AuthConfigService {
   async describe(): Promise<AuthConfigView> {
     const rows = await this.rows();
     const byKey = new Map(rows.map((row) => [row.key, row]));
-    const environment = envAuthConfig();
+    const environment = envAuthConfig(AUTH_CONFIG_DEFAULTS);
     const social: Record<string, SocialProviderView> = {};
 
     for (const row of rows) {

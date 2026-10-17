@@ -42,11 +42,13 @@ test("admin can create a user, set its password, and remove it", async ({ playwr
   await admin.dispose();
 });
 
-test("a normal user cannot create users (403)", async ({ playwright }) => {
+test("a normal user cannot create users (403)", async ({ playwright, disposableUsers }) => {
   const user = await signedIn(playwright, USER);
   const res = await user.post("/api/auth/admin/create-user", {
     data: { email: `nope-${Date.now()}@example.com`, password: "Podokit3e-Str0ng!pw", name: "Nope", role: "user" },
   });
+  // Remove the account if the request wrongly succeeded, before failing on it.
+  if (res.ok()) await disposableUsers.trackResponse(res);
   expect(res.status()).toBe(403);
   await user.dispose();
 });

@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ADMIN, USER, anonState } from "../helpers/accounts";
 import { totpCode } from "../helpers/totp";
-import { exclusive } from "../helpers/exclusive";
 
 test.use({ storageState: anonState });
 
@@ -85,62 +84,60 @@ test("two-factor: sign in with an authenticator code from the login page", async
   await expectAccountPage(page);
 });
 
-test("require-2fa: a new sign-up is forced through the enrolment page", async ({ page, playwright }) => {
+test("require-2fa: a new sign-up is forced through the enrolment page", { tag: "@exclusive" }, async ({ page, playwright }) => {
   test.slow();
-  await exclusive("require2fa", async () => {
-    const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-    const caps = await (await admin.get("/api/account/capabilities")).json();
-    test.skip(!caps?.twoFactor, "two-factor not enabled");
-    await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
+  const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const caps = await (await admin.get("/api/account/capabilities")).json();
+  test.skip(!caps?.twoFactor, "two-factor not enabled");
+  await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
 
-    const email = `rq-ui-${Date.now()}@example.com`;
-    const pw = "Podokit3e-Str0ng!pw";
-    try {
-      await admin.put("/api/account/settings", { data: { require2fa: true } });
-      // A fresh un-enrolled user; poll (via API) until the guard cache picks up the policy.
+  const email = `rq-ui-${Date.now()}@example.com`;
+  const pw = "Podokit3e-Str0ng!pw";
+  try {
+    await admin.put("/api/account/settings", { data: { require2fa: true } });
+    // A fresh un-enrolled user; poll (via API) until the guard cache picks up the policy.
+    const probe = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+    await probe.post("/api/auth/sign-up/email", { data: { email, password: pw, name: "RQUI" } });
+    await expect(async () => {
+      expect((await probe.get("/api/account/me")).status()).toBe(403);
+    }).toPass({ timeout: 8000 });
+    await probe.dispose();
+
+    // Signing in toward a protected route lands on the mandatory enrolment page.
+    await openHydratedLogin(page, "/account");
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill(pw);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/\/setup-2fa/);
+
+    // Complete enrolment entirely through the UI: password → QR + backup codes →
+    // authenticator code → activate. The code is computed from the on-page URI.
+    await page.getByLabel("Confirm your password").fill(pw);
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByTestId("backup-codes")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
+    const uri = (await page.locator("code").first().innerText()).trim();
+    await page.getByRole("checkbox").click();
+    await page.getByLabel("3. Enter the 6-digit code").fill(totpCode(uri));
+    await page.getByRole("button", { name: "Activate and continue" }).click();
+
+    // Enrolled → the gate lets the regular user into their account page.
+    await expectAccountPage(page);
+
+    // An enrolled user who revisits setup is returned to the same non-admin page.
+    await page.goto("/setup-2fa");
+    await expectAccountPage(page);
+  } finally {
+    await admin.put("/api/account/settings", { data: { require2fa: false } });
+    await expect(async () => {
       const probe = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-      await probe.post("/api/auth/sign-up/email", { data: { email, password: pw, name: "RQUI" } });
-      await expect(async () => {
-        expect((await probe.get("/api/account/me")).status()).toBe(403);
-      }).toPass({ timeout: 8000 });
+      await probe.post("/api/auth/sign-in/email", { data: { email: USER.email, password: USER.password } });
+      const status = (await probe.get("/api/account/me")).status();
       await probe.dispose();
-
-      // Signing in toward a protected route lands on the mandatory enrolment page.
-      await openHydratedLogin(page, "/account");
-      await page.getByLabel("Email").fill(email);
-      await page.getByLabel("Password").fill(pw);
-      await page.getByRole("button", { name: "Sign in", exact: true }).click();
-      await expect(page).toHaveURL(/\/setup-2fa/);
-
-      // Complete enrolment entirely through the UI: password → QR + backup codes →
-      // authenticator code → activate. The code is computed from the on-page URI.
-      await page.getByLabel("Confirm your password").fill(pw);
-      await page.getByRole("button", { name: "Continue" }).click();
-      await expect(page.getByTestId("backup-codes")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
-      const uri = (await page.locator("code").first().innerText()).trim();
-      await page.getByRole("checkbox").click();
-      await page.getByLabel("3. Enter the 6-digit code").fill(totpCode(uri));
-      await page.getByRole("button", { name: "Activate and continue" }).click();
-
-      // Enrolled → the gate lets the regular user into their account page.
-      await expectAccountPage(page);
-
-      // An enrolled user who revisits setup is returned to the same non-admin page.
-      await page.goto("/setup-2fa");
-      await expectAccountPage(page);
-    } finally {
-      await admin.put("/api/account/settings", { data: { require2fa: false } });
-      await expect(async () => {
-        const probe = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-        await probe.post("/api/auth/sign-in/email", { data: { email: USER.email, password: USER.password } });
-        const status = (await probe.get("/api/account/me")).status();
-        await probe.dispose();
-        expect(status).toBe(200);
-      }).toPass({ timeout: 8000 });
-      await admin.dispose();
-    }
-  });
+      expect(status).toBe(200);
+    }).toPass({ timeout: 8000 });
+    await admin.dispose();
+  }
 });
 
 test("account: regenerate backup codes shows a fresh set", async ({ page, playwright }) => {

@@ -1,8 +1,6 @@
 import { Database as SqliteDatabase } from "bun:sqlite";
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import type { MigrationInterface, QueryRunner } from "typeorm";
+import { loadMigrations, migrationSet } from "./migration-files";
 
 export interface SqliteMigrationDefinition {
   timestamp: number;
@@ -15,40 +13,8 @@ interface AppliedMigration {
   name: string;
 }
 
-type MigrationConstructor = new () => MigrationInterface;
-
-function isMigration(value: unknown): value is MigrationConstructor {
-  if (typeof value !== "function") return false;
-  const prototype = (value as { prototype?: unknown }).prototype;
-  if (!prototype || typeof prototype !== "object") return false;
-  const record = prototype as Record<string, unknown>;
-  return typeof record.up === "function" && typeof record.down === "function";
-}
-
 async function discoverMigrations(): Promise<SqliteMigrationDefinition[]> {
-  const compiled = join(process.cwd(), "dist", "migrations");
-  const source = join(process.cwd(), "src", "migrations");
-  const directory = process.env.NODE_ENV === "production" && existsSync(compiled)
-    ? compiled
-    : source;
-  if (!existsSync(directory)) return [];
-  const files = readdirSync(directory)
-    .filter((file) => /^\d+-.+\.(?:js|ts)$/.test(file))
-    .sort();
-  const definitions: SqliteMigrationDefinition[] = [];
-  for (const file of files) {
-    const loaded = await import(pathToFileURL(join(directory, file)).href) as Record<string, unknown>;
-    const constructors = Object.values(loaded).filter(isMigration);
-    if (constructors.length !== 1) {
-      throw new Error(`SQLite migration ${file} must export exactly one migration class`);
-    }
-    const timestamp = Number(file.slice(0, file.indexOf("-")));
-    if (!Number.isSafeInteger(timestamp)) throw new Error(`SQLite migration ${file} has an invalid timestamp`);
-    const Constructor = constructors[0];
-    if (!Constructor) throw new Error(`SQLite migration ${file} has no migration class`);
-    definitions.push({ timestamp, migration: new Constructor() });
-  }
-  return definitions;
+  return loadMigrations(migrationSet());
 }
 
 function queryRunner(database: SqliteDatabase): QueryRunner {

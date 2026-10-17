@@ -6,6 +6,8 @@ import {
 } from "@podosoft/podokit-runtime";
 import type { AppEnv } from "../config/env.validation";
 import { Database } from "../database/database";
+import { migrationSet } from "../database/migration-files";
+import { MIGRATIONS_READINESS_CHECK, pendingMigrationsCheck } from "../database/migration-readiness";
 import { DATABASE_READINESS_CHECK, ReadinessService } from "../health/readiness.service";
 
 export type { ServiceKey } from "@podosoft/podokit-runtime";
@@ -410,6 +412,17 @@ export function createCoreServices(env: AppEnv): ServiceRegistry {
   });
   services.register(READINESS, readiness);
   readiness.register(DATABASE_READINESS_CHECK, () => services.resolve(DATABASE).ping());
+  if (env.NODE_ENV === "production") {
+    // Throws when the build output lacks its migration list, so the API does not
+    // start without knowing which migrations its schema needs.
+    const migrations = migrationSet({ production: true });
+    if (migrations.compiled) {
+      readiness.register(
+        MIGRATIONS_READINESS_CHECK,
+        pendingMigrationsCheck(() => services.resolve(DATABASE).sql, migrations),
+      );
+    }
+  }
   services.register(LOGGER, logger);
   services.register(ACCESS_POLICY, accessPolicy);
   services.register(REQUEST_GUARDS, requestGuards);

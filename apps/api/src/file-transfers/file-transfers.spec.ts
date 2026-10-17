@@ -7,7 +7,7 @@ import type { DataSource } from "typeorm";
 import { fsTransferRequestSchema, fsTransferResultSchema, type FsTransferEntry, type FsTransferRequest } from "@pdmux/protocol";
 import { FileTransfersService, type TransferAgent, type TransferOwner } from "./file-transfers.service";
 import { FileTransfer, FileTransferEntry } from "./file-transfer.entity";
-import { createAppDataSource } from "../database/data-source";
+import { createAppDataSource } from "../database/app-data-source";
 import { BunSqliteDatabaseAdapter } from "../database/sqlite-driver";
 import { Host } from "../hosts/host.entity";
 import { AppException } from "../common/app-exception";

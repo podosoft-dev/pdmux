@@ -7,6 +7,7 @@ import {
   bodyLimitFor,
   checkBackend,
   checkIdleTimeout,
+  configuredPublicOrigins,
   envMilliseconds,
   IN_MEMORY_RESPONSE_BYTES,
   proxyRequest,
@@ -16,12 +17,14 @@ import {
   resolveClientIp,
   sortedBodyLimits,
   sortedProxyTimeouts,
+  upstreamFetchOptions,
   withAppHeaders,
 } from "./backend-proxy";
 
 describe("backend proxy client address handling", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("returns the normalized address from a trusted proxy chain", () => {
@@ -72,6 +75,48 @@ describe("backend proxy client address handling", () => {
 
     expect(response.status).toBe(204);
     expect(upstreamHeaders?.get("x-forwarded-for")).toBe("203.0.113.9");
+  });
+
+  it("forwards the public origin a request came in on when CORS_ORIGIN lists it", async () => {
+    let upstreamHeaders: Headers | undefined;
+    vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
+      upstreamHeaders = new Headers(init?.headers);
+      return new Response(null, { status: 204 });
+    });
+    vi.stubEnv("CORS_ORIGIN", "https://example.com,https://mirror.example.com");
+
+    // The adapter builds the request URL from the gateway's forwarded host and
+    // protocol; a caller's own forwarded headers never reach the API.
+    const request = new Request("https://mirror.example.com/api/mcp/info", {
+      headers: { "x-forwarded-host": "attacker.example", "x-forwarded-proto": "http" },
+    });
+    await proxyRequest(request, "http://api:5002/mcp/info");
+
+    expect(upstreamHeaders?.get("x-forwarded-host")).toBe("mirror.example.com");
+    expect(upstreamHeaders?.get("x-forwarded-proto")).toBe("https");
+  });
+
+  it("forwards no origin that CORS_ORIGIN does not list", async () => {
+    let upstreamHeaders: Headers | undefined;
+    vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
+      upstreamHeaders = new Headers(init?.headers);
+      return new Response(null, { status: 204 });
+    });
+    vi.stubEnv("CORS_ORIGIN", "https://example.com");
+
+    const request = new Request("http://attacker.example/api/mcp/info", {
+      headers: { "x-forwarded-host": "example.com", "x-forwarded-proto": "https" },
+    });
+    await proxyRequest(request, "http://api:5002/mcp/info");
+
+    expect(upstreamHeaders?.has("x-forwarded-host")).toBe(false);
+    expect(upstreamHeaders?.has("x-forwarded-proto")).toBe(false);
+  });
+
+  it("reads absolute CORS_ORIGIN entries as origins and skips patterns", () => {
+    expect([...configuredPublicOrigins(" https://example.com/ , *.example.com, not a url, http://localhost:5001")])
+      .toEqual(["https://example.com", "http://localhost:5001"]);
+    expect(configuredPublicOrigins("").size).toBe(0);
   });
 
   // Not forwarding this does not leave the header unset: fetch substitutes its own
@@ -884,6 +929,40 @@ describe("backend proxy application timeouts", () => {
       error: { code: "BACKEND_UNAVAILABLE", path: "/api/file-transfers/7/commit" },
     });
     expect(checks).toBeGreaterThanOrEqual(3);
+  });
+
+  it("turns off Bun's fetch idle timeout on a route without a deadline only", async () => {
+    const proxy = await proxyWithTimeouts([{ pathPrefix: "/api/hosts/:hostId/file-transfers", timeoutMs: null }]);
+    const fetch = stubApi(async () => new Response("ok"), async () => Response.json({ done: true }));
+
+    await proxy(
+      new Request("http://app.localhost/api/hosts/h1/file-transfers/t1/commit", { method: "POST", body: "{}" }),
+      "http://api:5002/hosts/h1/file-transfers/t1/commit",
+    );
+    await proxy(new Request("http://app.localhost/api/hosts/h1/notes"), "http://api:5002/hosts/h1/notes");
+
+    const upstream = fetch.mock.calls.filter(([input]) => !String(input).endsWith("/health"));
+    const [commit, notes] = upstream.map(([, init]) => init as RequestInit & { timeout?: unknown });
+    expect(upstream).toHaveLength(2);
+    expect(commit?.timeout).toBe(false);
+    expect(notes).not.toHaveProperty("timeout");
+  });
+
+  it("turns off Bun's fetch idle timeout for a deadline it would cut first", async () => {
+    expect(upstreamFetchOptions(null)).toEqual({ timeout: false });
+    expect(upstreamFetchOptions(600_000)).toEqual({ timeout: false });
+    expect(upstreamFetchOptions(300_000)).toEqual({ timeout: false });
+    expect(upstreamFetchOptions(299_999)).toEqual({});
+    expect(upstreamFetchOptions(30_000)).toEqual({});
+
+    vi.stubEnv("BACKEND_PROXY_TIMEOUT_MS", "300000");
+    vi.stubEnv("CONNECTION_IDLE_TIMEOUT", "0");
+    const proxy = await proxyWithTimeouts([]);
+    const fetch = stubApi(async () => new Response("ok"), async () => Response.json({ done: true }));
+
+    await proxy(new Request("http://app.localhost/api/report"), "http://api:5002/report");
+
+    expect(fetch.mock.calls[0]?.[1]).toHaveProperty("timeout", false);
   });
 
   it("waits without a deadline on a route with a path parameter", async () => {

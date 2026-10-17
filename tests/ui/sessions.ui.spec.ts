@@ -1,4 +1,5 @@
 import { expect, test } from "../helpers/disposable-users";
+import { USER } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
@@ -36,14 +37,14 @@ test("admin sees user sessions across users", async ({ page }) => {
   // Search by exact address — robust to pagination as sessions accumulate (the
   // admin account alone can fill the first page). This is the across-users view.
   const searched = page.waitForResponse(
-    (response) => isSessionList(response.url()) && new URL(response.url()).searchParams.get("search") === "user@example.com",
+    (response) => isSessionList(response.url()) && new URL(response.url()).searchParams.get("search") === USER.email,
   );
-  await page.locator("#toolbar-search").fill("user@example.com");
+  await page.locator("#toolbar-search").fill(USER.email);
   await page.getByRole("button", { name: "Search", exact: true }).click();
   expect((await searched).ok()).toBeTruthy();
-  await expect(page.getByRole("main").getByText("user@example.com").first()).toBeVisible();
+  await expect(page.getByRole("main").getByText(USER.email).first()).toBeVisible();
   // row actions are available
-  await page.getByRole("row", { name: /user@example.com/ }).first().getByRole("button").click();
+  await page.getByRole("row", { name: USER.email }).first().getByRole("button").click();
   await expect(page.getByRole("menuitem", { name: "Revoke session" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Revoke all for user" })).toBeVisible();
 });

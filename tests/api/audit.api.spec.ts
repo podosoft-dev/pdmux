@@ -128,7 +128,7 @@ test("the audit log rejects bad paging parameters", async ({ playwright }) => {
 
 // Audit logging is a DB-backed on/off toggle (auth_config `server`, applied live).
 // Runs after the recording tests and restores the flag so nothing else is affected.
-test("audit logging honours the DB on/off toggle @smoke", async ({ playwright, disposableUsers }) => {
+test("audit logging honours the DB on/off toggle @smoke", { tag: "@exclusive" }, async ({ playwright, disposableUsers }) => {
   const admin = await signedIn(playwright, ADMIN);
   test.skip((await admin.get("/api/audit-logs")).status() === 404, "audit-log module not installed");
   const auditLog = async () => (await (await admin.get("/api/account/capabilities")).json()).auditLog as boolean;

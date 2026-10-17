@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { clickUntil, ready } from "../helpers/hydration";
+import { ready } from "../helpers/hydration";
+import { clickUntil } from "../helpers/pdmux-hydration";
 import { openSidebar } from "../helpers/shell";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /** A marker written onto a live element; it survives only if the element does. */
 type Marked = HTMLElement & { __pdmuxMark?: number };

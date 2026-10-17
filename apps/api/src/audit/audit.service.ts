@@ -166,6 +166,24 @@ export class AuditService {
     if (this.retention.days > 0 && !this.pruneTimer && !this.pruning) this.schedulePrune(0);
   }
 
+  /**
+   * Logs one warning when the toggle is off, because every write is then skipped
+   * without a trace. A failing toggle read counts as on, as it does for writes.
+   */
+  async warnIfDisabled(): Promise<void> {
+    let enabled: boolean;
+    try {
+      enabled = await this.enabled();
+    } catch {
+      return;
+    }
+    if (enabled) return;
+    this.logger?.warn(
+      { AUDIT_LOG_ENABLED: process.env.AUDIT_LOG_ENABLED ?? null },
+      "Audit log is off; no audit entries are recorded until it is turned on in the admin Settings",
+    );
+  }
+
   /** Stops pruning and the registry, then writes the queue. */
   async close(): Promise<void> {
     this.closed = true;

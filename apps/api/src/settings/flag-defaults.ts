@@ -1,14 +1,22 @@
-/** Admin-managed auth feature flags and their shipped defaults.
+import { APP_FLAG_DEFAULTS } from "./app-flags";
+
+/** Admin-managed auth feature flags and their shipped defaults, followed by the
+ *  application's flags from the owned app-flags.ts.
  *
  *  Kept free of framework/ORM imports so both SettingsService and the Better
  *  Auth feature gate (loaded by auth.ts, including when
  *  the better-auth CLI evaluates auth.ts for migrations) can import it safely.
  *
- *  Must match the rows seeded by the InitAppSettings migration. phoneNumber is
- *  off by default because real delivery needs an SMS provider. */
-export type FeatureFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "oidcProvider" | "require2fa" | "mcpEnabled";
+ *  The PodoKit defaults must match the rows seeded by the InitAppSettings
+ *  migration. phoneNumber is off by default because real delivery needs an SMS
+ *  provider. */
+export type PodokitFeatureFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "oidcProvider" | "require2fa";
 
-export const FLAG_DEFAULTS: Record<FeatureFlag, boolean> = {
+export type AppFlag = keyof typeof APP_FLAG_DEFAULTS;
+
+export type FeatureFlag = PodokitFeatureFlag | AppFlag;
+
+const PODOKIT_FLAG_DEFAULTS: Record<PodokitFeatureFlag, boolean> = {
   twoFactor: true,
   magicLink: true,
   emailOtp: true,
@@ -24,12 +32,26 @@ export const FLAG_DEFAULTS: Record<FeatureFlag, boolean> = {
   // two-factor before using the app. Enforced by AuthService + the web
   // enrolment gate — the feature gate ignores it (no endpoint prefix). Off by default.
   require2fa: false,
-  // Product policy rather than an authentication feature. It remains in the same
-  // store so administrators can update it through the existing settings endpoint.
-  mcpEnabled: true,
 };
 
+/** PodoKit's defaults with the application's; an application flag may not reuse a PodoKit name. */
+export function mergeFlagDefaults<App extends Record<string, boolean>>(
+  podokit: Record<PodokitFeatureFlag, boolean>,
+  app: App,
+): Record<PodokitFeatureFlag | keyof App, boolean> {
+  const redefined = Object.keys(app).filter((flag) => flag in podokit);
+  if (redefined.length > 0) {
+    throw new Error(`app-flags.ts redefines PodoKit feature flags: ${redefined.join(", ")}`);
+  }
+  return { ...podokit, ...app };
+}
+
+export const FLAG_DEFAULTS: Record<FeatureFlag, boolean> = mergeFlagDefaults(PODOKIT_FLAG_DEFAULTS, APP_FLAG_DEFAULTS);
+
 export const FEATURE_FLAGS = Object.keys(FLAG_DEFAULTS) as FeatureFlag[];
+
+/** The application's flags, which the capabilities endpoint returns as `appFlags`. */
+export const APP_FLAGS = Object.keys(APP_FLAG_DEFAULTS) as AppFlag[];
 
 /** Stored values override the shipped defaults; a missing row keeps the default. */
 export function flagsFrom(settings: ReadonlyMap<string, string>): Record<FeatureFlag, boolean> {

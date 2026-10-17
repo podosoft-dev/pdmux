@@ -38,6 +38,8 @@ put pagination outside the table.
 - Responsive columns: set `hideBelow` to `sm`, `md`, `lg`, or `xl`, then apply
   `cellClass(columnKey)` to the matching `Table.Cell`. Never repeat the
   responsive class by hand; the shared class keeps headers and cells aligned.
+- Header controls such as a select-all checkbox: pass a `head` snippet on the
+  column; it replaces the label and sort button. Give the control an aria-label.
 - Give each table an `ariaLabel` and scope Playwright locators to that table.
 - No footer needed: `perPage={0}`.
 - **Search & filters**: put the shared `table-toolbar.svelte` (`TableToolbar`)

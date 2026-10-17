@@ -37,6 +37,10 @@ export default defineConfig({
       "$app/env": fileURLToPath(new URL("./test/stubs/app-environment.ts", import.meta.url)),
       // hooks.server.ts reads the route list to tell a page from an endpoint.
       "$app/manifest": fileURLToPath(new URL("./test/stubs/app-manifest.ts", import.meta.url)),
+      // PodoKit's admin navigation spec imports the settings registry, whose components
+      // navigate and read the page; no test renders them.
+      "$app/navigation": fileURLToPath(new URL("./test/stubs/app-navigation.ts", import.meta.url)),
+      "$app/state": fileURLToPath(new URL("./test/stubs/app-state.ts", import.meta.url)),
     },
   },
 });

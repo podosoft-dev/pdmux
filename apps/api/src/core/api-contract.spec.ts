@@ -1,10 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import {
   assertApiContract,
+  assertApplicationRoutes,
   assertConsistentRouteParameters,
   documentedApiRoutes,
   expectedApiRoutes,
   missingApiRoutes,
+  normalizeApiRoute,
+  registeredApiRoutes,
 } from "./api-contract";
 
 describe("API contract inventory", () => {
@@ -56,5 +59,31 @@ describe("API contract inventory", () => {
       { method: "GET", path: "/hosts/:hostId/files/:path" },
       { method: "DELETE", path: "/hosts/:hostId/services/:serviceId" },
     ])).not.toThrow();
+  });
+
+  it("normalizes runtime and OpenAPI parameter syntax", () => {
+    expect(normalizeApiRoute("get /reports/:id/rows/:rowId")).toBe("GET /reports/{id}/rows/{rowId}");
+    expect(normalizeApiRoute("GET /reports/{id}")).toBe("GET /reports/{id}");
+    expect(registeredApiRoutes([
+      { method: "GET", path: "/reports/:id" },
+      { method: "POST", path: "/reports" },
+      { path: "/no-method" },
+    ])).toEqual(new Set(["GET /reports/{id}", "POST /reports"]));
+  });
+
+  it("requires every application route to be registered and documented", () => {
+    const document = { paths: { "/reports/{id}": { get: {} }, "/hidden": {} } };
+    const routes = [{ method: "GET", path: "/reports/:id" }, { method: "DELETE", path: "/hidden" }];
+
+    expect(() => assertApplicationRoutes(document, routes, ["GET /reports/:id", "GET /reports/{id}"])).not.toThrow();
+    expect(() => assertApplicationRoutes(document, routes, [])).not.toThrow();
+    expect(() => assertApplicationRoutes(document, routes, ["DELETE /hidden", "POST /reports"])).toThrow(
+      [
+        "Application API contract failed:",
+        "DELETE /hidden is missing from the OpenAPI document",
+        "POST /reports is not registered",
+        "POST /reports is missing from the OpenAPI document",
+      ].join("\n"),
+    );
   });
 });

@@ -2,7 +2,7 @@
 // (via SMS_WEBHOOK_URL) instead of a real provider, and tests read them back
 // over REST. Development only; never runs in production (see the `dev` profile
 // in docker-compose.yml). It uses Bun-compatible standard library APIs and runs
-// on the same pinned Bun Alpine runtime as the applications.
+// on the same pinned Bun Alpine runtime as generated applications.
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.PORT ?? 8095);

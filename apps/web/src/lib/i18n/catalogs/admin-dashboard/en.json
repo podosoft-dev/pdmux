@@ -293,6 +293,12 @@
     "manage": "Manage",
     "saved": "Setting updated",
     "saveFailed": "Failed to update setting",
+    "appFlags": {
+      "tab": "Application",
+      "title": "Application settings",
+      "subtitle": "Turn this application's own features on or off. Changes apply immediately.",
+      "unavailable": "Not available"
+    },
     "emailPassword": "Email & password",
     "emailPasswordDesc": "Sign in with an email address and password.",
     "emailVerification": "Email verification",

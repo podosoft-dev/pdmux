@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { ready } from "../helpers/hydration";
 import { ADMIN } from "../helpers/accounts";
-import { exclusive } from "../helpers/exclusive";
+import { paths } from "../helpers/paths";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADAQMAAACDJEzCAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURWYzmf///129H+IAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gcVCSUTzXBDTwAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNy0yMVQwOTozNzoxOSswMDowMOuehLIAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDctMjFUMDk6Mzc6MTkrMDA6MDCawzwOAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA3LTIxVDA5OjM3OjE5KzAwOjAwzdYd0QAAAAtJREFUCNdjYAABAAAGAAFm9MlsAAAAAElFTkSuQmCC",
@@ -17,7 +17,7 @@ test("account opens on the profile section @smoke", async ({ page }) => {
   await ready(page, "/admin/account");
   await expect(page.getByRole("heading", { name: "Account" })).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Email")).toHaveValue("admin@example.com");
+  await expect(page.getByLabel("Email")).toHaveValue(ADMIN.email);
   // save is enabled only once the name changes
   await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await page.getByLabel("Name", { exact: true }).fill(`Admin Preview ${Date.now()}`);
@@ -33,7 +33,7 @@ test("protected app routes do not inherit the admin shell @smoke", async ({ page
   await expect(page.getByTestId("sidebar-brand")).toBeVisible();
 });
 
-test("account displays profile image limits and updates every avatar", async ({ page }) => {
+test("account displays profile image limits and updates every avatar", { tag: "@exclusive" }, async ({ page }) => {
   await ready(page, "/account");
   await page.request.delete("/api/account/profile-image");
   await ready(page, "/account");
@@ -49,8 +49,10 @@ test("account displays profile image limits and updates every avatar", async ({ 
   await expect(page.getByText(/Profile image updated|프로필 이미지를 변경했습니다/)).toBeVisible();
   await expect(page.getByTestId("profile-image-preview").locator("img")).toBeVisible();
 
-  await ready(page, "/");
-  await expect(page.getByTestId("shell-user").locator("img")).toBeVisible();
+  if (paths.accountMenu !== null) {
+    await ready(page, paths.accountMenu);
+    await expect(page.getByTestId("account-menu").locator("img")).toBeVisible();
+  }
   await ready(page, "/admin");
   await expect(page.getByTestId("sidebar-user-menu").locator("img")).toBeVisible();
 
@@ -81,13 +83,13 @@ test("account rejects invalid profile images before upload", async ({ page }) =>
 test("account exposes a change-email action when the address is edited", async ({ page }) => {
   await ready(page, "/admin/account");
   const email = page.getByLabel("Email");
-  await expect(email).toHaveValue("admin@example.com");
+  await expect(email).toHaveValue(ADMIN.email);
   // no action until the address actually changes
   await expect(page.getByRole("button", { name: "Change email" })).toHaveCount(0);
-  await email.fill("admin+changed@example.com");
+  await email.fill(`changed.${ADMIN.email}`);
   await expect(page.getByRole("button", { name: "Change email" })).toBeVisible();
   // revert without submitting — don't mutate the shared admin session
-  await email.fill("admin@example.com");
+  await email.fill(ADMIN.email);
   await expect(page.getByRole("button", { name: "Change email" })).toHaveCount(0);
 });
 
@@ -145,7 +147,7 @@ test("account shows a phone field when enabled", async ({ page }) => {
   await expect(phone).toBeVisible();
 });
 
-test("admin can update their profile name", async ({ page }) => {
+test("admin can update their profile name", { tag: "@exclusive" }, async ({ page }) => {
   await ready(page, "/admin/account");
   const name = page.getByLabel("Name", { exact: true });
   await name.fill(`Admin Updated ${Date.now()}`);
@@ -230,58 +232,56 @@ test("account nav shows the core sections", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Sessions" })).toBeVisible();
 });
 
-test("connected account unlink uses the local account row id @smoke", async ({ page }) => {
+test("connected account unlink uses the local account row id @smoke", { tag: "@exclusive" }, async ({ page }) => {
   test.slow();
-  await exclusive("social-providers", async () => {
-    const provider = "google";
-    let unlinkBody: unknown;
-    await page.route("**/api/auth/list-accounts", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([
-          { id: "local-account-id", providerId: provider, accountId: "provider-subject" },
-        ]),
-      }),
-    );
-    await page.route("**/api/auth/unlink-account", async (route) => {
-      unlinkBody = route.request().postDataJSON();
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
-    });
+  const provider = "google";
+  let unlinkBody: unknown;
+  await page.route("**/api/auth/list-accounts", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { id: "local-account-id", providerId: provider, accountId: "provider-subject" },
+      ]),
+    }),
+  );
+  await page.route("**/api/auth/unlink-account", async (route) => {
+    unlinkBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
 
-    try {
-      const enabled = await page.request.put("/api/account/auth-config", {
-        data: {
-          social: {
-            [provider]: {
-              enabled: true,
-              clientId: "podokit",
-              clientSecret: "podokit",
-            },
+  try {
+    const enabled = await page.request.put("/api/account/auth-config", {
+      data: {
+        social: {
+          [provider]: {
+            enabled: true,
+            clientId: "podokit",
+            clientSecret: "podokit",
           },
         },
-      });
-      expect(enabled.ok()).toBeTruthy();
-      await expect
-        .poll(async () => {
-          const response = await page.request.get("/api/account/capabilities");
-          const body = (await response.json()) as { providers?: string[] };
-          return body.providers ?? [];
-        }, { timeout: 8_000 })
-        .toContain(provider);
+      },
+    });
+    expect(enabled.ok()).toBeTruthy();
+    await expect
+      .poll(async () => {
+        const response = await page.request.get("/api/account/capabilities");
+        const body = (await response.json()) as { providers?: string[] };
+        return body.providers ?? [];
+      }, { timeout: 8_000 })
+      .toContain(provider);
 
-      await ready(page, "/admin/account");
-      await page.getByRole("button", { name: "Connected", exact: true }).click();
-      await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+    await ready(page, "/admin/account");
+    await page.getByRole("button", { name: "Connected", exact: true }).click();
+    await page.getByRole("button", { name: "Disconnect", exact: true }).click();
 
-      await expect.poll(() => unlinkBody).toEqual({ accountId: "local-account-id" });
-      await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
-    } finally {
-      await page.request.put("/api/account/auth-config", {
-        data: { social: { [provider]: { enabled: false } } },
-      });
-    }
-  });
+    await expect.poll(() => unlinkBody).toEqual({ accountId: "local-account-id" });
+    await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
+  } finally {
+    await page.request.put("/api/account/auth-config", {
+      data: { social: { [provider]: { enabled: false } } },
+    });
+  }
 });
 
 test("two-factor setup shows a scannable QR code when enabled", async ({ page }) => {

@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { ADMIN, adminState, anonState } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
-import { exclusive } from "../helpers/exclusive";
 
 test.use({ storageState: anonState });
 
@@ -23,27 +22,24 @@ test("language switch updates messages and <html lang>", async ({ page }) => {
   }
 });
 
-test("explicit English overrides a Korean site fallback", async ({ page, playwright }) => {
-  test.slow();
-  await exclusive("site-general", async () => {
-    const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-    await admin.post("/api/auth/sign-in/email", {
-      data: { email: ADMIN.email, password: ADMIN.password },
-    });
-    const previous = await (await admin.get("/api/site/settings")).json() as { locale?: string };
-
-    try {
-      expect((await admin.put("/api/site/settings", { data: { locale: "ko" } })).ok()).toBeTruthy();
-      await page.context().addCookies([{ name: "locale", value: "en", url: base }]);
-      await ready(page, "/login");
-
-      await expect(page.locator("html")).toHaveAttribute("lang", "en");
-      await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    } finally {
-      await admin.put("/api/site/settings", { data: { locale: previous.locale ?? "en" } });
-      await admin.dispose();
-    }
+test("explicit English overrides a Korean site fallback", { tag: "@exclusive" }, async ({ page, playwright }) => {
+  const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  await admin.post("/api/auth/sign-in/email", {
+    data: { email: ADMIN.email, password: ADMIN.password },
   });
+  const previous = await (await admin.get("/api/site/settings")).json() as { locale?: string };
+
+  try {
+    expect((await admin.put("/api/site/settings", { data: { locale: "ko" } })).ok()).toBeTruthy();
+    await page.context().addCookies([{ name: "locale", value: "en", url: base }]);
+    await ready(page, "/login");
+
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  } finally {
+    await admin.put("/api/site/settings", { data: { locale: previous.locale ?? "en" } });
+    await admin.dispose();
+  }
 });
 
 test("managed admin labels react to locale changes", async ({ browser }) => {

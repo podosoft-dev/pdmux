@@ -4,6 +4,8 @@ import { AppException, type ErrorEnvelope } from "@podosoft/podokit-contracts";
 import { Elysia } from "elysia";
 import { configureServices, extensionModules } from "./app.extensions";
 import { validateEnv, type AppEnv } from "./config/env.validation";
+import { assertSelectedProvidersInstalled } from "./config/provider-selection";
+import { PROVIDERS } from "./config/providers";
 import { stampClientAddress } from "./core/client-address";
 import {
   appContext,
@@ -30,6 +32,7 @@ import { eventsMemoryModule } from "./events-provider-memory/events-memory.modul
 import { eventsModule } from "./events/events.module";
 import { jobsModule } from "./jobs/jobs.module";
 import { loggingModule } from "./logging/logging.module";
+import { jobsLocalModule } from "./jobs-local/jobs-local.module";
 // podokit:end:imports
 
 export interface CreateAppOptions {
@@ -139,6 +142,43 @@ function errorEnvelope(
   };
 }
 
+export interface ErrorResponseState {
+  status?: number | string;
+  headers: Record<string, string | number>;
+}
+
+/**
+ * Renders a failed request as the standard error envelope: an AppException with
+ * its code, status, and details; an unreachable database as 503; Elysia's
+ * validation and routing errors as 400 and 404; anything else as 500 without
+ * its message.
+ */
+export function renderError(code: unknown, error: unknown, path: string, set: ErrorResponseState): ErrorEnvelope {
+  if (error instanceof AppException) {
+    set.status = error.statusCode;
+    if (error.statusCode === 503) setRetryAfter(set.headers);
+    return errorEnvelope(error.code, error.message, error.statusCode, path, error.details);
+  }
+  if (isDatabaseUnavailable(error)) {
+    set.status = 503;
+    setRetryAfter(set.headers);
+    return errorEnvelope("DATABASE_UNAVAILABLE", "The database is temporarily unavailable", 503, path);
+  }
+  const statusCode = code === "NOT_FOUND" ? 404 : code === "VALIDATION" ? 400 : 500;
+  set.status = statusCode;
+  const publicCode = code === "NOT_FOUND"
+    ? "NOT_FOUND"
+    : code === "VALIDATION"
+      ? "VALIDATION_ERROR"
+      : "INTERNAL_ERROR";
+  const message = statusCode === 500
+    ? "Internal server error"
+    : error instanceof Error
+      ? error.message
+      : "Request failed";
+  return errorEnvelope(publicCode, message, statusCode, path);
+}
+
 const buildApp = (options: CreateAppOptions = {}) => {
   const env = options.env ?? validateEnv(process.env);
   const services = options.services ?? createCoreServices(env);
@@ -158,11 +198,13 @@ const buildApp = (options: CreateAppOptions = {}) => {
     eventsModule,
     jobsModule,
     loggingModule,
+    jobsLocalModule,
     // podokit:end:modules
     ...extensionModules,
   ];
   for (const module of modules) module.configure?.(env, services);
   configureServices(services);
+  assertSelectedProvidersInstalled(services, PROVIDERS);
   services.freeze();
   const context = appContext(env, services);
   const corsOrigin = env.CORS_ORIGIN?.split(",").map((origin) => origin.trim());
@@ -202,31 +244,7 @@ const buildApp = (options: CreateAppOptions = {}) => {
         "Complete request",
       );
     })
-    .onError(({ code, error, path, set }) => {
-      if (error instanceof AppException) {
-        set.status = error.statusCode;
-        if (error.statusCode === 503) setRetryAfter(set.headers);
-        return errorEnvelope(error.code, error.message, error.statusCode, path);
-      }
-      if (isDatabaseUnavailable(error)) {
-        set.status = 503;
-        setRetryAfter(set.headers);
-        return errorEnvelope("DATABASE_UNAVAILABLE", "The database is temporarily unavailable", 503, path);
-      }
-      const statusCode = code === "NOT_FOUND" ? 404 : code === "VALIDATION" ? 400 : 500;
-      set.status = statusCode;
-      const publicCode = code === "NOT_FOUND"
-        ? "NOT_FOUND"
-        : code === "VALIDATION"
-          ? "VALIDATION_ERROR"
-          : "INTERNAL_ERROR";
-      const message = statusCode === 500
-        ? "Internal server error"
-        : error instanceof Error
-          ? error.message
-          : "Request failed";
-      return errorEnvelope(publicCode, message, statusCode, path);
-    });
+    .onError(({ code, error, path, set }) => renderError(code, error, path, set));
 
   const plugins: AppPlugin[] = [
     healthPlugin,

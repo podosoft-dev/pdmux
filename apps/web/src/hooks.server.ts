@@ -3,6 +3,7 @@ import type { Handle } from "@sveltejs/kit/hooks";
 import { building } from "$app/env";
 import { routes } from "$app/manifest";
 import { serverApiClient } from "#lib/server/api.js";
+import { appHandle } from "#lib/server/app-hooks.js";
 import { resolveLocale } from "#lib/i18n/messages.js";
 import { applySearchIndexingHeaders } from "#lib/server/search-indexing.js";
 import { isPublicPath } from "#lib/server/guards.js";
@@ -91,12 +92,20 @@ export const handle: Handle = async ({ event, resolve }) => {
   } else {
     setEmptyRuntimeContext(event);
   }
-  const response = await resolve(event, {
-    transformPageChunk: ({ html }) =>
-      html.replace(
-        /(<html\b[^>]*?\slang=)(["'])[^"']*\2/i,
-        `$1"${event.locals.locale}"`,
-      ),
+  // The application's own hook from the app-owned app-hooks.ts runs next, with
+  // the runtime context loaded. Its page transform runs before the language one.
+  const response = await appHandle({
+    event,
+    resolve: (appEvent, options) =>
+      resolve(appEvent, {
+        ...options,
+        transformPageChunk: async ({ html, done }) => {
+          const transformed = options?.transformPageChunk
+            ? ((await options.transformPageChunk({ html, done })) ?? "")
+            : html;
+          return transformed.replace(/(<html\b[^>]*?\slang=)(["'])[^"']*\2/i, `$1"${event.locals.locale}"`);
+        },
+      }),
   });
   return applySearchIndexingHeaders(response, event.url.pathname);
 };

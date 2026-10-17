@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { ready } from "../helpers/hydration";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /**
  * The screen that mints a credential reaching every host a person can see.

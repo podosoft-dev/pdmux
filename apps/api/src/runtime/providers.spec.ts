@@ -1,9 +1,19 @@
 import { describe, expect, it } from "bun:test";
-import { isDesktopLoopbackUrl, runtimeProviders } from "./providers";
+import { PROVIDERS } from "../config/providers";
+import { providersFromEnvironment } from "../config/provider-selection";
+
+// The variables apps/desktop/src/stack-manager.ts gives the API and web processes.
+const DESKTOP_ENV = {
+  DATABASE_PROVIDER: "sqlite",
+  CACHE_PROVIDER: "memory",
+  OBJECT_STORAGE_PROVIDER: "local",
+  EVENTS_PROVIDER: "memory",
+  JOBS_PROVIDER: "local",
+};
 
 describe("[TC-PDDESKTOP-001] runtime provider profile", () => {
   it("selects external providers for the server profile", () => {
-    expect(runtimeProviders({})).toEqual({
+    expect(providersFromEnvironment(PROVIDERS, {})).toEqual({
       database: "postgres",
       cache: "redis",
       "object-storage": "s3",
@@ -13,7 +23,7 @@ describe("[TC-PDDESKTOP-001] runtime provider profile", () => {
   });
 
   it("selects embedded providers for the desktop profile", () => {
-    expect(runtimeProviders({ PDMUX_DESKTOP: "1" })).toEqual({
+    expect(providersFromEnvironment(PROVIDERS, DESKTOP_ENV)).toEqual({
       database: "sqlite",
       cache: "memory",
       "object-storage": "local",
@@ -23,24 +33,13 @@ describe("[TC-PDDESKTOP-001] runtime provider profile", () => {
   });
 
   it("allows each capability to be changed independently", () => {
-    expect(runtimeProviders({
-      PDMUX_DATABASE_PROVIDER: "sqlite",
-      PDMUX_CACHE_PROVIDER: "memory",
-      PDMUX_OBJECT_STORAGE_PROVIDER: "local",
-      PDMUX_EVENTS_PROVIDER: "memory",
-      PDMUX_JOBS_PROVIDER: "local",
-    })).toEqual({
-      database: "sqlite",
+    expect(providersFromEnvironment(PROVIDERS, { CACHE_PROVIDER: "memory" })).toEqual({
+      database: "postgres",
       cache: "memory",
-      "object-storage": "local",
-      events: "memory",
-      jobs: "local",
+      "object-storage": "s3",
+      events: "redis",
+      jobs: "bullmq",
     });
-  });
-
-  it("allows production HTTP only on the embedded loopback boundary", () => {
-    expect(isDesktopLoopbackUrl("http://127.0.0.1:5001", { PDMUX_DESKTOP: "1" })).toBe(true);
-    expect(isDesktopLoopbackUrl("http://example.com", { PDMUX_DESKTOP: "1" })).toBe(false);
-    expect(isDesktopLoopbackUrl("http://127.0.0.1:5001", {})).toBe(false);
+    expect(() => providersFromEnvironment(PROVIDERS, { JOBS_PROVIDER: "cron" })).toThrow("JOBS_PROVIDER");
   });
 });

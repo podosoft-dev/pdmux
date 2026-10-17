@@ -1,13 +1,16 @@
 import { AppException } from "@podosoft/podokit-contracts";
 import { Queue, RedisConnection, Worker, type ConnectionOptions, type RedisClient } from "bullmq";
-import type {
-  EnqueueOptions,
-  JobHandler,
-  JobQueue,
-  JobReference,
-  JobSnapshot,
-  JobStatus,
-  Unsubscribe,
+import cronParser from "cron-parser";
+import {
+  assertRepeatOptions,
+  type EnqueueOptions,
+  type JobHandler,
+  type JobQueue,
+  type JobReference,
+  type JobSnapshot,
+  type JobStatus,
+  type RepeatOptions,
+  type Unsubscribe,
 } from "@podosoft/podokit-runtime";
 import type { SupervisedConnection } from "../core/services";
 import { producerConnection, redisConnection } from "./queue";
@@ -45,6 +48,24 @@ export function jobsUnavailable(): AppException {
   return new AppException("JOBS_UNAVAILABLE", "Background jobs are temporarily unavailable.", 503);
 }
 
+function isJobsUnavailable(error: unknown): boolean {
+  return error instanceof AppException && error.code === "JOBS_UNAVAILABLE";
+}
+
+interface Schedule {
+  name: string;
+  payload: unknown;
+  repeat: RepeatOptions;
+}
+
+/** Rejects a schedule BullMQ could not run, before it is kept. */
+function assertSchedule(repeat: RepeatOptions): void {
+  assertRepeatOptions(repeat);
+  if (repeat.cron !== undefined) {
+    cronParser.parseExpression(repeat.cron, { tz: repeat.timezone ?? "UTC" }).next();
+  }
+}
+
 /**
  * Adds and reads jobs over one producer connection that the service registry
  * supervises, and runs in-process handlers on BullMQ workers, which keep their
@@ -53,6 +74,9 @@ export function jobsUnavailable(): AppException {
 export class BullMqJobQueue implements JobQueue, SupervisedConnection {
   private readonly queues = new Map<string, Queue>();
   private readonly workers = new Map<string, Worker>();
+  private readonly schedules = new Map<string, Schedule>();
+  // Schedules to delete from Redis once it is reachable: id to queue name.
+  private readonly removals = new Map<string, string>();
   private producer: RedisConnection;
   private lostListener?: (reason: unknown) => void;
   private closed = false;
@@ -65,10 +89,17 @@ export class BullMqJobQueue implements JobQueue, SupervisedConnection {
     this.lostListener = listener;
   }
 
-  /** Opens the producer connection. */
+  /**
+   * Opens the producer connection and applies every schedule, so a Redis that
+   * lost them, such as one restarted without persistence, gets them back.
+   */
   async connect(): Promise<void> {
     const client = await this.producer.client;
     if (client.status !== "ready") await client.connect();
+    await this.command(async (ready) => {
+      for (const id of [...this.removals.keys()]) await this.removeSchedule(ready, id);
+      for (const id of this.schedules.keys()) await this.applySchedule(ready, id);
+    });
   }
 
   /** Rejects while Redis is unreachable or slower to answer than `REDIS_COMMAND_TIMEOUT_MS`. */
@@ -110,6 +141,27 @@ export class BullMqJobQueue implements JobQueue, SupervisedConnection {
     };
   }
 
+  async schedule(id: string, name: string, payload: unknown, repeat: RepeatOptions): Promise<void> {
+    assertSchedule(repeat);
+    const previous = this.schedules.get(id);
+    // A scheduler lives in its queue, so a schedule that moves leaves the old one.
+    if (previous && previous.name !== name) this.removals.set(id, previous.name);
+    if (this.removals.get(id) === name) this.removals.delete(id);
+    this.schedules.set(id, { name, payload, repeat });
+    await this.whenConnected(async (client) => {
+      if (this.removals.has(id)) await this.removeSchedule(client, id);
+      await this.applySchedule(client, id);
+    });
+  }
+
+  async unschedule(id: string): Promise<void> {
+    const schedule = this.schedules.get(id);
+    if (!schedule) return;
+    this.schedules.delete(id);
+    this.removals.set(id, schedule.name);
+    await this.whenConnected((client) => this.removeSchedule(client, id));
+  }
+
   process(name: string, handler: JobHandler): Promise<Unsubscribe> {
     if (this.workers.has(name)) throw new Error(`A handler is already registered for job ${name}`);
     const worker = new Worker(
@@ -138,6 +190,38 @@ export class BullMqJobQueue implements JobQueue, SupervisedConnection {
     this.workers.clear();
     this.queues.clear();
     await this.producer.close(true);
+  }
+
+  private async applySchedule(client: RedisClient, id: string): Promise<void> {
+    const schedule = this.schedules.get(id);
+    if (!schedule) return;
+    const { cron, everyMs, timezone } = schedule.repeat;
+    await this.queue(schedule.name, client).upsertJobScheduler(
+      id,
+      cron !== undefined ? { pattern: cron, tz: timezone ?? "UTC" } : { every: everyMs },
+      { name: schedule.name, data: schedule.payload },
+    );
+  }
+
+  private async removeSchedule(client: RedisClient, id: string): Promise<void> {
+    const name = this.removals.get(id);
+    if (name === undefined) return;
+    await this.queue(name, client).removeJobScheduler(id);
+    if (this.removals.get(id) === name) this.removals.delete(id);
+  }
+
+  /**
+   * Runs `send` while the producer is connected. Otherwise, or when Redis goes
+   * away during it, the next connect() applies the change instead.
+   */
+  private async whenConnected(send: (client: RedisClient) => Promise<void>): Promise<void> {
+    const client = await this.producer.client;
+    if (client.status !== "ready") return;
+    try {
+      await this.command(send);
+    } catch (error) {
+      if (!isJobsUnavailable(error)) throw error;
+    }
   }
 
   /**

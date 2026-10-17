@@ -1,4 +1,5 @@
 import { expect, test } from "../helpers/disposable-users";
+import { ADMIN, USER } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
@@ -34,13 +35,13 @@ test("admin sees the user list and can search", async ({ page }) => {
   await ready(page, "/admin/users");
   await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
   // Search by exact address — robust to pagination as the user count grows.
-  await page.locator("#toolbar-search").fill("admin@example.com");
+  await page.locator("#toolbar-search").fill(ADMIN.email);
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page.getByRole("cell", { name: "admin@example.com" })).toBeVisible();
-  await page.locator("#toolbar-search").fill("user@example.com");
+  await expect(page.getByRole("cell", { name: ADMIN.email })).toBeVisible();
+  await page.locator("#toolbar-search").fill(USER.email);
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page.getByRole("cell", { name: "user@example.com" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: "admin@example.com" })).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: USER.email })).toBeVisible();
+  await expect(page.getByRole("cell", { name: ADMIN.email })).toHaveCount(0);
 });
 
 test("the user list asks the server for one page at a time", async ({ page }) => {
@@ -63,7 +64,7 @@ test("the user list asks the server for one page at a time", async ({ page }) =>
   expect(query.get("search")).toBe("Admin@Example.com");
   expect(query.get("searchField")).toBe("email");
   expect(query.get("offset")).toBe("0");
-  await expect(page.getByRole("cell", { name: "admin@example.com" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: ADMIN.email })).toBeVisible();
   expect(requested.filter((url) => url.includes("/api/auth/admin/list-users"))).toEqual([]);
 });
 
@@ -78,12 +79,12 @@ test("row menu exposes admin actions", async ({ page }) => {
   const searched = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return url.pathname === "/api/admin/users" &&
-      url.searchParams.get("search") === "user@example.com";
+      url.searchParams.get("search") === USER.email;
   });
-  await page.locator("#toolbar-search").fill("user@example.com");
+  await page.locator("#toolbar-search").fill(USER.email);
   await page.getByRole("button", { name: "Search", exact: true }).click();
   expect((await searched).ok()).toBeTruthy();
-  const row = page.getByRole("row", { name: /user@example.com/ });
+  const row = page.getByRole("row", { name: USER.email });
   await row.getByRole("button").click();
   await expect(page.getByRole("menuitem", { name: "Manage" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Impersonate" })).toBeVisible();

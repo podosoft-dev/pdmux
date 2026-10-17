@@ -1,100 +1,108 @@
-import { expect, test, type APIResponse } from "@playwright/test";
-import { adminState } from "../helpers/accounts";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type APIResponse,
+  type PlaywrightWorkerArgs,
+} from "@playwright/test";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
 
-// The global limit is shared by every request that reaches this stack. Exercising a
-// production-sized window inside the full suite would leave all following tests rate-limited.
+// rate-limit installs a global throttler guard (default RATE_LIMIT_MAX requests
+// per RATE_LIMIT_TTL seconds, per client). This module ships a global guard, so
+// it never joins the shared Outer smoke app (it would throttle every other
+// spec); this spec ships with the module and runs against a dedicated app.
+//
+// Honor RATE_LIMIT_MAX when the test runner has it (a dedicated app sets a small
+// value so the window is crossed in a handful of requests); otherwise fall back
+// to the module default and allow a little headroom.
+// A local stack that raises the limits to run the whole suite quickly sets
+// E2E_SKIP_RATE_LIMIT=true and runs this file separately against the defaults.
+test.skip(process.env.E2E_SKIP_RATE_LIMIT === "true", "assumes the configured limits; run it on its own");
+
 const limit = Number(process.env.RATE_LIMIT_MAX ?? 300);
 const authLimit = Number(process.env.RATE_LIMIT_AUTH_MAX ?? 20);
+const runtimeLimit = Number(process.env.RATE_LIMIT_RUNTIME_MAX ?? 1000);
 
-async function session(
-  playwright: import("@playwright/test").PlaywrightWorkerArgs["playwright"],
-) {
-  const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-  const email = `rate-limit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
-  const signup = await ctx.post("/api/auth/sign-up/email", {
-    data: {
-      email,
-      password: "Podokit3e-Str0ng!pw",
-      name: "Rate Limit",
-    },
+type Playwright = PlaywrightWorkerArgs["playwright"];
+const password = "Podokit3e-Str0ng!pw";
+
+function uniqueEmail(): string {
+  return `rate-limit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+}
+
+// Sign-ups and sign-ins are authentication writes. From an anonymous client the
+// limiter counts them against the per-address budget that the setup project's
+// and every other spec's sign-ins share. Only this worker's first one is
+// anonymous: the later ones carry its session cookie, so the limiter counts them
+// against that session instead.
+let carrier: string | undefined;
+
+/** Run one authentication write and return a context holding the session it set. */
+async function authenticated(
+  playwright: Playwright,
+  path: "/api/auth/sign-up/email" | "/api/auth/sign-in/email",
+  data: Record<string, string>,
+): Promise<APIRequestContext> {
+  const writer = await playwright.request.newContext({
+    baseURL: base,
+    extraHTTPHeaders: { ...origin, ...(carrier ? { cookie: carrier } : {}) },
   });
-  expect(signup.ok()).toBeTruthy();
-  return ctx;
+  const response = await writer.post(path, { data });
+  expect(response.ok(), `${path}: ${response.status()}`).toBeTruthy();
+  const storageState = await writer.storageState();
+  await writer.dispose();
+  const token = storageState.cookies.find((cookie) => cookie.name.endsWith("session_token"));
+  carrier ??= token ? `${token.name}=${token.value}` : undefined;
+  return playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin, storageState });
+}
+
+/** A new account, signed in. */
+async function session(playwright: Playwright, email = uniqueEmail()): Promise<APIRequestContext> {
+  return authenticated(playwright, "/api/auth/sign-up/email", { email, password, name: "Rate Limit" });
 }
 
 test("rate limit: health probes stay available while ordinary routes return 429 @smoke", async ({
   playwright,
 }) => {
-  // The full isolated suite deliberately uses a high ceiling. Exercise this contract against
-  // a dedicated low-limit stack instead of consuming the shared suite's whole request budget.
-  test.skip(
-    limit > 500,
-    `RATE_LIMIT_MAX=${limit} is an e2e ceiling; run this with a small limit: RATE_LIMIT_MAX=20 bun run test:e2e:api`,
-  );
-
-  const admin = await playwright.request.newContext({
-    baseURL: base,
-    storageState: adminState,
-    extraHTTPHeaders: origin,
-  });
-  const email = `rate-limit-${Date.now()}@example.com`;
-  const password = "Podokit3e-Str0ng!pw";
-  let userId = "";
-
-  try {
-    const created = await admin.post("/api/auth/admin/create-user", {
-      data: { email, password, name: "Rate Limit Probe", role: "user" },
-    });
-    test.skip(!created.ok(), `cannot create the probe account (${created.status()})`);
-    userId = ((await created.json()).user?.id ?? "") as string;
-    expect(userId, "the probe account must exist for its budget to be isolated").toBeTruthy();
-
-    const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-    try {
-      for (const path of ["/api/health", "/api/health/ready"]) {
-        for (let index = 0; index < limit + 5; index += 1) {
-          const response = await ctx.get(path);
-          expect(response.status(), `${path} request ${index + 1}`).toBe(200);
-        }
-      }
-
-      const signIn = await ctx.post("/api/auth/sign-in/email", { data: { email, password } });
-      test.skip(!signIn.ok(), `probe account cannot sign in (${signIn.status()})`);
-
-      const probe = await ctx.get("/api/hosts");
-      test.skip(probe.status() >= 500, "backend or throttler storage is not reachable");
-
-      let seen200 = probe.status() === 200;
-      let got429 = false;
-      for (let index = 0; index < limit + 10 && !got429; index += 1) {
-        const response = await ctx.get("/api/hosts");
-        if (response.status() === 200) seen200 = true;
-        if (response.status() === 429) got429 = true;
-      }
-
-      expect(seen200).toBe(true);
-      expect(got429).toBe(true);
-    } finally {
-      await ctx.dispose();
+  const ctx = await session(playwright);
+  for (const path of ["/api/health", "/api/health/ready"]) {
+    for (let i = 0; i < limit + 5; i++) {
+      const response = await ctx.get(path);
+      expect(response.status(), `${path} request ${i + 1}`).toBe(200);
     }
-  } finally {
-    if (userId) {
-      await admin.post("/api/auth/admin/remove-user", { data: { userId } });
-    }
-    await admin.dispose();
   }
+
+  // The redis module is added automatically and exposes a public demo cache
+  // route, so it provides a stable ordinary endpoint for the global limit.
+  const probe = await ctx.get("/api/cache/rate-limit-probe");
+  test.skip(probe.status() >= 500, "throttler storage (redis) not reachable");
+
+  let seen200 = probe.status() === 200;
+  let limitedResponse: APIResponse | undefined;
+  for (let i = 0; i < limit + 5 && !limitedResponse; i++) {
+    const response = await ctx.get("/api/cache/rate-limit-probe");
+    if (response.status() === 200) seen200 = true;
+    if (response.status() === 429) limitedResponse = response;
+  }
+  // A fresh window serves the first requests (200) and rejects once the limit is
+  // crossed (429).
+  expect(seen200).toBe(true);
+  expect(limitedResponse?.status()).toBe(429);
+  expect(limitedResponse?.headers()["retry-after"]).toBeTruthy();
+  expect(await limitedResponse?.json()).toMatchObject({
+    success: false,
+    error: { code: "RATE_LIMIT_EXCEEDED", statusCode: 429 },
+  });
+  await ctx.dispose();
 });
 
 test("rate limit: a user's sessions share one counter and forged sessions do not get one", async ({
   playwright,
 }) => {
-  const email = `rate-limit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
-  const password = "Podokit3e-Str0ng!pw";
-  const first = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-  expect((await first.post("/api/auth/sign-up/email", { data: { email, password, name: "Rate Limit" } })).ok()).toBeTruthy();
+  const email = uniqueEmail();
+  const first = await session(playwright, email);
   const probe = await first.get("/api/cache/rate-limit-probe");
   test.skip(probe.status() >= 500, "throttler storage (redis) not reachable");
   const remaining = (response: APIResponse): number => Number(response.headers()["ratelimit-remaining"]);
@@ -104,8 +112,7 @@ test("rate limit: a user's sessions share one counter and forged sessions do not
   // session. The probe requires a session, so each request below resolves it; a
   // session counts under its user from the request after the API first resolves
   // it (or from that request when authentication runs before the limiter).
-  const second = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-  expect((await second.post("/api/auth/sign-in/email", { data: { email, password } })).ok()).toBeTruthy();
+  const second = await authenticated(playwright, "/api/auth/sign-in/email", { email, password });
   const cookie = (await first.storageState()).cookies.find((c) => c.name.endsWith("session_token"));
   expect(cookie, "sign-up set a session cookie").toBeTruthy();
   const bearer = await playwright.request.newContext({
@@ -153,5 +160,24 @@ test("rate limit: session reads do not consume the strict authentication budget"
     const response = await ctx.get("/api/auth/get-session");
     expect(response.status(), `session request ${i + 1}`).toBe(200);
   }
+  await ctx.dispose();
+});
+
+test("rate limit: each route is counted in its most specific registered budget", async ({
+  playwright,
+}) => {
+  const ctx = await session(playwright);
+  const probe = await ctx.get("/api/account/capabilities");
+  test.skip(probe.status() >= 500, "throttler storage (redis) not reachable");
+  const ceiling = (response: APIResponse): number => Number(response.headers()["ratelimit-limit"]);
+
+  // Ordinary routes fall back to the general budget registered at "/".
+  expect(ceiling(probe)).toBe(limit);
+  // Longer GET prefixes inside "/api/auth" win over its authentication budget:
+  // session reads use the runtime budget and administrator reads the general one.
+  expect(ceiling(await ctx.get("/api/auth/get-session"))).toBe(runtimeLimit);
+  expect(ceiling(await ctx.get("/api/auth/admin/list-users"))).toBe(limit);
+  // Other "/api/auth" requests carry the strict authentication budget.
+  expect(ceiling(await ctx.post("/api/auth/sign-out", { data: {} }))).toBe(authLimit);
   await ctx.dispose();
 });

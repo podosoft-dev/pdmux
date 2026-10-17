@@ -1,11 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { ADMIN } from "../helpers/accounts";
+import { expectObjectLength } from "../helpers/object-response";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
-const expectedImageCache = process.env.E2E_DEV_SERVER === "1"
-  ? "no-cache"
-  : "public, max-age=31536000, immutable";
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAIAAAADAQMAAACDJEzCAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURWYzmf///129H+IAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gcVCSUTzXBDTwAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNy0yMVQwOTozNzoxOSswMDowMOuehLIAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDctMjFUMDk6Mzc6MTkrMDA6MDCawzwOAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA3LTIxVDA5OjM3OjE5KzAwOjAwzdYd0QAAAAtJREFUCNdjYAABAAAGAAFm9MlsAAAAAElFTkSuQmCC",
   "base64",
@@ -32,7 +30,7 @@ test("profile image upload requires authentication", async ({ playwright }) => {
   await anonymous.dispose();
 });
 
-test("profile image upload, replacement, public read, and removal", async ({ playwright }) => {
+test("profile image upload, replacement, public read, and removal", { tag: "@exclusive" }, async ({ playwright }) => {
   const admin = await adminContext(playwright);
   await admin.delete("/api/account/profile-image");
 
@@ -50,14 +48,14 @@ test("profile image upload, replacement, public read, and removal", async ({ pla
   const firstImage = await admin.get(firstBody.image);
   expect(firstImage.ok()).toBeTruthy();
   expect(firstImage.headers()["content-type"]).toContain("image/png");
-  expect(firstImage.headers()["cache-control"]).toBe(expectedImageCache);
-  expect(firstImage.headers()["content-length"]).toBe(String(PNG.byteLength));
+  expect(firstImage.headers()["cache-control"]).toBe("public, max-age=31536000, immutable");
+  expectObjectLength(firstImage.headers(), PNG.byteLength);
   expect((await firstImage.body()).equals(PNG)).toBe(true);
   const etag = firstImage.headers()["etag"];
   expect(etag).toMatch(/^"[^"]+"$/);
   const revalidated = await admin.get(firstBody.image, { headers: { "if-none-match": etag ?? "" } });
   expect(revalidated.status()).toBe(304);
-  expect(revalidated.headers()["cache-control"]).toBe(expectedImageCache);
+  expect(revalidated.headers()["cache-control"]).toBe("public, max-age=31536000, immutable");
 
   const replacement = await admin.post("/api/account/profile-image", {
     multipart: { file: { name: "replacement.png", mimeType: "image/png", buffer: PNG } },

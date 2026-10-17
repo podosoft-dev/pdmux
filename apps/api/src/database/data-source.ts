@@ -1,93 +1,46 @@
 import "dotenv/config";
-import { FileTransfer, FileTransferEntry } from "../file-transfers/file-transfer.entity";
 import { DataSource, type DataSourceOptions } from "typeorm";
-import { AgentAuthFailure } from "../agents/agent-auth-failure.entity";
-import { AgentEnrollment } from "../agents/agent-enrollment.entity";
-import { AgentToken } from "../agents/agent-token.entity";
-import { FleetSetting } from "../fleet/fleet-setting.entity";
-import { RepoCommit } from "../git/repo-commit.entity";
-import { RepoRef } from "../git/repo-ref.entity";
-import { Repo } from "../git/repo.entity";
-import { HostGitRoot } from "../hosts/host-git-root.entity";
-import { HostService } from "../hosts/host-service.entity";
-import { Host } from "../hosts/host.entity";
-import { HostMcpKey } from "../mcp/host-mcp-key.entity";
-import { UserMcpKey } from "../mcp/user-mcp-key.entity";
-import { HostMetricSample } from "../metrics/host-metric-sample.entity";
-import { UserHostPref } from "../prefs/user-host-pref.entity";
-import { UserLayout } from "../prefs/user-layout.entity";
-import { HostConnector } from "../integrations/host-connector.entity";
-import { IntegrationConnection } from "../integrations/integration-connection.entity";
-import { ServiceExposure } from "../integrations/service-exposure.entity";
-import { runtimeProviders } from "../runtime/providers";
+import type { DatabaseProviderName } from "@podosoft/podokit-runtime";
+import { PROVIDERS } from "../config/providers";
 import { validateEnv } from "../config/env.validation";
 import { databaseUrl, sqliteDatabasePath } from "./database";
-import { BunSqliteDatabaseAdapter, installPdmuxSqliteDriver } from "./sqlite-driver";
-import { POSTGRES_MIGRATIONS } from "./migrations";
+import { APP_ENTITIES } from "./entities";
+import { migrationPaths, migrationSet } from "./migration-files";
 
-const entities = [
-  FileTransfer,
-  FileTransferEntry,
-  AgentAuthFailure,
-  AgentEnrollment,
-  AgentToken,
-  FleetSetting,
-  Host,
-  HostConnector,
-  HostGitRoot,
-  HostMcpKey,
-  HostMetricSample,
-  HostService,
-  IntegrationConnection,
-  Repo,
-  RepoCommit,
-  RepoRef,
-  ServiceExposure,
-  UserHostPref,
-  UserLayout,
-  UserMcpKey,
-];
+/** The migrations the data source loads; compare them with `assertMigrationsLoaded`. */
+export const appMigrations = migrationSet();
 
-export function createDataSourceOptions(env: NodeJS.ProcessEnv = process.env): DataSourceOptions {
-  const providers = runtimeProviders(env);
-  const appEnv = validateEnv(env);
-  if (providers.database === "sqlite") {
-    return {
+const commonOptions = {
+  entities: APP_ENTITIES,
+  migrations: migrationPaths(appMigrations),
+  // One transaction per migration, so a migration can set `transaction = false`
+  // for statements such as CREATE INDEX CONCURRENTLY.
+  migrationsTransactionMode: "each" as const,
+  synchronize: false,
+};
+
+const env = validateEnv(process.env);
+function databaseProvider(): DatabaseProviderName {
+  return PROVIDERS.database;
+}
+
+export const dataSourceOptions: DataSourceOptions = databaseProvider() === "sqlite"
+  ? {
       type: "better-sqlite3",
-      database: sqliteDatabasePath(databaseUrl(appEnv, providers.database)),
-      driver: BunSqliteDatabaseAdapter,
+      database: sqliteDatabasePath(databaseUrl(env)),
       enableWAL: true,
-      entities,
-      migrations: [],
-      synchronize: true,
+      ...commonOptions,
+    }
+  : {
+      type: "postgres",
+      ...(process.env.DATABASE_URL ? { url: process.env.DATABASE_URL } : {}),
+      host: env.POSTGRES_HOST,
+      port: env.POSTGRES_PORT,
+      username: env.POSTGRES_USER,
+      password: env.POSTGRES_PASSWORD,
+      database: env.POSTGRES_DB,
+      ...commonOptions,
     };
-  }
-  return {
-    type: "postgres",
-    ...(env.DATABASE_URL ? { url: env.DATABASE_URL } : {}),
-    host: appEnv.POSTGRES_HOST,
-    port: appEnv.POSTGRES_PORT,
-    username: appEnv.POSTGRES_USER,
-    password: appEnv.POSTGRES_PASSWORD,
-    database: appEnv.POSTGRES_DB,
-    entities,
-    migrations: POSTGRES_MIGRATIONS,
-    // One transaction per migration, so a migration can set `transaction = false`
-    // for statements such as CREATE INDEX CONCURRENTLY.
-    migrationsTransactionMode: "each",
-    synchronize: false,
-  };
-}
 
-export const dataSourceOptions: DataSourceOptions = createDataSourceOptions();
-
-export function createAppDataSource(options: DataSourceOptions = dataSourceOptions): DataSource {
-  const source = new DataSource(options);
-  return options.type === "better-sqlite3" ? installPdmuxSqliteDriver(source) : source;
-}
-
-export const entityTypes = entities;
-
-// Used by the TypeORM CLI for migrations (see package.json scripts).
-export const appDataSource = createAppDataSource();
-export default appDataSource;
+// The TypeORM CLI (see package.json scripts) takes the file's only DataSource export.
+export const appDataSource = new DataSource(dataSourceOptions);

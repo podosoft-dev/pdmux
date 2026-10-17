@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ready } from "../helpers/hydration";
-import { exclusive } from "../helpers/exclusive";
+import { paths } from "../helpers/paths";
 
 // admin storageState (project default)
 
@@ -30,20 +30,17 @@ test("general settings: shows the favicon uploader", async ({ page }) => {
   await expect(page.locator('input[type="file"]')).toBeVisible();
 });
 
-test("general settings: edit the site name, save, and apply live", async ({ page }) => {
-  test.slow();
-  await exclusive("site-general", async () => {
-    await ready(page, "/admin/settings");
-    const name = page.getByLabel("Site name");
-    const original = await name.inputValue();
-    await name.fill("PodoKit Test Site");
-    await saveGeneral(page);
-    // the browser tab title reflects the new name live (no reload)
-    await expect(page).toHaveTitle("PodoKit Test Site");
-    // restore so other specs start clean
-    await name.fill(original);
-    await saveGeneral(page);
-  });
+test("general settings: edit the site name, save, and apply live", { tag: "@exclusive" }, async ({ page }) => {
+  await ready(page, "/admin/settings");
+  const name = page.getByLabel("Site name");
+  const original = await name.inputValue();
+  await name.fill("PodoKit Test Site");
+  await saveGeneral(page);
+  // the browser tab title reflects the new name live (no reload)
+  await expect(page).toHaveTitle("PodoKit Test Site");
+  // restore so other specs start clean
+  await name.fill(original);
+  await saveGeneral(page);
 });
 
 test("settings lists the auth features under the Authentication tab", async ({ page }) => {
@@ -62,8 +59,8 @@ test("sidebar: back-to-home link returns to the landing page", async ({ page }) 
   // the home link lives in the sidebar footer, above the user menu
   await page.getByRole("link", { name: "Back to home" }).click();
   await expect(page).toHaveURL(/\/$/);
-  // Landing routes are app-owned, so only verify the shared page shell.
-  await expect(page.locator("main").first()).toBeVisible();
+  // The landing page is app-owned; tests/helpers/app-paths.ts says what shows it rendered.
+  await expect(paths.homeReady(page)).toBeVisible();
 });
 
 test("settings is reachable from the sidebar", async ({ page }) => {
@@ -72,58 +69,18 @@ test("settings is reachable from the sidebar", async ({ page }) => {
   await expect(page).toHaveURL(/\/admin\/settings/);
 });
 
-test("admin can toggle a feature flag and it applies live @smoke", async ({ page }) => {
-  test.slow();
-  await exclusive("magic-link", async () => {
-    await ready(page, "/admin/settings");
-    await page.getByRole("tab", { name: "Authentication" }).click();
-    const toggle = page.getByRole("switch", { name: "Magic link" });
-    test.skip((await toggle.count()) === 0, "magic link toggle not present");
-    // The magic-link lock keeps the API spec that toggles the same flag out.
-    await expect(toggle).toBeChecked();
-    await toggle.click();
-    await expect(page.getByText("Setting updated")).toBeVisible();
-    await expect(toggle).not.toBeChecked(); // capabilities refreshed live
-    // restore so the shared magic-link/2FA specs keep their expected state
-    await toggle.click();
-    await expect(toggle).toBeChecked();
-  });
-});
-
-test("admin can disable the MCP endpoint and restore it live", async ({ page }) => {
+test("admin can toggle a feature flag and it applies live @smoke", { tag: "@exclusive" }, async ({ page }) => {
   await ready(page, "/admin/settings");
   await page.getByRole("tab", { name: "Authentication" }).click();
-  const toggle = page.getByRole("switch", { name: "MCP (Model Context Protocol)" });
-  await expect(toggle).toBeVisible();
-  const original = await toggle.isChecked();
-
-  async function setEnabled(enabled: boolean): Promise<void> {
-    if ((await toggle.isChecked()) === enabled) return;
-    const saved = page.waitForResponse(
-      (response) => response.url().endsWith("/api/account/settings")
-        && response.request().method() === "PUT",
-    );
-    await toggle.click();
-    expect((await saved).ok()).toBeTruthy();
-    if (enabled) await expect(toggle).toBeChecked();
-    else await expect(toggle).not.toBeChecked();
-  }
-
-  try {
-    await setEnabled(true);
-    await expect(async () => {
-      expect((await page.request.post("/mcp")).status()).toBe(401);
-    }).toPass({ timeout: 5_000 });
-
-    await setEnabled(false);
-    // The endpoint reads the database through a short cross-replica cache. Poll the
-    // externally visible contract instead of assuming this request hits the writer.
-    await expect(async () => {
-      expect((await page.request.post("/mcp")).status()).toBe(404);
-    }).toPass({ timeout: 5_000 });
-  } finally {
-    await setEnabled(original);
-  }
+  const toggle = page.getByRole("switch", { name: "Magic link" });
+  test.skip((await toggle.count()) === 0, "magic link toggle not present");
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await expect(page.getByText("Setting updated")).toBeVisible();
+  await expect(toggle).not.toBeChecked(); // capabilities refreshed live
+  // restore so the shared magic-link/2FA specs keep their expected state
+  await toggle.click();
+  await expect(toggle).toBeChecked();
 });
 
 test("settings: the require-two-factor toggle is available", async ({ page }) => {
@@ -137,72 +94,70 @@ test("settings: the require-two-factor toggle is available", async ({ page }) =>
   await expect(page.getByRole("switch", { name: "Automatic logout" })).toBeVisible();
 });
 
-test("inactive browser sessions are signed out automatically @smoke", async ({ browser, page: adminPage }) => {
+test("inactive browser sessions are signed out automatically @smoke", { tag: "@exclusive" }, async ({ browser, page: adminPage }) => {
   test.slow();
-  await exclusive("session-idle-timeout", async () => {
-    // Idle sign-out revokes the active server session. Use a dedicated login so
-    // this test cannot invalidate the shared admin storageState used by later specs.
-    const context = await browser.newContext({ baseURL: base });
-    const page = await context.newPage();
-    const email = `idle-admin-${Date.now()}@example.com`;
-    let signOutRequests = 0;
-    let userId = "";
+  // Idle sign-out revokes the active server session. Use a dedicated login so
+  // this test cannot invalidate the shared admin storageState used by later specs.
+  const context = await browser.newContext({ baseURL: base });
+  const page = await context.newPage();
+  const email = `idle-admin-${Date.now()}@example.com`;
+  let signOutRequests = 0;
+  let userId = "";
+  try {
+    const created = await adminPage.request.post("/api/auth/admin/create-user", {
+      headers: { origin: base },
+      data: { email, password: "Podokit3e-Str0ng!pw", name: "Idle Admin", role: "admin" },
+    });
+    expect(created.ok()).toBeTruthy();
+    userId = ((await created.json()).user?.id ?? "") as string;
+    expect(userId).toBeTruthy();
+
+    const signIn = await context.request.post("/api/auth/sign-in/email", {
+      headers: { origin: base },
+      data: { email, password: "Podokit3e-Str0ng!pw" },
+    });
+    expect(signIn.ok()).toBeTruthy();
+
+    const configured = await context.request.put("/api/account/auth-config", {
+      data: { server: { sessionIdleTimeoutMinutes: 5 } },
+    });
+    expect(configured.ok()).toBeTruthy();
+    await page.route("**/api/auth/sign-out", async (route) => {
+      signOutRequests += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: '{"success":true}' });
+    });
+    await page.clock.install();
+
     try {
-      const created = await adminPage.request.post("/api/auth/admin/create-user", {
-        headers: { origin: base },
-        data: { email, password: "Podokit3e-Str0ng!pw", name: "Idle Admin", role: "admin" },
+      await ready(page, "/admin");
+      await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    } finally {
+      // Keep the loaded page policy at five minutes while restoring the shared
+      // DB policy before the isolated session is revoked.
+      const restored = await context.request.put("/api/account/auth-config", {
+        data: { server: { sessionIdleTimeoutMinutes: null } },
       });
-      expect(created.ok()).toBeTruthy();
-      userId = ((await created.json()).user?.id ?? "") as string;
-      expect(userId).toBeTruthy();
+      expect(restored.ok()).toBeTruthy();
+    }
 
-      const signIn = await context.request.post("/api/auth/sign-in/email", {
-        headers: { origin: base },
-        data: { email, password: "Podokit3e-Str0ng!pw" },
-      });
-      expect(signIn.ok()).toBeTruthy();
+    const removed = await adminPage.request.post("/api/auth/admin/remove-user", {
+      headers: { origin: base },
+      data: { userId },
+    });
+    expect(removed.ok()).toBeTruthy();
+    userId = "";
 
-      const configured = await context.request.put("/api/account/auth-config", {
-        data: { server: { sessionIdleTimeoutMinutes: 5 } },
-      });
-      expect(configured.ok()).toBeTruthy();
-      await page.route("**/api/auth/sign-out", async (route) => {
-        signOutRequests += 1;
-        await route.fulfill({ status: 200, contentType: "application/json", body: '{"success":true}' });
-      });
-      await page.clock.install();
-
-      try {
-        await ready(page, "/admin");
-        await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-      } finally {
-        // Keep the loaded page policy at five minutes while restoring the shared
-        // DB policy before the isolated session is revoked.
-        const restored = await context.request.put("/api/account/auth-config", {
-          data: { server: { sessionIdleTimeoutMinutes: null } },
-        });
-        expect(restored.ok()).toBeTruthy();
-      }
-
-      const removed = await adminPage.request.post("/api/auth/admin/remove-user", {
+    await page.clock.fastForward(5 * 60_000 + 1_000);
+    await expect.poll(() => signOutRequests).toBe(1);
+    await expect(page).toHaveURL(/\/login\?reason=idle$/);
+    await expect(page.getByTestId("session-timeout-message")).toBeVisible();
+  } finally {
+    if (userId) {
+      await adminPage.request.post("/api/auth/admin/remove-user", {
         headers: { origin: base },
         data: { userId },
       });
-      expect(removed.ok()).toBeTruthy();
-      userId = "";
-
-      await page.clock.fastForward(5 * 60_000 + 1_000);
-      await expect.poll(() => signOutRequests).toBe(1);
-      await expect(page).toHaveURL(/\/login\?reason=idle$/);
-      await expect(page.getByTestId("session-timeout-message")).toBeVisible();
-    } finally {
-      if (userId) {
-        await adminPage.request.post("/api/auth/admin/remove-user", {
-          headers: { origin: base },
-          data: { userId },
-        });
-      }
-      await context.close();
     }
-  });
+    await context.close();
+  }
 });

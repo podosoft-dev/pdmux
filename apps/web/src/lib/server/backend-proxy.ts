@@ -358,6 +358,23 @@ export function proxyTimeoutFor(
   return entry ? entry.timeoutMs : backendProxyTimeoutMs();
 }
 
+/**
+ * Bun's fetch fails a request whose connection sends nothing for its idle
+ * timeout, 300 seconds unless BUN_CONFIG_HTTP_IDLE_TIMEOUT sets another, even
+ * while the proxy still waits for response headers.
+ */
+const FETCH_IDLE_TIMEOUT_MS = 300_000;
+
+/**
+ * Bun's fetch options for a request that waits up to timeoutMs for response
+ * headers. A wait without a deadline, or one Bun's idle timeout would cut
+ * first, turns that timeout off, so only the deadline, the health checks, and
+ * the browser end it. Shorter waits keep Bun's default.
+ */
+export function upstreamFetchOptions(timeoutMs: number | null): { timeout?: false } {
+  return timeoutMs === null || timeoutMs >= FETCH_IDLE_TIMEOUT_MS ? { timeout: false } : {};
+}
+
 /** Bun closes silent connections on a 4-second tick, up to 4 seconds before their idle timeout. */
 const IDLE_TICK_SECONDS = 4;
 /** The longest idle timeout Bun accepts; 0 turns it off. */
@@ -509,6 +526,40 @@ export function normalizeClientIp(address: string | undefined): string | undefin
   return address;
 }
 
+let publicOriginsSource: string | undefined;
+let publicOrigins: ReadonlySet<string> = new Set();
+
+/**
+ * The public web origins listed in CORS_ORIGIN. Wildcard patterns name no single
+ * origin and are skipped, as are entries that are not absolute URLs.
+ */
+export function configuredPublicOrigins(value = process.env.CORS_ORIGIN): ReadonlySet<string> {
+  if (value !== publicOriginsSource) {
+    publicOriginsSource = value;
+    publicOrigins = new Set(
+      (value ?? "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => !entry.includes("*") && URL.canParse(entry))
+        .map((entry) => new URL(entry).origin),
+    );
+  }
+  return publicOrigins;
+}
+
+/**
+ * Tell the API which public origin a request came in on. SvelteKit resolves the
+ * request URL from the Host header, or from the gateway's forwarded headers that
+ * HOST_HEADER and PROTOCOL_HEADER name, so the value is sent only when that origin
+ * is listed in CORS_ORIGIN. The API can then build links for the origin a browser
+ * used without trusting a header a caller wrote.
+ */
+export function setForwardedOrigin(headers: Headers, url: URL): void {
+  if (!configuredPublicOrigins().has(url.origin)) return;
+  headers.set("x-forwarded-host", url.host);
+  headers.set("x-forwarded-proto", url.protocol.slice(0, -1));
+}
+
 export function resolveClientIp(getClientAddress: () => string): string | undefined {
   try {
     return normalizeClientIp(getClientAddress());
@@ -531,8 +582,10 @@ export async function proxyRequest(
   // Forward the resolved client IP so the API (better-auth) can record it.
   const forwardedIp = normalizeClientIp(clientAddress);
   if (forwardedIp) headers.set("x-forwarded-for", forwardedIp);
+  const requestUrl = new URL(request.url);
+  setForwardedOrigin(headers, requestUrl);
 
-  const { pathname } = new URL(request.url);
+  const { pathname } = requestUrl;
   if (!backendReachable()) {
     request.body?.cancel().catch(() => undefined);
     return backendFailure(pathname, 503);
@@ -578,6 +631,7 @@ export async function proxyRequest(
       // closed EventSource or aborted request keeps its API socket open until Bun's
       // fetch pool is exhausted and the web process stops serving requests.
       signal: AbortSignal.any([request.signal, waiting.signal]),
+      ...upstreamFetchOptions(timeoutMs),
     });
   } catch (cause: unknown) {
     // Nobody waits for an answer to a request the browser abandoned.

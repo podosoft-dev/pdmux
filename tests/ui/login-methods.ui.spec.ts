@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { anonState } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
-import { mailpitReachable, clearMailpit, waitForOtp } from "../helpers/mailpit";
+import { mailpitReachable, waitForOtp } from "../helpers/mailpit";
 
 test.use({ storageState: anonState });
 
@@ -26,10 +26,9 @@ test("login: an emailed one-time code signs a user in", async ({ page, playwrigh
   test.skip(!caps?.emailOtp, "email otp disabled");
   test.skip(!(await mailpitReachable()), "mailpit unreachable");
 
-  const email = `otp-${Date.now()}@example.com`;
+  const email = `ui-otp-${Date.now()}@example.com`;
   await api.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "OTP" } });
   await api.dispose();
-  await clearMailpit();
 
   await ready(page, "/login");
   await page.locator("#email").fill(email);

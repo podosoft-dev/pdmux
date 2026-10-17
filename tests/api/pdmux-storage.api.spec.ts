@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 

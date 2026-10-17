@@ -18,15 +18,15 @@
   import type { Capabilities } from "@podosoft/podokit-api-client";
   import type { AuthConfigView, SocialProviderView } from "./+page.server";
 
-  let { data }: { data: { capabilities: Capabilities; authConfig: AuthConfigView | null; require2fa: boolean; mcpEnabled: boolean } } = $props();
+  let { data }: { data: { capabilities: Capabilities; authConfig: AuthConfigView | null; require2fa: boolean } } = $props();
   const i18n = getI18n();
   const caps = $derived(data.capabilities);
   const ac = $derived(data.authConfig);
 
   type EditableFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "oidcProvider";
-  // require2fa is an enrolment policy and mcpEnabled a product policy rather than
-  // features, so their cards read `data` instead of the feature flags in `caps`.
-  type ToggleFlag = EditableFlag | "require2fa" | "mcpEnabled";
+  // require2fa is an enrolment policy rather than a feature, so its card reads
+  // `data.require2fa` instead of the feature flags in `caps`.
+  type ToggleFlag = EditableFlag | "require2fa";
   type ServerKey = "requireEmailVerification" | "requireSignupApproval" | "hibp" | "allowDelete" | "auditLog";
 
   // Every card renders from this one shape, so they share size and structure: a
@@ -223,13 +223,6 @@
       toggle: { checked: data.require2fa, disabled: saving || !caps.twoFactor, onChange: (v) => toggleFlag("require2fa", v) },
     },
     {
-      key: "flag-mcpEnabled",
-      name: i18n.t.settings.mcpEnabled,
-      desc: i18n.t.settings.mcpEnabledDesc,
-      status: { on: data.mcpEnabled, label: data.mcpEnabled ? i18n.t.settings.enabled : i18n.t.settings.disabled },
-      toggle: { checked: data.mcpEnabled, disabled: saving, onChange: (v) => toggleFlag("mcpEnabled", v) },
-    },
-    {
       key: "session-idle-timeout",
       name: i18n.t.settings.autoLogout,
       desc: i18n.t.settings.autoLogoutDesc,
@@ -301,7 +294,7 @@
   </div>
 
   <Tabs.Root value="general">
-    <Tabs.List>
+    <Tabs.List class="h-auto max-w-full flex-wrap justify-start">
       <Tabs.Trigger value="general">{i18n.t.general.tab}</Tabs.Trigger>
       <Tabs.Trigger value="appearance">{i18n.t.general.appearanceTitle}</Tabs.Trigger>
       <Tabs.Trigger value="auth">{i18n.t.settings.tab}</Tabs.Trigger>

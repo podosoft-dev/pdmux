@@ -1,7 +1,7 @@
 import { expect, test as setup } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { E2E_ADMIN } from "./helpers/accounts";
+import { E2E_ADMIN } from "./helpers/pdmux-accounts";
 import { LAYOUT_SNAPSHOT } from "./helpers/layout-snapshot";
 
 /**

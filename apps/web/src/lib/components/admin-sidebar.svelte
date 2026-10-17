@@ -2,36 +2,15 @@
   import { page } from "$app/state";
   import * as Sidebar from "#lib/components/ui/sidebar/index.js";
   import SidebarUserMenu from "./sidebar-user-menu.svelte";
-  import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
-  import UsersIcon from "@lucide/svelte/icons/users";
-  import MonitorSmartphoneIcon from "@lucide/svelte/icons/monitor-smartphone";
-  import ScrollTextIcon from "@lucide/svelte/icons/scroll-text";
-  import Building2Icon from "@lucide/svelte/icons/building-2";
-  import SettingsIcon from "@lucide/svelte/icons/settings";
   import HouseIcon from "@lucide/svelte/icons/house";
   import { getI18n } from "#lib/i18n/index.js";
-  import { moduleNavEntries, type AdminNavEntry } from "#lib/admin/registry.svelte.js";
+  import { adminNavEntries } from "#lib/admin/nav.js";
   import type { SessionUser } from "../../app.d.ts";
 
   let { user, capabilities }: { user: SessionUser; capabilities?: { auditLog?: boolean; organization?: boolean } } = $props();
   const i18n = getI18n();
 
-  type NavItem = AdminNavEntry;
-  const items = $derived<NavItem[]>([
-    { href: "/admin", label: (t) => t.nav.overview, icon: LayoutDashboardIcon },
-    { href: "/admin/users", label: (t) => t.nav.users, icon: UsersIcon, adminOnly: true },
-    { href: "/admin/sessions", label: (t) => t.nav.sessions, icon: MonitorSmartphoneIcon, adminOnly: true },
-    ...(capabilities?.organization
-      ? [{ href: "/admin/organizations", label: (t) => t.nav.organizations, icon: Building2Icon, adminOnly: true } as NavItem]
-      : []),
-    ...(capabilities?.auditLog
-      ? [{ href: "/admin/audit", label: (t) => t.nav.audit, icon: ScrollTextIcon, adminOnly: true } as NavItem]
-      : []),
-    // Module-contributed entries (present only for installed modules).
-    ...moduleNavEntries,
-    { href: "/admin/settings", label: (t) => t.nav.settings, icon: SettingsIcon, adminOnly: true },
-  ]);
-  const visible = $derived(items.filter((item) => !item.adminOnly || user.role === "admin"));
+  const visible = $derived(adminNavEntries(capabilities, user.role));
 </script>
 
 <Sidebar.Root collapsible="icon">

@@ -6,7 +6,7 @@ const origin = { origin: base };
 // The administrator seeded by the admin-dashboard Playwright setup. Inlined so this
 // spec also compiles in apps that do not install that module.
 const admin = {
-  email: "admin@example.com",
+  email: process.env.E2E_ADMIN_EMAIL || "admin@example.com",
   password: process.env.E2E_ADMIN_PASSWORD || "Podokit3e-Str0ng!pw",
 };
 

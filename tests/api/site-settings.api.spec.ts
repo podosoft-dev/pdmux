@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { ADMIN } from "../helpers/accounts";
 import { expectObjectLength } from "../helpers/object-response";
-import { exclusive } from "../helpers/exclusive";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
@@ -18,36 +17,30 @@ async function adminCtx(playwright: import("@playwright/test").PlaywrightWorkerA
   return ctx;
 }
 
-test("theme settings: valid preset/radius/accent round-trip", async ({ playwright }) => {
-  test.slow();
-  await exclusive("site-theme", async () => {
-    const admin = await adminCtx(playwright);
-    const put = await admin.put("/api/site/settings", {
-      data: { themePreset: "slate", themeRadius: "0.75", brandColor: "#2563eb" },
-    });
-    expect(put.ok()).toBeTruthy();
-
-    const anon = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-    const settings = await (await anon.get("/api/site/settings")).json();
-    expect(settings.themePreset).toBe("slate");
-    expect(settings.themeRadius).toBe("0.75");
-    expect(settings.brandColor).toBe("#2563eb");
-
-    // restore
-    await admin.put("/api/site/settings", { data: { themePreset: "", themeRadius: "", brandColor: "" } });
-    await anon.dispose();
+test("theme settings: valid preset/radius/accent round-trip", { tag: "@exclusive" }, async ({ playwright }) => {
+  const admin = await adminCtx(playwright);
+  const put = await admin.put("/api/site/settings", {
+    data: { themePreset: "slate", themeRadius: "0.75", brandColor: "#2563eb" },
   });
+  expect(put.ok()).toBeTruthy();
+
+  const anon = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const settings = await (await anon.get("/api/site/settings")).json();
+  expect(settings.themePreset).toBe("slate");
+  expect(settings.themeRadius).toBe("0.75");
+  expect(settings.brandColor).toBe("#2563eb");
+
+  // restore
+  await admin.put("/api/site/settings", { data: { themePreset: "", themeRadius: "", brandColor: "" } });
+  await anon.dispose();
 });
 
-test("theme settings: valid per-token overrides accepted", async ({ playwright }) => {
-  test.slow();
-  await exclusive("site-theme", async () => {
-    const admin = await adminCtx(playwright);
-    const overrides = JSON.stringify({ light: { primary: "#123456" }, dark: { background: "#0a0a0a" } });
-    const put = await admin.put("/api/site/settings", { data: { themeOverrides: overrides } });
-    expect(put.ok()).toBeTruthy();
-    await admin.put("/api/site/settings", { data: { themeOverrides: "" } }); // restore
-  });
+test("theme settings: valid per-token overrides accepted", { tag: "@exclusive" }, async ({ playwright }) => {
+  const admin = await adminCtx(playwright);
+  const overrides = JSON.stringify({ light: { primary: "#123456" }, dark: { background: "#0a0a0a" } });
+  const put = await admin.put("/api/site/settings", { data: { themeOverrides: overrides } });
+  expect(put.ok()).toBeTruthy();
+  await admin.put("/api/site/settings", { data: { themeOverrides: "" } }); // restore
 });
 
 test("theme settings: invalid values are rejected (no CSS injection)", async ({ playwright }) => {
@@ -68,36 +61,33 @@ test("theme settings: invalid values are rejected (no CSS injection)", async ({ 
   }
 });
 
-test("site settings: one response shape and immediate reads after each write", async ({ playwright }) => {
-  test.slow();
-  await exclusive("site-general", async () => {
-    const admin = await adminCtx(playwright);
-    const anon = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-    const before = await (await anon.get("/api/site/settings")).json() as Record<string, unknown>;
-    expect(Object.keys(before)).toEqual([
-      "name", "description", "supportEmail", "footerText", "brandColor", "themePreset", "themeRadius",
-      "themeOverrides", "termsUrl", "privacyUrl", "locale", "timezone", "maintenanceMode", "allowSignup",
-      "hasFavicon", "faviconVersion",
-    ]);
-    expect(typeof before.hasFavicon).toBe("boolean");
-    expect(before.faviconVersion === null || typeof before.faviconVersion === "string").toBe(true);
+test("site settings: one response shape and immediate reads after each write", { tag: "@exclusive" }, async ({ playwright }) => {
+  const admin = await adminCtx(playwright);
+  const anon = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const before = await (await anon.get("/api/site/settings")).json() as Record<string, unknown>;
+  expect(Object.keys(before)).toEqual([
+    "name", "description", "supportEmail", "footerText", "brandColor", "themePreset", "themeRadius",
+    "themeOverrides", "termsUrl", "privacyUrl", "locale", "timezone", "maintenanceMode", "allowSignup",
+    "hasFavicon", "faviconVersion",
+  ]);
+  expect(typeof before.hasFavicon).toBe("boolean");
+  expect(before.faviconVersion === null || typeof before.faviconVersion === "string").toBe(true);
 
-    try {
-      // The second write lands while the first read is still cached; it must not be hidden.
-      for (const footerText of ["first footer", "second footer"]) {
-        expect((await admin.put("/api/site/settings", { data: { footerText } })).ok()).toBeTruthy();
-        expect((await (await anon.get("/api/site/settings")).json()).footerText).toBe(footerText);
-      }
-    } finally {
-      const footerText = typeof before.footerText === "string" ? before.footerText : "";
-      await admin.put("/api/site/settings", { data: { footerText } });
-      await anon.dispose();
-      await admin.dispose();
+  try {
+    // The second write lands while the first read is still cached; it must not be hidden.
+    for (const footerText of ["first footer", "second footer"]) {
+      expect((await admin.put("/api/site/settings", { data: { footerText } })).ok()).toBeTruthy();
+      expect((await (await anon.get("/api/site/settings")).json()).footerText).toBe(footerText);
     }
-  });
+  } finally {
+    const footerText = typeof before.footerText === "string" ? before.footerText : "";
+    await admin.put("/api/site/settings", { data: { footerText } });
+    await anon.dispose();
+    await admin.dispose();
+  }
 });
 
-test("site favicon: the versioned URL is cached for good and other URLs revalidate", async ({ playwright }) => {
+test("site favicon: the versioned URL is cached for good and other URLs revalidate", { tag: "@exclusive" }, async ({ playwright }) => {
   const admin = await adminCtx(playwright);
   const anon = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   try {

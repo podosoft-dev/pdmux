@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { paths } from "../helpers/paths";
 
-// PDMUX's root is the terminal workspace, whose toolbar replaces a document heading.
+// Module-agnostic: the app's first screen responds (a page or a redirect to it)
+// and renders. Its locator comes from tests/helpers/app-paths.ts.
 test("app is reachable @smoke", async ({ page }) => {
-  const res = await page.goto("/");
+  const res = await page.goto(paths.home);
   expect(res?.status()).toBeLessThan(400);
-  await expect(page.locator("main")).toBeVisible();
-  await expect(page.getByTestId("dashboard-shell")).toBeVisible();
-  await expect(page.locator("[data-pdmux-grid]")).toBeVisible();
+  await expect(paths.homeReady(page)).toBeVisible();
 });

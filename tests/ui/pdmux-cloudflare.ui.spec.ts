@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { e2eAdminState } from "../helpers/accounts";
-import { clickUntil, ready } from "../helpers/hydration";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
+import { ready } from "../helpers/hydration";
+import { clickUntil } from "../helpers/pdmux-hydration";
 
 test.use({ storageState: e2eAdminState });
 

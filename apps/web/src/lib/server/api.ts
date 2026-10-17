@@ -8,6 +8,7 @@ import {
   reportBackendAnswer,
   reportBackendFailure,
   resolveClientIp,
+  setForwardedOrigin,
 } from "./backend-proxy";
 
 /** Thrown without contacting the API while it is known to be unreachable. */
@@ -19,7 +20,8 @@ export class BackendUnavailableError extends Error {
 }
 
 // Server-side client for load functions and hooks: points at the internal
-// backend URL and forwards the incoming request's cookies. Each call is bounded
+// backend URL and forwards the incoming request's cookies, client address, and
+// public origin as the /api proxy does. Each call is bounded
 // by BACKEND_TIMEOUT_MS, so a page renders its fallbacks instead of waiting for
 // an API that does not answer.
 export function serverApiClient(event: RequestEvent): ApiClient {
@@ -31,6 +33,7 @@ export function serverApiClient(event: RequestEvent): ApiClient {
       const headers = new Headers(init?.headers);
       if (cookie) headers.set("cookie", cookie);
       if (clientIp) headers.set("x-forwarded-for", clientIp);
+      setForwardedOrigin(headers, event.url);
       const outage = backendOutageSignal();
       const signals = [AbortSignal.timeout(backendTimeoutMs()), outage];
       if (init?.signal) signals.push(init.signal);

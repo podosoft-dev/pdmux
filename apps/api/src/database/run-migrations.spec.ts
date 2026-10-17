@@ -15,6 +15,8 @@ interface LaunchOptions {
   /** Starts the launcher from the directory above the API, like a repository root. */
   fromParent?: boolean;
   files?: Record<string, string>;
+  /** Arguments after the launcher, such as --list. */
+  args?: string[];
 }
 
 /** Runs the migrate:all launcher in an API layout whose entries print their own path. */
@@ -32,7 +34,8 @@ async function launch(entries: string[], nodeEnv: string, body = "", options: La
       mkdirSync(dirname(join(root, path)), { recursive: true });
       writeFileSync(join(root, path), content);
     }
-    const child = Bun.spawn([process.execPath, options.fromParent ? "api/scripts/run-migrations.mjs" : "scripts/run-migrations.mjs"], {
+    const launcher = options.fromParent ? "api/scripts/run-migrations.mjs" : "scripts/run-migrations.mjs";
+    const child = Bun.spawn([process.execPath, launcher, ...(options.args ?? [])], {
       cwd: options.fromParent ? parent : root,
       env: { ...process.env, NODE_ENV: nodeEnv },
       stdout: "pipe",
@@ -66,6 +69,14 @@ describe("migrate:all launcher", () => {
     // A production image has only the compiled output.
     expect(await launch(["dist/migrate.js", "dist/database/migrate.js"], "production"))
       .toMatchObject({ code: 0, stdout: "dist/migrate.js" });
+  });
+
+  it("lists migrations through the application migrator, which needs no auth", async () => {
+    const body = "console.log(process.argv.slice(2).join(' '));\n";
+    expect(await launch(["src/migrate.ts", "src/database/migrate.ts"], "development", body, { args: ["--list"] }))
+      .toMatchObject({ code: 0, stdout: "src/database/migrate.ts\n--list" });
+    expect(await launch(["dist/migrate.js", "dist/database/migrate.js"], "production", body, { args: ["--list"] }))
+      .toMatchObject({ code: 0, stdout: "dist/database/migrate.js\n--list" });
   });
 
   it("exits with the migration's status", async () => {

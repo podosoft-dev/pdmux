@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { ADMIN } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
 
 // admin storageState (project default). The Audit log page is gated by the
@@ -23,7 +24,7 @@ test("admin filters the audit log on the server", async ({ page }) => {
 
   await page.locator('button[data-slot="select-trigger"]').first().click(); // Action filter
   await page.getByRole("option", { name: "auth.login", exact: true }).click();
-  await page.locator("#toolbar-search").fill("admin@example.com");
+  await page.locator("#toolbar-search").fill(ADMIN.email);
   const filtered = page.waitForResponse((response) =>
     response.url().includes("/api/audit-logs?") &&
     response.url().includes("action=auth.login") &&
@@ -35,7 +36,7 @@ test("admin filters the audit log on the server", async ({ page }) => {
   const actions = table.locator("tbody tr td:nth-child(3)");
   await expect(actions.first()).toHaveText("auth.login");
   for (const text of await actions.allInnerTexts()) expect(text).toBe("auth.login");
-  await expect(table.getByText("admin@example.com").first()).toBeVisible();
+  await expect(table.getByText(ADMIN.email).first()).toBeVisible();
 });
 
 test("admin pages through the audit log", async ({ page }) => {

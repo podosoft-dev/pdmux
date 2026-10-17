@@ -1,7 +1,18 @@
+import { appAccounts } from "./app-accounts";
+
 export type Account = { name: string; email: string; password: string };
 
+const DEFAULT_PASSWORD = "Podokit3e-Str0ng!pw";
+
+function fromEnv(name: string): string | undefined {
+  const value = process.env[name];
+  return value !== undefined && value.length > 0 ? value : undefined;
+}
+
 /**
- * The password the suite signs in with, per account.
+ * The seeded accounts the suite signs in as. Each value comes from, in order,
+ * an `E2E_*` environment variable, the application-owned `app-accounts.ts`, and
+ * the generated default.
  *
  * A test must never change an existing account's credentials. `seed.setup.ts` signs up
  * idempotently and then signs in with these values, which is right on a stack the suite
@@ -19,32 +30,22 @@ export type Account = { name: string; email: string; password: string };
  * Without the override the run fails with `INVALID_EMAIL_OR_PASSWORD`, which is the correct
  * outcome — a refusal, not a silent overwrite. Do not commit a real value here.
  */
-function seedPassword(
-  envVar: "E2E_ADMIN_PASSWORD" | "E2E_USER_PASSWORD" | "E2E_SUITE_ADMIN_PASSWORD",
-): string {
-  const value = process.env[envVar];
-  return value !== undefined && value.length > 0 ? value : "Podokit3e-Str0ng!pw";
+function seededAccount(
+  role: "ADMIN" | "USER",
+  configured: Partial<Account> | undefined,
+  defaults: Pick<Account, "name" | "email">,
+): Account {
+  return {
+    name: configured?.name ?? defaults.name,
+    email: fromEnv(`E2E_${role}_EMAIL`) ?? configured?.email ?? defaults.email,
+    password: fromEnv(`E2E_${role}_PASSWORD`) ?? configured?.password ?? DEFAULT_PASSWORD,
+  };
 }
 
-export const ADMIN = { name: "Admin", email: "admin@example.com", password: seedPassword("E2E_ADMIN_PASSWORD") };
-export const USER = { name: "Normal User", email: "user@example.com", password: seedPassword("E2E_USER_PASSWORD") };
-/**
- * The account the pdmux specs run as, with its own host and agent.
- *
- * The product specs write dashboard layout and fleet state as part of their assertions.
- * Keeping those writes on a dedicated account prevents a suite run from rearranging the
- * shared admin's screen or touching that account's machines.
- */
-export const E2E_ADMIN = {
-  name: "E2E Admin",
-  email: "pdmux-e2e@example.com",
-  password: seedPassword("E2E_SUITE_ADMIN_PASSWORD"),
-};
+export const ADMIN = seededAccount("ADMIN", appAccounts.admin, { name: "Admin", email: "admin@example.com" });
+export const USER = seededAccount("USER", appAccounts.user, { name: "Normal User", email: "user@example.com" });
 export const adminState = "playwright/.auth/admin.json";
 export const userState = "playwright/.auth/user.json";
-export const e2eAdminState = "playwright/.auth/pdmux-e2e.json";
-/** Where setup leaves the one-time plaintext token used by the isolated agent. */
-export const e2eAgentToken = "playwright/.auth/pdmux-e2e-agent-token.txt";
 export const userBaselineState = "playwright/.auth/user-baseline.json";
 const testUrl = new URL(process.env.E2E_BASE_URL ?? "http://localhost:5001");
 export const anonState = {

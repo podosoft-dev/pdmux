@@ -1,10 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DataSource } from "typeorm";
-import { createAppDataSource, createDataSourceOptions } from "../src/database/data-source";
-import { POSTGRES_MIGRATIONS } from "../src/database/migrations";
+import { createAppDataSource, createDataSourceOptions } from "../src/database/app-data-source";
 import { assertMigrationsApplied, initializeApplicationDataSource } from "../src/database/schema-readiness";
 import { Host } from "../src/hosts/host.entity";
 import { FileTransfer, FileTransferEntry } from "../src/file-transfers/file-transfer.entity";
@@ -16,8 +15,12 @@ if (process.env.PDMUX_MIGRATION_TEST_ISOLATED !== "1" || process.env.POSTGRES_HO
 describe("[TC-PDHOST-030][TC-PDHOST-026] published migration upgrade path", () => {
   it("preserves an installed schema, relaxes the account issuer, rolls back failures, and tolerates old clients and reruns", async () => {
     const directory = mkdtempSync(join(tmpdir(), "pdmux-upgrade-bundle-"));
-    const bundle = join(directory, "migrate.js");
-    copyFileSync(join(__dirname, "../dist/migrate.js"), bundle);
+    // The image's layout without its source: the bundle and the compiled migrations with their list.
+    const bundle = join(directory, "dist/migrate.js");
+    mkdirSync(join(directory, "dist"));
+    cpSync(join(__dirname, "../dist/migrate.js"), bundle);
+    cpSync(join(__dirname, "../dist/migrations"), join(directory, "dist/migrations"), { recursive: true });
+    const built = (JSON.parse(readFileSync(join(directory, "dist/migrations/migrations.json"), "utf8")) as unknown[]).length;
     const options = createDataSourceOptions(process.env);
     const source = new DataSource({ ...options, entities: [] });
     const runtime = createAppDataSource(options);
@@ -89,10 +92,10 @@ describe("[TC-PDHOST-030][TC-PDHOST-026] published migration upgrade path", () =
       ) AS data`);
     }
     try {
-      // First install must work with the same bundle and without a source/migrations directory.
+      // First install must work with the same bundle and without a source directory.
       expect(await migrate()).toEqual({ code: 0, stderr: "" });
       await source.initialize();
-      expect(await count("SELECT count(*) FROM migrations")).toBe(POSTGRES_MIGRATIONS.length);
+      expect(await count("SELECT count(*) FROM migrations")).toBe(built);
       expect(await source.showMigrations()).toBe(false);
 
       // Recreate the application schema shipped by 0.11.5, retaining its migration ledger.
@@ -145,7 +148,7 @@ describe("[TC-PDHOST-030][TC-PDHOST-026] published migration upgrade path", () =
       expect(await migrate()).toEqual({ code: 0, stderr: "" });
       expect(await snapshot()).toEqual(before);
       expect(await accountIdentity()).toEqual(relaxedIdentity);
-      expect(await count("SELECT count(*) FROM migrations")).toBe(POSTGRES_MIGRATIONS.length);
+      expect(await count("SELECT count(*) FROM migrations")).toBe(built);
       await initializeApplicationDataSource(runtime);
       await assertMigrationsApplied(runtime);
       const host = await runtime.getRepository(Host).findOneByOrFail({ id: "00000000-0000-4000-8000-000000000001" });

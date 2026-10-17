@@ -52,7 +52,7 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
     const layout: RuntimeLayout = {
       bunExecutable: "/runtime/bun",
       apiEntry: "/resources/api/main.js",
-      migrateEntry: "/resources/api/migrate.js",
+      migrateEntry: "/resources/api/desktop-migrate.js",
       webEntry: "/resources/web/index.js",
       dataDirectory: root,
       filesDirectory: join(root, "files"),
@@ -88,7 +88,13 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
       layout.webEntry,
     ]);
     expect(calls[1]?.options.env.HOST).toBe("127.0.0.1");
-    expect(calls[1]?.options.env.PDMUX_JOBS_PROVIDER).toBe("local");
+    expect(calls[1]?.options.env).toMatchObject({
+      DATABASE_PROVIDER: "sqlite",
+      CACHE_PROVIDER: "memory",
+      OBJECT_STORAGE_PROVIDER: "local",
+      EVENTS_PROVIDER: "memory",
+      JOBS_PROVIDER: "local",
+    });
     expect(calls[2]?.options.env.BACKEND_INTERNAL_URL).toBe("http://127.0.0.1:51002");
     expect(calls[2]?.options.env.PROTOCOL_HEADER).toBe("x-forwarded-proto");
     expect(calls[2]?.options.env.HOST_HEADER).toBe("x-forwarded-host");

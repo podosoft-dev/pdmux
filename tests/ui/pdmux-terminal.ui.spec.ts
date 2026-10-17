@@ -2,7 +2,7 @@ import { type Page, expect, test } from "@playwright/test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { openSidebar } from "../helpers/shell";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /**
  * The terminal panel end to end: browser -> SvelteKit origin -> relay -> agent PTY.

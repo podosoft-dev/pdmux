@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "test:e2e": "bunx playwright test",
-    "test:e2e:ui": "bunx playwright test --project=ui",
-    "test:e2e:api": "bunx playwright test --project=api",
+    "test:e2e:ui": "bunx playwright test --project=ui --project=ui-exclusive",
+    "test:e2e:api": "bunx playwright test --project=api --project=api-exclusive",
     "test:e2e:report": "bunx playwright show-report"
   },
   "devDependencies": {

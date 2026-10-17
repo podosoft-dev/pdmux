@@ -1,6 +1,6 @@
 import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 import { ready } from "../helpers/hydration";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 import { readLayout, seedSoloPane, writeLayout } from "../helpers/pdmux-layout";
 
 /**

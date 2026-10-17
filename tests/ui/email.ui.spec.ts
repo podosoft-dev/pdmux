@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { anonState } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
-import { clearMailpit, mailpitReachable, waitForLink } from "../helpers/mailpit";
+import { mailpitReachable, waitForLink } from "../helpers/mailpit";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
@@ -20,7 +20,6 @@ test("forgot password: request, open the emailed link, set a new password, sign 
   // The happy path ends by signing in; when verification is required that would be
   // blocked, so this UI walkthrough only applies with verification off.
   test.skip(verificationOn, "email verification enabled");
-  await clearMailpit();
 
   await ready(page, "/forgot-password");
   await page.getByLabel("Email").fill(email);

@@ -11,7 +11,10 @@
 </script>
 
 {#if s.footerText || hasLinks}
-  <footer class="text-muted-foreground flex flex-col items-center gap-1 px-4 py-6 text-center text-sm">
+  <footer
+    class="text-muted-foreground flex flex-col items-center gap-1 px-4 py-6 text-center text-sm"
+    data-testid="site-footer"
+  >
     {#if s.footerText}
       <p>{s.footerText}</p>
     {/if}

@@ -12,7 +12,7 @@ import {
   superviseApplicationDatabase,
 } from "./application-database";
 import { isDatabaseUnavailable } from "./database";
-import { POSTGRES_MIGRATIONS } from "./migrations";
+import { migrationSet } from "./migration-files";
 
 function refused(): Error {
   return Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), { code: "ECONNREFUSED" });
@@ -28,7 +28,8 @@ function fakeDataSource(reachable: boolean): FakeDatabase {
   const state: FakeDatabase["state"] = { reachable, pending: false, initialized: false, destroyed: 0 };
   const dataSource = {
     options: { type: "postgres" },
-    migrations: POSTGRES_MIGRATIONS.map((Migration) => new Migration()),
+    // The fake's schema has every migration of this checkout; only the count is compared.
+    migrations: migrationSet().files.map(({ file }) => ({ name: file })),
     driver: { createQueryRunner: (): QueryRunner => ({}) as QueryRunner },
     get isInitialized(): boolean {
       return state.initialized;

@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { ready } from "../helpers/hydration";
-import { exclusive } from "../helpers/exclusive";
 
 // admin storageState (project default). The Appearance controls live in their
 // own "Appearance" settings tab.
@@ -49,20 +48,17 @@ test("appearance: advanced reveals per-token pickers", async ({ page }) => {
   await expect(page.getByLabel("Primary dark")).toBeVisible();
 });
 
-test("appearance: pick a preset, save, apply live, then restore @smoke", async ({ page }) => {
-  test.slow();
-  await exclusive("site-theme", async () => {
-    await openAppearance(page);
-    await page.getByRole("button", { name: "Slate" }).click();
-    await page.getByRole("button", { name: "Medium" }).click();
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByText("General settings saved.").first()).toBeVisible();
-    // Applied globally via the scoped override stylesheet.
-    await expect.poll(async () => page.locator("#podokit-theme").count()).toBeGreaterThan(0);
+test("appearance: pick a preset, save, apply live, then restore @smoke", { tag: "@exclusive" }, async ({ page }) => {
+  await openAppearance(page);
+  await page.getByRole("button", { name: "Slate" }).click();
+  await page.getByRole("button", { name: "Medium" }).click();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("General settings saved.").first()).toBeVisible();
+  // Applied globally via the scoped override stylesheet.
+  await expect.poll(async () => page.locator("#podokit-theme").count()).toBeGreaterThan(0);
 
-    // "Restore defaults" reverts everything in one click and persists.
-    await page.getByRole("button", { name: "Restore defaults" }).click();
-    await expect(page.getByText("General settings saved.").first()).toBeVisible();
-    await expect.poll(async () => page.locator("#podokit-theme").count()).toBe(0);
-  });
+  // "Restore defaults" reverts everything in one click and persists.
+  await page.getByRole("button", { name: "Restore defaults" }).click();
+  await expect(page.getByText("General settings saved.").first()).toBeVisible();
+  await expect.poll(async () => page.locator("#podokit-theme").count()).toBe(0);
 });

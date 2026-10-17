@@ -1,9 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Include utilities used by the compiled product workspace components. */
-@source "../../../node_modules/@pdmux/ui/dist";
-
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -124,3 +121,6 @@
   color: var(--sidebar-foreground);
   font-weight: 400;
 }
+
+/* Application styles: @source paths, theme overrides, and base styles. */
+@import "./app.extensions.css";

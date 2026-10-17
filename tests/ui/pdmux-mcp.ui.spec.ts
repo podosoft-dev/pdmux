@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { ready } from "../helpers/hydration";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /**
  * Connecting a coding CLI to a host.

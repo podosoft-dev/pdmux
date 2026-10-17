@@ -44,9 +44,8 @@
   {/if}
 </svelte:head>
 
-<!-- `lightClassNames`: `@pdmux/ui` follows a `.dark` OR `.light` class and falls back to the
-     OS only when neither is set, so the resolved light theme has to be named too — without
-     it, a light theme on a dark OS painted the package's dark palette on a white card. -->
+<!-- `.light` on <html> in light mode lets component libraries that follow a `.dark`
+     or `.light` class, and fall back to the OS setting otherwise, match the theme. -->
 <ModeWatcher lightClassNames={["light"]} />
 <SessionIdleTimeout timeoutMinutes={sessionIdleTimeoutMinutes} />
 <!-- podokit:begin:site-runtime-components -->

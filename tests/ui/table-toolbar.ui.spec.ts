@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { ADMIN, USER } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
 
 // The shared toolbar: filters + search both commit on the Search button; the
@@ -6,10 +7,10 @@ import { ready } from "../helpers/hydration";
 test("users toolbar searches only when Search is pressed", async ({ page }) => {
   await ready(page, "/admin/users");
   const main = page.getByRole("main");
-  await page.locator("#toolbar-search").fill("admin@example.com");
+  await page.locator("#toolbar-search").fill(ADMIN.email);
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(main.getByRole("cell", { name: "admin@example.com" })).toBeVisible();
-  await expect(main.getByRole("cell", { name: "user@example.com" })).toHaveCount(0);
+  await expect(main.getByRole("cell", { name: ADMIN.email })).toBeVisible();
+  await expect(main.getByRole("cell", { name: USER.email })).toHaveCount(0);
 });
 
 test("users toolbar applies filter + search together on Search", async ({ page }) => {
@@ -24,8 +25,8 @@ test("users toolbar applies filter + search together on Search", async ({ page }
   });
   await page.getByRole("button", { name: "Search", exact: true }).click();
   expect((await filtered).ok()).toBeTruthy();
-  await expect(main.getByRole("cell", { name: "admin@example.com" })).toBeVisible();
-  await expect(main.getByRole("cell", { name: "user@example.com" })).toHaveCount(0);
+  await expect(main.getByRole("cell", { name: ADMIN.email })).toBeVisible();
+  await expect(main.getByRole("cell", { name: USER.email })).toHaveCount(0);
 });
 
 test("users toolbar combines the role and status filters", async ({ page }) => {
@@ -48,8 +49,8 @@ test("users toolbar combines the role and status filters", async ({ page }) => {
   });
   await page.getByRole("button", { name: "Search", exact: true }).click();
   expect((await filtered).ok()).toBeTruthy();
-  await expect(main.getByRole("cell", { name: "admin@example.com" })).toBeVisible();
-  await expect(main.getByRole("cell", { name: "user@example.com" })).toHaveCount(0);
+  await expect(main.getByRole("cell", { name: ADMIN.email })).toBeVisible();
+  await expect(main.getByRole("cell", { name: USER.email })).toHaveCount(0);
 });
 
 test("users toolbar can pick the search field", async ({ page }) => {

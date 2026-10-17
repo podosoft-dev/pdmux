@@ -1,8 +1,9 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { expectOnScreen, expectScrollable, expectViewportBound } from "../helpers/geometry";
-import { clickUntil, ready } from "../helpers/hydration";
+import { ready } from "../helpers/hydration";
+import { clickUntil } from "../helpers/pdmux-hydration";
 import { openSidebar } from "../helpers/shell";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 import { mockHost, mockUpdate, type MockHost } from "../helpers/fleet";
 
 /**

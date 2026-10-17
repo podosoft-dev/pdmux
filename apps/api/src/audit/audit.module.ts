@@ -29,7 +29,11 @@ export const auditModule: PodokitModule = {
       retention: { days: parseRetentionDays(process.env.AUDIT_LOG_RETENTION_DAYS) },
     });
     services.register(AUDIT, audit, () => audit.close());
-    services.onStart(() => audit.connect());
+    services.onStart(() => {
+      audit.connect();
+      // Not awaited: the toggle read may wait for the database, which startup does not.
+      void audit.warnIfDisabled();
+    });
   },
   plugin: auditPlugin,
 };

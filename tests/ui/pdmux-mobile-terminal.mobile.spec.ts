@@ -1,7 +1,7 @@
 import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /**
  * Typing at a terminal from a phone.

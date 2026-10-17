@@ -22,9 +22,9 @@ import { readAppSettings } from "../auth/db";
 const TTL_MS = 3_000;
 
 /**
- * Not in `FLAG_DEFAULTS`'s union by accident — it is added there so the admin
- * Settings page can toggle it through the existing `PUT /account/settings`. This
- * constant is the fallback used when the read itself fails.
+ * The default in `APP_FLAG_DEFAULTS` (settings/app-flags.ts), through which the
+ * admin Settings page toggles it with `PUT /account/settings`. This constant is the
+ * fallback used when the read itself fails.
  */
 const FALLBACK = true;
 

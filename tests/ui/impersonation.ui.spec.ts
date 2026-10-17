@@ -13,9 +13,12 @@ test("admin can impersonate a user and stop", async ({ page }) => {
   await row.getByRole("button").click();
   await page.getByRole("menuitem", { name: "Impersonate" }).click();
 
-  // Impersonating a normal user leaves the admin-only route group and keeps a
-  // visible route back to the original administrator session.
-  await expect(page).toHaveURL(/\/account(\/|$)/);
+  // Impersonating a normal user leaves the admin-only route group. Where the
+  // application-owned users page lands is the application's choice; the managed
+  // account page always offers the route back to the administrator session.
+  await expect(page).not.toHaveURL(/\/admin\/users/);
+  await ready(page, "/account");
+  await expect(page.getByText(`Impersonating ${USER.email}`)).toBeVisible();
   const stop = page.getByRole("button", { name: "Stop impersonating" });
   await expect(stop).toBeVisible();
 

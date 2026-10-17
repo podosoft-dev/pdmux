@@ -29,9 +29,14 @@ test("register a passkey and sign in with it", async ({ page, baseURL }) => {
   await addBtn.click();
   await expect(page.getByText("Passkey added")).toBeVisible();
 
-  // Sign out, then sign back in using only the passkey.
-  await page.context().request.post("/api/auth/sign-out", { headers: origin });
+  // Sign out, then sign back in using only the passkey. Check the sign-out: a
+  // session left behind would pass the URL check below without the passkey.
+  const signOut = await page.context().request.post("/api/auth/sign-out", { headers: origin, data: {} });
+  expect(signOut.ok(), await signOut.text()).toBeTruthy();
+  expect(await (await page.context().request.get("/api/auth/get-session")).json()).toBeNull();
   await ready(page, "/login");
   await page.getByRole("button", { name: "Use a passkey" }).click();
   await expect(page).toHaveURL(new URL("/", baseURL).toString());
+  const session = await (await page.context().request.get("/api/auth/get-session")).json();
+  expect(session?.user?.email).toBe(email);
 });

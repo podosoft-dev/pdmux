@@ -6,15 +6,15 @@ if (PROVIDERS.jobs !== "bullmq") {
   throw new Error("The BullMQ worker cannot start unless jobs=bullmq is selected");
 }
 
-const runtime = awaitRuntime();
+const runtime = startWorkers();
 
-async function awaitRuntime(): Promise<Awaited<ReturnType<typeof startWorkers>>> {
-  const started = await startWorkers();
-  for (const worker of started.workers) worker.on("failed", (job, error) => {
-    process.stderr.write(`Process job failed: ${job?.id ?? "unknown"} ${error.message}\n`);
-  });
-  return started;
-}
+void runtime.then(({ workers }) => {
+  for (const worker of workers) {
+    worker.on("failed", (job, error) => {
+      process.stderr.write(`Process job failed: ${job?.id ?? "unknown"} ${error.message}\n`);
+    });
+  }
+});
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {

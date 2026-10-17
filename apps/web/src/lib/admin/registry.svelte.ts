@@ -1,5 +1,7 @@
 import type { Component } from "svelte";
+import AppFlagsSettings from "#lib/components/settings/app-flags-settings.svelte";
 import type { Messages } from "#lib/i18n/messages.js";
+import { APP_FLAG_SETTINGS } from "./app-flags";
 // Modules import their nav-entry icons here.
 // podokit:begin:admin-nav-imports
 // podokit:end:admin-nav-imports
@@ -26,6 +28,15 @@ export type AdminSettingsSection = {
   component: Component;
 };
 
+/** A switch on the Settings page's Application tab for one of the API's
+ *  application flags; see the app-owned app-flags.ts. */
+export type AppFlagSetting = {
+  /** The key in APP_FLAG_DEFAULTS (apps/api/src/settings/app-flags.ts). */
+  flag: string;
+  label: (t: Messages) => string;
+  description?: (t: Messages) => string;
+};
+
 export const moduleNavEntries: AdminNavEntry[] = [
   // podokit:begin:admin-nav-entries
   // podokit:end:admin-nav-entries
@@ -34,4 +45,8 @@ export const moduleNavEntries: AdminNavEntry[] = [
 export const moduleSettingsSections: AdminSettingsSection[] = [
   // podokit:begin:admin-settings
   // podokit:end:admin-settings
+  // The application's flags, after every module tab, when app-flags.ts lists any.
+  ...(APP_FLAG_SETTINGS.length > 0
+    ? [{ value: "application", label: (t: Messages) => t.settings.appFlags.tab, component: AppFlagsSettings }]
+    : []),
 ];

@@ -16,6 +16,7 @@
   import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
   import { untrack } from "svelte";
   import type { SessionUser } from "../../app.d.ts";
+  import ImpersonationBanner from "./impersonation-banner.svelte";
   import UserAvatar from "./user-avatar.svelte";
   import {
     ApiError,
@@ -33,7 +34,13 @@
     accountPath = "/account",
     returnPath = "/",
   }: {
-    data: { user: SessionUser; currentSessionId: string | null; capabilities: Capabilities };
+    data: {
+      user: SessionUser;
+      currentSessionId: string | null;
+      capabilities: Capabilities;
+      /** Set by the /account load while an administrator acts as this user. */
+      showImpersonationBanner?: boolean;
+    };
     accountPath?: string;
     returnPath?: string;
   } = $props();
@@ -273,7 +280,7 @@
     const { data: res, error } = await api.auth.twoFactor.enable({ password: twoFaPassword });
     twoFaBusy = false;
     if (error) return void toast.error(error.message ?? i18n.t.account.changeFailed);
-    if (res?.method !== "totp") {
+    if (!res || !("totpURI" in res) || !res.totpURI || !Array.isArray(res.backupCodes)) {
       return void toast.error(i18n.t.account.changeFailed);
     }
     setup = { totpURI: res.totpURI, backupCodes: res.backupCodes };
@@ -552,6 +559,9 @@
 </script>
 
 <div class="flex flex-col gap-6">
+  {#if data.showImpersonationBanner}
+    <ImpersonationBanner email={data.user.email} class="rounded-md" />
+  {/if}
   <h1 class="text-2xl font-semibold">{i18n.t.account.title}</h1>
 
   <div class="flex flex-col gap-6 lg:flex-row">

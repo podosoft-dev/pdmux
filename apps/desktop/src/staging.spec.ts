@@ -21,7 +21,7 @@ describe("[TC-PDDESKTOP-009] desktop runtime staging", () => {
     root = await mkdtemp(join(tmpdir(), "pdmux-desktop-stage-"));
     await Promise.all([
       fixture(join(root, "apps/api/dist/main.js"), "api"),
-      fixture(join(root, "apps/api/dist/migrate.js"), "migrate"),
+      fixture(join(root, "apps/api/dist/desktop-migrate.js"), "migrate"),
       fixture(join(root, "apps/api/dist/main-worker.js"), "worker"),
       fixture(join(root, "apps/web/build/index.js"), "web"),
       fixture(join(root, "apps/web/build/client/agent/0.1.23/manifest.json"), "old"),
@@ -44,8 +44,8 @@ describe("[TC-PDDESKTOP-009] desktop runtime staging", () => {
 
     expect(result).toEqual({ agentVersion: "0.1.24", bunDestination: "bun" });
     expect((await readdir(join(root, "apps/desktop/resources/services/api"))).sort()).toEqual([
+      "desktop-migrate.js",
       "main.js",
-      "migrate.js",
     ]);
     expect(await readdir(join(root, "apps/desktop/resources/services/web/client/agent"))).toEqual([
       "0.1.24",
@@ -57,7 +57,7 @@ describe("[TC-PDDESKTOP-009] desktop runtime staging", () => {
     root = await mkdtemp(join(tmpdir(), "pdmux-desktop-stage-"));
     await Promise.all([
       fixture(join(root, "apps/api/dist/main.js"), "api"),
-      fixture(join(root, "apps/api/dist/migrate.js"), "migrate"),
+      fixture(join(root, "apps/api/dist/desktop-migrate.js"), "migrate"),
       fixture(join(root, "apps/web/build/client/agent/0.1.24/manifest.json"), "current"),
       fixture(join(root, "agent/internal/cli/version.go"), 'package cli\nvar AgentVersion = "0.1.24"\n'),
       fixture(join(root, "bun"), "runtime"),

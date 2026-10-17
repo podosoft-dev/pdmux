@@ -1,6 +1,6 @@
 import { test as teardown } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { E2E_ADMIN } from "./helpers/accounts";
+import { E2E_ADMIN } from "./helpers/pdmux-accounts";
 import { LAYOUT_SNAPSHOT } from "./helpers/layout-snapshot";
 
 /**

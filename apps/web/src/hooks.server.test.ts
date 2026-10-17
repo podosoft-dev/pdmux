@@ -1,5 +1,6 @@
 import { ApiError } from "@podosoft/podokit-api-client";
 import type { RequestEvent } from "@sveltejs/kit";
+import type { Handle } from "@sveltejs/kit/hooks";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BackendUnavailableError } from "#lib/server/api.js";
 import { handle } from "./hooks.server";
@@ -14,12 +15,18 @@ const client = vi.hoisted(() => ({
   getSession: vi.fn<() => Promise<SessionResult>>(),
 }));
 
+// Stands in for the application's own hook in the app-owned app-hooks.ts.
+const appHook = vi.hoisted(() => ({
+  handle: vi.fn<Handle>(({ event, resolve }) => resolve(event)),
+}));
+vi.mock("#lib/server/app-hooks.js", () => ({ appHandle: appHook.handle }));
+
 vi.mock("#lib/server/api.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("#lib/server/api.js")>()),
   serverApiClient: () => ({ get: client.get, auth: { getSession: client.getSession } }),
 }));
 
-const resolve = vi.fn(async (): Promise<Response> => new Response("ok"));
+const resolve = vi.fn(async (_event: RequestEvent): Promise<Response> => new Response("ok"));
 
 function requestEvent(pathname: string, cookies: Record<string, string> = {}): RequestEvent {
   return {
@@ -40,6 +47,7 @@ describe("handle", () => {
     client.get.mockReset();
     client.getSession.mockReset();
     resolve.mockClear();
+    appHook.handle.mockClear();
   });
 
   it("requests the session without waiting for site settings", async () => {
@@ -143,5 +151,33 @@ describe("handle", () => {
     expect(client.get).not.toHaveBeenCalled();
     expect(client.getSession).not.toHaveBeenCalled();
     expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the application hook with the loaded runtime context", async () => {
+    client.get.mockResolvedValue({ locale: null });
+    client.getSession.mockResolvedValue(signedIn);
+    let seenUser: unknown;
+    appHook.handle.mockImplementationOnce(({ event, resolve: next }) => {
+      seenUser = event.locals.user;
+      event.locals.user = { id: "local", email: "local@localhost", name: "Local", role: "admin" };
+      return next(event);
+    });
+    const event = requestEvent("/account");
+
+    const response = await handle({ event, resolve });
+
+    expect(seenUser).toEqual({ id: "user-1" });
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve.mock.calls[0]?.[0].locals.user).toMatchObject({ id: "local", role: "admin" });
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it("lets the application hook answer a request itself", async () => {
+    appHook.handle.mockImplementationOnce(() => new Response("teapot", { status: 418 }));
+
+    const response = await handle({ event: requestEvent("/api/site/settings"), resolve });
+
+    expect(response.status).toBe(418);
+    expect(resolve).not.toHaveBeenCalled();
   });
 });

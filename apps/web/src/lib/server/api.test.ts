@@ -9,6 +9,7 @@ type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 function requestEvent(fetch: Fetch): RequestEvent {
   return {
     request: new Request("http://app.localhost/services", { headers: { cookie: "session=abc" } }),
+    url: new URL("http://app.localhost/services"),
     getClientAddress: () => "203.0.113.9",
     fetch,
   } as unknown as RequestEvent;
@@ -48,6 +49,24 @@ describe("serverApiClient", () => {
     await expect(api.get("/site/settings")).resolves.toEqual({ ok: true });
     expect(headers?.get("cookie")).toBe("session=abc");
     expect(headers?.get("x-forwarded-for")).toBe("203.0.113.9");
+  });
+
+  it("forwards the public origin only when CORS_ORIGIN lists it", async () => {
+    let headers: Headers | undefined;
+    const api = serverApiClient(requestEvent(async (_input, init) => {
+      headers = new Headers(init?.headers);
+      return Response.json({ ok: true });
+    }));
+
+    vi.stubEnv("CORS_ORIGIN", "https://example.com, http://app.localhost");
+    await api.get("/site/settings");
+    expect(headers?.get("x-forwarded-host")).toBe("app.localhost");
+    expect(headers?.get("x-forwarded-proto")).toBe("http");
+
+    vi.stubEnv("CORS_ORIGIN", "https://example.com");
+    await api.get("/site/settings");
+    expect(headers?.has("x-forwarded-host")).toBe(false);
+    expect(headers?.has("x-forwarded-proto")).toBe(false);
   });
 
   it("gives up on a call that outlasts BACKEND_TIMEOUT_MS", async () => {

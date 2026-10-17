@@ -17,6 +17,7 @@ import {
   AuthConfigService,
   type AuthConfigUpdate,
 } from "../auth-config/auth-config.service";
+import { APP_FLAGS } from "../settings/flag-defaults";
 import { FEATURE_FLAGS, SettingsService, type FeatureFlag } from "../settings/settings.service";
 import { authConfigStore } from "./auth-config-store";
 import { getAuth, authRuntime, primeAuth } from "./auth-provider";
@@ -76,9 +77,6 @@ const accountPlugin: AppPlugin = ({ services }) => {
     .get("/account/require-2fa", async () => ({ require2fa: await settings.getBool("require2fa") }), {
       detail: { tags: ["account"], summary: "Get the two-factor enrolment policy" },
     })
-    .get("/account/mcp-enabled", async () => ({ mcpEnabled: await settings.getBool("mcpEnabled") }), {
-      detail: { tags: ["account"], summary: "Get the MCP server policy" },
-    })
     .get("/account/capabilities", async (): Promise<Capabilities> => {
       const [flags, snapshot] = await Promise.all([
         settings.flags(),
@@ -104,6 +102,7 @@ const accountPlugin: AppPlugin = ({ services }) => {
         auditLog: snapshot.auditLog,
         sessionIdleTimeoutMinutes: snapshot.sessionIdleTimeoutMinutes,
         roles: ROLE_NAMES,
+        appFlags: Object.fromEntries(APP_FLAGS.map((flag) => [flag, flags[flag]])),
       };
     }, {
       detail: { tags: ["account"], summary: "Get authentication capabilities" },

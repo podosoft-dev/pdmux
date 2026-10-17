@@ -154,8 +154,8 @@ Configure any external proxy's response timeout to accommodate that verification
 
 ## Upgrade compatibility
 
-Deploy the new API/web and run `migrate:all` **before updating agents**. PostgreSQL uses the statically
-registered `AddFileTransfers1731700000000` migration, adding two independent tables without changing
+Deploy the new API/web and run `migrate:all` **before updating agents**. PostgreSQL uses the
+`AddFileTransfers1731700000000` migration, adding two independent tables without changing
 existing data. Desktop SQLite adds the entities through its existing schema synchronization path.
 Back up the database before upgrading.
 

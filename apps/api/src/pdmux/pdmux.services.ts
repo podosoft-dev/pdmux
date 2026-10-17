@@ -33,7 +33,7 @@ import {
   applicationDataSourceOptions,
   superviseApplicationDatabase,
 } from "../database/application-database";
-import { createAppDataSource, dataSourceOptions } from "../database/data-source";
+import { createAppDataSource, createDataSourceOptions } from "../database/app-data-source";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { GitBlobBufferService } from "../git/git-blob-buffer.service";
@@ -138,7 +138,7 @@ function scheduleMaintenance(jobs: JobProvider): void {
 }
 
 export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): PdmuxServices {
-  const dataSource = createAppDataSource(applicationDataSourceOptions(dataSourceOptions, env));
+  const dataSource = createAppDataSource(applicationDataSourceOptions(createDataSourceOptions(), env));
   const storage = services.resolve(OBJECT_STORAGE);
   const events = new HostEvents(services.resolve(EVENTS));
   const auth = services.resolve(AUTH);

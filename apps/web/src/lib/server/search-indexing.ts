@@ -1,5 +1,6 @@
+import { APP_NON_INDEXABLE_PATHS } from "./non-indexable-paths";
+
 const NON_INDEXABLE_PATH_PREFIXES = [
-  "/",
   "/api",
   "/admin",
   "/account",
@@ -13,7 +14,9 @@ const NON_INDEXABLE_PATH_PREFIXES = [
   "/oauth2",
   "/accept-invitation",
   "/maintenance",
-] as const;
+  // Application prefixes from the app-owned non-indexable-paths.ts.
+  ...APP_NON_INDEXABLE_PATHS,
+];
 
 function matchesPathPrefix(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);

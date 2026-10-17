@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { webSocketProxy } from "../vite.config";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string): string => readFileSync(`${root}/${path}`, "utf8");
@@ -19,10 +20,13 @@ describe("WebSocket gateway routing", () => {
   });
 
   it("routes both public socket paths through Vite during development", () => {
-    const config = read("apps/web/vite.config.ts");
-    expect(config).toContain('"/terminal/ws": { target:');
-    expect(config).toContain('"/agent/ws": { target:');
-    expect(config.match(/ws: true/g)).toHaveLength(2);
+    // The managed vite.config.ts proxies exactly the paths .podokit/dev.json lists.
+    const proxy = webSocketProxy(read(".podokit/dev.json"), "http://api:5002");
+    expect(Object.keys(proxy).map((key) => new RegExp(key)).map((path) => [
+      path.test("/agent/ws"),
+      path.test("/terminal/ws"),
+    ])).toEqual([[true, false], [false, true]]);
+    expect(Object.values(proxy).every((rule) => rule.ws === true)).toBe(true);
   });
 
   it("[TC-PDTERM-107] routes only the two exact socket paths to the API in self-hosted deployments", () => {

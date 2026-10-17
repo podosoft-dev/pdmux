@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { ConnectionOptions } from "bullmq";
+import { Queue, type ConnectionOptions } from "bullmq";
 import { BullMqJobQueue, externalJobId, parseExternalJobId } from "./bullmq-job.queue";
 import { producerConnection, reconnectDelay, redisConnection } from "./queue";
 
@@ -125,6 +125,62 @@ describe("BullMqJobQueue while Redis is unavailable", () => {
     } finally {
       await queue.close();
       redis.stop();
+    }
+  });
+});
+
+describe("BullMqJobQueue schedules", () => {
+  it("rejects an invalid schedule before keeping it", async () => {
+    const queue = new BullMqJobQueue(producerAt(closedPort()));
+    try {
+      await expect(queue.schedule("bad", "report", {}, { cron: "61 * * * *" })).rejects.toThrow();
+      await expect(queue.schedule("bad", "report", {}, { cron: "0 3 * * *", timezone: "Mars/Olympus" })).rejects.toThrow();
+      await expect(queue.schedule("bad", "report", {}, { everyMs: 10 })).rejects.toThrow("at least 1000");
+    } finally {
+      await queue.close();
+    }
+  });
+
+  it("keeps a schedule while Redis is unreachable instead of failing", async () => {
+    const queue = new BullMqJobQueue(producerAt(closedPort()));
+    try {
+      await expect(queue.schedule("nightly", "report", {}, { cron: "0 3 * * *" })).resolves.toBeUndefined();
+      await expect(queue.unschedule("nightly")).resolves.toBeUndefined();
+    } finally {
+      await queue.close();
+    }
+  });
+});
+
+// Runs against the Redis the app's environment names (REDIS_URL or REDIS_HOST, as
+// in .env); skipped when neither is set.
+describe.skipIf(!process.env.REDIS_URL && !process.env.REDIS_HOST)("BullMqJobQueue schedules in Redis", () => {
+  const REDIS = process.env;
+  it("applies schedules on connect, again after Redis lost them, and removes them", async () => {
+    const name = `schedule-test-${crypto.randomUUID()}`;
+    const queue = new BullMqJobQueue(producerConnection(REDIS));
+    const inspect = new Queue(name, { connection: redisConnection(REDIS) });
+    try {
+      await queue.schedule("hourly", name, { scope: "all" }, { everyMs: 3_600_000 });
+      await queue.schedule("nightly", name, {}, { cron: "0 3 * * *", timezone: "Asia/Seoul" });
+      expect(await inspect.getJobScheduler("hourly")).toBeUndefined();
+
+      await queue.connect();
+      expect(await inspect.getJobScheduler("hourly")).toMatchObject({ every: 3_600_000, name });
+      expect(await inspect.getJobScheduler("nightly")).toMatchObject({ pattern: "0 3 * * *", tz: "Asia/Seoul" });
+
+      // A Redis that lost its data gets the schedules back on the next connect.
+      await inspect.removeJobScheduler("hourly");
+      await queue.connect();
+      expect(await inspect.getJobScheduler("hourly")).toMatchObject({ every: 3_600_000 });
+
+      await queue.unschedule("nightly");
+      expect(await inspect.getJobScheduler("nightly")).toBeUndefined();
+      expect(await inspect.getJobSchedulersCount()).toBe(1);
+    } finally {
+      await queue.close();
+      await inspect.obliterate({ force: true });
+      await inspect.close();
     }
   });
 });

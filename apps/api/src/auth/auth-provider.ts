@@ -1,10 +1,11 @@
-import type { AuthConfig } from "@podosoft/podokit-auth";
+import { envAuthConfig, type AuthConfig } from "@podosoft/podokit-auth";
 import { validateEnv } from "../config/env.validation";
 import { auth as bootstrapAuth, buildAuth } from "./auth";
-import { authConfigStore } from "./auth-config-store";
+import { AUTH_CONFIG_DEFAULTS, authConfigStore } from "./auth-config-store";
 import { publishConfigChanged } from "./config-events";
 import { answersWithin, checkAuthResponse } from "./database-outage";
 import { authDatabaseReachable } from "./db";
+import { createSchemaRecheck } from "./schema-recheck";
 
 const REFRESH_WAIT_MS = validateEnv(process.env).READINESS_CHECK_TIMEOUT_MS;
 
@@ -16,8 +17,10 @@ const REFRESH_WAIT_MS = validateEnv(process.env).READINESS_CHECK_TIMEOUT_MS;
 // Auth instance. Session tokens remain valid because BETTER_AUTH_SECRET is stable.
 
 let current = bootstrapAuth;
+let currentConfig: AuthConfig = envAuthConfig(AUTH_CONFIG_DEFAULTS); // the bootstrap instance's
 let currentVersion = "env"; // matches envAuthConfig() bootstrap
 let failedVersion: string | null = null;
+const recheckSchema = createSchemaRecheck();
 
 export function getAuth(): typeof bootstrapAuth {
   return current;
@@ -38,6 +41,7 @@ export async function refreshIfStale(): Promise<void> {
   if (config.version === currentVersion || config.version === failedVersion) return;
   try {
     current = buildAuth(config);
+    currentConfig = config;
     currentVersion = config.version;
     failedVersion = null;
   } catch (err) {
@@ -64,7 +68,19 @@ export async function refreshAuthNow(): Promise<void> {
  * current instance serves the request, and the refresh finishes in the background.
  */
 export async function refreshForRequest(): Promise<void> {
-  await answersWithin(refreshIfStale, REFRESH_WAIT_MS);
+  await answersWithin(async () => {
+    await refreshIfStale();
+    await recheckSchema(current, rebuildCurrent);
+  }, REFRESH_WAIT_MS);
+}
+
+/** A new instance of the current configuration, which checks the schema again. */
+function rebuildCurrent(): void {
+  try {
+    current = buildAuth(currentConfig);
+  } catch (err) {
+    console.error("[auth-config] rebuild failed; keeping last-good auth instance:", err instanceof Error ? err.message : err);
+  }
 }
 
 // Stable handler reference the adapter captures once; redispatches per request.

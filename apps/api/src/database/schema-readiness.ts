@@ -1,5 +1,5 @@
 import type { DataSource } from "typeorm";
-import { POSTGRES_MIGRATIONS } from "./migrations";
+import { assertMigrationsLoaded, migrationSet, type MigrationSet } from "./migration-files";
 
 type MigrationSource = Pick<DataSource, "options" | "migrations" | "showMigrations">;
 
@@ -11,11 +11,22 @@ export class SchemaNotCurrentError extends Error {
   }
 }
 
+let buildMigrations: MigrationSet | undefined;
+
 /** Never mark a PostgreSQL process ready against a schema older than its code. */
-export async function assertMigrationsApplied(source: MigrationSource): Promise<void> {
+export async function assertMigrationsApplied(
+  source: MigrationSource,
+  migrations?: MigrationSet,
+): Promise<void> {
   if (source.options.type !== "postgres") return;
-  if (source.migrations.length !== POSTGRES_MIGRATIONS.length || source.migrations.length === 0) {
-    throw new SchemaNotCurrentError("Application migration registry is incomplete");
+  migrations ??= buildMigrations ??= migrationSet();
+  if (migrations.files.length === 0) {
+    throw new SchemaNotCurrentError("Application migration list is empty");
+  }
+  try {
+    assertMigrationsLoaded(source.migrations, migrations);
+  } catch (error: unknown) {
+    throw new SchemaNotCurrentError(error instanceof Error ? error.message : String(error));
   }
   if (await source.showMigrations()) {
     throw new SchemaNotCurrentError(

@@ -1,8 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { createPublicKey, verify, type JsonWebKey } from "node:crypto";
 import { ADMIN, USER } from "../helpers/accounts";
-import { exclusive } from "../helpers/exclusive";
-import { clearSms, smsSinkReachable, waitForSmsOtp } from "../helpers/sms";
+import { smsSinkReachable, waitForSmsOtp } from "../helpers/sms";
 import { totpCode } from "../helpers/totp";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
@@ -32,7 +31,6 @@ test("phone number: verify with the code delivered to the SMS sink", async ({ pl
   const caps = await (await ctx.get("/api/account/capabilities")).json();
   test.skip(!caps?.phoneNumber, "phone number not enabled");
   test.skip(!(await smsSinkReachable()), "SMS sink not reachable");
-  await clearSms();
   const email = `phone-${Date.now()}@example.com`;
   await ctx.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "Phone" } });
   // Unique number per run so the "phone already exists" guard never trips.
@@ -144,50 +142,48 @@ test("two-factor: regenerating backup codes invalidates the old set", async ({ p
   await ctxNew.dispose();
 });
 
-test("require-2fa: gates an un-enrolled user until they enrol", async ({ playwright }) => {
+test("require-2fa: gates an un-enrolled user until they enrol", { tag: "@exclusive" }, async ({ playwright }) => {
   test.slow();
-  await exclusive("require2fa", async () => {
-    const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-    const caps = await (await admin.get("/api/account/capabilities")).json();
-    test.skip(!caps?.twoFactor, "two-factor not enabled");
-    await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
+  const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const caps = await (await admin.get("/api/account/capabilities")).json();
+  test.skip(!caps?.twoFactor, "two-factor not enabled");
+  await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
 
-    const user = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-    const email = `rq-${Date.now()}@example.com`;
-    const pw = "Podokit3e-Str0ng!pw";
-    await user.post("/api/auth/sign-up/email", { data: { email, password: pw, name: "RQ" } });
+  const user = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const email = `rq-${Date.now()}@example.com`;
+  const pw = "Podokit3e-Str0ng!pw";
+  await user.post("/api/auth/sign-up/email", { data: { email, password: pw, name: "RQ" } });
 
-    try {
-      // Turn the policy on (admin; the toggle endpoint is allow-listed by the guard).
-      await admin.put("/api/account/settings", { data: { require2fa: true } });
-      // Capabilities carry the same policy as the dedicated endpoint.
-      await expect(async () => {
-        expect((await (await admin.get("/api/account/capabilities")).json()).require2fa).toBe(true);
-        expect(await (await admin.get("/api/account/require-2fa")).json()).toEqual({ require2fa: true });
-      }).toPass({ timeout: 8000 });
-      // The guard caches for a few seconds — poll until the un-enrolled user is gated.
-      await expect(async () => {
-        expect((await user.get("/api/account/me")).status()).toBe(403);
-      }).toPass({ timeout: 8000 });
+  try {
+    // Turn the policy on (admin; the toggle endpoint is allow-listed by the guard).
+    await admin.put("/api/account/settings", { data: { require2fa: true } });
+    // Capabilities carry the same policy as the dedicated endpoint.
+    await expect(async () => {
+      expect((await (await admin.get("/api/account/capabilities")).json()).require2fa).toBe(true);
+      expect(await (await admin.get("/api/account/require-2fa")).json()).toEqual({ require2fa: true });
+    }).toPass({ timeout: 8000 });
+    // The guard caches for a few seconds — poll until the un-enrolled user is gated.
+    await expect(async () => {
+      expect((await user.get("/api/account/me")).status()).toBe(403);
+    }).toPass({ timeout: 8000 });
 
-      // Enrolling restores access.
-      const enable = await (await user.post("/api/auth/two-factor/enable", { data: { password: pw } })).json();
-      await user.post("/api/auth/two-factor/verify-totp", { data: { code: totpCode(enable.totpURI) } });
-      expect((await user.get("/api/account/me")).status()).toBe(200);
-    } finally {
-      // Always turn it back off so the shared (un-enrolled) sessions aren't gated.
-      await admin.put("/api/account/settings", { data: { require2fa: false } });
-      await expect(async () => {
-        const probe = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-        await probe.post("/api/auth/sign-in/email", { data: { email: USER.email, password: USER.password } });
-        const status = (await probe.get("/api/account/me")).status();
-        await probe.dispose();
-        expect(status).toBe(200);
-      }).toPass({ timeout: 8000 });
-      await admin.dispose();
-      await user.dispose();
-    }
-  });
+    // Enrolling restores access.
+    const enable = await (await user.post("/api/auth/two-factor/enable", { data: { password: pw } })).json();
+    await user.post("/api/auth/two-factor/verify-totp", { data: { code: totpCode(enable.totpURI) } });
+    expect((await user.get("/api/account/me")).status()).toBe(200);
+  } finally {
+    // Always turn it back off so the shared (un-enrolled) sessions aren't gated.
+    await admin.put("/api/account/settings", { data: { require2fa: false } });
+    await expect(async () => {
+      const probe = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+      await probe.post("/api/auth/sign-in/email", { data: { email: USER.email, password: USER.password } });
+      const status = (await probe.get("/api/account/me")).status();
+      await probe.dispose();
+      expect(status).toBe(200);
+    }).toPass({ timeout: 8000 });
+    await admin.dispose();
+    await user.dispose();
+  }
 });
 
 test("multi-session holds several accounts and switches between them", async ({ playwright }) => {
@@ -384,10 +380,9 @@ test("an organization can have a parent and manager members", async ({ playwrigh
   await ctx.dispose();
 });
 
-test("the OIDC provider's discovery and endpoints follow its setting", async ({ playwright }) => {
+test("the OIDC provider's discovery and endpoints follow its setting", { tag: "@exclusive" }, async ({ playwright }) => {
   // The provider's metadata is answered before endpoint hooks run, so it needs its
-  // own check that "off" hides it. The lock keeps tests/ui/oidc.ui.spec.ts, which
-  // also toggles the provider, from running at the same time.
+  // own check that "off" hides it.
   test.slow();
   const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
@@ -399,22 +394,20 @@ test("the OIDC provider's discovery and endpoints follow its setting", async ({ 
   const allStatuses = (): Promise<number[]> =>
     Promise.all([...discovery, "/api/auth/oauth2/authorize?client_id=probe"].map(status));
 
-  await exclusive("oidc-provider", async () => {
-    try {
-      expect((await admin.put("/api/account/settings", { data: { oidcProvider: false } })).ok()).toBeTruthy();
-      await expect.poll(allStatuses, { timeout: 8000 }).toEqual([404, 404, 404]);
-      // The jwt plugin's keys and session tokens are not part of the provider.
-      expect(await status("/api/auth/jwks")).toBe(200);
-
-      expect((await admin.put("/api/account/settings", { data: { oidcProvider: true } })).ok()).toBeTruthy();
-      await expect.poll(() => Promise.all(discovery.map(status)), { timeout: 8000 }).toEqual([200, 200]);
-      const metadata = await (await admin.get(discovery[0]!)).json();
-      expect(metadata.authorization_endpoint).toContain("/api/auth/oauth2/authorize");
-    } finally {
-      expect((await admin.put("/api/account/settings", { data: { oidcProvider: false } })).ok()).toBeTruthy();
-    }
+  try {
+    expect((await admin.put("/api/account/settings", { data: { oidcProvider: false } })).ok()).toBeTruthy();
     await expect.poll(allStatuses, { timeout: 8000 }).toEqual([404, 404, 404]);
-  });
+    // The jwt plugin's keys and session tokens are not part of the provider.
+    expect(await status("/api/auth/jwks")).toBe(200);
+
+    expect((await admin.put("/api/account/settings", { data: { oidcProvider: true } })).ok()).toBeTruthy();
+    await expect.poll(() => Promise.all(discovery.map(status)), { timeout: 8000 }).toEqual([200, 200]);
+    const metadata = await (await admin.get(discovery[0]!)).json();
+    expect(metadata.authorization_endpoint).toContain("/api/auth/oauth2/authorize");
+  } finally {
+    expect((await admin.put("/api/account/settings", { data: { oidcProvider: false } })).ok()).toBeTruthy();
+  }
+  await expect.poll(allStatuses, { timeout: 8000 }).toEqual([404, 404, 404]);
   await admin.dispose();
 });
 
@@ -426,28 +419,26 @@ test("only admins can change settings @smoke", async ({ playwright }) => {
   await userCtx.dispose();
 });
 
-test("disabling a feature blocks its endpoint server-side and re-enabling restores it @smoke", async ({ playwright }) => {
+test("disabling a feature blocks its endpoint server-side and re-enabling restores it @smoke", { tag: "@exclusive" }, async ({ playwright }) => {
   test.slow();
-  await exclusive("magic-link", async () => {
-    // Uses a fresh admin context (not the shared storageState) so it never rotates
-    // the seeded session. Toggles a flag and confirms the feature gate enforces it.
-    const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-    await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
-    const caps = await (await admin.get("/api/account/capabilities")).json();
-    test.skip(!caps?.magicLink, "magic link not enabled");
+  // Uses a fresh admin context (not the shared storageState) so it never rotates
+  // the seeded session. Toggles a flag and confirms the feature gate enforces it.
+  const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
+  const caps = await (await admin.get("/api/account/capabilities")).json();
+  test.skip(!caps?.magicLink, "magic link not enabled");
 
-    // A disabled feature's endpoint 404s; the gate reads the flag through a short cache.
-    const status = (): Promise<number> =>
-      admin.post("/api/auth/sign-in/magic-link", { data: { email: "probe@example.com" } }).then((r) => r.status());
+  // A disabled feature's endpoint 404s; the gate reads the flag through a short cache.
+  const status = (): Promise<number> =>
+    admin.post("/api/auth/sign-in/magic-link", { data: { email: "probe@example.com" } }).then((r) => r.status());
 
-    expect((await admin.put("/api/account/settings", { data: { magicLink: false } })).ok()).toBeTruthy();
-    await expect.poll(status, { timeout: 8000 }).toBe(404);
+  expect((await admin.put("/api/account/settings", { data: { magicLink: false } })).ok()).toBeTruthy();
+  await expect.poll(status, { timeout: 8000 }).toBe(404);
 
-    expect((await admin.put("/api/account/settings", { data: { magicLink: true } })).ok()).toBeTruthy();
-    await expect.poll(status, { timeout: 8000 }).not.toBe(404);
+  expect((await admin.put("/api/account/settings", { data: { magicLink: true } })).ok()).toBeTruthy();
+  await expect.poll(status, { timeout: 8000 }).not.toBe(404);
 
-    await admin.dispose();
-  });
+  await admin.dispose();
 });
 
 test("sign-in with a wrong password is rejected", async ({ request }) => {

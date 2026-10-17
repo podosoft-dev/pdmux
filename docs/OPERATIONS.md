@@ -97,8 +97,9 @@ An HTTP 200 from the old readiness endpoint proves database connectivity, not sc
 host requests and agent reconnects can still fail. Use a subsequent release containing the fix
 described in the `Unreleased` changelog, not a retagged or overwritten `0.12.0` image.
 
-The corrected source embeds migration classes through `apps/api/src/database/migrations.ts` in every
-API bundle. Builds compare this registry with all historical source migrations and fail on omissions.
+The corrected source no longer depends on where the bundler emits migrations. Since PodoKit 1.6.0 the
+API build writes every source migration to `dist/migrations/<file>.js` with a `migrations.json` list,
+fails when the output does not match `src/migrations`, and the migrators run exactly the listed files.
 API and worker startup refuse a pending schema, and readiness includes `pdmux-schema`. No automatic
 schema synchronization or credential rotation is enabled for PostgreSQL. Existing migration names,
 timestamps, ledgers, and application data are preserved; SQLite keeps its separate desktop path.

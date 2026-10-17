@@ -26,15 +26,18 @@ flag (`--database`); apply other choices using
 Provider selection does not migrate or delete existing data.
 
 **pdmux selects providers at startup, not at generation.** One build serves the
-self-hosted server and the desktop shell: `apps/api/src/runtime/providers.ts`
-reads `PDMUX_DESKTOP` and the `PDMUX_*_PROVIDER` variables, and
-`apps/api/src/config/providers.ts` hands that selection to the PodoKit modules.
-Both the server and the local implementation modules are installed, and each
-stays inactive unless its provider is selected. `.podokit/manifest.json` records
-the server selection for deployments. Do not run `podo provider set`: it rewrites
-`config/providers.ts` to fixed values. A provider module must precede the modules
-that consume it in the manifest order and in `app.ts`, because a module resolves
-its dependencies while it is configured.
+self-hosted server and the desktop shell. `.podokit/manifest.json` and the managed
+`apps/api/src/config/providers.ts` record the server selection, and the desktop
+shell replaces it with `DATABASE_PROVIDER=sqlite`, `CACHE_PROVIDER=memory`,
+`OBJECT_STORAGE_PROVIDER=local`, `EVENTS_PROVIDER=memory`, and
+`JOBS_PROVIDER=local` (`config/provider-selection.ts`). Both the server and the
+local implementation modules are installed, and each stays inactive unless its
+provider is selected. A provider module must precede the modules that consume it
+in the manifest order and in `app.ts`, because a module resolves its dependencies
+while it is configured. The desktop shell runs `dist/desktop-migrate.js`
+(`apps/api/src/desktop-migrate.ts`, built through `scripts/build.extensions.mjs`)
+instead of `migrate.js`: pdmux migrations are PostgreSQL-only, so its SQLite
+schema comes from the desktop tables and entity synchronization.
 
 ```bash
 bun install
@@ -66,7 +69,20 @@ Merge added module settings from `.env.example` into an existing `.env`.
   `apps/web/src/lib/server/proxy-timeouts.ts` (`APP_PROXY_TIMEOUTS`, `null` for
   none); never edit the managed deadline. Both lists take path prefixes with
   `:name` parameters, such as `/api/hosts/:hostId/file-transfers`, and the most
-  specific prefix wins.
+  specific prefix wins. The proxy and `serverApiClient` send the request's public
+  origin to the API in `x-forwarded-host`/`x-forwarded-proto` only when
+  `CORS_ORIGIN` lists it; an API route may use them to choose among its configured
+  origins, never as a new origin.
+- `apps/web/src/app.css` is managed. Put application styles (theme variable
+  overrides, `@theme` entries, fonts, base styles, and `@source` for packages
+  whose built components use Tailwind classes) in the app-owned
+  `apps/web/src/app.extensions.css`, which `app.css` imports last.
+- `apps/web/vite.config.ts` is managed. Put Vite options (warmup, `optimizeDeps`,
+  `define`, plugins, allowed hosts) in `appViteConfig` and SvelteKit options
+  (`alias`, `csrf`) in `appSvelteKitConfig` of the app-owned
+  `apps/web/vite.extensions.ts`. `bun run dev` proxies the exact
+  `webSocketPaths` of `.podokit/dev.json` to the API like the `podo dev` gateway,
+  so do not add a WebSocket proxy of your own.
 - Server-side API calls (`serverApiClient`) give up after `BACKEND_TIMEOUT_MS`
   (2000), and the proxy answers 504 `BACKEND_TIMEOUT` when the API sends no
   response headers within `BACKEND_PROXY_TIMEOUT_MS` (30000). Once the API's
@@ -106,15 +122,17 @@ Merge added module settings from `.env.example` into an existing `.env`.
 - Per workspace: `bun run --cwd apps/api build` / `bun run --cwd apps/web build`.
 - Set up the database and apply later migrations, including after adding a module, with
   `bun run --cwd apps/api migrate:all`. It applies the Better Auth schema before the application
-  migrations, and on the desktop SQLite provider it creates the schema (module tables plus entity
-  synchronization). It runs the source in development and the compiled bundle in a production image
+  migrations. It runs the source in development and the compiled bundle in a production image
   (`NODE_ENV=production`), from `apps/api` so Bun applies the API's decorator settings.
 - `bun run --cwd apps/api migration:run` runs only the PostgreSQL application migrations and never
   creates Better Auth tables; on a new database `IndexSessionCreatedAt` stops and names `migrate:all`.
   `bun run --cwd apps/api migration:revert` reverts the latest application migration.
-- PostgreSQL migrations are statically registered in `apps/api/src/database/migrations.ts` and
-  embedded in the API bundles. Register every new migration there without renaming or editing
-  historical migrations. The build rejects a missing registration; do not restore runtime globs.
+- Name a migration `apps/api/src/migrations/<timestamp>-<Name>.ts` with exactly one exported
+  migration class, and never rename or edit a historical one. The build lists compiled migrations in
+  `dist/migrations/migrations.json` and fails when one is lost; `bun run --cwd apps/api migrate:list`
+  prints what a build would run. pdmux's TypeORM entities are listed in the app-owned
+  `apps/api/src/database/entities.ts`; its services use `database/app-data-source.ts`, which adds the
+  desktop SQLite driver to the managed `data-source.ts`.
 - Run `bun run test:migrations` for database or migration-build changes. It builds the API and tests
   fresh install, populated legacy-schema upgrade, rollback, and rerun against disposable PostgreSQL.
   API and worker startup must refuse pending migrations; never bypass this gate to make a rollout pass.
@@ -127,7 +145,14 @@ Merge added module settings from `.env.example` into an existing `.env`.
   503 `JOBS_UNAVAILABLE` at once, schedules the maintenance jobs again, and that the worker runs jobs.
 - CI also builds and tests final API images on native AMD64 and ARM64 runners without publishing them.
   Both migration-image jobs must pass before merging migration or packaging changes.
-- e2e (Playwright, ships in `tests/`): `bun run test:e2e`.
+- e2e (Playwright, ships in `tests/`): `bun run test:e2e`. Run the whole suite on more
+  workers with `E2E_WORKERS=2`, never `--workers`. Tag a test `{ tag: "@exclusive" }` when
+  it changes state other tests rely on (a server-wide setting, a seeded account's profile);
+  tagged tests run alone after the rest. Give each test its own mail and SMS recipients and
+  never empty the shared Mailpit inbox or SMS sink. See `tests/README.md`. The managed specs
+  read the app's first screen, public pages, and seeded accounts from the owned
+  `tests/helpers/app-paths.ts` (and `app-accounts.ts` with admin-dashboard): change those
+  instead of editing or ejecting a managed spec, and test the app's own screens in specs of its own.
 - Playwright officially runs on Node, so `bunx playwright` respects its Node
   shebang. Node LTS is a test-tool dependency only; product runtimes and builds use Bun.
 
@@ -204,6 +229,14 @@ pdmux keeps a managed file as PodoKit renders it whenever an app-owned place exi
   `settings` without editing `catalogs/admin-dashboard/*.json`.
 - Build-time globals such as `__PDMUX_VERSION__` are declared in the app-owned
   `apps/web/src/pdmux.d.ts`, not in `app.d.ts`.
+- On/off settings go in `APP_FLAG_DEFAULTS` (`apps/api/src/settings/app-flags.ts`) and their
+  admin switches in `APP_FLAG_SETTINGS` (`apps/web/src/lib/admin/app-flags.ts`); pdmux's
+  `mcpEnabled` is one. Worker queues go in `apps/api/src/worker.extensions.ts`, API routes the
+  contract must find in `apps/api/src/core/api-contract.extensions.ts`, Vite options in
+  `apps/web/vite.extensions.ts`, and styles in `apps/web/src/app.extensions.css`.
+- The managed e2e specs read pdmux's screens from `tests/helpers/app-paths.ts`. pdmux's own
+  account, host, and helpers are in `tests/helpers/pdmux-accounts.ts`,
+  `tests/helpers/pdmux-hydration.ts`, and `tests/pdmux-e2e-host.setup.ts`.
 
 Useful commands:
 
@@ -265,10 +298,12 @@ Conventional Commits (`feat|fix|docs|refactor|test|chore`), imperative mood,
 - The `(admin)` route group and `admin-sidebar.svelte` are the admin-console shell for `/admin/*` only. Put signed-in product pages in `(app)` or in a separate route group with its own layout; do not place them under `(admin)`.
 - Admin console lives at `/admin/*` (users, sessions, organizations, audit, settings, account). Set `ADMIN_EMAILS`, then create or verify the initial account with `bun run --cwd apps/api admin:bootstrap`; never commit or persist `ADMIN_BOOTSTRAP_PASSWORD`. When sign-up approval is enabled, self-registered users stay pending until an administrator approves them on `/admin/users`; administrator-created users bypass the queue.
 - Signed-in users can upload, replace, or remove their profile image from `/account` or `/admin/account`. Keep the shared policy visible in custom account UI: PNG, JPEG, or WebP; at most 2 MB and 2048 by 2048 pixels. Use the managed `/api/account/profile-image` endpoints instead of writing directly to storage or `user.image`.
-- `sidebar-user-menu.svelte` is specific to the admin sidebar. For a product shell outside `Sidebar.Provider`, use the managed `<AccountMenu {user} variant="identity" side="top" />` component.
+- For the signed-in user block in a product shell outside `Sidebar.Provider`, use the managed `<AccountMenu {user} variant="identity" side="top" />`; `sidebar-user-menu.svelte` renders the same menu there and the sidebar menu item inside a `Sidebar.Provider`.
 - Custom protected server layouts must call `requireBackendAvailable(locals)` from `#lib/server/guards.js` before redirecting anonymous users. This preserves sessions and returns 503 when authentication or maintenance policy cannot be checked.
 - Every page except the sign-in flow, `/`, and module pages requires a session, and fails closed with 503 when the API or site settings are unavailable. List the application's public pages (such as `/install.sh`) in `APP_PUBLIC_PATHS` in the app-owned `apps/web/src/lib/server/public-paths.ts`; a prefix covers its subpaths. Do not edit the `PUBLIC_PATHS` list in the managed `guards.ts`.
+- `hooks.server.ts` is managed: put request handling of your own (adjusting `event.locals`, extra headers) in `appHandle` of the app-owned `apps/web/src/lib/server/app-hooks.ts`, which runs after the runtime context is loaded. Add admin sidebar entries to `APP_ADMIN_NAV` in the app-owned `apps/web/src/lib/admin/app-nav.ts`, Settings switches for the API's `APP_FLAG_DEFAULTS` to `APP_FLAG_SETTINGS` in the app-owned `apps/web/src/lib/admin/app-flags.ts`, and private page prefixes that must send `X-Robots-Tag: noindex` to `APP_NON_INDEXABLE_PATHS` in the app-owned `apps/web/src/lib/server/non-indexable-paths.ts`; never edit `admin-sidebar.svelte` or `search-indexing.ts`.
 - `hooks.server.ts` loads the site settings and the session for pages, page data, form actions, remote functions, and the 404 page. When a `+server.ts` endpoint serves files or feeds that need neither, list its prefix in `APP_ASSET_PATHS` in the app-owned `apps/web/src/lib/server/asset-paths.ts` to skip both API calls; such endpoints see an anonymous `locals.user`, and page requests under the prefix still get the full context.
+- `routes/account`, `routes/setup-2fa`, `routes/(auth)/login`, `routes/(auth)/signup`, and the `routes/(admin)` pages are owned, but their `+page.server.ts` (and the `(admin)` layout load) stay managed. Keep the owned page passing `data` to the managed component (for example `<AccountPage {data} />`) and keep its own chrome; never move a managed load's fields into the owned page or edit the managed load.
 - **Every list/table MUST use the shared `#lib/components/data-table.svelte` (`DataTable`)** — it gives sortable headers + a footer pagination. Add search/filters with `#lib/components/table-toolbar.svelte`. Never assemble `Table.Root`/`Table.Header`/`Table.Body` by hand. For responsive columns, use `hideBelow` and apply the row context's `cellClass(columnKey)` to the matching cell.
 
 ### rate-limit

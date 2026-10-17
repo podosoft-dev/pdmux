@@ -1,7 +1,16 @@
-import { createConfigStore, type ConfigStore } from "@podosoft/podokit-auth";
+import { createConfigStore, type AuthConfigDefaults, type ConfigStore } from "@podosoft/podokit-auth";
 import { flagsFrom } from "../settings/flag-defaults";
 import { readAppSettings, readAuthConfig, readConfigVersions } from "./db";
 import { signupOpenFrom } from "./feature-gate";
+
+/** Values used when neither the auth_config table nor the environment sets one.
+ *  Other PodoKit modules add theirs below the marker. */
+export const AUTH_CONFIG_DEFAULTS: AuthConfigDefaults = {
+  appName: "pdmux",
+  // podokit:begin:auth-config-defaults
+  auditLog: true,
+  // podokit:end:auth-config-defaults
+};
 
 /** A store over this app's auth_config and app_setting tables. */
 export function createAuthConfigStore(): ConfigStore {
@@ -9,6 +18,10 @@ export function createAuthConfigStore(): ConfigStore {
     list: readAuthConfig,
     listSettings: readAppSettings,
     versions: readConfigVersions,
+  }, {
+    defaults: AUTH_CONFIG_DEFAULTS,
+    // The site name from the admin Settings, when the admin dashboard stores one.
+    appNameSetting: "site.name",
   });
 }
 

@@ -18,7 +18,7 @@ function legacyDesktopDatabase(file: string): void {
   }
 }
 
-/** One desktop launch, in the order `src/migrate.ts` applies on the SQLite provider. */
+/** One desktop launch, in the order `src/desktop-migrate.ts` applies on the SQLite provider. */
 async function launch(file: string): Promise<string> {
   const sql = new SQL(`sqlite://${file}`);
   try {

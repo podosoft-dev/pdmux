@@ -86,6 +86,18 @@ describe("database provider", () => {
     expect(() => databaseUrl({ ...env, DATABASE_URL })).toThrow("DATABASE_URL must use");
   });
 
+  it("puts the default SQLite database at SQLITE_PATH", () => {
+    const root = mkdtempSync(join(tmpdir(), "podokit-sqlite-"));
+    try {
+      const path = join(root, "state", "app.sqlite");
+      expect(databaseUrl({ ...env, SQLITE_PATH: path }, "sqlite")).toBe(`sqlite://${path}`);
+      expect(existsSync(dirname(path))).toBe(true);
+      expect(databaseUrl(env, "sqlite")).toBe(`sqlite://${join(process.cwd(), "data/podokit.sqlite")}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("creates the parent directory for an explicit SQLite database", () => {
     const root = mkdtempSync(join(tmpdir(), "podokit-sqlite-"));
     try {

@@ -45,7 +45,7 @@ function runtimeLayout(userData: string): RuntimeLayout {
       ? join(process.resourcesPath, "bin", process.platform === "win32" ? "bun.exe" : "bun")
       : process.env.PDMUX_BUN_EXECUTABLE ?? "bun",
     apiEntry: join(root, app.isPackaged ? "api/main.js" : "apps/api/dist/main.js"),
-    migrateEntry: join(root, app.isPackaged ? "api/migrate.js" : "apps/api/dist/migrate.js"),
+    migrateEntry: join(root, app.isPackaged ? "api/desktop-migrate.js" : "apps/api/dist/desktop-migrate.js"),
     webEntry: join(root, app.isPackaged ? "web/index.js" : "apps/web/build/index.js"),
     dataDirectory,
     filesDirectory: join(dataDirectory, "files"),

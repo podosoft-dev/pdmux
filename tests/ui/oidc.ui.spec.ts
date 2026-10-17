@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createHash, randomBytes } from "node:crypto";
-import { exclusive } from "../helpers/exclusive";
 import { ready } from "../helpers/hydration";
 
 // admin storageState (project default) — the admin is the resource owner.
@@ -14,10 +13,9 @@ const REDIRECT = "https://example.com/callback";
 // (with PKCE) that validates the client and hands off to the consent page. The
 // back-channel token exchange is driven by an OIDC client SDK / real RP — see
 // docs/modules.md for the manual round-trip checklist.
-test("OIDC provider: discovery, JWKS, client registration, authorize handoff", async ({ page, baseURL }) => {
-  // tests/api/auth.api.spec.ts also toggles the provider; the lock keeps the two apart.
+test("OIDC provider: discovery, JWKS, client registration, authorize handoff", { tag: "@exclusive" }, async ({ page, baseURL }) => {
   test.slow();
-  await exclusive("oidc-provider", () => frontChannel(page, baseURL));
+  await frontChannel(page, baseURL);
 });
 
 async function frontChannel(page: Page, baseURL: string | undefined): Promise<void> {

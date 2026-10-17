@@ -19,7 +19,6 @@ const MODULE_ROUTES: Record<string, string[]> = {
   auth: [
     "GET /account/me",
     "GET /account/require-2fa",
-    "GET /account/mcp-enabled",
     "GET /account/capabilities",
     "PUT /account/settings",
     "GET /account/auth-config",
@@ -98,6 +97,7 @@ const MODULE_ROUTES: Record<string, string[]> = {
 };
 
 interface RuntimeRoute {
+  method?: string;
   path: string;
 }
 
@@ -110,9 +110,45 @@ function record(value: unknown): Record<string, unknown> {
 function runtimeRoutes(value: unknown): RuntimeRoute[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((route) => {
-    const path = record(route).path;
-    return typeof path === "string" ? [{ path }] : [];
+    const { path, method } = record(route);
+    if (typeof path !== "string") return [];
+    return [typeof method === "string" ? { method, path } : { path }];
   });
+}
+
+/** "METHOD /path" with OpenAPI parameters, so ":id" and "{id}" compare equal. */
+export function normalizeApiRoute(route: string): string {
+  const [method = "", path = ""] = route.trim().split(/\s+/, 2);
+  const openApiPath = path
+    .split("/")
+    .map((segment) => segment.startsWith(":") ? `{${segment.slice(1).replace(/[?*]$/, "")}}` : segment)
+    .join("/");
+  return `${method.toUpperCase()} ${openApiPath}`;
+}
+
+/** The operations an Elysia app registers, as normalized "METHOD /path" entries. */
+export function registeredApiRoutes(routes: unknown): Set<string> {
+  const registered = new Set<string>();
+  for (const route of runtimeRoutes(routes)) {
+    if (route.method) registered.add(normalizeApiRoute(`${route.method} ${route.path}`));
+  }
+  return registered;
+}
+
+/**
+ * Fails unless every application route is both registered and documented.
+ * `expected` comes from APP_DOCUMENTED_ROUTES in api-contract.extensions.ts.
+ */
+export function assertApplicationRoutes(document: unknown, routes: unknown, expected: readonly string[]): void {
+  const documented = documentedApiRoutes(document);
+  const registered = registeredApiRoutes(routes);
+  const problems = [...new Set(expected.map(normalizeApiRoute))].sort().flatMap((route) => [
+    ...(registered.has(route) ? [] : [`${route} is not registered`]),
+    ...(documented.has(route) ? [] : [`${route} is missing from the OpenAPI document`]),
+  ]);
+  if (problems.length > 0) {
+    throw new Error(`Application API contract failed:\n${problems.join("\n")}`);
+  }
 }
 
 /**

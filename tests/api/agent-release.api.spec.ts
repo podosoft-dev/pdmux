@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /**
  * What the API publishes must be what the web tier can hand over.

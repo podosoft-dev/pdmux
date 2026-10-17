@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { USER } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
 
 // admin storageState (project default) — organizations is an admin-only view
@@ -38,7 +39,9 @@ test("create an org with a non-ascii name, a parent, and a manager", async ({ pa
   await page.getByLabel("Name", { exact: true }).fill(child);
   await page.locator("#o-parent").click();
   await page.getByRole("option", { name: parent }).click();
-  await page.getByRole("checkbox").first().click(); // first existing user as a manager
+  // The seeded user, not the first listed one: tests on other workers add and
+  // remove users while this one runs.
+  await page.locator("label", { hasText: USER.email }).getByRole("checkbox").click();
   await page.getByRole("dialog").getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.getByText("Organization created").first()).toBeVisible();
   // child row shows the parent org name
@@ -64,7 +67,7 @@ test("organization manage: remove a member, invite one, and cancel the invite", 
   await page.getByLabel("Name", { exact: true }).fill(name);
   // Seed a specific non-owner member (the admin is always the owner, so pick the
   // seeded user — .first() is order-dependent and could hit the owner).
-  await page.locator("label", { hasText: "user@example.com" }).getByRole("checkbox").click();
+  await page.locator("label", { hasText: USER.email }).getByRole("checkbox").click();
   await page.getByRole("dialog").getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.getByText("Organization created").first()).toBeVisible();
 

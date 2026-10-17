@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { clearMailpit, mailpitReachable, waitForLink, waitForOtp } from "../helpers/mailpit";
+import { mailpitReachable, waitForLink, waitForOtp } from "../helpers/mailpit";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
@@ -11,7 +11,6 @@ test("email one-time code signs a user in", async ({ playwright }) => {
   test.skip(!caps?.emailOtp, "email OTP not enabled");
   const email = `otp-${Date.now()}@example.com`;
   await ctx.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "Otp" } });
-  await clearMailpit();
   const requested = await ctx.post("/api/auth/email-otp/send-verification-otp", { data: { email, type: "sign-in" } });
   expect(requested.ok()).toBeTruthy();
   const otp = await waitForOtp(email);
@@ -58,7 +57,6 @@ test("magic link signs a user in", async ({ playwright }) => {
   // rotate the account's sessions, which would invalidate the seeded storageState.
   const email = `magic-${Date.now()}@example.com`;
   await ctx.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "Magic" } });
-  await clearMailpit();
   const requested = await ctx.post("/api/auth/sign-in/magic-link", { data: { email, callbackURL: `${base}/admin` } });
   expect(requested.ok()).toBeTruthy();
   const link = await waitForLink(email);
@@ -84,8 +82,6 @@ test("password reset delivers an email and updates the password @smoke", async (
   // With verification on, sign-up returns no session and the new password still
   // can't sign in until confirmed — so only assert sign-in when it's off.
   const verificationOn = !(await signup.json())?.token;
-
-  await clearMailpit();
   const requested = await ctx.post("/api/auth/request-password-reset", { data: { email, redirectTo: `${base}/reset-password` } });
   expect(requested.ok()).toBeTruthy();
 
@@ -106,7 +102,6 @@ test("email verification blocks sign-in until the address is confirmed", async (
   test.skip(!(await mailpitReachable()), "Mailpit not available");
   const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   const email = `verify-${Date.now()}@example.com`;
-  await clearMailpit();
   const signup = await ctx.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "Verify", callbackURL: `${base}/admin` } });
   expect(signup.ok()).toBeTruthy();
   // When verification is off, sign-up returns a session — nothing to test here.

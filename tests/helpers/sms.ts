@@ -1,6 +1,8 @@
 // Read-back helper for the dev SMS sink (the "Mailpit for SMS"). The app posts
 // outgoing SMS to the sink via SMS_WEBHOOK_URL; tests poll it here to obtain the
 // delivered code, so the phone-number flow is verified for real (not just "sent").
+// Each test texts a number of its own; the sink is shared with tests on other
+// workers, so no test empties it.
 const SINK = process.env.SMS_SINK_URL ?? "http://localhost:8095";
 
 type SinkMessage = { to: string; body: string; receivedAt: string };
@@ -12,10 +14,6 @@ export async function smsSinkReachable(): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-export async function clearSms(): Promise<void> {
-  await fetch(`${SINK}/messages`, { method: "DELETE" }).catch(() => undefined);
 }
 
 /** Poll the sink until an SMS to `to` arrives, then return the first 4–8 digit code. */

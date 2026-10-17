@@ -17,3 +17,5 @@ data:
   HOST_HEADER: "x-forwarded-host"
   ADDRESS_HEADER: "x-forwarded-for"
   XFF_DEPTH: "1"
+  AUDIT_LOG_ENABLED: "true"
+  # podokit:end:runtime-config

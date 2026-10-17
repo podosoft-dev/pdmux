@@ -192,6 +192,23 @@ describe("AuditService", () => {
     expect(capture.batches.map((batch) => batch[0]?.ip)).toEqual(["203.0.113.7", null]);
   });
 
+  test("warns once at startup when the toggle is off", async () => {
+    const warnings: string[] = [];
+    const logger: AuditLogger = { warn: (_details, message) => warnings.push(message) };
+    const sql = await sqliteDatabase();
+    await new AuditService(sql, { dialect: "sqlite", enabled: on, logger }).warnIfDisabled();
+    await new AuditService(sql, {
+      dialect: "sqlite",
+      enabled: () => Promise.reject(new Error("store down")),
+      logger,
+    }).warnIfDisabled();
+    expect(warnings).toEqual([]);
+    await new AuditService(sql, { dialect: "sqlite", enabled: off, logger }).warnIfDisabled();
+    expect(warnings).toEqual([
+      "Audit log is off; no audit entries are recorded until it is turned on in the admin Settings",
+    ]);
+  });
+
   test("a failing toggle read never breaks the caller", async () => {
     const sql = await sqliteDatabase();
     const service = new AuditService(sql, {

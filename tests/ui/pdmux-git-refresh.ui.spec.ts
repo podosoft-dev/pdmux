@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { e2eAdminState } from "../helpers/accounts";
+import { e2eAdminState } from "../helpers/pdmux-accounts";
 import { readLayout, writeLayout } from "../helpers/pdmux-layout";
 import { boxFacts, expectOnScreen } from "../helpers/geometry";
 import { agentDownstreamSchema, agentUpstreamSchema, commitDetailSchema, gitTreeSchema, gitBlobSchema, workingDiffSchema } from "@pdmux/protocol";

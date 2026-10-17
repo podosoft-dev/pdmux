@@ -31,24 +31,13 @@ async function loadAuthConfig(fetch: CapabilitiesEvent["fetch"]): Promise<AuthCo
   return null;
 }
 
-async function loadMcpEnabled(fetch: CapabilitiesEvent["fetch"]): Promise<boolean> {
-  try {
-    const res = await fetch("/api/account/mcp-enabled");
-    if (res.ok) return ((await res.json()) as { mcpEnabled?: boolean }).mcpEnabled !== false;
-  } catch {
-    /* default on so an unavailable display request does not imply a policy change */
-  }
-  return true;
-}
-
 export const load: PageServerLoad = async ({ locals, fetch }) => {
   requireAdmin(locals.user, locals);
   // The admin layout loads the same capabilities in this request, so the
   // require-two-factor policy comes from that shared response.
-  const [authConfig, capabilities, mcpEnabled] = await Promise.all([
+  const [authConfig, capabilities] = await Promise.all([
     loadAuthConfig(fetch),
     getCapabilities({ locals, fetch }),
-    loadMcpEnabled(fetch),
   ]);
-  return { authConfig, require2fa: capabilities.require2fa, mcpEnabled };
+  return { authConfig, require2fa: capabilities.require2fa };
 };

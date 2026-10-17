@@ -19,8 +19,21 @@ Review these fields before planning:
 - `exposure`: Ingress or NodePort. Ingress routes `/` to web and routes only the
   exact paths in `webSocketPaths` directly to API. The list is empty by default;
   root, prefixes, patterns, queries, encoded separators, and traversal are invalid.
+  `apiPaths` lists static prefixes under `/api/` (such as `/api/files/uploads/`)
+  for bodies above the web `BODY_SIZE_LIMIT`; a second Ingress with a Traefik
+  `stripPrefix` Middleware sends them to API without `/api`. It needs a
+  Traefik-served IngressClass, and `/api/auth` is rejected. `podo deploy init`
+  and `podo add` fill in the paths installed modules declare (file-upload:
+  `/api/files/uploads/`); keep them. `edgeProxies` counts the reverse proxies in
+  front of the Ingress controller or NodePort (default 0); the web server then
+  trusts that many plus the controller in `X-Forwarded-For`. Never set
+  `XFF_DEPTH`, `ADDRESS_HEADER`, `TRUSTED_PROXY_HOPS`, or `TRUSTED_PROXY_HEADER`
+  in `runtimeConfig`; the profile refuses them.
 - `workloads`: API/web replicas and resources plus an optional worker
-- `dependencies`: PostgreSQL, Redis, and object storage mode, image, Secret name, and storage
+- `dependencies`: PostgreSQL, Redis, and object storage mode, image, Secret name, and storage.
+  PostgreSQL also takes `maxConnections` (default 100) and `appPools` for pools the
+  application opens itself; the doctor and the plan check the connection budget
+  against them, so lower `DB_POOL_MAX`/`DB_AUTH_POOL_MAX` or replicas when they warn.
 - `secrets`: API/optional web Secret names and required key names, plus image-pull Secret
 - `runtimeConfig`: non-sensitive environment values only
 - `verification`: HTTPS origin and checks with exact statuses and optional JSON fields
@@ -61,11 +74,14 @@ The fields that differ from the Kubernetes driver:
 
 - `target`: Docker context, endpoint fingerprint, Compose project name
 - `exposure`: `bindAddress` and `port`, plus an exact `webSocketPaths` allowlist,
-  `trustedProxyCidrs`, and `gatewayImage`. With an empty allowlist, web owns the
-  published port. With paths, an internal gateway owns it, sends only exact listed
-  paths to API, and sends every other request to web. Forwarding headers are trusted
+  an `apiPaths` prefix list, `trustedProxyCidrs`, and `gatewayImage`. With both
+  lists empty, web owns the published port. With paths, an internal gateway owns
+  it, sends exact WebSocket paths to API, sends `apiPaths` prefixes to API with
+  `/api` removed, and sends every other request to web. Forwarding headers are trusted
   only from the direct proxy CIDRs in `trustedProxyCidrs`; leave it empty without an
-  external proxy. The bind address defaults to `127.0.0.1`, because the expected
+  external proxy. `edgeProxies` counts the reverse proxies in front of the published
+  port (default 1); with the gateway it must match `trustedProxyCidrs`, which the
+  doctor checks. The bind address defaults to `127.0.0.1`, because the expected
   front door is a trusted reverse proxy — binding every interface publishes the app
   before TLS exists.
 - `workloads`: replicas plus Compose `cpus` and `memory` limits

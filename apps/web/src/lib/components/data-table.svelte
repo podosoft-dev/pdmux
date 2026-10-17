@@ -6,7 +6,8 @@
   export type DataTableColumn<Row> = {
     key: string;
     label: string;
-    /** Optional interactive header content, such as a select-all checkbox. */
+    // Header content in place of the label and sort button, such as a
+    // select-all checkbox. Give it its own accessible name.
     head?: Snippet;
     sortable?: boolean;
     class?: string;

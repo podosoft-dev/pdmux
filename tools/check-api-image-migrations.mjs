@@ -17,6 +17,8 @@ const output = execFileSync("docker", [
   "run", "--rm", "--network", "none", "--entrypoint", "bun", image,
   "dist/database/migrate.js", "--list",
 ], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
-assert.deepEqual(JSON.parse(output).sort(), expected, "Final API image must carry every migration");
+// One migration name per line, from the image's dist/migrations/migrations.json.
+const listed = output.split("\n").map((line) => line.trim()).filter(Boolean).sort();
+assert.deepEqual(listed, expected, "Final API image must carry every migration");
 assert.ok(expected.length > 0, "A release cannot contain an empty migration registry");
 console.log(`Verified ${expected.length} migrations in ${image}`);

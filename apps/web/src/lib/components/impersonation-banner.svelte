@@ -3,9 +3,10 @@
   import { api } from "#lib/api.js";
   import { Button } from "#lib/components/ui/button/index.js";
   import { getI18n } from "#lib/i18n/index.js";
+  import { cn } from "#lib/utils.js";
   import { toast } from "svelte-sonner";
 
-  let { email }: { email: string } = $props();
+  let { email, class: className }: { email: string; class?: string } = $props();
   const i18n = getI18n();
 
   async function stopImpersonating(): Promise<void> {
@@ -18,7 +19,7 @@
   }
 </script>
 
-<div class="bg-primary text-primary-foreground flex items-center justify-between gap-2 px-4 py-2 text-sm">
+<div class={cn("bg-primary text-primary-foreground flex items-center justify-between gap-2 px-4 py-2 text-sm", className)}>
   <span>{i18n.t.users.impersonatingAs.replace("{email}", email)}</span>
   <Button variant="secondary" size="sm" onclick={stopImpersonating}>{i18n.t.users.stopImpersonating}</Button>
 </div>

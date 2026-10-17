@@ -4,7 +4,8 @@ import { SQL } from "bun";
 import { AuditService } from "../audit/audit.service";
 import { UserLayout } from "../prefs/user-layout.entity";
 import { initializeDesktopSchema } from "./desktop-schema";
-import { createAppDataSource, createDataSourceOptions, entityTypes } from "./data-source";
+import { createAppDataSource, createDataSourceOptions } from "./app-data-source";
+import { APP_ENTITIES } from "./entities";
 
 let source: DataSource | undefined;
 
@@ -16,13 +17,13 @@ afterEach(async () => {
 describe("[TC-PDDESKTOP-002] Bun SQLite TypeORM compatibility", () => {
   it("initializes every application entity and round-trips JSON and dates", async () => {
     const options = createDataSourceOptions({
-      PDMUX_DESKTOP: "1",
+      DATABASE_PROVIDER: "sqlite",
       DATABASE_URL: "sqlite://:memory:",
     });
     source = createAppDataSource(options);
     await source.initialize();
 
-    expect(source.entityMetadatas).toHaveLength(entityTypes.length);
+    expect(source.entityMetadatas).toHaveLength(APP_ENTITIES.length);
     const repository = source.getRepository(UserLayout);
     const saved = await repository.save(repository.create({
       userId: "user-1",

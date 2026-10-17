@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { anonState, userState } from "../helpers/accounts";
+import { paths } from "../helpers/paths";
 
 test.describe("unauthenticated", () => {
   test.use({ storageState: anonState });
@@ -11,9 +12,15 @@ test.describe("unauthenticated", () => {
   });
 
   test("private and authentication routes prevent search indexing", async ({ request }) => {
-    for (const route of ["/", "/admin", "/account", "/login", "/api/account/me"]) {
+    for (const route of ["/admin", "/account", "/login", "/api/account/me"]) {
       const response = await request.get(route, { maxRedirects: 0 });
       expect(response.headers()["x-robots-tag"]).toBe("noindex, nofollow");
+    }
+
+    // Public pages come from tests/helpers/app-paths.ts.
+    for (const route of paths.indexable) {
+      const response = await request.get(route);
+      expect(response.headers()["x-robots-tag"], route).toBeUndefined();
     }
   });
 });
