@@ -47,16 +47,26 @@ Tag a test when it changes a server-wide setting (a feature flag, the
 authentication configuration such as SMTP, social providers, or sign-up
 approval, the site settings, or a module's settings) or the profile of a seeded
 account. Each project has an `<name>-exclusive` twin, such as `ui-exclusive`,
-that runs only the tagged tests, one at a time. With more than one worker the
-twins wait for every other test, so an exclusive test never runs alongside
-another one. Never empty the shared mail catcher or SMS sink in a test: send to
-an address or number of the test's own instead.
+that runs only the tagged tests, one at a time. Never empty the shared mail
+catcher or SMS sink in a test: send to an address or number of the test's own
+instead.
 
-More than one worker suits the whole suite. When a run selects exclusive tests
-with a file name, `--grep`, or `--project`, Playwright also runs every other test
-first, because the twins depend on them, and a test that fails there marks the
-exclusive tests as not run. Use the default single worker for a few files, and
-do not combine `--no-deps` with `E2E_WORKERS` above 1.
+The `test:e2e` scripts run `run-e2e.ts`, which hands its arguments (a file,
+`--grep`, `--project`) to Playwright. With more than one worker it runs
+Playwright twice: first every test not tagged `@exclusive` on those workers,
+then the tagged tests on one worker, even when a test failed in the first run.
+The suite fails when either run fails. The second run reports to
+`playwright-report/exclusive` and `test-results/exclusive`:
+
+```bash
+bunx playwright show-report playwright-report/exclusive
+```
+
+A plain `bunx playwright test` with `E2E_WORKERS` above 1 makes one run in which
+the twins depend on every other test: a failing test there leaves the exclusive
+tests not run, and selecting an exclusive test runs every other test first. Use
+`bun run test:e2e` on more workers, and do not combine `--no-deps` with
+`E2E_WORKERS` above 1.
 
 Application-owned projects in `playwright.projects.cjs` get twins too. A project
 that another project depends on is a setup project and keeps a single copy.
@@ -81,7 +91,11 @@ their own, never as the seeded `admin@example.com`:
   gives it an empty saved layout, and saves its session in
   `playwright/.auth/pdmux-e2e-w<N>.json`. The worker accounts are created after
   the setup's user baseline, so the `cleanup` project removes them when the run
-  ends and the next run creates them again. A `--no-deps` run reuses them.
+  ends and the next run creates them again. A `--no-deps` run reuses them. With
+  `E2E_WORKERS` above 1, `bun run test:e2e` makes two Playwright runs and each
+  has its own `setup` and `cleanup`: the first run creates and removes one
+  account per worker, and the exclusive run, on one worker, creates
+  `pdmux-e2e-w0` again.
 - Both take their password from `E2E_SUITE_ADMIN_PASSWORD`. Without it they use
   the suite default, which is right only on a stack the suite created.
 
@@ -102,8 +116,11 @@ organization, which every worker shares:
   as the host retention, or its integrations.
 
 The terminal, git, and file specs need an agent connected to `pdmux-e2e-host`
-with that token, and skip without one. To run the whole suite on two workers
-against the containerized loop:
+with that token, and skip without one. Each run's setup mints one more token for
+the host and revokes none, so an agent started with the first run's token stays
+connected through the exclusive run. To run the whole suite on two workers
+against the containerized loop, with the exclusive tests' report in
+`playwright-report/exclusive`:
 
 ```bash
 E2E_BASE_URL=http://pdmux.localhost E2E_WORKERS=2 bun run test:e2e
