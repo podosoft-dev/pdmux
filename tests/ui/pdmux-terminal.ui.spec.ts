@@ -278,6 +278,15 @@ test.describe("pdmux terminal", () => {
     await expect(page.locator("[data-testid='pane-actions-menu'] [data-pdmux-detach]")).toBeVisible();
     await expect(page.locator("[data-testid='pane-actions-menu'] [data-pdmux-close]")).toBeVisible();
     await page.keyboard.press("Escape");
+    // An open menu sets `pointer-events: none` on <body> and lifts it only after it has
+    // closed, so a hit test taken before then reaches <html>, not the terminal. A page
+    // that stays unclickable after the menu has gone fails here.
+    await expect(page.locator("[data-testid='pane-actions-menu']")).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => getComputedStyle(document.body).pointerEvents), {
+        message: "the closed menu gives the page its pointer back",
+      })
+      .not.toBe("none");
 
     const frames = await page.evaluate(() => {
       const nodes = [...document.querySelectorAll("[data-pdmux-pane]:not([hidden])")] as HTMLElement[];
