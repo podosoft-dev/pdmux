@@ -23,17 +23,22 @@ test("admin can disable the MCP endpoint and restore it live", { tag: "@exclusiv
     else await expect(toggle).not.toBeChecked();
   }
 
+  // What an MCP client sends: a JSON-RPC body. A body-less POST is refused before it
+  // reaches /mcp by a built web server's cross-site form check (403), which the dev
+  // server skips.
+  const call = () => page.request.post("/mcp", { data: { jsonrpc: "2.0", id: 1, method: "initialize" } });
+
   try {
     await setEnabled(true);
     await expect(async () => {
-      expect((await page.request.post("/mcp")).status()).toBe(401);
+      expect((await call()).status()).toBe(401);
     }).toPass({ timeout: 5_000 });
 
     await setEnabled(false);
     // The endpoint reads the database through a short cross-replica cache. Poll the
     // externally visible contract instead of assuming this request hits the writer.
     await expect(async () => {
-      expect((await page.request.post("/mcp")).status()).toBe(404);
+      expect((await call()).status()).toBe(404);
     }).toPass({ timeout: 5_000 });
   } finally {
     await setEnabled(original);
