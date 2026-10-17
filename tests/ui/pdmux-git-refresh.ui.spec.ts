@@ -300,7 +300,9 @@ test.describe("real snapshot ingestion", () => {
     } finally {
       socket?.terminate();
       await page.goto("/login");
-      const removed = await request.delete(`/api/hosts/${hostId}`);
+      // A body-less DELETE without an Origin is a cross-site form submission to a built
+      // web server (the dev server skips that check), so name the origin.
+      const removed = await request.delete(`/api/hosts/${hostId}`, { headers: { origin: new URL(baseURL ?? "").origin } });
       expect(removed.ok(), "remove only the disposable host and its credentials").toBeTruthy();
     }
   });
