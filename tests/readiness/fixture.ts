@@ -30,11 +30,14 @@ export const test = base.extend<object, { runtime: ReadinessRuntime }>({
     const container = `pdmux-readiness-${randomUUID()}`;
     const password = `${randomUUID()}!Az9`;
     const postgresContainer = `${container}-postgres`;
+    const postgres = process.env.READINESS_DATABASE === "postgres";
+    const apiDirectory = join(repository, "apps/api");
     let databaseEnvironment: NodeJS.ProcessEnv = {};
     const stack = new StackManager({
       bunExecutable: "bun",
-      apiEntry: join(repository, "apps/api/dist/main.js"),
-      migrateEntry: join(repository, "apps/api/dist/migrate.js"),
+      apiEntry: join(apiDirectory, "dist/main.js"),
+      // SQLite takes the desktop's schema step; PostgreSQL runs the product migrations.
+      migrateEntry: join(apiDirectory, postgres ? "dist/migrate.js" : "dist/desktop-migrate.js"),
       webEntry: join(repository, "apps/web/build/index.js"),
       dataDirectory: temporary,
       filesDirectory: join(temporary, "files"),
@@ -44,16 +47,19 @@ export const test = base.extend<object, { runtime: ReadinessRuntime }>({
     }, {
       spawn: (command, args, options) => spawn(command, [...args], {
         ...options,
+        // The API reads its migration list from dist/ under its working directory, as
+        // in the API image. StackManager starts it inside dist/, which has no dist/.
+        cwd: postgres && options.cwd === join(apiDirectory, "dist") ? apiDirectory : options.cwd,
         // The application's supported bootstrap policy; no direct database writes.
         env: { ...options.env, ...databaseEnvironment, ADMIN_EMAILS: emails.join(","), AUTH_REQUIRE_SIGNUP_APPROVAL: "false", AUTH_HIBP_ENABLED: "false", AUDIT_LOG_ENABLED: "true" },
       }),
     });
     const contexts: APIRequestContext[] = [];
     try {
-      if (process.env.READINESS_DATABASE === "postgres") {
+      if (postgres) {
         await execute("docker", ["run", "--detach", "--name", postgresContainer, "--publish", "127.0.0.1::5432", "--env", "POSTGRES_HOST_AUTH_METHOD=trust", "--env", "POSTGRES_DB=pdmux", "postgres:16-alpine"]);
         const address = (await execute("docker", ["port", postgresContainer, "5432/tcp"])).stdout.trim();
-        databaseEnvironment = { PDMUX_DATABASE_PROVIDER: "postgres", DATABASE_URL: `postgres://postgres@${address}/pdmux`, POSTGRES_HOST: "127.0.0.1", POSTGRES_PORT: address.split(":")[1], POSTGRES_USER: "postgres", POSTGRES_PASSWORD: password, POSTGRES_DB: "pdmux" };
+        databaseEnvironment = { DATABASE_PROVIDER: "postgres", DATABASE_URL: `postgres://postgres@${address}/pdmux`, POSTGRES_HOST: "127.0.0.1", POSTGRES_PORT: address.split(":")[1], POSTGRES_USER: "postgres", POSTGRES_PASSWORD: password, POSTGRES_DB: "pdmux" };
         await expect.poll(async () => (await execute("docker", ["exec", postgresContainer, "pg_isready", "-U", "postgres"]).catch(() => ({ stdout: "" }))).stdout, { timeout: 30_000 }).toContain("accepting connections");
       }
       const addresses = await stack.start();
@@ -92,7 +98,7 @@ export const test = base.extend<object, { runtime: ReadinessRuntime }>({
       await execute("docker", ["rm", "--force", container]).catch(() => undefined);
       await Promise.all(contexts.map(context => context.dispose()));
       await stack.stop();
-      if (process.env.READINESS_DATABASE === "postgres") await execute("docker", ["rm", "--force", postgresContainer]).catch(() => undefined);
+      if (postgres) await execute("docker", ["rm", "--force", postgresContainer]).catch(() => undefined);
       await rm(temporary, { recursive: true, force: true });
     }
   }, { scope: "worker", timeout: 240_000 }],
