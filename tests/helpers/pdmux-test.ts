@@ -64,11 +64,14 @@ async function prepareWorker(playwright: Playwright, index: number): Promise<str
     const userId = (await readSession(session))?.user?.id;
     expect(userId, `session of ${account.email}`).toBeTruthy();
 
+    // Not filtered by userId: Better Auth answers 500 (an empty SQL IN list) when the
+    // filter matches no member, which is exactly the case of a new worker account.
     const members = await owner.get("/api/auth/organization/list-members", {
-      params: { organizationId, filterField: "userId", filterValue: userId as string },
+      params: { organizationId, limit: "1000" },
     });
-    expect(members.ok(), `list the members: ${await members.text()}`).toBeTruthy();
-    if (((await members.json()) as { members: unknown[] }).members.length === 0) {
+    expect(members.ok(), `list the members: ${members.status()} ${await members.text()}`).toBeTruthy();
+    const rows = ((await members.json()) as { members: { userId: string }[] }).members;
+    if (!rows.some((member) => member.userId === userId)) {
       const added = await owner.post("/api/account/org-member", {
         data: { organizationId, userId, role: "admin" },
       });
