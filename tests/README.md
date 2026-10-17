@@ -18,7 +18,9 @@ E2E_BASE_URL=http://pdmux.localhost bun run test:e2e
 
 The default `http://localhost:5001` is for the alternative `bun run dev`
 host-process loop. Files ending in `*.api.spec.ts` run in the request-only `api`
-project; `*.ui.spec.ts` run in the chromium `ui` project.
+project; `*.ui.spec.ts` run in the chromium `ui` project; `*.mobile.spec.ts` run
+in the `ui-mobile` project (Pixel 7) from `playwright.projects.cjs`, and
+`PDMUX_WEBKIT=1` adds `ui-mobile-webkit` (iPhone 14).
 
 ## Workers and exclusive tests
 
