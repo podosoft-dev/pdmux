@@ -553,14 +553,23 @@ test.describe("pdmux terminal on a phone", () => {
   test("[TC-PDUI-156] the shell yields to the software keyboard", async ({ page }) => {
     await ready(page, "/");
     await showTab(page, "terminal");
+    const shell = page.locator("[data-testid='dashboard-shell']");
 
-    // No headless engine can raise a real keyboard, so the CSS contract is driven directly:
-    // the app sets these two from `visualViewport`, and this asserts what they must produce.
-    await page.evaluate(() => {
-      const shell = document.querySelector(".pdmux-shell") as HTMLElement;
-      shell.style.setProperty("--pdmux-vh", "440px");
-      shell.dataset.keyboard = "open";
-    });
+    // No headless engine can raise a real keyboard, so the visual viewport reports one: it
+    // shrinks while the layout viewport keeps its height, as on both engines. The app reads
+    // it through `trackVisualViewport` and sizes the frame around the shell, so this drives
+    // the same path a phone does rather than writing the result into the DOM.
+    const reportVisualHeight = (height: number | null): Promise<void> =>
+      page.evaluate((value) => {
+        const viewport = window.visualViewport;
+        if (!viewport) throw new Error("this engine has no visualViewport");
+        if (value === null) Reflect.deleteProperty(viewport, "height");
+        else Object.defineProperty(viewport, "height", { configurable: true, get: () => value });
+        viewport.dispatchEvent(new Event("resize"));
+      }, height);
+
+    await reportVisualHeight(440);
+    await expect(shell).toHaveAttribute("data-keyboard", "open");
 
     const facts = await page.evaluate(() => {
       const box = (selector: string) => {
@@ -577,5 +586,16 @@ test.describe("pdmux terminal on a phone", () => {
     expect(facts.grid.bottom).toBeLessThanOrEqual(440);
     expect(facts.grid.h).toBeGreaterThan(200);
     await expectViewportBound(page);
+
+    // And the whole screen comes back when the keyboard goes.
+    await reportVisualHeight(null);
+    await expect(shell).toHaveAttribute("data-keyboard", "closed");
+    const restored = await page.evaluate(() => ({
+      shell: Math.round(document.querySelector(".pdmux-shell")?.getBoundingClientRect().height ?? 0),
+      layout: document.documentElement.clientHeight,
+      tabs: Math.round(document.querySelector("[data-testid='shell-tabs']")?.getBoundingClientRect().height ?? 0),
+    }));
+    expect(restored.shell).toBe(restored.layout);
+    expect(restored.tabs).toBeGreaterThan(0);
   });
 });
