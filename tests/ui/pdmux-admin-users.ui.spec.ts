@@ -26,10 +26,14 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 
     await expect(status).toContainText("Active");
     await expect(role).toContainText("User");
 
+    // Other tests add users while this one runs on more than one worker, and the newest
+    // come first, so the seeded user can fall off the first page; a search keeps it there.
+    await main.locator("#toolbar-search").fill("user@example.com");
     const listed = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return url.pathname === "/api/admin/users" &&
-        url.searchParams.get("role") === "user" && url.searchParams.get("status") === "active";
+        url.searchParams.get("role") === "user" && url.searchParams.get("status") === "active" &&
+        url.searchParams.get("search") === "user@example.com";
     });
     await main.getByRole("button", { name: "Search", exact: true }).click();
     expect((await listed).ok()).toBeTruthy();
