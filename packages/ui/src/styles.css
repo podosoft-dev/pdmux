@@ -2399,6 +2399,22 @@
 		border-bottom: 1px solid var(--pdmux-line);
 	}
 
+	/* The column the refs panel shares with the remote report stacks the same way. Left
+	   at its desktop width it sat beside the list as a 149px column, the column flex gave
+	   it its whole content height, and the commit list got 0px. The cap moves to the
+	   column; inside it the panel fills what the remote report leaves. */
+	.pdmux-refs-column {
+		width: auto;
+		max-height: 38%;
+		border-right: 0;
+		border-bottom: 1px solid var(--pdmux-line);
+	}
+
+	.pdmux-refs-column > .pdmux-refs {
+		max-height: none;
+		border-bottom: 0;
+	}
+
 	/* 110px author + 112px date + 60px sha + the lane gutter left the SUBJECT about 24px
 	   at 390px — the one column a person actually reads. The author goes first; the date
 	   keeps enough for a short form. */
