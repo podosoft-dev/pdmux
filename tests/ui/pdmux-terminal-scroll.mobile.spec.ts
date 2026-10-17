@@ -1,6 +1,6 @@
-import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, test, workerSession } from "../helpers/pdmux-test";
 import { ready } from "../helpers/hydration";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
 import { readLayout, seedSoloPane, writeLayout } from "../helpers/pdmux-layout";
 
 /**
@@ -97,18 +97,15 @@ async function recordSocket(page: Page): Promise<void> {
   });
 }
 
-// Its own account, host and agent: these specs write the dashboard layout, and sharing an
-// account with a person rearranges their screen mid-session.
-test.use({ storageState: e2eAdminState });
-
 /**
  * The multiplexer session the alternate-buffer cases scroll in. A scroll gesture over such a
  * pane asks the agent to put the session in copy-mode, and the session keeps that mode after
  * the test; in the shared `pdmux-e2e` session the next spec that typed there sent its keys
  * to copy-mode instead of the shell (`[TC-PDTERM-126]`, measured on a second run against one
- * agent). As with the mouse case below, a test that changes a terminal's mode owns it.
+ * agent). As with the mouse case below, a test that changes a terminal's mode owns it, and
+ * the name carries the worker so a second worker never scrolls the same session.
  */
-const SCROLL_SESSION = "pdmux-e2e-scroll";
+const scrollSession = (): string => workerSession("pdmux-e2e-scroll");
 
 test.describe("reaching a pane's scrollback from a phone", () => {
   test("[TC-PDTERM-129] a pane with history behind it shows this product's own thumb", async ({ page, request }) => {
@@ -223,7 +220,7 @@ test.describe("reaching a pane's scrollback from a phone", () => {
       ).toEqual([]);
 
       // --- the ALTERNATE buffer: tmux, where xterm has no scrollback to scroll -------------
-      await seedSoloPane(request, saved, { id: "scroll3", hostId: host.id, kind: "new", session: SCROLL_SESSION });
+      await seedSoloPane(request, saved, { id: "scroll3", hostId: host.id, kind: "new", session: scrollSession() });
       await page.reload();
       await ready(page, "/");
       const tmux = page.locator("[data-pdmux-surface]").first();
@@ -315,7 +312,12 @@ test.describe("reaching a pane's scrollback from a phone", () => {
     const saved = await readLayout(request);
     await recordSocket(page);
     try {
-      await seedSoloPane(request, saved, { id: "scroll5", hostId: host.id, kind: "new", session: "pdmux-e2e-mouse" });
+      await seedSoloPane(request, saved, {
+        id: "scroll5",
+        hostId: host.id,
+        kind: "new",
+        session: workerSession("pdmux-e2e-mouse"),
+      });
       await ready(page, "/");
       const surface = page.locator("[data-pdmux-surface]").first();
       await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 30_000 });
@@ -464,7 +466,7 @@ test.describe("reaching a pane's scrollback from a phone", () => {
     await recordSocket(page);
     try {
       // The ALTERNATE buffer, which is what nearly every pane on this dashboard is showing.
-      await seedSoloPane(request, saved, { id: "scroll4", hostId: host.id, kind: "new", session: SCROLL_SESSION });
+      await seedSoloPane(request, saved, { id: "scroll4", hostId: host.id, kind: "new", session: scrollSession() });
       await ready(page, "/");
       const surface = page.locator("[data-pdmux-surface]").first();
       await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 30_000 });

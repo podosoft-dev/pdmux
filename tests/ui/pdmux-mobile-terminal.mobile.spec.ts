@@ -1,7 +1,7 @@
-import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, test, workerSession } from "../helpers/pdmux-test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /**
  * Typing at a terminal from a phone.
@@ -70,17 +70,15 @@ async function showTab(page: Page, view: "hosts" | "terminal" | "git"): Promise<
 }
 
 /**
- * Point the pane on screen at a session this test owns, and hand back the layout that was
- * there before.
+ * Point the pane on screen at a session this worker owns (`workerSession()`).
  *
  * ⚠ NEVER TYPE INTO WHATEVER PANE IS ON SCREEN. The picker's session list is this
  * machine's REAL multiplexer sessions — editors, other agents' shells. A spec that typed
  * into the first pane sent `echo pdmux-key-27941` straight into a live agent session
  * (observed). A named session cannot be mistaken for someone's work.
  */
-const OWN_SESSION = "pdmux-e2e";
-
 async function useOwnSession(page: Page, hostId: string): Promise<void> {
+  const own = workerSession();
   const pane = page.locator("[data-pdmux-pane]:not([hidden])").first();
   // A first visit now opens four EMPTY cells (it joins `main` only if the host has one, and
   // never grabs somebody else's session), so there may be no pane to retarget — then the
@@ -90,12 +88,12 @@ async function useOwnSession(page: Page, hostId: string): Promise<void> {
   const picker = page.locator("[data-pdmux-popover='target-picker']");
   await expect(picker).toBeVisible();
   await picker.locator(`[data-pdmux-host='${hostId}']`).click();
-  const existing = picker.locator(`[data-pdmux-session='${OWN_SESSION}']`);
+  const existing = picker.locator(`[data-pdmux-session='${own}']`);
   if ((await existing.count()) > 0) {
     // Reuse it, so repeated runs do not litter the host with sessions.
     await existing.click();
   } else {
-    await picker.getByLabel(/session name/i).fill(OWN_SESSION);
+    await picker.getByLabel(/session name/i).fill(own);
     await picker.locator("[data-pdmux-action='new']").click();
   }
   /**
@@ -103,16 +101,12 @@ async function useOwnSession(page: Page, hostId: string): Promise<void> {
    * cell, which is not necessarily the cell on screen. Stepping the pager is what a person
    * would do, and it is bounded.
    */
-  const label = page.locator(`.pdmux-pane-label:has-text("${OWN_SESSION}")`);
+  const label = page.locator(`.pdmux-pane-label:has-text("${own}")`);
   await expect(async () => {
     if ((await label.count()) === 0) await page.locator("[data-testid='page-next']").click();
     await expect(label).toBeVisible({ timeout: 1500 });
   }).toPass({ timeout: 20_000 });
 }
-
-// Its own account, host and agent (see `E2E_ADMIN`): these specs write the dashboard
-// layout, and sharing an account with a person rearranges their screen mid-session.
-test.use({ storageState: e2eAdminState });
 
 
 test.describe("pdmux terminal on a phone", () => {
@@ -471,6 +465,7 @@ test.describe("pdmux terminal on a phone", () => {
     page,
     browser,
     request,
+    e2eState,
   }) => {
     const host = await paneHost(request);
     test.skip(!host, "no host in the fleet — nothing to put in a cell");
@@ -481,15 +476,15 @@ test.describe("pdmux terminal on a phone", () => {
      * The state a phone actually opens in: one terminal in the first cell and NOTHING
      * focused. Seeded through the API rather than by driving the picker, because the claim is
      * about a screen nobody has touched — every tap the setup spends is a tap that could be
-     * the thing making the composer appear. `pdmux-e2e` is this suite's own session, so
-     * nothing here can land in somebody's work.
+     * the thing making the composer appear. `workerSession()` is this worker's own session,
+     * so nothing here can land in somebody's work.
      */
     await writeLayout(request, {
       name: saved?.name ?? "default",
       payload: {
         mode: "split4",
         page: 0,
-        slots: [{ id: "s1", hostId: host.id, kind: "new", session: OWN_SESSION }],
+        slots: [{ id: "s1", hostId: host.id, kind: "new", session: workerSession() }],
         focusId: null,
         zoomId: null,
       },
@@ -536,7 +531,7 @@ test.describe("pdmux terminal on a phone", () => {
      * than a resize: the media query is the device's, not the viewport's.
      */
     const desktop = await browser.newContext({
-      storageState: e2eAdminState,
+      storageState: e2eState,
       baseURL: process.env.E2E_BASE_URL ?? "http://localhost:5001",
       viewport: { width: 1280, height: 900 },
     });

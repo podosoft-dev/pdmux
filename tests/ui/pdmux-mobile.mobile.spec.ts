@@ -1,7 +1,7 @@
-import { type Page, expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test, workerSession } from "../helpers/pdmux-test";
 import { expectControlsInside, expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
 import { readLayout, seedSoloPane, writeLayout } from "../helpers/pdmux-layout";
 
 /**
@@ -58,10 +58,6 @@ async function regionBoxes(page: Page): Promise<Record<string, { w: number; h: n
     };
   });
 }
-
-// Its own account, host and agent (see `E2E_ADMIN`): these specs write the dashboard
-// layout, and sharing an account with a person rearranges their screen mid-session.
-test.use({ storageState: e2eAdminState });
 
 
 test.describe("pdmux on a phone", () => {
@@ -323,18 +319,19 @@ test.describe("pdmux on a phone", () => {
     const saved = await readLayout(request);
     const hostsResponse = await request.get("/api/hosts");
     const hosts = hostsResponse.ok()
-      ? ((await hostsResponse.json()) as { id: string; sessions?: { name: string }[] }[])
+      ? ((await hostsResponse.json()) as { id: string; online: boolean; enabled: boolean }[])
       : [];
-    const host = hosts[0];
-    const session = host?.sessions?.[0]?.name;
-    test.skip(!saved || !host || !session, "no saved layout or terminal fixture available");
-    if (!saved || !host || !session) return;
+    const host = hosts.find((row) => row.online && row.enabled);
+    test.skip(!saved || !host, "no saved layout or online host available");
+    if (!saved || !host) return;
 
+    // The worker's own session rather than whichever one the host lists first: that one
+    // can be another worker's, and a phone attaching to it resizes that worker's terminal.
     await seedSoloPane(request, saved, {
       id: "mobile-pane-actions",
       hostId: host.id,
-      kind: "attach",
-      session,
+      kind: "new",
+      session: workerSession(),
     });
 
     try {

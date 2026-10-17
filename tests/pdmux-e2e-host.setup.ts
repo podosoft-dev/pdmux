@@ -2,7 +2,7 @@ import { expect, test as setup } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chmod, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { E2E_ADMIN, e2eAdminState, e2eAgentToken } from "./helpers/pdmux-accounts";
+import { E2E_OWNER, e2eAgentToken, e2eOwnerState, withEnglishLocale } from "./helpers/pdmux-accounts";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 /** The label the e2e host is registered under, so repeated runs reuse it. */
@@ -13,46 +13,49 @@ const FILLER_HOSTS = 11;
 const E2E_GIT_ROOT = process.env.E2E_GIT_ROOT ?? process.cwd().replace(/\/tests$/, "");
 
 /**
- * Seed an account, host and token used only by the pdmux product specs.
+ * Seed the organization, host and token the pdmux product specs share.
  *
- * Fleet rows are account-scoped, so the isolated account must own the live host used by
- * terminal, git and MCP tests. The token is written once for the local agent process that
- * the e2e runner starts after setup. The session is pinned to English like the seeded
- * accounts' in seed.setup.ts, because UI locators use the English catalog.
+ * Fleet rows are scoped per organization, so an organization owned by `E2E_OWNER` holds
+ * the live host used by terminal, git and MCP tests, and every worker account the specs
+ * sign in as (`helpers/pdmux-test.ts`) joins it. The token is written once for the local
+ * agent process that the e2e runner starts after setup.
  */
 setup("seed pdmux e2e host", async ({ playwright }) => {
-  mkdirSync(dirname(e2eAdminState), { recursive: true });
+  mkdirSync(dirname(e2eOwnerState), { recursive: true });
   const session = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: { origin: base } });
-  await session.post("/api/auth/sign-up/email", { data: E2E_ADMIN }).catch(() => undefined); // idempotent
+  await session.post("/api/auth/sign-up/email", { data: E2E_OWNER }).catch(() => undefined); // idempotent
   const signIn = await session.post("/api/auth/sign-in/email", {
-    data: { email: E2E_ADMIN.email, password: E2E_ADMIN.password },
+    data: { email: E2E_OWNER.email, password: E2E_OWNER.password },
   });
-  expect(signIn.ok(), `sign-in ${E2E_ADMIN.email}`).toBeTruthy();
+  expect(signIn.ok(), `sign-in ${E2E_OWNER.email}`).toBeTruthy();
   expect((await session.post("/api/auth/revoke-other-sessions")).ok(), "clear old e2e sessions").toBeTruthy();
-  const state = await session.storageState();
-  const url = new URL(base);
-  writeFileSync(e2eAdminState, `${JSON.stringify({
-    ...state,
-    cookies: [
-      ...state.cookies.filter((cookie) => cookie.name !== "locale"),
-      {
-        name: "locale",
-        value: "en",
-        domain: url.hostname,
-        path: "/",
-        expires: -1,
-        httpOnly: false,
-        secure: url.protocol === "https:",
-        sameSite: "Lax" as const,
-      },
-    ],
-  }, null, 2)}\n`);
+
+  // The slug carries the owner's id: slugs are unique across the stack, and an owner the
+  // suite's cleanup removed leaves its organization behind without a member to find it by.
+  const owner = (await (await session.get("/api/auth/get-session")).json()) as { user: { id: string } };
+  const slug = `pdmux-e2e-${owner.user.id.toLowerCase()}`;
+  const organizations = await session.get("/api/auth/organization/list");
+  expect(organizations.ok(), `list organizations: ${await organizations.text()}`).toBeTruthy();
+  let organization = ((await organizations.json()) as { id: string; slug: string }[]).find((row) => row.slug === slug);
+  if (!organization) {
+    const created = await session.post("/api/auth/organization/create", { data: { name: "pdmux e2e", slug } });
+    expect(created.ok(), `create the e2e organization: ${await created.text()}`).toBeTruthy();
+    organization = (await created.json()) as { id: string; slug: string };
+  }
+  const active = await session.post("/api/auth/organization/set-active", { data: { organizationId: organization.id } });
+  expect(active.ok(), `act in the e2e organization: ${await active.text()}`).toBeTruthy();
+  expect(
+    await (await session.get("/api/fleet/scope")).json(),
+    `${E2E_OWNER.email} manages the organization's fleet: list it in ADMIN_EMAILS before it signs up`,
+  ).toEqual({ personal: false, canManage: true });
+
+  writeFileSync(e2eOwnerState, `${JSON.stringify(withEnglishLocale(await session.storageState(), base), null, 2)}\n`);
   await session.dispose();
 
   const ctx = await playwright.request.newContext({
     baseURL: base,
     extraHTTPHeaders: { origin: base },
-    storageState: e2eAdminState,
+    storageState: e2eOwnerState,
   });
   const existing = (await (await ctx.get("/api/hosts")).json()) as { id: string; label: string }[];
   const host =

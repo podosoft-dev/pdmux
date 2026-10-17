@@ -1,8 +1,8 @@
-import { type Page, expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test, workerSession } from "../helpers/pdmux-test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { openSidebar } from "../helpers/shell";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /**
  * The terminal panel end to end: browser -> SvelteKit origin -> relay -> agent PTY.
@@ -102,10 +102,6 @@ async function ensureGridPane(page: Page, host: HostRow): Promise<ReturnType<Pag
   await expect(panes.first()).toBeVisible();
   return panes.first();
 }
-
-// Its own account, host and agent (see `E2E_ADMIN`): these specs write the dashboard
-// layout, and sharing an account with a person rearranges their screen mid-session.
-test.use({ storageState: e2eAdminState });
 
 
 test.describe("pdmux terminal", () => {
@@ -214,6 +210,7 @@ test.describe("pdmux terminal", () => {
     if (!host) return;
 
     await ready(page, "/");
+    const own = workerSession();
     const panes = page.locator("[data-pdmux-pane]:not([hidden])");
     // Wait for the neighbour rather than sampling the count once: panes mount as their
     // relays attach, so an instantaneous count fails for a reason that has nothing to do
@@ -228,11 +225,11 @@ test.describe("pdmux terminal", () => {
       const picker = page.locator("[data-pdmux-popover='target-picker']");
       await expect(picker).toBeVisible();
       await picker.locator(`[data-pdmux-host='${host.id}']`).click();
-      const own = picker.locator("[data-pdmux-session='pdmux-e2e']");
-      // A session this suite owns, never one that belongs to the machine's user.
-      if ((await own.count()) > 0) await own.click();
+      const existing = picker.locator(`[data-pdmux-session='${own}']`);
+      // A session this worker owns, never one that belongs to the machine's user.
+      if ((await existing.count()) > 0) await existing.click();
       else {
-        await picker.getByLabel(/session name/i).fill("pdmux-e2e");
+        await picker.getByLabel(/session name/i).fill(own);
         await picker.locator("[data-pdmux-action='new']").click();
       }
     }
@@ -244,11 +241,11 @@ test.describe("pdmux terminal", () => {
       const picker = page.locator("[data-pdmux-popover='target-picker']");
       await expect(picker).toBeVisible();
       await picker.locator(`[data-pdmux-host='${host.id}']`).click();
-      const own = picker.locator("[data-pdmux-session='pdmux-e2e']");
-      // A session this suite owns, never one that belongs to the machine's user.
-      if ((await own.count()) > 0) await own.click();
+      const existing = picker.locator(`[data-pdmux-session='${own}']`);
+      // A session this worker owns, never one that belongs to the machine's user.
+      if ((await existing.count()) > 0) await existing.click();
       else {
-        await picker.getByLabel(/session name/i).fill("pdmux-e2e");
+        await picker.getByLabel(/session name/i).fill(own);
         await picker.locator("[data-pdmux-action='new']").click();
       }
     }
@@ -557,7 +554,7 @@ test.describe("pdmux terminal", () => {
     const saved = await captureLayout(request);
     await ready(page, "/");
 
-    // A session this test OWNS, under a name nobody would mistake for theirs.
+    // A session this worker OWNS, under a name nobody would mistake for theirs.
     //
     // Taking whatever sits in the first cell means typing into whichever multiplexer
     // session the layout happens to hold — and those are the machine's REAL sessions
@@ -565,7 +562,7 @@ test.describe("pdmux terminal", () => {
     // way. A plain `shell` target is not an option either: this test is about work
     // SURVIVING a teardown, and a bare shell dies with its pane, so only a multiplexer
     // session can prove it.
-    const SESSION = "pdmux-e2e";
+    const SESSION = workerSession();
     // Retarget an existing cell rather than adding one: the grid is usually full, and
     // then "add terminal" has no cell to fill and quietly does nothing. The layout
     // captured above is put back at the end, so borrowing a cell costs the user nothing.

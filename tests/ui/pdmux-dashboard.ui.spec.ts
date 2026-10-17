@@ -1,9 +1,9 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, test } from "../helpers/pdmux-test";
 import { expectControlsInside, expectOnScreen, expectScrollable, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
 import { openSidebar } from "../helpers/shell";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
 import { mockHost, mockUpdate, type MockHost } from "../helpers/fleet";
 
 /**
@@ -97,30 +97,21 @@ function resetDock(request: APIRequestContext): Promise<void> {
   return putLayout(request, { dockWidth: 420, dockDetailHeight: null });
 }
 
-// Its own account, host and agent (see `E2E_ADMIN`): these specs write the dashboard
-// layout, and sharing an account with a person rearranges their screen mid-session.
-test.use({ storageState: e2eAdminState });
-
 
 test.describe.serial("pdmux dashboard", () => {
   let created: string[] = [];
 
-  test.beforeAll(async ({ playwright, baseURL }) => {
+  test.beforeAll(async ({ playwright, baseURL, e2eState }) => {
     // Enough cards that the sidebar has to scroll — with two hosts the check
-    // could not tell a scroll container from a short list.
-    const request = await playwright.request.newContext({
-      baseURL,
-      storageState: "playwright/.auth/admin.json",
-    });
+    // could not tell a scroll container from a short list. Created as the worker's
+    // account: `admin.json` acts in its own fleet, which this sidebar never shows.
+    const request = await playwright.request.newContext({ baseURL, storageState: e2eState });
     created = await createHosts(request, 12);
     await request.dispose();
   });
 
-  test.afterAll(async ({ playwright, baseURL }) => {
-    const request = await playwright.request.newContext({
-      baseURL,
-      storageState: "playwright/.auth/admin.json",
-    });
+  test.afterAll(async ({ playwright, baseURL, e2eState }) => {
+    const request = await playwright.request.newContext({ baseURL, storageState: e2eState });
     await removeHosts(request, created);
     await request.dispose();
   });
@@ -1010,12 +1001,12 @@ test.describe.serial("pdmux shell fleet controls", () => {
   const MARK = 165;
   const label = `${PREFIX}card-${Date.now().toString().slice(-6)}`;
 
-  test.afterAll(async ({ playwright, baseURL }) => {
-    // The e2e account's own state, not `admin.json`: fleet rows are scoped per account
-    // (`personal:<userId>`), so cleaning up as a different user lists a different fleet
-    // and deletes nothing. A green run has already removed this host in TC-PDUI-166;
-    // this is for the run that failed half way.
-    const request = await playwright.request.newContext({ baseURL, storageState: e2eAdminState });
+  test.afterAll(async ({ playwright, baseURL, e2eState }) => {
+    // The worker's own state, not `admin.json`: fleet rows are scoped per organization,
+    // and `admin.json` is not in the suite's, so cleaning up as that user lists a
+    // different fleet and deletes nothing. A green run has already removed this host in
+    // TC-PDUI-166; this is for the run that failed half way.
+    const request = await playwright.request.newContext({ baseURL, storageState: e2eState });
     const hosts = (await (await request.get("/api/hosts")).json()) as { id: string; label: string }[];
     for (const host of hosts.filter((row) => row.label === label)) {
       await request.delete(`/api/hosts/${host.id}`);

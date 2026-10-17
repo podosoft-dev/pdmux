@@ -1,10 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/pdmux-test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
 import { openSidebar } from "../helpers/shell";
 import { userState } from "../helpers/accounts";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
 import { mockHost, mockUpdate, type MockHost } from "../helpers/fleet";
 
 /**
@@ -39,17 +38,12 @@ function daysAgoIso(days: number): string {
 }
 
 
-// Its own account, host and agent (see `E2E_ADMIN`): these specs write the dashboard
-// layout, and sharing an account with a person rearranges their screen mid-session.
-test.use({ storageState: e2eAdminState });
-
-
 test.describe.serial("pdmux hosts", () => {
-  test.afterAll(async ({ playwright, baseURL }) => {
-    // The e2e account's own state, not `admin.json`: fleet rows are scoped per
-    // account (`personal:<userId>`), so cleaning up as a different user lists a
-    // different fleet and deletes nothing.
-    const request = await playwright.request.newContext({ baseURL, storageState: e2eAdminState });
+  test.afterAll(async ({ playwright, baseURL, e2eState }) => {
+    // The worker's own state, not `admin.json`: fleet rows are scoped per
+    // organization, and `admin.json` is not in the suite's, so cleaning up as that
+    // user lists a different fleet and deletes nothing.
+    const request = await playwright.request.newContext({ baseURL, storageState: e2eState });
     const hosts = (await (await request.get("/api/hosts")).json()) as { id: string; label: string }[];
     for (const host of hosts.filter((row) => row.label.startsWith("e2e-host-"))) {
       await request.delete(`/api/hosts/${host.id}`);
@@ -938,7 +932,14 @@ test.describe.serial("pdmux hosts", () => {
     await expect(page.getByRole("row").filter({ hasText: "mock-quiet" })).toHaveCount(0);
   });
 
-  test("[TC-PDWEB-018] the list warns before the sweep takes a host", async ({ page, playwright, baseURL }) => {
+  // Exclusive: it arms the host retention of the organization every worker shares, and
+  // the fleet settings specs read that retention as off.
+  test("[TC-PDWEB-018] the list warns before the sweep takes a host", { tag: "@exclusive" }, async ({
+    page,
+    playwright,
+    baseURL,
+    e2eState,
+  }) => {
     /**
      * Automatic removal is opt-in and irreversible — the delete cascades to the
      * host's tokens, so the machine is refused until somebody re-runs the installer.
@@ -947,10 +948,10 @@ test.describe.serial("pdmux hosts", () => {
      * quietly), so the notice is what this measures.
      *
      * ⚠ THE SETTING IS READ BY THE SERVER LOADER, so `page.route` cannot fabricate
-     * it — it is written through the API for this suite's own account and put back
+     * it — it is written through the API for the suite's organization and put back
      * in `finally`. Rows are still mocked: nothing here waits on a real agent.
      */
-    const request = await playwright.request.newContext({ baseURL, storageState: e2eAdminState });
+    const request = await playwright.request.newContext({ baseURL, storageState: e2eState });
     try {
       await request.put("/api/fleet/settings", { data: { staleHostRetentionDays: 30 } });
 
@@ -988,7 +989,7 @@ test.describe.serial("pdmux hosts", () => {
       await expect(page.getByRole("row").filter({ hasText: "mock-seen-40d" })).toBeVisible();
       await expect(page.locator("[data-testid^='host-removal-']")).toHaveCount(0);
     } finally {
-      // Back to the default whatever happened above: leaving a suite account armed
+      // Back to the default whatever happened above: leaving the suite's fleet armed
       // would let a later run delete rows nobody pointed at.
       await request.put("/api/fleet/settings", { data: { staleHostRetentionDays: 0 } });
       await request.dispose();

@@ -1,5 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
+import { expect, test } from "../helpers/pdmux-test";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 
@@ -10,11 +9,11 @@ interface HostRow {
   capabilities: string[];
 }
 
-test("[TC-PDTERM-150] file operations cross the live agent transport", async ({ playwright }) => {
+test("[TC-PDTERM-150] file operations cross the live agent transport", async ({ playwright, e2eState }) => {
   const ctx = await playwright.request.newContext({
     baseURL: base,
     extraHTTPHeaders: { origin: base },
-    storageState: e2eAdminState,
+    storageState: e2eState,
   });
   const hostsResponse = await ctx.get("/api/hosts");
   expect(hostsResponse.ok(), await hostsResponse.text()).toBeTruthy();

@@ -1,5 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
+import type { Page } from "@playwright/test";
+import { expect, test } from "../helpers/pdmux-test";
 import { readLayout, writeLayout } from "../helpers/pdmux-layout";
 import { boxFacts, expectOnScreen } from "../helpers/geometry";
 import { agentDownstreamSchema, agentUpstreamSchema, commitDetailSchema, gitTreeSchema, gitBlobSchema, workingDiffSchema } from "@pdmux/protocol";
@@ -10,7 +10,7 @@ import { graphSnapshot, repository, NEW_SHA, OLD_SHA } from "../../apps/web/test
 import type { RepoGraphResponse } from "../../apps/web/src/lib/dashboard/types";
 
 // The live-ingest case mints a one-time agent credential; never archive it in a trace.
-test.use({ storageState: e2eAdminState, trace: "off" });
+test.use({ trace: "off" });
 
 interface Fixture {
   graph: RepoGraphResponse;
@@ -60,12 +60,12 @@ async function mockGit(page: Page): Promise<Fixture> {
 
 async function inDock(page: Page, state: Fixture, run: () => Promise<void>): Promise<void> {
   const saved = await readLayout(page.request);
-  if (!saved) throw new Error("The isolated test account needs a saved layout");
+  if (!saved) throw new Error("The worker account needs a saved layout");
   const response = await page.request.get("/api/hosts");
   expect(response.ok()).toBeTruthy();
   const hosts = await response.json() as { id: string }[];
   const host = hosts[0];
-  if (!host) throw new Error("The isolated test account needs a host");
+  if (!host) throw new Error("The worker account needs a host");
   state.graph = graphSnapshot(repository({ hostId: host.id }));
   try {
     await writeLayout(page.request, { ...saved, payload: { ...saved.payload,

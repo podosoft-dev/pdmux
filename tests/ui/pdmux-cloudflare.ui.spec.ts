@@ -1,9 +1,6 @@
-import { expect, test } from "@playwright/test";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
+import { expect, test } from "../helpers/pdmux-test";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
-
-test.use({ storageState: e2eAdminState });
 
 test("[TC-PDUI-227] configures the fleet connection without ever rendering the token", async ({ page }) => {
   const calls: string[] = [];

@@ -1,6 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/pdmux-test";
 import { ready } from "../helpers/hydration";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /**
  * The screen that mints a credential reaching every host a person can see.
@@ -12,8 +11,6 @@ import { e2eAdminState } from "../helpers/pdmux-accounts";
  * are disabled or simply absent. Both failures are silent and both are the ones
  * that cost something.
  */
-test.use({ storageState: e2eAdminState });
-
 /** Any real token starts like this; a fixture must never match it by accident. */
 const TOKEN_SHAPE = /pdmux_usr_[A-Za-z0-9_-]{20}/;
 
@@ -27,8 +24,8 @@ const TOKENS = "**/api/account/mcp-tokens";
  */
 test.describe("coding CLI access", () => {
   /**
-   * ⚠ THE CEILING IS MOCKED, NOT ARRANGED. This suite runs as the sole owner of a
-   * personal fleet, whose ceiling is `admin` — so the account can never produce the
+   * ⚠ THE CEILING IS MOCKED, NOT ARRANGED. This suite runs as an administrator of its
+   * organization, whose ceiling is `admin` — so the account can never produce the
    * state this screen's hardest rule is about. Demoting a real account to reach it
    * would be the suite rewriting its own fixtures, which is the thing that took
    * somebody's login away on 2026-07-29.

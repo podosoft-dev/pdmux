@@ -1,5 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
+import { expect, test } from "../helpers/pdmux-test";
 
 /**
  * What the API publishes must be what the web tier can hand over.
@@ -38,14 +37,14 @@ interface Manifest {
 }
 
 test.describe("[TC-PDAGENT-127] a published agent release is one the web tier can serve", () => {
-  test("every version the dashboard offers is fetchable at the path the agent is given", async ({ playwright }) => {
-    // The isolated e2e account's stored session, NOT a sign-in as `admin@example.com`:
+  test("every version the dashboard offers is fetchable at the path the agent is given", async ({ playwright, e2eState }) => {
+    // The e2e worker account's stored session, NOT a sign-in as `admin@example.com`:
     // a person has this dashboard open, and every sign-in against their account revokes
     // the session in their browser (`live-stack.md`). This spec only reads.
     const ctx = await playwright.request.newContext({
       baseURL: base,
       extraHTTPHeaders: { origin: base },
-      storageState: e2eAdminState,
+      storageState: e2eState,
     });
 
     const hosts = (await (await ctx.get("/api/hosts")).json()) as HostRow[];

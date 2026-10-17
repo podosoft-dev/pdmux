@@ -1,8 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/pdmux-test";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
 import { openSidebar } from "../helpers/shell";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /** A marker written onto a live element; it survives only if the element does. */
 type Marked = HTMLElement & { __pdmuxMark?: number };
@@ -24,10 +23,6 @@ const MARK = 5107;
  * are therefore real and only the WRITES are intercepted, which is also what keeps
  * these specs from changing the settings of the fleet this deployment actually uses.
  */
-
-// Its own account, as every pdmux spec uses: fleet settings are scoped per account
-// (`personal:<userId>`), so writing them as somebody else would retune their agents.
-test.use({ storageState: e2eAdminState });
 
 /** A fleet row as `GET /hosts` returns it — enough of one for the sidebar and the sweep. */
 type MockHost = Record<string, unknown>;
@@ -65,15 +60,16 @@ function daysAgoIso(days: number): string {
 
 test.describe.serial("pdmux fleet settings", () => {
   /**
-   * OFF is the state these specs describe, and the state the account has to be left in.
+   * OFF is the state these specs describe, and the state the fleet has to be left in.
    *
    * It is a precondition rather than an assumption: the sweep is a real server-side job,
-   * so a suite account left armed by an earlier run (or an interrupted one) would let it
+   * so the suite's fleet left armed by an earlier run (or an interrupted one) would let it
    * delete rows nobody pointed at — and the "off" copy this suite reads would be a lie
-   * about the fleet in front of it.
+   * about the fleet in front of it. The settings belong to the organization every worker
+   * shares, so a spec that writes anything but OFF runs in the exclusive phase.
    */
-  test.beforeAll(async ({ playwright, baseURL }) => {
-    const request = await playwright.request.newContext({ baseURL, storageState: e2eAdminState });
+  test.beforeAll(async ({ playwright, baseURL, e2eState }) => {
+    const request = await playwright.request.newContext({ baseURL, storageState: e2eState });
     await request.put("/api/fleet/settings", { data: { staleHostRetentionDays: 0 } });
     await request.dispose();
   });
@@ -175,6 +171,7 @@ test.describe.serial("pdmux fleet settings", () => {
     page,
     playwright,
     baseURL,
+    e2eState,
   }) => {
     /**
      * The failure the operator used to get was a 400 from `curl`. On a screen that is
@@ -186,7 +183,7 @@ test.describe.serial("pdmux fleet settings", () => {
      * /fleet/settings` upserts what it is given, so a form that posted all fourteen
      * would stamp this browser's view over any change made between load and click.
      */
-    const request = await playwright.request.newContext({ baseURL, storageState: e2eAdminState });
+    const request = await playwright.request.newContext({ baseURL, storageState: e2eState });
     try {
       // The real document, so the mocked answer is a whole one — the page re-seeds its
       // form from the PUT's response, and a partial body would blank every other field.
@@ -239,10 +236,11 @@ test.describe.serial("pdmux fleet settings", () => {
     }
   });
 
-  test("[TC-PDWEB-025] arming host deletion needs the days typed, and names what it would take", async ({
+  test("[TC-PDWEB-025] arming host deletion needs the days typed, and names what it would take", { tag: "@exclusive" }, async ({
     page,
     playwright,
     baseURL,
+    e2eState,
   }) => {
     /**
      * `staleHostRetentionDays` is the one setting on this page that destroys something:
@@ -257,7 +255,7 @@ test.describe.serial("pdmux fleet settings", () => {
      * is 3650 (ten years), which the sweep cannot act on, and it is put back in
      * `finally`.
      */
-    const request = await playwright.request.newContext({ baseURL, storageState: e2eAdminState });
+    const request = await playwright.request.newContext({ baseURL, storageState: e2eState });
     try {
       await request.put("/api/fleet/settings", { data: { staleHostRetentionDays: 0 } });
       const baseline = (await (await request.get("/api/fleet/settings")).json()) as Record<string, unknown>;
@@ -326,7 +324,7 @@ test.describe.serial("pdmux fleet settings", () => {
        * ⚠ THE CONTROL that matters most: turning deletion OFF is NOT gated.
        *
        * A confirmation on every write would pass everything above while making a
-       * destructive setting harder to switch off than on. The account is armed at 3650
+       * destructive setting harder to switch off than on. The fleet is armed at 3650
        * days — long enough that the sweep cannot act on it — and clearing it to 0 has
        * to save straight away.
        */
@@ -341,7 +339,7 @@ test.describe.serial("pdmux fleet settings", () => {
       expect(bodies[0]).toEqual({ staleHostRetentionDays: 0 });
       await expect(page.locator("[data-testid='fleet-sweep-confirm']")).toHaveCount(0);
     } finally {
-      // Back to OFF whatever happened above: leaving a suite account armed would let a
+      // Back to OFF whatever happened above: leaving the suite's fleet armed would let a
       // later run delete rows nobody pointed at.
       await request.put("/api/fleet/settings", { data: { staleHostRetentionDays: 0 } });
       await request.dispose();

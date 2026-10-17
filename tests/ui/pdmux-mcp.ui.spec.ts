@@ -1,6 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../helpers/pdmux-test";
 import { ready } from "../helpers/hydration";
-import { e2eAdminState } from "../helpers/pdmux-accounts";
 
 /**
  * Connecting a coding CLI to a host.
@@ -10,8 +9,6 @@ import { e2eAdminState } from "../helpers/pdmux-accounts";
  * most likely thing here to end up committed to a repository, and a secret that
  * travels in it leaks by construction.
  */
-test.use({ storageState: e2eAdminState });
-
 /** Any real key starts like this; a fixture must never match it by accident. */
 const KEY_SHAPE = /pdmux_mcp_[A-Za-z0-9_-]{20}/;
 
@@ -46,15 +43,15 @@ test.describe.serial("pdmux agent connection", () => {
   let hostId = "";
   const label = `e2e-mcp-${Date.now().toString().slice(-6)}`;
 
-  test.beforeAll(async ({ playwright, baseURL }) => {
-    const api = await playwright.request.newContext({ baseURL, storageState: e2eAdminState });
+  test.beforeAll(async ({ playwright, baseURL, e2eState }) => {
+    const api = await playwright.request.newContext({ baseURL, storageState: e2eState });
     const made = await api.post("/api/hosts", { data: { label, tags: [] } });
     hostId = (await made.json()).id as string;
     await api.dispose();
   });
 
-  test.afterAll(async ({ playwright, baseURL }) => {
-    const api = await playwright.request.newContext({ baseURL, storageState: e2eAdminState });
+  test.afterAll(async ({ playwright, baseURL, e2eState }) => {
+    const api = await playwright.request.newContext({ baseURL, storageState: e2eState });
     await api.delete(`/api/hosts/${hostId}`);
     await api.dispose();
   });
