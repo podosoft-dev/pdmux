@@ -534,6 +534,14 @@ Watch the collection budget alongside it: building 15 repositories × 300 commit
 start stalls the loop, so it fills newest-first within **a per-pass budget** (120 by default). The
 screen shows what remains as "still collecting (N)".
 
+PostgreSQL connections: each API and worker process opens PodoKit's query pool (`DB_POOL_MAX`, 20,
+plus one probe connection), the authentication pool (`DB_AUTH_POOL_MAX`, 10) and pdmux's own TypeORM
+pool (`PDMUX_DB_POOL_MAX`, 10), so up to 41 connections. A deployment profile sets
+`PDMUX_DB_POOL_MAX` in `runtimeConfig` and lists `{ "sizeKey": "PDMUX_DB_POOL_MAX" }` in
+`dependencies.postgres.appPools`, so `podo deploy doctor` and `podo deploy plan` count the TypeORM
+pool too. One API and one worker then hold at most 82, and a migration adds 2, of the 97 that the
+default `max_connections` of 100 leaves.
+
 ---
 
 ## 4. Backup and recovery

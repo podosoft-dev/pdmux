@@ -38,6 +38,8 @@ export function createDataSourceOptions(
     username: appEnv.POSTGRES_USER,
     password: appEnv.POSTGRES_PASSWORD,
     database: appEnv.POSTGRES_DB,
+    // TypeORM hands this to pg as the pool's `max`; an `extra.max` would override it.
+    poolSize: appEnv.PDMUX_DB_POOL_MAX,
     entities: APP_ENTITIES,
     migrations: migrationPaths(migrations),
     // One transaction per migration, so a migration can set `transaction = false`
