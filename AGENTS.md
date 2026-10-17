@@ -104,8 +104,8 @@ Merge added module settings from `.env.example` into an existing `.env`.
   `APP_PROXY_TIMEOUTS` and their chunk route a 1 MiB cap in `APP_BODY_LIMITS`,
   because the API's agent deadlines (up to five minutes for a commit) own that
   wait. A route without a deadline needs `CONNECTION_IDLE_TIMEOUT=0` wherever the
-  built web server runs (the web image, the desktop shell, the k3s ConfigMap, and
-  the deployment profile's `runtimeConfig`); the API instead lifts its idle
+  built web server runs (the web image, the desktop shell, and the k3s ConfigMap;
+  `podo deploy` derives it for a deployment); the API instead lifts its idle
   timeout per request on the transfer routes that wait. The origin the caller
   reached travels to the API in `x-pdmux-caller-origin`, which the `/api` and
   `/mcp` routes set (`apps/web/src/lib/server/caller-origin.ts`), since the proxy
