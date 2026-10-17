@@ -60,3 +60,51 @@ do not combine `--no-deps` with `E2E_WORKERS` above 1.
 
 Application-owned projects in `playwright.projects.cjs` get twins too. A project
 that another project depends on is a setup project and keeps a single copy.
+
+## pdmux accounts, one per worker
+
+The pdmux specs that drive the fleet import `test` and `expect` from
+`helpers/pdmux-test.ts` instead of `@playwright/test`. They run as accounts of
+their own, never as the seeded `admin@example.com`:
+
+- `pdmux-e2e@example.com` (`E2E_OWNER` in `helpers/pdmux-accounts.ts`) owns the
+  `pdmux e2e` organization, whose fleet holds the live host `pdmux-e2e-host` and
+  eleven offline filler hosts. `pdmux-e2e-host.setup.ts` signs it up in the
+  `setup` project and writes the host's agent token to
+  `playwright/.auth/pdmux-e2e-agent-token.txt`. List the address in
+  `ADMIN_EMAILS` before the account signs up: it creates the worker accounts,
+  and only an administrator changes an organization's fleet. Setup stops and
+  says so otherwise.
+- Each Playwright worker signs in as `pdmux-e2e-w<N>@example.com`, where `<N>`
+  is the worker's `parallelIndex`. On a worker's first test, the `e2eState`
+  fixture creates the account as an administrator, adds it to the organization,
+  gives it an empty saved layout, and saves its session in
+  `playwright/.auth/pdmux-e2e-w<N>.json`. The worker accounts are created after
+  the setup's user baseline, so the `cleanup` project removes them when the run
+  ends and the next run creates them again. A `--no-deps` run reuses them.
+- Both take their password from `E2E_SUITE_ADMIN_PASSWORD`. Without it they use
+  the suite default, which is right only on a stack the suite created.
+
+Pages and the `request` fixture get the worker's session by default. A context
+or request context a spec opens itself passes `storageState: e2eState`, in hooks
+too. `test.use({ storageState: userState })` still runs a block as the seeded
+user.
+
+The dashboard layout, the sidebar, and card preferences belong to the worker's
+account, so workers never see each other's. The fleet belongs to the
+organization, which every worker shares:
+
+- Give each host, file, and storage key a test creates a unique name, and delete
+  only what the test created.
+- Type only into terminal sessions named by `workerSession()`, such as
+  `pdmux-e2e-w0`. Two workers in one session type into the same shell.
+- Tag a test `@exclusive` when it writes the organization's fleet settings, such
+  as the host retention, or its integrations.
+
+The terminal, git, and file specs need an agent connected to `pdmux-e2e-host`
+with that token, and skip without one. To run the whole suite on two workers
+against the containerized loop:
+
+```bash
+E2E_BASE_URL=http://pdmux.localhost E2E_WORKERS=2 bun run test:e2e
+```

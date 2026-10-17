@@ -235,8 +235,13 @@ pdmux keeps a managed file as PodoKit renders it whenever an app-owned place exi
   contract must find in `apps/api/src/core/api-contract.extensions.ts`, Vite options in
   `apps/web/vite.extensions.ts`, and styles in `apps/web/src/app.extensions.css`.
 - The managed e2e specs read pdmux's screens from `tests/helpers/app-paths.ts`. pdmux's own
-  account, host, and helpers are in `tests/helpers/pdmux-accounts.ts`,
-  `tests/helpers/pdmux-hydration.ts`, and `tests/pdmux-e2e-host.setup.ts`.
+  accounts, host, and helpers are in `tests/helpers/pdmux-accounts.ts`,
+  `tests/helpers/pdmux-test.ts`, `tests/helpers/pdmux-hydration.ts`, and
+  `tests/pdmux-e2e-host.setup.ts`. A pdmux spec that drives the fleet imports `test` and
+  `expect` from `pdmux-test.ts`, so each Playwright worker runs as its own account in one
+  shared organization (`tests/README.md`). It names what it creates uniquely, types only into
+  `workerSession()` terminals, and is tagged `@exclusive` when it writes the organization's
+  fleet settings.
 
 Useful commands:
 
