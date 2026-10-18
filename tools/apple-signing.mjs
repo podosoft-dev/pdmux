@@ -52,11 +52,16 @@ export function signingEnvironment(source) {
 
 // Child output is intentionally captured: keychain tools can echo identities and
 // arguments. Errors expose the operation only, never credential-bearing output.
-function signingDiagnostic(stderr) {
+export function signingDiagnostic(stderr) {
   if (/MAC verification failed/.test(stderr)) return "PKCS12 integrity verification failed";
   if (/User interaction is not allowed/.test(stderr)) return "keychain interaction unavailable";
   if (/One or more parameters/.test(stderr)) return "unsupported keychain import parameters";
-  return stderr.match(/CSSMERR_[A-Z_]+|code failed to satisfy specified code requirement\(s\)|code object is not signed at all|invalid signature|main executable failed strict validation|unable to build chain to self-signed root|a sealed resource is missing or invalid|code or signature have been modified/)?.[0] ?? "output suppressed";
+  return stderr.match(/CSSMERR_[A-Z_]+|errSec[A-Za-z]+|no identity found|The timestamp service is not available|code failed to satisfy specified code requirement\(s\)|code object is not signed at all|invalid signature|main executable failed strict validation|unable to build chain to self-signed root|a sealed resource is missing or invalid|code or signature have been modified/)?.[0] ?? "output suppressed";
+}
+
+/** Keychain paths from `security list-keychains` output, one quoted path per line. */
+export function parseKeychainList(output) {
+  return output.split("\n").map(line => line.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean);
 }
 
 export function signingCommand(command, args, options = {}) {
@@ -77,6 +82,7 @@ export async function withAppleSigning(callback, { local = false, env = process.
   const keychain = join(temporary, "signing.keychain-db");
   const keychainPassword = randomBytes(32).toString("hex");
   let created = false;
+  let searchList;
   try {
     const archive = Buffer.from(credentials.APPLE_CERTIFICATE_P12_BASE64, "base64");
     const passwordEnv = { ...clean, PDMUX_IMPORT_PASSWORD: credentials.APPLE_CERTIFICATE_PASSWORD };
@@ -120,6 +126,10 @@ export async function withAppleSigning(callback, { local = false, env = process.
     await rm(p12);
     // Only this short-lived keychain password is passed to security(1).
     signingCommand("security", ["set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", keychainPassword, keychain], { env: clean });
+    // codesign finds the identity only in a keychain on the user search list, even with
+    // --keychain: on the macos-26 runner it otherwise fails with "no identity found".
+    searchList = parseKeychainList(signingCommand("security", ["list-keychains", "-d", "user"], { env: clean }));
+    signingCommand("security", ["list-keychains", "-d", "user", "-s", keychain, ...searchList.filter(path => path !== keychain)], { env: clean });
     const identity = certificate.fingerprint.replaceAll(":", "");
     const childEnv = {
       ...clean, CSC_KEYCHAIN: keychain, CSC_IDENTITY_AUTO_DISCOVERY: "false",
@@ -145,7 +155,10 @@ export async function withAppleSigning(callback, { local = false, env = process.
     };
     return await callback(context);
   } finally {
-    try { if (created) signingCommand("security", ["delete-keychain", keychain], { env: clean }); }
-    finally { await rm(temporary, { recursive: true, force: true }); }
+    try { if (searchList) signingCommand("security", ["list-keychains", "-d", "user", "-s", ...searchList], { env: clean }); }
+    finally {
+      try { if (created) signingCommand("security", ["delete-keychain", keychain], { env: clean }); }
+      finally { await rm(temporary, { recursive: true, force: true }); }
+    }
   }
 }
