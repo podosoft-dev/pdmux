@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonical, chooseChange, mapHostIds, omitHostReferences, DESKTOP_PROTOCOL_VERSION, syncBatchSchema, type SyncRecord, type SyncResult } from "@pdmux/desktop-protocol";
-import type { Repository } from "typeorm";
+import type { QueryDeepPartialEntity, Repository } from "typeorm";
 import { AppException } from "../common/app-exception";
 import type { AuthSession } from "../auth/auth.service";
 import { assertCanManageFleet, resolveScopeId } from "../fleet/session-scope";
@@ -195,5 +195,6 @@ export class DesktopService {
 
   async hasForeignBinding(hostId: string): Promise<boolean> { return this.records.exist({ where: { hostId } }); }
 
-  async cacheView(binding: DesktopRecord, view: Record<string, unknown>): Promise<void> { if (recordHash(binding.cachedView) !== recordHash(view)) await this.records.save({ ...binding, cachedView: view }); }
+  /** Writes only the cached view: the binding was read before a lock-free relay, and a sync may have changed the rest since. */
+  async cacheView(binding: DesktopRecord, view: Record<string, unknown>): Promise<void> { if (recordHash(binding.cachedView) !== recordHash(view)) await this.records.update({ id: binding.id }, { cachedView: view } as QueryDeepPartialEntity<DesktopRecord>); }
 }
