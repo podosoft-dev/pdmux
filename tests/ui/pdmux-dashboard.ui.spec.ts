@@ -517,6 +517,9 @@ test.describe.serial("pdmux dashboard", () => {
      * Asserted as "one row" rather than against those numbers: a font or a token can move
      * them by a pixel without anything being wrong, but a second row is always a
      * regression of the thing this changed.
+     *
+     * The Dashboard button leads the row on every product page, so it is the control that
+     * starts at the column's padding; add and hosts follow it on the same row.
      */
     await ready(page, "/");
     await openSidebar(page);
@@ -524,17 +527,21 @@ test.describe.serial("pdmux dashboard", () => {
     const probe = await page.evaluate(() => {
       const sidebar = document.querySelector("[data-pdmux-sidebar]") as HTMLElement;
       const header = sidebar.firstElementChild as HTMLElement;
+      const dashboard = document.querySelector("[data-testid='open-dashboard']") as HTMLElement | null;
       const add = document.querySelector("[data-testid='host-add-sidebar']") as HTMLElement | null;
       const hosts = document.querySelector("[data-testid='nav-hosts']") as HTMLElement | null;
       const box = (el: HTMLElement | null) => (el ? el.getBoundingClientRect() : null);
+      // Same baseline = same row. Two rows would differ by a control's height.
+      const rowOf = (a: HTMLElement | null, b: HTMLElement | null) =>
+        a && b ? Math.abs(box(a)!.y - box(b)!.y) < 2 : false;
       return {
         wordmark: Boolean(document.querySelector("[data-testid='dashboard-title']")),
         headerHeight: Math.round(box(header)!.height),
         control: add ? Math.round(box(add)!.height) : 0,
-        // Same baseline = same row. Two rows would differ by a control's height.
-        sameRow: add && hosts ? Math.abs(box(add)!.y - box(hosts)!.y) < 2 : false,
+        sameRow: rowOf(dashboard, add) && rowOf(add, hosts),
+        dashboardLeads: dashboard && add ? box(dashboard)!.x < box(add)!.x : false,
         // The controls start at the column's own padding, not indented behind something.
-        addOffset: add ? Math.round(box(add)!.x - box(header)!.x) : -1,
+        firstOffset: dashboard ? Math.round(box(dashboard)!.x - box(header)!.x) : -1,
       };
     });
 
@@ -544,8 +551,10 @@ test.describe.serial("pdmux dashboard", () => {
     expect(probe.headerHeight, "the column spends more than one row above the first card").toBeLessThanOrEqual(
       probe.control + 8,
     );
-    expect(probe.sameRow, "add and hosts are on different rows").toBe(true);
-    expect(probe.addOffset).toBeLessThanOrEqual(1);
+    expect(probe.sameRow, "dashboard, add and hosts are on different rows").toBe(true);
+    expect(probe.dashboardLeads, "the Dashboard button no longer leads the row").toBe(true);
+    expect(probe.firstOffset).toBeGreaterThanOrEqual(0);
+    expect(probe.firstOffset).toBeLessThanOrEqual(1);
   });
 
   test("[TC-PDUI-182] host management is reachable from the card it is about", async ({ page, request }) => {
