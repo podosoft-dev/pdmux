@@ -303,11 +303,13 @@
     <ImpersonationBanner email={data.user.email} />
   {/if}
   <!-- `main`, not a div: this shell IS the page's content, and the landmark is what lets
-       a screen reader (and the shared "back to home" check) find it. -->
+       a screen reader (and the shared "back to home" check) find it.
+       Collapsing the sidebar is a dashboard choice: its toggle is on the dashboard only and
+       the way back to the dashboard is in the sidebar, so other pages always show it. -->
   <main
   class="pdmux pdmux-shell min-h-0 flex-1"
   data-testid="dashboard-shell"
-  data-sidebar={layout.sidebarOpen ? "open" : "hidden"}
+  data-sidebar={layout.sidebarOpen || !onDashboard ? "open" : "hidden"}
   data-dock={dockOpen ? "open" : "closed"}
   data-view={view}
   data-keyboard={keyboard.open ? "open" : "closed"}

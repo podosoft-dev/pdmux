@@ -2,7 +2,7 @@ import { expect, test } from "../helpers/pdmux-test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
-import { openSidebar } from "../helpers/shell";
+import { collapseSidebar, openSidebar } from "../helpers/shell";
 import { userState } from "../helpers/accounts";
 import { mockHost, mockUpdate, type MockHost } from "../helpers/fleet";
 
@@ -1024,5 +1024,35 @@ test.describe("pdmux hosts (member)", () => {
     // And it leads somewhere: the dialog opens rather than the button answering 403.
     await page.locator("[data-testid='host-add-sidebar']").click();
     await expect(page.locator("[data-testid='host-label']")).toBeVisible();
+  });
+});
+
+test.describe("pdmux shell navigation", () => {
+  test("[TC-PDDESKTOP-019] a product page keeps the Dashboard button while the dashboard's sidebar is collapsed", async ({
+    page,
+  }) => {
+    /**
+     * The sidebar's toggle is on the dashboard only, and the way back to the dashboard is
+     * the Dashboard button inside the sidebar, now that the breadcrumb is gone. A collapsed
+     * column carried over to another page therefore left that page with no way back but
+     * the browser's. Collapsing is a dashboard choice: the other pages show the column,
+     * and the dashboard keeps it collapsed.
+     */
+    await ready(page, "/");
+    await collapseSidebar(page);
+    const shell = page.locator("[data-testid='dashboard-shell']");
+
+    try {
+      await ready(page, "/hosts");
+      await expect(shell).toHaveAttribute("data-sidebar", "open");
+      const back = page.locator("[data-testid='open-dashboard']");
+      await expectOnScreen(back, "the Dashboard button on /hosts");
+      await clickUntil(page, "[data-testid='open-dashboard']", page.locator("[data-pdmux-grid]"));
+      await expect(page).toHaveURL((url) => url.pathname === "/");
+      await expect(shell, "the dashboard forgot the collapsed column").toHaveAttribute("data-sidebar", "hidden");
+    } finally {
+      if (new URL(page.url()).pathname !== "/") await ready(page, "/");
+      await openSidebar(page);
+    }
   });
 });
