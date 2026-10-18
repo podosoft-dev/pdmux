@@ -118,9 +118,39 @@ organization, which every worker shares:
 The terminal, git, and file specs need an agent connected to `pdmux-e2e-host`
 with that token, and skip without one. Each run's setup mints one more token for
 the host and revokes none, so an agent started with the first run's token stays
-connected through the exclusive run. To run the whole suite on two workers
-against the containerized loop, with the exclusive tests' report in
-`playwright-report/exclusive`:
+connected through the exclusive run.
+
+Run a copy of the agent binary for this, with a config file, state directory,
+and tmux socket directory of its own, so it never touches an agent or a tmux
+server already running on the machine:
+
+```bash
+dir=$(mktemp -d) && mkdir -m 700 "$dir/state" "$dir/tmux"
+cp /path/to/pdmux-agent "$dir/"
+# "$dir/config.json", mode 0600:
+# {"server":"http://pdmux.localhost","token":"<playwright/.auth/pdmux-e2e-agent-token.txt>"}
+env -u TMUX PDMUX_STATE_DIR="$dir/state" TMUX_TMPDIR="$dir/tmux" \
+  "$dir/pdmux-agent" run --config "$dir/config.json"
+```
+
+Drop `TMUX` as above when the shell runs inside tmux. Without `-S` or `-L`,
+tmux takes the server socket from an inherited `TMUX` before it looks at
+`TMUX_TMPDIR`, so the agent would open the e2e sessions on the calling shell's
+own tmux server. Keep the directory short, as `mktemp -d` does: a Unix socket
+path holds about 100 bytes, and tmux fails with `File name too long` past that.
+Stop the copy by its process id, and reach its tmux server only through an
+explicit socket:
+
+```bash
+env -u TMUX tmux -S "$dir/tmux/tmux-$(id -u)/default" ls
+```
+
+⚠ A `tmux kill-server` without `-S` from inside tmux ends the calling shell's
+server and every session on it. Measured: a cleanup written as
+`TMUX_TMPDIR=<dir> tmux kill-server` did exactly that.
+
+To run the whole suite on two workers against the containerized loop, with the
+exclusive tests' report in `playwright-report/exclusive`:
 
 ```bash
 E2E_BASE_URL=http://pdmux.localhost E2E_WORKERS=2 bun run test:e2e
