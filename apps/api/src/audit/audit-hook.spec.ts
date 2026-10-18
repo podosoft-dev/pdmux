@@ -8,7 +8,7 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import { APIError, createAuthEndpoint } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { getAuthTables } from "better-auth/db";
-import { admin, bearer, emailOTP, jwt, magicLink, multiSession, twoFactor } from "better-auth/plugins";
+import { admin, bearer, emailOTP, jwt, magicLink, multiSession, phoneNumber, twoFactor } from "better-auth/plugins";
 import { buildAuth } from "../auth/auth";
 import { setAuditRecorder, type AuditEntry } from "./audit-events";
 import { auditPlugin, NOT_SIGN_INS, SIGN_IN_METHODS } from "./audit-hook";
@@ -83,6 +83,8 @@ interface Mailbox {
   magicLink: string;
   otp: string;
   verification: string;
+  reset: string;
+  sms: string;
 }
 
 interface AuthHandler {
@@ -131,23 +133,55 @@ function desktopSignIn(): BetterAuthPlugin {
 interface StartOptions {
   enabled?: () => Promise<boolean>;
   session?: BetterAuthOptions["session"];
+  /** Self-registered accounts wait for approval without a session, as auth.ts does. */
+  signupApproval?: boolean;
+  /** Whether an email verification link signs its user in. */
+  verificationSignIn?: boolean;
 }
+
+// Like auth.ts with sign-up approval on: a self-registered account starts
+// pending and gets no session until an administrator approves it.
+const signupApprovalHooks: BetterAuthOptions["databaseHooks"] = {
+  user: {
+    create: {
+      before: async (user, context) => ({ data: { ...user, signupApproved: context?.path === "/admin/create-user" } }),
+    },
+  },
+  session: {
+    create: {
+      before: async (session, context) => {
+        const user = (await context?.context.internalAdapter.findUserById(session.userId)) as { signupApproved?: boolean } | null;
+        if (user?.signupApproved === false) throw new APIError("FORBIDDEN", { message: "Waiting for approval." });
+      },
+    },
+  },
+};
 
 // The sign-in methods PodoKit's auth.ts enables and plugins that set or swap
 // sessions without a sign-in, on an in-memory database, with the audit plugin
 // pushed last as the audit-log module does.
-function startAuth({ enabled = async () => true, session }: StartOptions = {}) {
-  const mail: Mailbox = { magicLink: "", otp: "", verification: "" };
+function startAuth({ enabled = async () => true, session, signupApproval = false, verificationSignIn = true }: StartOptions = {}) {
+  const mail: Mailbox = { magicLink: "", otp: "", verification: "", reset: "", sms: "" };
   const db: Record<string, Record<string, unknown>[]> = {};
   const options = {
     baseURL: BASE_URL,
     secret: "audit-hook-test-secret-0123456789abcdef",
     database: memoryAdapter(db),
     ...(session ? { session } : {}),
-    user: { changeEmail: { enabled: true, updateEmailWithoutVerification: true } },
-    emailAndPassword: { enabled: true },
+    ...(signupApproval ? { databaseHooks: signupApprovalHooks } : {}),
+    user: {
+      changeEmail: { enabled: true, updateEmailWithoutVerification: true },
+      additionalFields: { signupApproved: { type: "boolean" as const, required: false, defaultValue: true, input: false } },
+    },
+    emailAndPassword: {
+      enabled: true,
+      autoSignIn: !signupApproval,
+      sendResetPassword: async ({ token }: { token: string }) => {
+        mail.reset = token;
+      },
+    },
     emailVerification: {
-      autoSignInAfterVerification: true,
+      autoSignInAfterVerification: verificationSignIn,
       sendVerificationEmail: async ({ url }: { url: string }) => {
         mail.verification = url;
       },
@@ -183,8 +217,17 @@ function startAuth({ enabled = async () => true, session }: StartOptions = {}) {
         },
       }),
       emailOTP({
+        changeEmail: { enabled: true },
         sendVerificationOTP: async ({ otp }) => {
           mail.otp = otp;
+        },
+      }),
+      phoneNumber({
+        sendOTP: async ({ code }) => {
+          mail.sms = code;
+        },
+        sendPasswordResetOTP: async ({ code }) => {
+          mail.sms = code;
         },
       }),
       multiSession(),
@@ -271,6 +314,33 @@ function totp(uri: string): string {
 }
 
 const otherCode = (code: string): string => String((Number(code) + 1) % 1_000_000).padStart(6, "0");
+
+// A Google sign-in through the provider's callback, with the token endpoint
+// stubbed; the provider reports social@example.com, verified.
+async function googleSignIn(browser: Browser): Promise<Response> {
+  const realFetch = globalThis.fetch;
+  const tokenEndpoint = spyOn(globalThis, "fetch").mockImplementation(((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.startsWith("https://oauth2.googleapis.com/token")) {
+      return Promise.resolve(Response.json({ access_token: "access", expires_in: 3600, token_type: "Bearer" }));
+    }
+    return realFetch(input, init);
+  }) as typeof fetch);
+  try {
+    const started = await browser.post("/sign-in/social", { provider: "google", callbackURL: `${BASE_URL}/` });
+    const state = new URL(((await started.json()) as { url: string }).url).searchParams.get("state") ?? "";
+    return await browser.get(`/callback/google?code=code&state=${encodeURIComponent(state)}`);
+  } finally {
+    tokenEndpoint.mockRestore();
+  }
+}
+
+async function makeAdmin(db: Record<string, Record<string, unknown>[]>, browser: Browser): Promise<string> {
+  const id = await userId(browser);
+  const row = db.user?.find((user) => user.id === id);
+  if (row) row.role = "admin";
+  return id;
+}
 
 describe("audit plugin", () => {
   test("records a password sign-in once and a wrong password not at all", async () => {
@@ -580,6 +650,214 @@ describe("audit plugin", () => {
     await signUp(auth, "off@example.com");
     expect((await new Browser(auth).post("/sign-in/email", { email: "off@example.com", password: PASSWORD })).status).toBe(200);
     expect(entries).toEqual([]);
+  });
+});
+
+describe("audit plugin accounts and sessions", () => {
+  test("records an email sign-up once, and not a duplicate answered as if it succeeded", async () => {
+    const { auth } = startAuth({ signupApproval: true });
+    const first = await new Browser(auth).post("/sign-up/email", { email: "pending@example.com", password: PASSWORD, name: "P" });
+    expect(first.status).toBe(200);
+    const id = (await first.json()) as { user: { id: string } };
+    // With auto sign-in off, Better Auth answers a taken address with the same 200.
+    const again = await new Browser(auth).post("/sign-up/email", { email: "pending@example.com", password: PASSWORD, name: "P" });
+    expect(again.status).toBe(200);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        action: "auth.signup",
+        actorEmail: "pending@example.com",
+        targetId: id.user.id,
+        targetLabel: "pending@example.com",
+        metadata: { method: "password" },
+      }),
+    ]);
+  });
+
+  test("records a social sign-up that waits for approval, without a sign-in", async () => {
+    const { auth, db } = startAuth({ signupApproval: true });
+    // The approval hook refuses the session, so the callback fails after the
+    // account is stored.
+    expect((await googleSignIn(new Browser(auth))).status).toBe(403);
+    expect(db.session).toEqual([]);
+    expect(db.user).toHaveLength(1);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        action: "auth.signup",
+        actorEmail: "social@example.com",
+        targetId: db.user?.[0]?.id,
+        metadata: { method: "social", provider: "google" },
+      }),
+    ]);
+  });
+
+  test("records an approved social sign-up and its sign-in, and a later sign-in alone", async () => {
+    const { auth } = startAuth();
+    expect((await googleSignIn(new Browser(auth))).status).toBe(302);
+    expect(entries.map((entry) => [entry.action, entry.metadata])).toEqual([
+      ["auth.signup", { method: "social", provider: "google" }],
+      ["auth.login", { method: "social", provider: "google" }],
+    ]);
+    expect((await googleSignIn(new Browser(auth))).status).toBe(302);
+    expect(entries.map((entry) => entry.action)).toEqual(["auth.signup", "auth.login", "auth.login"]);
+  });
+
+  test("records the account a magic link or an email code creates as a sign-up", async () => {
+    const { auth, mail } = startAuth();
+    const linked = new Browser(auth);
+    await linked.post("/sign-in/magic-link", { email: "new-magic@example.com", callbackURL: `${BASE_URL}/` });
+    expect((await linked.get(mail.magicLink)).status).toBe(302);
+    const coded = new Browser(auth);
+    await coded.post("/email-otp/send-verification-otp", { email: "new-code@example.com", type: "sign-in" });
+    expect((await coded.post("/sign-in/email-otp", { email: "new-code@example.com", otp: mail.otp })).status).toBe(200);
+    expect(entries.map((entry) => [entry.action, entry.actorEmail, entry.metadata])).toEqual([
+      ["auth.signup", "new-magic@example.com", { method: "magic-link" }],
+      ["auth.login", "new-magic@example.com", { method: "magic-link" }],
+      ["auth.signup", "new-code@example.com", { method: "email-otp" }],
+      ["auth.login", "new-code@example.com", { method: "email-otp" }],
+    ]);
+  });
+
+  test("records an administrator's new user as user.create only, with its id", async () => {
+    const { auth, db } = startAuth({ signupApproval: true });
+    await new Browser(auth).post("/sign-up/email", { email: "creator@example.com", password: PASSWORD, name: "C" });
+    const creator = db.user?.[0];
+    if (creator) Object.assign(creator, { role: "admin", signupApproved: true });
+    const operator = new Browser(auth);
+    expect((await operator.post("/sign-in/email", { email: "creator@example.com", password: PASSWORD })).status).toBe(200);
+    entries = [];
+
+    const created = await operator.post("/admin/create-user", { email: "made@example.com", password: PASSWORD, name: "M" });
+    expect(created.status).toBe(200);
+    const { user } = (await created.json()) as { user: { id: string } };
+    expect(entries).toEqual([
+      expect.objectContaining({ action: "user.create", actorEmail: "creator@example.com", targetId: user.id, targetLabel: "made@example.com" }),
+    ]);
+  });
+
+  test("records an account created outside a request without an actor", async () => {
+    const { auth } = startAuth();
+    const context = await auth.$context;
+    const user = await context.internalAdapter.createUser(
+      { email: "seeded@example.com", name: "Seeded", emailVerified: true },
+      { method: "seed" },
+    );
+    expect(entries).toEqual([
+      { action: "auth.signup", targetId: user.id, targetLabel: "seeded@example.com", ip: null },
+    ]);
+  });
+
+  test("names the user who signs out, and records nothing for a sign-out without a session", async () => {
+    const { auth } = startAuth();
+    const owner = await signUp(auth, "leaving@example.com");
+    const id = await userId(owner);
+    entries = [];
+    expect((await new Browser(auth).post("/sign-out", {})).status).toBe(200);
+    const forged = new Browser(auth, { cookie: "better-auth.session_token=forged.signature" });
+    expect((await forged.post("/sign-out", {})).status).toBe(200);
+    expect(entries).toEqual([]);
+
+    expect((await owner.post("/sign-out", {})).status).toBe(200);
+    expect(entries).toEqual([
+      expect.objectContaining({ action: "auth.logout", actorId: id, actorEmail: "leaving@example.com", targetId: id }),
+    ]);
+    // The session is gone, so signing out again ends nothing.
+    expect((await owner.post("/sign-out", {})).status).toBe(200);
+    expect(actions("auth.logout")).toHaveLength(1);
+  });
+
+  test("records a sign-out of every account a browser holds", async () => {
+    const { auth } = startAuth();
+    await signUp(auth, "first@example.com");
+    await signUp(auth, "second@example.com");
+    const browser = new Browser(auth);
+    await browser.post("/sign-in/email", { email: "first@example.com", password: PASSWORD });
+    await browser.post("/sign-in/email", { email: "second@example.com", password: PASSWORD });
+    entries = [];
+    expect((await browser.post("/sign-out", {})).status).toBe(200);
+    expect(actions("auth.logout").map((entry) => entry.actorEmail).sort()).toEqual(["first@example.com", "second@example.com"]);
+  });
+
+  test("names the owner of a session an administrator revokes, and the administrator who stops impersonating", async () => {
+    const { auth, db } = startAuth();
+    const operator = await signUp(auth, "revoker@example.com");
+    await makeAdmin(db, operator);
+    const target = await signUp(auth, "revoked@example.com");
+    const targetId = await userId(target);
+    const { session } = (await (await target.get("/get-session")).json()) as { session: { token: string } };
+    entries = [];
+
+    expect((await operator.post("/admin/revoke-user-session", { sessionToken: session.token })).status).toBe(200);
+    expect(actions("user.session_revoke")).toEqual([
+      expect.objectContaining({ actorEmail: "revoker@example.com", targetId, targetLabel: "revoked@example.com" }),
+    ]);
+
+    expect((await operator.post("/admin/impersonate-user", { userId: targetId })).status).toBe(200);
+    expect((await operator.post("/admin/stop-impersonating", {})).status).toBe(200);
+    expect(actions("user.stop_impersonate")).toEqual([
+      expect.objectContaining({ actorEmail: "revoker@example.com", targetId, targetLabel: "revoked@example.com" }),
+    ]);
+    // Ending the impersonation session is not a sign-out.
+    expect(actions("auth.logout")).toEqual([]);
+  });
+
+  test("names the user a password reset link, email code, or text message code resets", async () => {
+    const { auth, mail, db } = startAuth();
+    await signUp(auth, "reset@example.com");
+    const id = db.user?.[0]?.id;
+    entries = [];
+
+    const anonymous = new Browser(auth);
+    await anonymous.post("/request-password-reset", { email: "reset@example.com" });
+    const wrong = await anonymous.post("/reset-password", { token: "forged", newPassword: "N3w-Str0ng!password" });
+    expect(wrong.status).toBe(400);
+    expect((await anonymous.post("/reset-password", { token: mail.reset, newPassword: "N3w-Str0ng!password" })).status).toBe(200);
+
+    await anonymous.post("/email-otp/request-password-reset", { email: "reset@example.com" });
+    const coded = await anonymous.post("/email-otp/reset-password", { email: "reset@example.com", otp: mail.otp, password: PASSWORD });
+    expect(coded.status).toBe(200);
+
+    const row = db.user?.[0];
+    if (row) Object.assign(row, { phoneNumber: "+15550100", phoneNumberVerified: true });
+    await anonymous.post("/phone-number/request-password-reset", { phoneNumber: "+15550100" });
+    const texted = await anonymous.post("/phone-number/reset-password", {
+      phoneNumber: "+15550100",
+      otp: mail.sms,
+      newPassword: "Th1rd-Str0ng!password",
+    });
+    expect(texted.status).toBe(200);
+
+    expect(actions("auth.password_reset")).toEqual([
+      expect.objectContaining({ actorId: id, actorEmail: "reset@example.com", targetId: id, targetLabel: "reset@example.com" }),
+      expect.objectContaining({ actorId: id, actorEmail: "reset@example.com", targetId: id, targetLabel: "reset@example.com" }),
+      expect.objectContaining({ actorId: id, actorEmail: "reset@example.com", targetId: id, targetLabel: "reset@example.com" }),
+    ]);
+  });
+
+  test("names the user an email verification link or code verifies", async () => {
+    const { auth, mail } = startAuth({ verificationSignIn: false });
+    const owner = await signUp(auth, "verify-me@example.com");
+    const id = await userId(owner);
+    await owner.post("/send-verification-email", { email: "verify-me@example.com", callbackURL: `${BASE_URL}/` });
+    expect((await new Browser(auth).get(mail.verification)).status).toBe(302);
+
+    const coded = await signUp(auth, "verify-code@example.com");
+    const codedId = await userId(coded);
+    const anonymous = new Browser(auth);
+    await anonymous.post("/email-otp/send-verification-otp", { email: "verify-code@example.com", type: "email-verification" });
+    expect((await anonymous.post("/email-otp/verify-email", { email: "verify-code@example.com", otp: mail.otp })).status).toBe(200);
+
+    expect(actions("auth.email_verified")).toEqual([
+      expect.objectContaining({ actorId: id, actorEmail: "verify-me@example.com", targetId: id, targetLabel: "verify-me@example.com" }),
+      expect.objectContaining({ actorId: codedId, targetId: codedId, targetLabel: "verify-code@example.com" }),
+    ]);
+  });
+
+  test("records an email change by code", async () => {
+    const { auth, mail } = startAuth();
+    const owner = await signUp(auth, "old-address@example.com");
+    expect((await owner.post("/email-otp/request-email-change", { newEmail: "new-address@example.com" })).status).toBe(200);
+    expect((await owner.post("/email-otp/change-email", { newEmail: "new-address@example.com", otp: mail.otp })).status).toBe(200);
+    expect(actions("auth.email_change")).toEqual([expect.objectContaining({ actorEmail: "old-address@example.com" })]);
   });
 });
 

@@ -98,7 +98,7 @@ bun run --cwd apps/api auth:configure -- --smtp
 2. Open `/login` and confirm the provider button appears.
 3. With sign-up approval enabled, register a disposable account and confirm it reaches `/pending-approval` without a session.
 4. Open `/admin/users`, filter by **Pending approval**, approve the account, and confirm sign-in succeeds.
-5. Confirm administrator-created users and emails in `ADMIN_EMAILS` do not enter the approval queue.
+5. Confirm administrator-created users and administrators made from `ADMIN_EMAILS` do not enter the approval queue, and that an email and password sign-up with an `ADMIN_EMAILS` address is refused.
 6. Send a real verification or password-reset email and inspect SPF, DKIM, and DMARC results in the receiving mailbox.
 
 ## Preserve provider independence

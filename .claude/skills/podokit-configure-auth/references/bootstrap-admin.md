@@ -9,8 +9,15 @@ Do not create the first administrator through the public sign-up page.
 
 Set `ADMIN_EMAILS` in the same deployment environment used by the API. Include
 the exact lowercase-normalized address selected for the initial administrator.
-Keep this value after bootstrap so future matching sign-ups retain the same role
-policy.
+Use the administrators' real addresses: with `NODE_ENV=production` the API
+refuses to start when an entry is not an address or is on a reserved
+documentation name such as `example.com`, and `podo deploy doctor` fails on it.
+
+Keep this value after bootstrap. A later account with a listed address becomes
+an administrator only when its address is proven as the account is created: by
+`admin:bootstrap`, an administrator, a social provider that reports the email
+verified, a magic link, or an email code. An email and password sign-up with a
+listed address is refused, so nobody can claim it before its owner.
 
 ## Inject credentials for one command
 

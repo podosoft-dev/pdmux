@@ -12,6 +12,7 @@ type Entry = {
   id: string;
   action: string;
   actorEmail: string | null;
+  targetId: string | null;
   targetLabel: string | null;
   metadata: Record<string, unknown> | null;
   createdAt: string;
@@ -58,6 +59,31 @@ test("audit log records auth/admin actions", async ({ playwright, disposableUser
 
   await admin.post("/api/auth/admin/remove-user", { data: { userId } });
   disposableUsers.forget(userId);
+  await admin.dispose();
+});
+
+test("a sign-up and a sign-out are audited with the user", async ({ playwright, disposableUsers }) => {
+  const admin = await signedIn(playwright, ADMIN);
+  test.skip((await admin.get("/api/audit-logs")).status() === 404, "audit-log module not installed");
+  const email = `audit-signup-${Date.now()}@example.com`;
+  const visitor = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const signup = await visitor.post("/api/auth/sign-up/email", { data: { email, password: PASSWORD, name: "Signup" } });
+  test.skip(signup.status() === 403, "public sign-up is closed");
+  const userId = await disposableUsers.trackResponse(signup);
+  const entries = async (action: string): Promise<Entry[]> =>
+    (await (await admin.get(auditQuery({ action, target: email }))).json()) as Entry[];
+
+  expect(await entries("auth.signup")).toEqual([
+    expect.objectContaining({ actorEmail: email, targetId: userId, metadata: { method: "password" } }),
+  ]);
+  if (!(await visitor.get("/api/auth/get-session").then((response) => response.json()))?.session) {
+    expect((await visitor.post("/api/auth/sign-in/email", { data: { email, password: PASSWORD } })).ok()).toBeTruthy();
+  }
+  expect((await visitor.post("/api/auth/sign-out", { data: {} })).ok()).toBeTruthy();
+  expect(await entries("auth.logout"), "the sign-out names the user whose session ended").toEqual([
+    expect.objectContaining({ actorEmail: email, targetId: userId }),
+  ]);
+  await visitor.dispose();
   await admin.dispose();
 });
 

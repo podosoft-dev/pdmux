@@ -41,7 +41,7 @@ Review these fields before planning:
 - `runtimeConfig`: non-sensitive environment values only
 - `verification`: HTTPS origin and checks with exact statuses and optional JSON fields
 
-The cluster namespace and referenced Secrets must already exist. PodoKit asks `kubectl` to output only Secret key names and never prints or stores their values; the Kubernetes client still materializes the Secret while evaluating that output.
+The cluster namespace and referenced Secrets must already exist. PodoKit asks `kubectl` to output only Secret key names and never prints or stores their values; the Kubernetes client still materializes the Secret while evaluating that output. The one exception is `ADMIN_EMAILS` of the API Secret, an allowlist of addresses rather than a credential: with the `auth` module installed, the doctor reads it and fails on a placeholder such as `admin@example.com`.
 
 Required keys:
 
@@ -94,7 +94,8 @@ The fields that differ from the Kubernetes driver:
 
 Credentials live in env files **on the target host**, never in the profile and never
 in the rendered Compose project. The doctor reads only the key names, in a throwaway
-container that mounts the file read-only. Create those files with the host's own
+container that mounts the file read-only, plus the `ADMIN_EMAILS` line of the API env
+file when the `auth` module is installed, to fail on a placeholder such as `admin@example.com`. Create those files with the host's own
 secret tooling before deploying; PodoKit does not write them.
 
 Required keys:

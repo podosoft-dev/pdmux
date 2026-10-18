@@ -13,7 +13,20 @@ which the Better Auth plugin in `audit-hook.ts` maps to semantic action codes li
 matters.
 
 The plugin records an action only when the request succeeded, so a wrong
-password or a forbidden admin call leaves no entry. Every sign-in method records
+password or a forbidden admin call leaves no entry. The exception is a new
+account: `auth.signup` is recorded when Better Auth stores the user, whichever
+endpoint creates it (email sign-up, a social provider's callback, a magic link,
+an email code, or a plugin the app adds), and even when the request then fails,
+as a social sign-up that waits for approval does when it is refused a session.
+Its `metadata.method` names the endpoint the way `auth.login` does, with the
+provider for a social sign-up, for example
+`{ "method": "social", "provider": "google" }`. A user an administrator creates
+is recorded as `user.create` only. Entries name the user even when the request
+carries no session: `auth.logout` names each account whose session the sign-out
+ended (a sign-out without a session records nothing), a password reset by link
+or code and an email verification name the account they changed,
+`user.session_revoke` names the owner of the revoked session, and
+`user.stop_impersonate` names the administrator. Every sign-in method records
 `auth.login` with the method in `metadata.method` (`password`, `email-otp`,
 `magic-link`, `passkey`, `two-factor-totp`, ...) and, for social sign-in, the
 provider in `metadata.provider`. A sign-in through an endpoint of a plugin the

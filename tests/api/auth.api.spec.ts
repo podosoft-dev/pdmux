@@ -470,6 +470,30 @@ test("ADMIN_EMAILS account has the admin role @smoke", async ({ playwright }) =>
   await ctx.dispose();
 });
 
+// An ADMIN_EMAILS address with no account yet, such as a placeholder that was
+// never replaced: a sign-up with it must not create an account, let alone an
+// approved administrator.
+test("a sign-up cannot claim an ADMIN_EMAILS address", async ({ playwright }) => {
+  const email = process.env.E2E_UNCLAIMED_ADMIN_EMAIL;
+  test.skip(!email, "set E2E_UNCLAIMED_ADMIN_EMAIL to an ADMIN_EMAILS address that has no account");
+  const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const password = "Podokit3e-Str0ng!pw";
+  const signUp = await ctx.post("/api/auth/sign-up/email", { data: { email, password, name: "Claim" } });
+  // Refused, or answered like any sign-up while approval or email verification
+  // hides whether an address can register.
+  expect([200, 403], await signUp.text()).toContain(signUp.status());
+  expect((await ctx.post("/api/auth/sign-in/email", { data: { email, password } })).ok()).toBe(false);
+  expect((await (await ctx.get("/api/auth/get-session")).json())?.user ?? null).toBeNull();
+  await ctx.dispose();
+
+  const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
+  const found = await admin.get(`/api/auth/admin/list-users?searchField=email&searchOperator=contains&searchValue=${encodeURIComponent(email ?? "")}`);
+  expect(found.ok()).toBeTruthy();
+  expect(((await found.json()) as { users: unknown[] }).users).toEqual([]);
+  await admin.dispose();
+});
+
 test("admin can list users, a normal user cannot (403)", async ({ playwright }) => {
   const adminCtx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   await adminCtx.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
