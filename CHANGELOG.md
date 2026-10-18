@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.17.2
+
+- Desktop builds omit the web administration and enrolment screens. The account menu keeps local
+  preferences, backups and optional server connection controls, while web administration is unchanged.
+- Start the bundled local agent on first launch and open a default terminal in pane #1 without
+  signing in. Agent 0.1.28 adds native Windows PowerShell terminals through ConPTY alongside macOS
+  and Linux support, and initializes Windows terminals as UTF-8.
+- Keep API, web, migration, agent and backup subprocesses hidden on Windows, including automatic
+  recovery after a child process exits, so background services do not open command windows.
+- Put a Dashboard button in the sidebar toolbar on every product page and remove duplicate
+  breadcrumbs. Desktop common host settings have separate Local and Server tabs; server settings
+  become available after connection and update only the selected server workspace.
+
 - Saving a layout or editing hosts no longer waits behind other users' writes. Desktop sync and the
   writes it compares against were one queue for the whole server; they now wait only for the same
   workspace's host writes and the same user's preference writes. A theme or language change on the

@@ -11,8 +11,8 @@ that keep those promises.
 
 | Line | Source of truth | Today | When it moves |
 |---|---|---|---|
-| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.17.1` | every product release |
-| **The agent** | `AgentVersion` in `agent/internal/cli/version.go` | `0.1.27` | agent/protocol code or distribution signing changes |
+| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.17.2` | every product release |
+| **The agent** | `AgentVersion` in `agent/internal/cli/version.go` | `0.1.28` | agent/protocol code or distribution signing changes |
 
 **Why they are not one number**: the agent is not something we deploy — it is something a
 **host downloads**. A host compares its own version against what the server publishes and
@@ -86,7 +86,7 @@ The number in the column is `hello.agentVersion`; the badge beside it is a **ver
 | `unknown` | the version string could not be read, **or nothing is published for that platform** |
 | `incompatible` | protocol version mismatch, or below `MIN_SUPPORTED_AGENT` |
 
-The comparison is **per host (os, arch)**. One release, four binaries — so whether a Linux
+The comparison is **per host (os, arch)**. One release, five binaries — so whether a Linux
 host is current has to be decided against the Linux build.
 
 `unknown` folding two situations into one is deliberate: both mean "we cannot call this
@@ -119,7 +119,7 @@ the same dishonesty pointing the other way.
 
 ### 5-2. `agent-binaries` — does it really report the version it promised?
 
-Builds all four with `bun run build:agent`, then:
+Builds all five with `bun run build:agent`, then:
 
 1. Fails if the built **linux/amd64 binary's `--version`** differs from `version` in
    `manifest.json`.
@@ -143,7 +143,7 @@ different binary, and the update path compares sha256.
 
 ## 6. Reproducible builds
 
-`tools/build-agent-binaries.mjs` builds all four targets with `CGO_ENABLED=0`,
+`tools/build-agent-binaries.mjs` builds all five targets with `CGO_ENABLED=0`,
 `-trimpath` and `-buildvcs=false`.
 
 - `-trimpath` — the build machine's absolute paths would otherwise land in the binary and
@@ -153,7 +153,7 @@ different binary, and the update path compares sha256.
   every host re-downloads the same bytes.
 - `.gitattributes` keeps text build inputs at LF on every host, including Windows checkouts
   with `core.autocrlf=true`. Go embeds the protocol schema's exact bytes; CRLF conversion
-  changes all four agents and breaks their published checksums. The release workflow tests
+  changes all five agents and breaks their published checksums. The release workflow tests
   exercise a real Git checkout under that configuration and also preserve binary assets.
   Use a fresh checkout when validating an older Windows clone that already contains CRLF
   source files; do not replace the committed checksums to accommodate changed inputs.
@@ -190,7 +190,7 @@ archive every installer embeds and the release attaches), by the `agent-binaries
 2. For a product release, update `version` in the root `package.json` and `CHANGELOG.md`.
    The two have **no reason to move together** — if only the web changed, leave the agent
    alone.
-3. `bun run build:agent` — four binaries plus `SHA256SUMS` and `manifest.json` under
+3. `bun run build:agent` — five binaries plus `SHA256SUMS` and `manifest.json` under
    `apps/web/static/agent/<version>/`.
 4. Deploy. The moment the web image serves that directory, `/install.sh` bakes the new
    version's checksums into what it hands out and the card's `outdated` badge lights up.
@@ -204,26 +204,26 @@ name a `version` to pick one of them. A deleted version can no longer be named �
 means the target of a deliberate downgrade (`force`) is gone. What `install.sh` bakes is
 always the checksums of **the single newest version**.
 
-### 7-1. ⚠ A container deployment serves exactly one version — all four platforms of it
+### 7-1. ⚠ A container deployment serves exactly one version — all five platforms of it
 
 The paragraph above describes a **checkout**, where every released version accumulates
 under `apps/web/static/agent/`. A deployed image does not work that way, and the
 difference decides what a running server can be asked for.
 
 `.dockerignore` excludes `apps/web/static/agent` on purpose — a local `bun run build:agent`
-leaves ~30 MB there and shipping the developer's copy would only bloat the build context.
+leaves ~40 MB there and shipping the developer's copy would only bloat the build context.
 Each image instead builds its own in an `agent` stage. So an image contains the **one
 version that commit declares** in `agent/internal/cli/version.go`, and nothing else:
 
 | | in a checkout | in a deployed image |
 |---|---|---|
 | versions present | every released one (`0.1.0` … current) | **the current one only** |
-| platforms per version | linux/darwin × amd64/arm64 — **all four** | **all four**, unchanged |
-| what the web image carries | — | the four binaries, `SHA256SUMS`, `manifest.json` (~31 MB) |
+| platforms per version | linux/darwin × amd64/arm64 and windows/amd64 — **all five** | **all five**, unchanged |
+| what the web image carries | — | the five binaries, `SHA256SUMS`, `manifest.json` (~40 MB) |
 | what the api image carries | — | `manifest.json` only; the binaries are deleted after the build |
 
 **Platforms are not the axis that narrows.** A host installing or updating gets its own
-`GOOS/GOARCH` from the same four artifacts regardless of the server's architecture — the
+`GOOS/GOARCH` from the same five artifacts regardless of the server's architecture — the
 agent is cross-compiled and the release job verifies that the amd64 and arm64 images carry
 byte-identical binaries. Only the **version** axis collapses to one.
 
