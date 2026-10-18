@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.4
+
 - Update the PodoKit foundation to 1.6.4. `ADMIN_EMAILS` makes an account an administrator only when the
   address is proven: `admin:bootstrap`, an administrator creating the account, or a sign-in that verifies
   the email. An email and password sign-up with such an address is refused, and a production API refuses
