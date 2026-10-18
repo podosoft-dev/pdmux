@@ -71,6 +71,23 @@ tests not run, and selecting an exclusive test runs every other test first. Use
 Application-owned projects in `playwright.projects.cjs` get twins too. A project
 that another project depends on is a setup project and keeps a single copy.
 
+## Email tests
+
+The email specs that the `admin-dashboard` module adds read messages from the
+Mailpit at `MAILPIT_URL` (default `http://localhost:8025`). Before the first one,
+each worker has the app send a password reset email to a throwaway account and
+waits up to five seconds for it there. When it does not arrive, because the app
+has no SMTP or sends to a catcher other than the one on that port, the email
+tests skip with that cause. Set `MAILPIT_URL` to the Mailpit that receives the
+app's mail to run them, and `E2E_REQUIRE_MAIL=true` to make a missing probe
+message fail them instead of skipping.
+
+The `podo dev` stack runs no Mailpit, so its email tests skip, also when another
+project's Mailpit answers on port 8025: the probe email never reaches it.
+Measured on 2026-10-18 with PodoKit 1.6.3: with another project's Mailpit on
+port 8025 and no `MAILPIT_URL`, a whole two-worker run skipped all seven email
+tests with "does not receive this app's mail" and failed none of them.
+
 ## pdmux accounts, one per worker
 
 The pdmux specs that drive the fleet import `test` and `expect` from
@@ -177,11 +194,11 @@ to `RATE_LIMIT_TTL=5`, `RATE_LIMIT_MAX=2000`, and `RATE_LIMIT_AUTH_MAX=2000`.
 
 `api/rate-limit.api.spec.ts` reads each budget's limit from the API's
 `RateLimit-Limit` header, so the whole run needs no `E2E_SKIP_RATE_LIMIT` against
-raised limits. Two of its four tests skip there: the 429 test, because a
-five-second window ends before one client sends 2000 requests, and the
-session-read test, because the authentication budget (2000) is not below the
-runtime one (1000). To run those two, run the spec on its own against the example
-limits:
+raised limits. Two of its four tests skip there, each with its reason: the 429
+test times its first 50 requests and skips when the rest of the 2000 would take
+more than half of the time the test has left, and the session-read test skips
+because the authentication budget (2000) is not below the runtime one (1000). To
+run those two, run the spec on its own against the example limits:
 
 1. Put the example values in `.env.docker` (delete the `RATE_LIMIT_AUTH_MAX`
    line) and restart the stack with `podo dev down`, then `podo dev watch`. The
@@ -196,8 +213,10 @@ limits:
 
 3. Put the raised values back and restart the stack again.
 
-Measured on 2026-10-18 with PodoKit 1.6.2: two whole two-worker runs against the
+Measured on 2026-10-18 with PodoKit 1.6.3: a whole two-worker run against the
 raised limits, without `E2E_SKIP_RATE_LIMIT`, passed two of the rate-limit tests
-and skipped the other two for the reasons above. The file alone against the
-example limits, with no limits in the runner's environment, passed all four in
-4.2 s.
+and skipped the other two for the reasons above; the 429 test skipped with
+"1951 more requests at 156 per second take about 12.5 s, more than half of the
+24.5 s this test has left". The file alone against the example limits, with no
+limits in the runner's environment, passed all four in 4.2 s, the 429 test in
+1.2 s.
