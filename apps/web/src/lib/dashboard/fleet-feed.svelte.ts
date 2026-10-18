@@ -42,7 +42,8 @@ export class FleetFeed {
   private hostTimer: ReturnType<typeof setInterval> | null = null;
   private historyTimer: ReturnType<typeof setInterval> | null = null;
   private historyBusy = false;
-  private refreshPending: Promise<void> | null = null;
+  private reading: Promise<void> | null = null;
+  private rereading: Promise<void> | null = null;
   private readonly events = new FleetEvents(() => this.refresh(), () => this.reload());
 
   constructor(options: FleetFeedOptions = {}) {
@@ -74,10 +75,32 @@ export class FleetFeed {
     await this.refreshHistory();
   }
 
+  /**
+   * Reads the hosts with a request that leaves AFTER this call.
+   *
+   * ⚠ NOT "join the read already on the wire". A poll or an SSE invalidation is often
+   * mid-read, and that read may have left before the caller's own write landed. Joined,
+   * it answered `removeHost` with the deleted host still in the fleet: nothing was pruned
+   * and the saved layout kept a pane on a host that no longer exists. So a call during a
+   * read waits for it and reads once more; every call made meanwhile shares that one
+   * follow-up, which keeps the reads one at a time.
+   */
   refresh(): Promise<void> {
-    if (this.refreshPending) return this.refreshPending;
-    this.refreshPending = this.fetchHosts().finally(() => { this.refreshPending = null; });
-    return this.refreshPending;
+    if (this.rereading) return this.rereading;
+    if (!this.reading) return this.read();
+    this.rereading = this.reading.then(() => {
+      this.rereading = null;
+      return this.read();
+    });
+    return this.rereading;
+  }
+
+  private read(): Promise<void> {
+    const reading = this.fetchHosts().finally(() => {
+      if (this.reading === reading) this.reading = null;
+    });
+    this.reading = reading;
+    return reading;
   }
 
   private async fetchHosts(): Promise<void> {
