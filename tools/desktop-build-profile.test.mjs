@@ -21,6 +21,7 @@ it("[TC-PDDESKTOP-015] builds local auth without administration, organizations o
     expect(inputs.filter(path => pattern.test(path))).toEqual([]);
   }
   expect(inputs.some(path => path.endsWith("desktop/profile/auth.ts"))).toBe(true);
+  expect(inputs.some(path => path.endsWith("desktop/profile/session-guard.ts"))).toBe(true);
 });
 it("[TC-PDDESKTOP-015] excludes server pages while retaining product screens and the original web routes", async () => {
   for (const path of ["(admin)/admin/users", "(auth)/login", "(auth)/signup", "(app)/dashboard", "oauth2/consent", "setup-2fa", "(shell)/account", "desktop/connect"]) expect(desktopRouteExcluded(path)).toBe(true);

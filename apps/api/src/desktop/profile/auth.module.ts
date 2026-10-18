@@ -1,3 +1,4 @@
+import { requireDesktopSession } from "./session-guard";
 import { Elysia } from "elysia";
 import { ACCESS_POLICY, DATABASE, REQUEST_GUARDS, REQUEST_IDENTITY, RESOLVED_SESSIONS, type PodokitModule, type ServiceKey } from "../../core/services";
 import { AuthService, createRequestIdentity } from "../../auth/auth.service";
@@ -25,7 +26,7 @@ export const authModule: PodokitModule = {
     services.override(REQUEST_IDENTITY, createRequestIdentity(auth));
     policy.register("*", "/api/auth/*", "public");
     policy.register("GET", "/account/capabilities", "public");
-    services.resolve(REQUEST_GUARDS).register(({ request }) => auth.guard(request));
+    services.resolve(REQUEST_GUARDS).register(({ request }) => requireDesktopSession(auth, policy, request));
   },
   plugin: ({ services }) => new Elysia({ name: "desktop.auth" })
     .all("/api/auth/*", ({ request }) => {
