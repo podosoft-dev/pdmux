@@ -14,6 +14,17 @@ try {
  page = await application.firstWindow({timeout:120_000});
  await page.locator('[data-testid="shell-user"]').waitFor({timeout:60_000});
  await verifyDesktopFirstRun(page,process.argv[2] ?? "/tmp/pdmux-desktop-first-run.png");
+ // Hold client modules while SSR is already visible: interacting before hydration
+ // used to lose the menu click on slower fresh and restarted CI installations.
+ let releaseModules;
+ const modules = new Promise(resolve => { releaseModules = resolve; });
+ await page.route("**/_app/immutable/**/*.js", async route => { await modules; await route.continue(); });
+ await page.goto(page.url(), { waitUntil:"commit" });
+ await page.locator('[data-testid="shell-user"]').waitFor();
+ const delayed = verifyDesktopFirstRun(page,"/tmp/pdmux-desktop-hydration-menu.png",{fresh:false});
+ setTimeout(releaseModules,300);
+ await delayed;
+ await page.unroute("**/_app/immutable/**/*.js");
  await page.locator('[data-testid="shell-user"]').click();
  await page.locator('[data-testid="shell-server-connection"]').click();
  await page.waitForURL("**/connection");

@@ -6,10 +6,11 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
   const status = await page.evaluate(() => window.pdmuxDesktop.localAgent.status());
   assert.equal(status.phase,"ready","[TC-PDDESKTOP-017] embedded local agent is ready");
   let output = "";
+  let terminalReady = false;
   page.on("websocket", socket => {
     if (!socket.url().includes("/terminal/ws")) return;
     socket.on("framereceived", ({ payload }) => {
-      try { const frame = JSON.parse(String(payload)); if (frame.type === "output") output += frame.data; } catch { /* Other transport frames are irrelevant. */ }
+      try { const frame = JSON.parse(String(payload)); if (frame.type === "output") output += frame.data; if (frame.type === "ready" && frame.termId === "slot-1") terminalReady = true; } catch { /* Other transport frames are irrelevant. */ }
     });
   });
   if (fresh) {
@@ -18,6 +19,9 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
     await pane.waitFor({ timeout:30_000 });
     const area = pane.locator("textarea.xterm-helper-textarea");
     await area.waitFor({ state:"attached", timeout:30_000 });
+    const readyDeadline = Date.now()+15_000;
+    while (!terminalReady && Date.now()<readyDeadline) await new Promise(resolve => setTimeout(resolve,50));
+    assert.ok(terminalReady, "Wait for the terminal ready frame before typing");
     await area.focus();
     const platform = await page.evaluate(() => window.pdmuxDesktop.platform);
     await page.keyboard.type(platform === "win32" ? "Write-Output ('PDMUX_DESKTOP_' + 'READY')" : "printf 'PDMUX_DESKTOP_%s\\n' READY");
@@ -28,6 +32,8 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
     const bounds = await pane.boundingBox();
     assert.ok(bounds.width>200 && bounds.height>150,"Require a usable terminal surface");
   }
+  // SSR markup can be visible before Svelte has attached the menu handlers.
+  await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
   await page.locator('[data-testid="shell-user"]').click();
   const menu = page.locator('[data-testid="shell-user-menu"]');
   await menu.waitFor();
