@@ -12,26 +12,27 @@ const proxyBlocks = (caddyfile: string): Map<string, string> =>
     .map(([, upstream = "", body = ""]) => [upstream, body.trim()]));
 
 describe("WebSocket gateway routing", () => {
-  it("registers both exact socket paths with the shared development gateway", () => {
+  it("registers all exact socket paths with the shared development gateway", () => {
     const config = JSON.parse(read(".podokit/dev.json")) as {
       webSocketPaths: string[];
     };
-    expect(config.webSocketPaths).toEqual(["/agent/ws", "/terminal/ws"]);
+    expect(config.webSocketPaths).toEqual(["/agent/ws", "/terminal/ws", "/desktop/bridge/ws"]);
   });
 
-  it("routes both public socket paths through Vite during development", () => {
+  it("routes all public socket paths through Vite during development", () => {
     // The managed vite.config.ts proxies exactly the paths .podokit/dev.json lists.
     const proxy = webSocketProxy(read(".podokit/dev.json"), "http://api:5002");
     expect(Object.keys(proxy).map((key) => new RegExp(key)).map((path) => [
       path.test("/agent/ws"),
       path.test("/terminal/ws"),
-    ])).toEqual([[true, false], [false, true]]);
+      path.test("/desktop/bridge/ws"),
+    ])).toEqual([[true, false, false], [false, true, false], [false, false, true]]);
     expect(Object.values(proxy).every((rule) => rule.ws === true)).toBe(true);
   });
 
-  it("[TC-PDTERM-107] routes only the two exact socket paths to the API in self-hosted deployments", () => {
+  it("[TC-PDTERM-107] routes only the declared exact socket paths to the API in self-hosted deployments", () => {
     const caddy = read("infra/docker/Caddyfile");
-    expect(caddy).toContain("@websockets path /terminal/ws /agent/ws");
+    expect(caddy).toContain("@websockets path /terminal/ws /agent/ws /desktop/bridge/ws");
     expect(caddy).toMatch(/handle @websockets \{\s+reverse_proxy api:5002\b/);
     expect(caddy).toMatch(/handle \{\s+reverse_proxy web:3000\b/);
   });
@@ -55,7 +56,7 @@ describe("WebSocket gateway routing", () => {
 
   it("uses exact API routes ahead of the web fallback in k3s", () => {
     const ingress = read("infra/k3s/ingress.yaml");
-    for (const path of ["/terminal/ws", "/agent/ws"]) {
+    for (const path of ["/terminal/ws", "/agent/ws", "/desktop/bridge/ws"]) {
       expect(ingress).toContain(`- path: ${path}\n            pathType: Exact`);
     }
     expect(ingress.indexOf("- path: /terminal/ws")).toBeLessThan(ingress.indexOf("- path: /\n"));

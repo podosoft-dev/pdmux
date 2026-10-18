@@ -19,6 +19,7 @@ export interface RuntimeLayout {
 
 export interface RuntimeProcess {
   readonly exitCode: number | null;
+  readonly stdin?: { end(data: string): void } | null;
   kill(signal?: NodeJS.Signals): boolean;
   once(event: "exit", listener: (code: number | null) => void): this;
 }
@@ -26,7 +27,7 @@ export interface RuntimeProcess {
 export interface SpawnRuntimeOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
-  stdio: "inherit";
+  stdio: "inherit" | ["pipe", "inherit", "inherit"];
 }
 
 export type SpawnRuntime = (
@@ -115,6 +116,8 @@ export class StackManager {
   private stopping = false;
   private addresses?: StackAddresses;
   private gateway?: DesktopGateway;
+  private capability = "";
+  private localCookie = "";
 
   constructor(
     private readonly layout: RuntimeLayout,
@@ -153,6 +156,7 @@ export class StackManager {
       FILE_TRANSFER_DIR: join(this.layout.dataDirectory, "file-transfers"),
       BODY_SIZE_LIMIT: "3M",
       AGENT_RELEASE_DIR: this.layout.agentReleaseDirectory,
+      PDMUX_DESKTOP_AGENT_CACHE: join(this.layout.dataDirectory, "agent-cache"),
       BETTER_AUTH_SECRET: secret,
       BETTER_AUTH_URL: apiUrl,
       CORS_ORIGIN: webUrl,
@@ -167,11 +171,13 @@ export class StackManager {
     const migrationCode = await exited(migration);
     if (migrationCode !== 0) throw new Error(`Desktop database migration exited with code ${migrationCode}`);
 
+    this.capability = randomBytes(32).toString("base64url");
     const api = this.dependencies.spawn(
       this.layout.bunExecutable,
       [this.layout.apiEntry],
-      { cwd: dirname(this.layout.apiEntry), env: { ...common, PORT: String(apiPort) }, stdio: "inherit" },
+      { cwd: dirname(this.layout.apiEntry), env: { ...common, PORT: String(apiPort), PDMUX_DESKTOP_RUNTIME: "1" }, stdio: ["pipe", "inherit", "inherit"] },
     );
+    api.stdin?.end(JSON.stringify({ capability: this.capability }));
     const web = this.dependencies.spawn(
       this.layout.bunExecutable,
       [this.layout.webEntry],
@@ -206,6 +212,37 @@ export class StackManager {
     }
     this.addresses = { apiUrl, webUrl };
     return this.addresses;
+  }
+
+  async profiles(): Promise<Array<{ id: string; name: string; email: string }>> {
+    const response = await this.bootstrap("profiles", {});
+    return response.json() as Promise<Array<{ id: string; name: string; email: string }>>;
+  }
+
+  async localSession(profileId?: string): Promise<Response> {
+    const response = await this.bootstrap("session", profileId ? { profileId } : {});
+    this.localCookie = response.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
+    return response;
+  }
+
+  async control(action: "attach" | "connect" | "disconnect", data: { url?: string; cookie?: string } = {}): Promise<unknown> {
+    if (!this.addresses) throw new Error("Desktop runtime is not running");
+    const response = await fetch(`${this.addresses.apiUrl}/desktop/local/control`, {
+      method: "POST", headers: { "content-type": "application/json", "x-pdmux-desktop-capability": this.capability, cookie: this.localCookie },
+      body: JSON.stringify({ action, ...data }),
+    });
+    if (!response.ok) throw Object.assign(new Error(`Desktop connection failed (${response.status})`), { code: "DESKTOP_CONNECTION_FAILED" });
+    return response.json();
+  }
+
+  private async bootstrap(endpoint: string, body: object): Promise<Response> {
+    if (!this.addresses) throw new Error("Desktop runtime is not running");
+    const response = await fetch(`${this.addresses.apiUrl}/api/auth/desktop-local/${endpoint}`, {
+      method: "POST", headers: { "content-type": "application/json", "x-pdmux-desktop-capability": this.capability },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`Local profile bootstrap failed (${response.status})`);
+    return response;
   }
 
   async restart(): Promise<StackAddresses> {

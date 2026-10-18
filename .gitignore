@@ -46,3 +46,5 @@ apps/desktop/release-agent/
 # safe to publish through the deliberately minimal publish profile.
 .podokit/deploy/*.json
 !.podokit/deploy/publish.json
+
+/apps/api/dist-desktop/

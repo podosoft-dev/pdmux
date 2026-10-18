@@ -8,4 +8,6 @@
  * session and site settings, so it keeps its sign-in and maintenance checks.
  * PodoKit creates this file once and never overwrites it.
  */
-export const APP_ASSET_PATHS: readonly string[] = [];
+export const APP_ASSET_PATHS: readonly string[] = [
+  "/agent",
+];

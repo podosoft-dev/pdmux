@@ -1,6 +1,6 @@
 # Desktop application
 
-The desktop edition packages the existing pdmux API and web build inside a thin Electron lifecycle
+The desktop edition packages the existing PDMux API and web build inside a thin Electron lifecycle
 shell. It does not maintain a second frontend or a desktop-only copy of product services.
 
 ## Runtime profile
@@ -35,9 +35,41 @@ Provider selection changes configuration and future reads/writes only. It never 
 data from another provider. Export or migration between a server installation and a desktop profile
 must therefore be an explicit operation.
 
+## Local workspace and optional server connection
+
+A normal first launch opens the dashboard without sign-up or a password. The native shell
+passes a one-launch capability to the local API over a private pipe and installs an HttpOnly
+session in its own browser session. The capability is never exposed to web content, URLs or
+command-line arguments. An existing local profile is reused; multiple profiles require a one-time
+native profile selection. Ordinary web servers do not accept this bootstrap path.
+
+Open **Server connection** from the user menu to connect one HTTPS server/account/workspace at a
+time. Authentication uses the system browser and PKCE; a manual authorization code supports
+platforms where a deep link cannot reopen the app. Cloud credentials are kept out of the renderer
+and protected with the OS credential store. Without a secure store, the session is memory-only.
+
+Connecting shares all current and future local hosts with that server. The desktop must remain
+running and signed in for the web to operate these hosts; closing to the tray keeps it running.
+A single outbound WSS connection carries bounded, cancellable host operations. No LAN listener
+or inbound desktop port is opened. Hosts keep their original agent connection and credentials.
+The original backend remains responsible for agent configuration and update verification.
+
+Host settings, service definitions, Git scan roots, dashboard layouts, widget preferences,
+language and theme synchronize. Unrelated changes merge automatically. Concurrent changes appear
+in **Synchronization conflicts** for a local/server choice; first-connection backups preserve the
+original workspace. Agent credentials, global server authentication/provider secrets, files,
+terminal output and running sessions are not automatically replicated. Explicit file transfers
+stream on demand. Cloud session and workspace access are checked again while relaying.
+
+Disconnecting stops synchronization and the relay, while local hosts remain usable. Server hosts
+stay visible as an offline read-only cache. Connection state and cached data are separated by server,
+account and workspace. This is metadata synchronization, not a PostgreSQL-to-SQLite database copy.
+The legacy pinned `remote` mode below remains supported for existing configurations.
+
 ## Data and backups
 
-The Electron user-data directory uses the application name `pdmux-desktop`: by default,
+The visible application name is **PDMux**. The legacy bundle/executable and user-data directory
+retain their stable identifiers; the user-data directory is `pdmux-desktop`: by default,
 `~/Library/Application Support/pdmux-desktop` on macOS, `%APPDATA%\pdmux-desktop` on Windows,
 and `~/.config/pdmux-desktop` on Linux (or `$XDG_CONFIG_HOME/pdmux-desktop`). The tray's
 **Open data folder** action opens the actual directory. It contains:
@@ -49,6 +81,9 @@ runtime/
   pdmux.sqlite
   files/
   file-transfers/
+  agent-cache/
+local-profile.json
+cloud-session-<profile hash>.encrypted
 backups/
   <UTC timestamp>/
     manifest.json
@@ -60,7 +95,8 @@ Use **Create backup** from the tray menu. The backup helper checkpoints SQLite, 
 database copy with `VACUUM INTO`, copies the atomically-written object tree, writes a manifest, and
 only then publishes the timestamped generation. Incomplete temporary generations are not treated as
 backups. Five generations are retained by default; set `backupRetention` in `desktop.json` to a value
-from 1 to 100. A downloaded update uses the same backup gate before installation.
+from 1 to 100. A downloaded update uses the same backup gate before installation. Existing databases are also
+backed up before startup migrations; starting a new server connection creates a workspace backup.
 
 ## Folder transfers
 
@@ -106,13 +142,22 @@ Installers are built on their native GitHub-hosted operating systems by
 
 One shared job cross-compiles the four host-agent binaries (native macOS for signed releases, Linux
 for PR validation) and hands them to every installer runner as
-an `agent-binaries` archive, so all installers embed the same bytes and no installer runner needs Go.
+an `agent-binaries` archive, so every installer uses the same canonical catalog and no installer runner needs Go.
 Each installer runner then builds shared packages, the API and the SvelteKit app, copies the current
 platform's pinned Bun executable into the application resources, runs desktop tests, and uploads
 installers as architecture-specific workflow artifacts. Intel and Apple Silicon packages
 run on separate native macOS runners so their embedded Bun executable always matches the target.
-Desktop staging keeps only the API entry points and the current release of each supported host-agent
-binary, and installer packaging excludes production source maps and unused Electron locales.
+Desktop staging builds API/migration entry points together with shared chunks. Only the native
+supported host-agent binary is bundled; Windows has no native host-agent target. The full canonical
+manifest and checksums remain unchanged. Other targets download from an exact official release tag
+on first use, with size/SHA-256 verification and an atomic cache outside the signed app. Use the
+connection page to pre-download targets before going offline. Missing downloads never prevent local
+startup. Installer packaging excludes production source maps and unused Electron locales. The native
+auth client is bundled without shipping the server SDK and unused database adapters.
+
+Electron and the pinned Bun runtime account for most installed bytes. Measure installed bundle size
+separately from compressed installer size and optional downloaded agent caches. Keeping Electron
+provides a substantial runtime floor even after duplicate code and unused agent targets are removed.
 The workflow uses standard GitHub-hosted runners, whose usage is free and unlimited for public
 repositories according to the [GitHub-hosted runners reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 Pull requests produce disposable self-signed macOS validation artifacts and unsigned Windows/Linux

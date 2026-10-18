@@ -13,7 +13,7 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && bun scripts/bundle-cloud.mjs",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "bun test src",
     "package": "node ../../tools/package-desktop.mjs"
@@ -25,44 +25,97 @@
   "devDependencies": {
     "electron": "44.2.0",
     "electron-builder": "^26.15.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "better-auth": "1.7.9",
+    "@better-auth/electron": "1.7.9",
+    "@pdmux/desktop-protocol": "workspace:*"
   },
   "build": {
-    "directories": { "output": "release" },
+    "directories": {
+      "output": "release"
+    },
     "appId": "dev.podosoft.pdmux",
-    "productName": "pdmux",
+    "productName": "PDMux",
     "executableName": "pdmux",
     "icon": "../web/static/favicon.svg",
     "asar": true,
     "compression": "maximum",
-    "electronLanguages": ["en", "ko"],
+    "electronLanguages": [
+      "en",
+      "ko"
+    ],
     "artifactName": "pdmux-${version}-${os}-${arch}.${ext}",
-    "files": ["dist/**", "package.json"],
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
     "extraResources": [
-      { "from": "resources/services/api", "to": "api" },
-      { "from": "resources/services/web", "to": "web", "filter": ["**/*", "!**/*.map"] },
-      { "from": "resources/bin", "to": "bin" },
-      { "from": "resources/sqlite-backup.mjs", "to": "runtime/sqlite-backup.mjs" },
-      { "from": "resources/tray.png", "to": "tray.png" }
+      {
+        "from": "resources/services/api",
+        "to": "api"
+      },
+      {
+        "from": "resources/services/web",
+        "to": "web",
+        "filter": [
+          "**/*",
+          "!**/*.map"
+        ]
+      },
+      {
+        "from": "resources/bin",
+        "to": "bin"
+      },
+      {
+        "from": "resources/sqlite-backup.mjs",
+        "to": "runtime/sqlite-backup.mjs"
+      },
+      {
+        "from": "resources/tray.png",
+        "to": "tray.png"
+      }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "linux": {
       "category": "Development",
       "syncDesktopName": true,
-      "target": ["AppImage", "deb"]
+      "target": [
+        "AppImage",
+        "deb"
+      ]
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
-    "publish": [{ "provider": "github", "owner": "podosoft-dev", "repo": "pdmux" }]
-  }
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "podosoft-dev",
+        "repo": "pdmux"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "PDMux Desktop",
+        "schemes": [
+          "dev.podosoft.pdmux"
+        ]
+      }
+    ]
+  },
+  "productName": "PDMux"
 }

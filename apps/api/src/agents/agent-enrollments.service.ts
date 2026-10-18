@@ -147,7 +147,7 @@ export class AgentEnrollmentsService {
     createdByUserId: string | null,
     tokenExpiresInDays: number | null = null,
   ): Promise<MintedAgentEnrollment> {
-    const host = await this.hosts.get(organizationId, hostId);
+    const host = await this.hosts.get(organizationId, hostId, true);
     await this.enrollments.update(
       { hostId: host.id, consumedAt: IsNull(), revokedAt: IsNull() },
       { revokedAt: new Date() },
@@ -188,7 +188,7 @@ export class AgentEnrollmentsService {
    * At most one such row exists (partial unique index).
    */
   async current(organizationId: string, hostId: string): Promise<AgentEnrollmentView | null> {
-    const host = await this.hosts.get(organizationId, hostId);
+    const host = await this.hosts.get(organizationId, hostId, true);
     const row = await this.enrollments.findOne({
       where: { hostId: host.id, consumedAt: IsNull(), revokedAt: IsNull() },
       order: { createdAt: "DESC" },
@@ -197,7 +197,7 @@ export class AgentEnrollmentsService {
   }
 
   async revoke(organizationId: string, hostId: string, id: string): Promise<AgentEnrollmentView> {
-    const host = await this.hosts.get(organizationId, hostId);
+    const host = await this.hosts.get(organizationId, hostId, true);
     const row = await this.enrollments.findOne({ where: { id, hostId: host.id } });
     if (!row) throw new AppException("ENROLLMENT_NOT_FOUND", "Enrollment code not found", 404);
     // Revoking twice must not move the timestamp — the first revocation is the fact.

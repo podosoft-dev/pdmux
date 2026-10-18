@@ -90,6 +90,7 @@ export class HostsService {
   private enabledChangeListener: HostEnabledChangeListener = () => {};
   private removedListener: HostRemovedListener = () => {};
   private removingListener: HostRemovingListener = () => {};
+  private nativeConnectionGuard: (scope: string, id: string) => Promise<void> = async () => undefined;
   private movingListener: HostMovingListener = () => {};
 
   constructor(
@@ -105,6 +106,8 @@ export class HostsService {
     private readonly dataSource: DataSource,
     private readonly exposures?: Repository<ServiceExposure>,
   ) {}
+
+  setNativeConnectionGuard(guard: (scope: string, id: string) => Promise<void>): void { this.nativeConnectionGuard = guard; }
 
   /** Called once by the agent gateway at startup (avoids a circular provider). */
   setConnectedProbe(probe: ConnectedProbe): void {
@@ -229,15 +232,18 @@ export class HostsService {
 
   /** Scoped read. Every caller goes through this — there is no unscoped `findOne`
    *  on the request path, which is what keeps org A out of org B's rows. */
-  async get(organizationId: string, id: string): Promise<Host> {
+  async get(organizationId: string, id: string, native = false): Promise<Host> {
     const host = await this.hosts.findOne({ where: { id, organizationId } });
     if (!host) throw new AppException("HOST_NOT_FOUND", "Host not found", 404);
+    if (native) await this.nativeConnectionGuard(organizationId, id);
     return host;
   }
 
   /** Unscoped lookup for the agent gateway, which authenticates by token, not session. */
-  async getById(id: string): Promise<Host | null> {
-    return this.hosts.findOne({ where: { id } });
+  async getById(id: string, native = false): Promise<Host | null> {
+    const host = await this.hosts.findOne({ where: { id } });
+    if (host && native) await this.nativeConnectionGuard(host.organizationId, id);
+    return host;
   }
 
   async create(organizationId: string, dto: CreateHostDto): Promise<Host> {

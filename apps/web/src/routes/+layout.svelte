@@ -1,5 +1,6 @@
 <script lang="ts">
   import "../app.css";
+  import AppearanceSync from "#lib/components/appearance-sync.svelte";
   import SiteRuntime from "#lib/components/site-runtime.svelte";
 
   let { children } = $props();
@@ -15,4 +16,5 @@
 </script>
 
 <SiteRuntime />
+<AppearanceSync />
 {@render children()}

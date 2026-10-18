@@ -13,7 +13,7 @@ export async function releaseMac({ local = false } = {}) {
   const version = parseAgentVersion(await readFile(join(repository, "agent/internal/cli/version.go"), "utf8"));
   await withAppleSigning(async context => {
     await verifyAgentDirectory(join(repository, "apps/desktop/resources/services/web/client/agent", version), {
-      signed: true, native: true, sourceDirectory: join(process.env.PDMUX_AGENT_SOURCE_ROOT ?? join(repository, "apps/web/static/agent"), version),
+      signed: true, native: true, subset: true, sourceDirectory: join(process.env.PDMUX_AGENT_SOURCE_ROOT ?? join(repository, "apps/web/static/agent"), version),
     });
     await packageMac(false, context);
     await finalizeMacArtifacts(join(repository, "apps/desktop/release"), context);

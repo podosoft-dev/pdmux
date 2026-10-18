@@ -8,4 +8,7 @@ import type { Handle } from "@sveltejs/kit/hooks";
  * of editing hooks.server.ts. Combine several handles with `sequence` from
  * "@sveltejs/kit/hooks". PodoKit creates this file once and never overwrites it.
  */
-export const appHandle: Handle = ({ event, resolve }) => resolve(event);
+export const appHandle: Handle = ({ event, resolve }) => {
+  if (event.locals.site && (!event.locals.site.name || event.locals.site.name === "pdmux")) event.locals.site.name = "PDMux";
+  return resolve(event);
+};

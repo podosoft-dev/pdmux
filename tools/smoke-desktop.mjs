@@ -28,8 +28,8 @@ try {
   assert.equal(await application.evaluate(({ app }) => app.getPath("userData")), resolve(configuration), "Isolate the real user's desktop data");
   window = await application.firstWindow({ timeout: 120_000 });
   await window.waitForURL(/http:\/\/127\.0\.0\.1:\d+\//, { timeout: 60_000 });
-  // Username sign-in uses type=text for the same email/username field.
-  await window.locator('input#email[autocomplete="username"]').waitFor({ timeout: 60_000 });
+  await window.locator('[data-testid="shell-user"]').waitFor({ timeout: 60_000 });
+  assert.ok(!new URL(window.url()).pathname.startsWith("/login"), "Open the local workspace without login");
   // Functions cannot cross Playwright's serialization boundary. Inspect them
   // inside the renderer and return only their names and types.
   assert.deepEqual(await window.evaluate(() => ({
@@ -41,7 +41,7 @@ try {
     transfers: { pickFolder: "function", read: "function", release: "function", download: "function",
       status: "function", pauseDownload: "function", cancelDownload: "function" },
   });
-  assert.ok((await window.locator("body").innerText()).length > 30, "Render the real login page");
+  assert.ok((await window.locator("body").innerText()).length > 30, "Render the local workspace");
   await application.evaluate(async ({ app, dialog }) => {
     const { join } = process.getBuiltinModule("node:path");
     const { mkdir, writeFile } = process.getBuiltinModule("node:fs/promises");

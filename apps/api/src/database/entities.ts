@@ -1,3 +1,5 @@
+import { DesktopConnection } from "../desktop/desktop-connection.entity";
+import { DesktopRecord } from "../desktop/desktop-record.entity";
 import type { DataSourceOptions } from "typeorm";
 import { AgentAuthFailure } from "../agents/agent-auth-failure.entity";
 import { AgentEnrollment } from "../agents/agent-enrollment.entity";
@@ -27,6 +29,8 @@ import { UserLayout } from "../prefs/user-layout.entity";
 export type AppEntities = NonNullable<DataSourceOptions["entities"]>;
 
 export const APP_ENTITIES = [
+  DesktopRecord,
+  DesktopConnection,
   FileTransfer,
   FileTransferEntry,
   AgentAuthFailure,

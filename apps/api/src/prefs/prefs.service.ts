@@ -81,6 +81,11 @@ export class PrefsService {
     return { name };
   }
 
+  async deleteHostPref(userId: string, organizationId: string, hostId: string): Promise<void> {
+    await this.hosts.get(organizationId, hostId);
+    await this.hostPrefs.delete({ userId, hostId });
+  }
+
   async putHostPref(
     userId: string,
     organizationId: string,

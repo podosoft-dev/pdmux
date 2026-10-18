@@ -48,7 +48,7 @@
   onMount(() => void dock.openHost(data.hostId, data.repoId));
 </script>
 
-<svelte:head><title>{i18n.t.dash.git.title} · pdmux</title></svelte:head>
+<svelte:head><title>{i18n.t.dash.git.title} · PDMux</title></svelte:head>
 
 <div class="pdmux flex flex-col" style="height:100dvh" data-testid="detached-git">
   <CommitDock

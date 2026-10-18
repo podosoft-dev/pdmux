@@ -1,3 +1,5 @@
+import { seedDesktopAgents } from "./seed-desktop-agents.mjs";
+import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, rm } from "node:fs/promises";
@@ -12,7 +14,7 @@ const repository = resolve(import.meta.dirname, "..");
 const clean = signingEnvironment(process.env);
 const agentRoot = join(repository, "apps/desktop/release-agent/agent");
 const agents = await prepareAgentArtifacts({ signed: true, local: true, outputRoot: agentRoot });
-for (const workspace of ["@pdmux/protocol", "@pdmux/core", "@pdmux/ui", "@pdmux/mcp", "pdmux-api", "pdmux-web", "pdmux-desktop"]) {
+for (const workspace of ["@pdmux/desktop-protocol", "@pdmux/protocol", "@pdmux/core", "@pdmux/ui", "@pdmux/mcp", "pdmux-api", "pdmux-web", "pdmux-desktop"]) {
   execFileSync(process.execPath, ["run", "--filter", workspace, "build"], { cwd: repository, env: clean, stdio: "inherit", timeout: 600_000 });
 }
 execFileSync(process.execPath, ["run", "desktop:prepare"], { cwd: repository, env: clean, stdio: "inherit" });
@@ -20,5 +22,6 @@ const destination = join(repository, "apps/desktop/resources/services/web/client
 await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });
 await cp(agents, join(destination, agents.split("/").pop()), { recursive: true });
+await seedDesktopAgents(join(destination, agents.split("/").pop()), { releaseTag: `v${JSON.parse(await readFile(join(repository, "package.json"), "utf8")).version}` });
 await rm(join(repository, "apps/desktop/release"), { recursive: true, force: true });
 await releaseMac({ local: true });

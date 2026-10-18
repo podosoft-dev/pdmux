@@ -89,6 +89,6 @@ export const load: PageServerLoad = async ({ locals, params, url, fetch }) => {
     cloudflare,
     fleetGitRoots: fleet.gitRoots,
     gitIntervalSec: fleet.gitIntervalSec,
-    canManage: scope.canManage,
+    canManage: scope.canManage && !host.origin?.readOnly,
   };
 };

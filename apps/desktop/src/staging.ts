@@ -16,6 +16,7 @@ export interface DesktopRuntimeStageOptions {
   repositoryRoot: string;
   bunExecutable: string;
   platform?: NodeJS.Platform;
+  arch?: string;
 }
 
 export interface DesktopRuntimeStageResult {
@@ -45,11 +46,10 @@ async function normalizeRuntimePermissions(directory: string): Promise<void> {
 }
 
 async function stageApi(repositoryRoot: string, destination: string): Promise<void> {
-  const source = join(repositoryRoot, "apps", "api", "dist");
+  const source = join(repositoryRoot, "apps", "api", "dist-desktop");
   await mkdir(destination, { recursive: true });
-  for (const entry of ["main.js", "desktop-migrate.js"] as const) {
-    await copyFile(join(source, entry), join(destination, entry));
-  }
+  for (const required of ["main.js", "desktop-migrate.js"]) await stat(join(source, required));
+  await cp(source, destination, { recursive: true });
 }
 
 async function stageWeb(repositoryRoot: string, destination: string, agentVersion: string): Promise<void> {

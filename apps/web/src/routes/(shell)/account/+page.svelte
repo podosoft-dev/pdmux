@@ -33,7 +33,7 @@
   const account = $derived(data.user ? { ...data, user: data.user } : null);
 </script>
 
-<svelte:head><title>{i18n.t.nav.account} · pdmux</title></svelte:head>
+<svelte:head><title>{i18n.t.nav.account} · PDMux</title></svelte:head>
 
 <!-- The shell owns the viewport, so this column owns its own scrolling (ARCHITECTURE §7). -->
 <div class="flex min-h-0 flex-col gap-4 overflow-y-auto p-6" data-testid="account-panel" data-pdmux-region="page">

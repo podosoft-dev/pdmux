@@ -73,12 +73,14 @@ export class HostServicesService {
     return this.services.find({ where: { hostId }, order: { sortOrder: "ASC", label: "ASC" } });
   }
 
-  async create(organizationId: string, hostId: string, dto: CreateHostServiceDto): Promise<HostService> {
+  async create(organizationId: string, hostId: string, dto: CreateHostServiceDto, syncId?: string): Promise<HostService> {
     const host = await this.hosts.get(organizationId, hostId);
+    if (syncId && await this.services.existsBy({ id: syncId })) throw new AppException("DESKTOP_ID_CONFLICT", "Setting ID already exists", 409);
     await this.assertLabelFree(host.id, dto.label, null);
     const sortOrder = dto.sortOrder ?? (await this.nextSortOrder(host.id));
     const created = await this.services.save(
       this.services.create({
+        ...(syncId ? { id: syncId } : {}),
         hostId: host.id,
         label: dto.label,
         port: dto.port,

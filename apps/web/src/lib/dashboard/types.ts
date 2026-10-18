@@ -78,6 +78,7 @@ export interface ServiceExposureView {
 
 /** `GET /hosts` — one row per host, already joined to its last heartbeat. */
 export interface HostView {
+  origin?: { kind: "local" | "server" | "desktop"; readOnly: boolean; deviceId?: string };
   id: string;
   label: string;
   address: string | null;

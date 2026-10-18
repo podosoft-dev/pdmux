@@ -78,7 +78,7 @@ export class AgentTokensService {
   ) {}
 
   async list(organizationId: string, hostId: string): Promise<AgentTokenView[]> {
-    const host = await this.hosts.get(organizationId, hostId);
+    const host = await this.hosts.get(organizationId, hostId, true);
     const rows = await this.tokens.find({ where: { hostId: host.id }, order: { createdAt: "DESC" } });
     return rows.map(toView);
   }
@@ -94,7 +94,7 @@ export class AgentTokensService {
     name: string,
     expiresInDays: number | null = null,
   ): Promise<MintedAgentToken> {
-    const host = await this.hosts.get(organizationId, hostId);
+    const host = await this.hosts.get(organizationId, hostId, true);
     return this.issue(host.id, name, expiresInDays === null ? null : expiryFrom(new Date(), expiresInDays));
   }
 
@@ -211,7 +211,7 @@ export class AgentTokensService {
   }
 
   private async getScoped(organizationId: string, hostId: string, id: string): Promise<AgentToken> {
-    const host = await this.hosts.get(organizationId, hostId);
+    const host = await this.hosts.get(organizationId, hostId, true);
     const row = await this.tokens.findOne({ where: { id, hostId: host.id } });
     if (!row) throw new AppException("AGENT_TOKEN_NOT_FOUND", "Agent token not found", 404);
     return row;

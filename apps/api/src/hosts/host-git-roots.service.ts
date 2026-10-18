@@ -42,13 +42,15 @@ export class HostGitRootsService {
     return this.roots.find({ where: { hostId }, order: { sortOrder: "ASC", path: "ASC" } });
   }
 
-  async create(organizationId: string, hostId: string, dto: CreateHostGitRootDto): Promise<HostGitRoot> {
+  async create(organizationId: string, hostId: string, dto: CreateHostGitRootDto, syncId?: string): Promise<HostGitRoot> {
     const host = await this.hosts.get(organizationId, hostId);
+    if (syncId && await this.roots.existsBy({ id: syncId })) throw new AppException("DESKTOP_ID_CONFLICT", "Setting ID already exists", 409);
     await this.assertPathFree(host.id, dto.path, null);
     await this.assertRoom(host.id);
     const sortOrder = dto.sortOrder ?? (await this.nextSortOrder(host.id));
     const created = await this.roots.save(
       this.roots.create({
+        ...(syncId ? { id: syncId } : {}),
         hostId: host.id,
         path: dto.path,
         sortOrder,

@@ -375,7 +375,7 @@
   });
 </script>
 
-<svelte:head><title>{i18n.t.dash.title} · pdmux</title></svelte:head>
+<svelte:head><title>{i18n.t.dash.title} · PDMux</title></svelte:head>
 
 {#snippet paneActions(actions: TerminalPaneActionContext)}
   <TerminalPaneActions {actions} compact={stacked.current} />

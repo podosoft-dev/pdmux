@@ -179,7 +179,7 @@
   }
 </script>
 
-<svelte:head><title>{i18n.t.dash.fleet.title} · pdmux</title></svelte:head>
+<svelte:head><title>{i18n.t.dash.fleet.title} · PDMux</title></svelte:head>
 
 <!-- The shell owns the viewport, so this column owns its own scrolling (ARCHITECTURE §7).
      ⚠ EVERY CARD BELOW CARRIES `shrink-0`, AND IT IS NOT COSMETIC. A flex column
