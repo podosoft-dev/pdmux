@@ -103,7 +103,7 @@ describe("[TC-PDHOST-034] API against a PostgreSQL that stops, pauses and return
     });
 
     const migrate = Bun.spawnSync([process.execPath, "src/migrate.ts"], { cwd: apiDirectory, env, stdout: "pipe", stderr: "pipe" });
-    expect(migrate.exitCode).toBe(0);
+    expect(migrate.exitCode, migrate.stderr.toString().slice(-2_000)).toBe(0);
     docker("stop", container);
 
     const spawnedAt = performance.now();

@@ -72,7 +72,9 @@ try {
   let ready = false;
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      docker(["exec", postgres, "pg_isready", "-U", "podokit", "-d", "podokit"]);
+      // Over TCP: the image's first start runs a socket-only server for initdb, stops it
+      // and starts the real one, so a socket check passes before the port is served.
+      docker(["exec", postgres, "pg_isready", "-h", "127.0.0.1", "-U", "podokit", "-d", "podokit"]);
       ready = true;
       break;
     } catch {
