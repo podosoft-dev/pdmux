@@ -2,11 +2,14 @@
 
 ## Unreleased
 
-- Update the PodoKit foundation to 1.6.0. The MCP switch moves to the admin Settings page's new
-  Application tab. Authenticator apps and passkey prompts show the site name instead of "Better Auth"
-  for new enrolments. The audit log records unless `AUDIT_LOG_ENABLED=false` or the admin toggle turns
-  it off. The light theme marks the page with a `light` class from the first paint, so
-  `@pdmux/ui` follows the chosen theme on a dark operating system.
+## 0.17.0
+
+- Update the PodoKit foundation to 1.6.0, then 1.6.1. The MCP switch moves to the admin Settings
+  page's new Application tab, and the `/account/mcp-enabled` route is gone. Authenticator apps and
+  passkey prompts show the site name instead of "Better Auth" for new enrolments. The audit log records
+  unless `AUDIT_LOG_ENABLED=false` or the admin toggle turns it off. The light theme marks the page
+  with a `light` class from the first paint, so `@pdmux/ui` follows the chosen theme on a dark
+  operating system.
 - The API image lists its migrations in `dist/migrations/migrations.json`, and the API refuses to
   start without that list; `bun run --cwd apps/api migrate:list` prints them. The desktop shell
   selects its providers with `DATABASE_PROVIDER`, `CACHE_PROVIDER`, `OBJECT_STORAGE_PROVIDER`,
@@ -14,6 +17,17 @@
 - The self-host Caddyfile sends each upstream one `X-Forwarded-For` entry, the client address Caddy
   resolved. Sessions, audit entries and rejected agents keep the client's address when Caddy trusts a
   proxy in front of it, instead of recording that proxy. `docs/OPERATIONS.md` §1-3 describes the chain.
+- A deployment profile no longer sets `CONNECTION_IDLE_TIMEOUT`: `podo deploy` (PodoKit 1.6.0 or
+  later) derives it and `API_IDLE_TIMEOUT` as `0` from the transfer route's `APP_PROXY_TIMEOUTS`
+  entry. The `/api` proxy turns Bun's fetch idle timeout off for that route itself, so the web image
+  and the desktop shell no longer set `BUN_CONFIG_HTTP_IDLE_TIMEOUT`.
+- pdmux's TypeORM pool takes its size from `PDMUX_DB_POOL_MAX` (default 10, the previous implicit
+  cap), so a deployment profile can list it in `dependencies.postgres.appPools` and
+  `podo deploy doctor` and `plan` count it in the PostgreSQL connection budget.
+- On a phone, the Git tab shows the commit panel even for an account that never opened the dock on a
+  desktop, and the refs column stacks above the commit list instead of leaving it no width. The
+  commit dock header wraps to a second row, so rescan, check remote, refs and detach stay reachable
+  in a narrow dock.
 
 ## 0.16.0
 
