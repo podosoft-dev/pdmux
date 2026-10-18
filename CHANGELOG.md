@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Update the PodoKit foundation to 1.6.4. `ADMIN_EMAILS` makes an account an administrator only when the
+  address is proven: `admin:bootstrap`, an administrator creating the account, or a sign-in that verifies
+  the email. An email and password sign-up with such an address is refused, and a production API refuses
+  to start with a placeholder or invalid entry. The audit log records `auth.signup` for every new account
+  and names the user on `auth.logout`. A deployment now starts the new API and web beside the old ones and
+  stops the old ones once the new ones are healthy, so a rollout no longer takes the site offline.
 - A desktop database created by 0.17.2 or 0.17.3 lacked the user ban columns that server code shared
   with the desktop reads, such as for MCP user tokens; it worked only because SQLite read the missing
   names as text. The desktop now declares them, and its next start adds them to such a database.
