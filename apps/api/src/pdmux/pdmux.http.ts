@@ -836,6 +836,8 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
       (result) => ({ type: "mcp-token", id: result.id, label: result.label, metadata: { tier: result.tier } }));
     })
     .all("/mcp", ({ request }) => services.mcp.handle(request), {
+      // The MCP transport reads the original stream, including JSON requests.
+      parse: "none",
       detail: { hide: true },
     });
 };
