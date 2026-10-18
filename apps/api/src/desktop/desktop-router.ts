@@ -59,7 +59,7 @@ export class DesktopRouter {
     }
     // Do not expose stale cached rows belonging to a different account.
     if (route && !binding && await this.service.hasForeignBinding(route.hostId)) throw new AppException("HOST_NOT_FOUND", "Host not found", 404);
-    if (metadataWrite(request.method, url.pathname)) this.releases.set(request, await this.service.mutex.acquire());
+    if (metadataWrite(request.method, url.pathname)) this.releases.set(request, await this.service.lock.acquire(this.service.writeKeys(session, url.pathname)));
     return undefined;
   }
   release(request: Request): void { this.releases.get(request)?.(); this.releases.delete(request); }

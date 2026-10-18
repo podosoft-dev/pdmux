@@ -6,6 +6,7 @@ import type { AuthSession } from "../auth/auth.service";
 import { assertCanManageFleet, resolveScopeId } from "../fleet/session-scope";
 import type { PdmuxServices } from "../pdmux/pdmux.services";
 import { DesktopRecord } from "./desktop-record.entity";
+import { KeyedMutex } from "./keyed-mutex";
 import { appearanceSchema, hostSchema, layoutSchema, widgetsSchema } from "./record-schema";
 
 export function recordHash(value: unknown): string { return createHash("sha256").update(canonical(value)).digest("hex"); }
@@ -14,22 +15,27 @@ const hostKeys = ["label", "address", "description", "tags", "sortOrder", "enabl
 const serviceKeys = ["id", "label", "port", "probe", "path", "urlTemplate", "sortOrder", "enabled"] as const;
 const rootKeys = ["id", "path", "sortOrder", "enabled"] as const;
 
-/** Serializes metadata writes with sync comparisons on this single-process host gateway. */
-export class WorkspaceMutex {
-  private tail = Promise.resolve();
-  async acquire(): Promise<() => void> {
-    const prior = this.tail;
-    let release!: () => void;
-    this.tail = new Promise<void>(resolve => { release = resolve; });
-    await prior; return release;
-  }
-}
+/** Hosts, with their services and Git roots, belong to the scope and are shared by its members. */
+export function hostsLockKey(session: AuthSession): string { return `hosts:${resolveScopeId(session)}`; }
+/** Layouts, card widgets and appearance belong to the user in every scope. */
+export function prefsLockKey(session: AuthSession): string { return `prefs:${session.user.id}`; }
 
 export class DesktopService {
-  readonly mutex = new WorkspaceMutex();
+  /**
+   * Keeps a write from landing between a sync's comparison and its apply, where it would be
+   * overwritten unseen. A sync reads the scope's hosts and the user's preferences and takes both
+   * keys; any other write takes the key of what it changes, so other users and scopes never wait.
+   * The lock is per process. That holds because one API process serves a database (the agent
+   * registry and the desktop bridge peers are in memory too); more would need a database lock.
+   */
+  readonly lock = new KeyedMutex();
   connectionKey = "";
   origin = "server";
   constructor(readonly pdmux: PdmuxServices, private readonly records: Repository<DesktopRecord>) {}
+
+  syncKeys(session: AuthSession): string[] { return [hostsLockKey(session), prefsLockKey(session)]; }
+  /** The key for a `/prefs…` or `/hosts…` write (see `metadataWrite`). */
+  writeKeys(session: AuthSession, path: string): string[] { return [/^\/prefs(?:\/|$)/.test(path) ? prefsLockKey(session) : hostsLockKey(session)]; }
 
   private id(session: AuthSession, record: SyncRecord, connectionKey: string): string {
     return recordHash([resolveScopeId(session), record.kind === "host" ? "" : session.user.id, record.key, connectionKey]);
@@ -83,8 +89,7 @@ export class DesktopService {
 
   async sync(session: AuthSession, body: unknown): Promise<SyncResult> {
     const batch = syncBatchSchema.parse(body);
-    const release = await this.mutex.acquire();
-    try {
+    return this.lock.run(this.syncKeys(session), async () => {
       const current = new Map((await this.snapshot(session)).map(record => [record.key, record]));
       const conflicts: SyncResult["conflicts"] = [];
       // Hosts establish the ID mapping before layouts and per-host preferences.
@@ -106,7 +111,7 @@ export class DesktopService {
       const snapshot = await this.snapshot(session);
       for (const record of snapshot) await this.remember(session, record);
       return { version: DESKTOP_PROTOCOL_VERSION, records: snapshot.map(record => ({ ...record, hash: recordHash(record.value) })), conflicts, userId: session.user.id, scopeId: resolveScopeId(session), hostIds: Object.fromEntries((await this.bindings(session)).filter(row => row.hostId).map(row => [row.key, row.hostId!])) };
-    } finally { release(); }
+    });
   }
 
   private async remember(session: AuthSession, record: SyncRecord, hostId?: string | null): Promise<DesktopRecord> {

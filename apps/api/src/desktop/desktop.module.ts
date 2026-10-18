@@ -9,7 +9,7 @@ import { PDMUX } from "../pdmux/pdmux.services";
 import type { AuthSession } from "../auth/auth.service";
 import { DesktopRecord } from "./desktop-record.entity";
 import { DesktopConnection } from "./desktop-connection.entity";
-import { DesktopService } from "./desktop.service";
+import { DesktopService, prefsLockKey } from "./desktop.service";
 import { DesktopClient } from "./desktop-client";
 import { DesktopBridge } from "./bridge";
 import { DesktopRouter, requireCurrentScope } from "./desktop-router";
@@ -74,7 +74,7 @@ export const desktopModule: PodokitModule = {
       }, { body: t.Object({ key: t.String({ maxLength: 256 }), choice: t.Union([t.Literal("local"), t.Literal("server")]) }) })
       .put("/desktop/appearance", async ({ request, body }) => {
         const session = await pdmux.auth.requireSession(request);
-        await router.service.apply(session, { key: "appearance", kind: "appearance", origin: "personal", value: body });
+        await router.service.lock.run([prefsLockKey(session)], () => router.service.apply(session, { key: "appearance", kind: "appearance", origin: "personal", value: body }));
         return body;
       }, { body: t.Object({ theme: t.Union([t.Literal("light"), t.Literal("dark"), t.Literal("system")]), locale: t.Union([t.Literal("en"), t.Literal("ko")]) }) })
       .post("/desktop/local/control", async ({ request, body }) => {

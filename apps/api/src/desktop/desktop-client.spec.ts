@@ -1,12 +1,13 @@
 import { afterEach, expect, it, mock, spyOn } from "bun:test";
 import type { Repository } from "typeorm";
 import { DesktopClient } from "./desktop-client";
-import { WorkspaceMutex, type DesktopService } from "./desktop.service";
+import type { DesktopService } from "./desktop.service";
+import { KeyedMutex } from "./keyed-mutex";
 import type { DesktopConnection } from "./desktop-connection.entity";
 const session = (id: string) => ({ user: { id }, session: {} });
 afterEach(() => mock.restore());
 function fixture(): { client: DesktopClient; service: DesktopService } {
-  const service = { origin: "server", connectionKey: "", mutex: new WorkspaceMutex() } as unknown as DesktopService;
+  const service = { origin: "server", connectionKey: "", lock: new KeyedMutex(), syncKeys: () => ["hosts:test", "prefs:test"] } as unknown as DesktopService;
   const store = {
     findOneBy: async ({ userId }: { userId: string }) => userId === "old" ? { userId, state: { deviceId: crypto.randomUUID(), selected: "old-account", accounts: { "old-account": { url: "https://previous.example.test", userId: "remote", scopeId: "personal:remote", bases: {}, hostIds: {}, conflicts: [] } } } } : null,
     save: async (value: unknown) => value,

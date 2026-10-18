@@ -132,7 +132,7 @@ export class DesktopClient {
     try {
       await this.checkSession();
       if (epoch !== this.epoch) return;
-      const release = await this.service.mutex.acquire();
+      const release = await this.service.lock.acquire(this.service.syncKeys(this.session));
       try {
         const records = await this.service.snapshot(this.session);
         const current = new Map(records.map(record => [record.key, record]));

@@ -61,6 +61,11 @@ original workspace. Agent credentials, global server authentication/provider sec
 terminal output and running sessions are not automatically replicated. Explicit file transfers
 stream on demand. Cloud session and workspace access are checked again while relaying.
 
+A sync waits for host writes in its workspace and for the same user's preference writes, and those
+writes wait for it, so none lands between its comparison and its update unseen. Other users and
+workspaces never wait for it. This lock lives in the API process, so a server must run one API
+process per database, which the agent registry already requires.
+
 Disconnecting stops synchronization and the relay, while local hosts remain usable. Server hosts
 stay visible as an offline read-only cache. Connection state and cached data are separated by server,
 account and workspace. This is metadata synchronization, not a PostgreSQL-to-SQLite database copy.
