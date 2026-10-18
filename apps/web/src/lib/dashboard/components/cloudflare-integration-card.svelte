@@ -8,7 +8,7 @@
   import { Input } from "#lib/components/ui/input/index.js";
   import { Label } from "#lib/components/ui/label/index.js";
   import * as Select from "#lib/components/ui/select/index.js";
-  import { cloudflareApi, errorCode } from "#lib/dashboard/api.js";
+  import { cloudflareApi, errorCode, type SettingsTarget } from "#lib/dashboard/api.js";
   import { getI18n } from "#lib/i18n/index.js";
   import type {
     CloudflareDiscoveryView,
@@ -16,7 +16,7 @@
   } from "#lib/dashboard/types.js";
   import ConfirmDialog from "./confirm-dialog.svelte";
 
-  let { canManage }: { canManage: boolean } = $props();
+  let { canManage, target = "local" }: { canManage: boolean; target?: SettingsTarget } = $props();
   const i18n = getI18n();
   let connection = $state<CloudflareIntegrationView | null>(null);
   let loading = $state(true);
@@ -35,7 +35,7 @@
   );
 
   onMount(() => {
-    void cloudflareApi.get()
+    void cloudflareApi.get(target)
       .then((value) => (connection = value))
       .catch(() => {})
       .finally(() => (loading = false));
@@ -53,7 +53,7 @@
     if (!token.trim()) return;
     discovering = true;
     try {
-      discovery = await cloudflareApi.discover(token.trim());
+      discovery = await cloudflareApi.discover(token.trim(), target);
       const first = discovery.zones[0];
       zoneId = first?.id ?? "";
       baseDomain = first?.name ?? "";
@@ -82,7 +82,7 @@
         zoneId,
         baseDomain: baseDomain.trim(),
         accessPolicyId: policyId,
-      });
+      }, target);
       token = "";
       discovery = null;
       toast.success(i18n.t.dash.cloudflare.connectedToast);
@@ -95,7 +95,7 @@
 
   async function disconnect(): Promise<void> {
     try {
-      await cloudflareApi.disconnect();
+      await cloudflareApi.disconnect(target);
       connection = null;
       toast.success(i18n.t.dash.cloudflare.disconnectedToast);
     } catch (cause: unknown) {

@@ -35,3 +35,14 @@ it("[TC-PDDESKTOP-012] does not resurrect a pending connection after disconnect"
   expect(client.status()).toMatchObject({ connected: false });
   expect(service.connectionKey).toBe("");
 });
+
+it("[TC-PDDESKTOP-020] refuses server settings without a connected, active local profile", async () => {
+  const { client } = fixture();
+  await client.attach(session("old"), "local-cookie");
+  const request = (who: string, path: string) => client.serverSettingsRequest(session(who), "GET", path, undefined, new AbortController().signal);
+  await expect(request("new", "/fleet/settings")).rejects.toMatchObject({ code: "DESKTOP_PROFILE_REQUIRED" });
+  await expect(request("old", "/fleet/settings")).rejects.toMatchObject({ code: "DESKTOP_NOT_CONNECTED" });
+  for (const path of ["/account/settings", "//other.example.test/fleet/settings", "/fleet/settings?scope=other", "/fleet/settings/../scope"]) {
+    await expect(request("old", path)).rejects.toMatchObject({ code: "DESKTOP_OPERATION_DENIED" });
+  }
+});

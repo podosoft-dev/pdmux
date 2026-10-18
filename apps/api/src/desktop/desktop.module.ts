@@ -68,6 +68,11 @@ export const desktopModule: PodokitModule = {
         if (router.client) router.client.requireProfile(await pdmux.auth.requireSession(request));
         return router.client?.status() ?? { local: false };
       })
+      .all("/desktop/server/*", async ({ request, params, body }) => {
+        if (!router.client) throw new AppException("DESKTOP_REQUIRED", "This action needs the desktop app", 404);
+        const session = await pdmux.auth.requireSession(request);
+        return router.client.serverSettingsRequest(session, request.method, `/${params["*"]}`, body, request.signal);
+      }, { detail: { hide: true } })
       .post("/desktop/resolve", async ({ request, body }) => {
         if (!router.client) throw new AppException("DESKTOP_REQUIRED", "This action needs the desktop app", 409);
         router.client.requireProfile(await pdmux.auth.requireSession(request));

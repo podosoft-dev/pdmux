@@ -13,17 +13,12 @@
    * never edited or forked, so every auth feature it grows arrives here for free.
    */
   import AccountPage from "#lib/components/account-page.svelte";
-  import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
   import { getI18n } from "#lib/i18n/index.js";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
   const i18n = getI18n();
 
-  const crumbs = $derived([
-    { label: i18n.t.dash.title, href: "/", testId: "open-dashboard" },
-    { label: i18n.t.nav.account },
-  ]);
 
   /**
    * The shell redirects anonymous visitors, so a session is guaranteed here — but the
@@ -37,7 +32,6 @@
 
 <!-- The shell owns the viewport, so this column owns its own scrolling (ARCHITECTURE §7). -->
 <div class="flex min-h-0 flex-col gap-4 overflow-y-auto p-6" data-testid="account-panel" data-pdmux-region="page">
-  <ShellBreadcrumb {crumbs} label={i18n.t.dash.breadcrumbLabel} />
   <!-- The forms read better at a measure than stretched across a wide column. -->
   <div class="w-full max-w-5xl">
     {#if account}<AccountPage data={account} />{/if}

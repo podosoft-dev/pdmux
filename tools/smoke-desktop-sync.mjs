@@ -71,12 +71,29 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
     const login = await local.localSession();
     const localCookie = login.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
     await local.control("attach");
+    const disconnectedSettings = await fetch(`${localUrl}/desktop/server/fleet/settings`, { headers: { cookie: localCookie } });
+    assert.equal(disconnectedSettings.status, 409, "[TC-PDDESKTOP-020] server settings require a live connection");
+    await json(localUrl, "/fleet/settings", localCookie, "PUT", { heartbeatSec: 7 });
+    await json(serverUrl, "/fleet/settings", cloudCookie, "PUT", { heartbeatSec: 11 });
+
     const localHost = await json(localUrl, "/hosts", localCookie, "POST", { label: "desktop-owned" });
     await json(localUrl, `/hosts/${localHost.id}/services`, localCookie, "POST", { label: "HTTP", port: 8080 });
     await json(serverUrl, "/prefs/layouts/default", cloudCookie, "PUT", { payload: { mode: "one", slots: [] }, isDefault: true });
     await json(localUrl, "/prefs/layouts/default", localCookie, "PUT", { payload: { mode: "split2", slots: [{ id: "slot-1", hostId: localHost.id, kind: "attach", session: "test" }] }, isDefault: true });
     await local.control("connect", { url: tlsOrigin, cookie: cloudCookie });
     const initialStatus = await json(localUrl, "/desktop/status", localCookie);
+    const remoteSettings = await json(localUrl, "/desktop/server/fleet/settings", localCookie);
+    assert.equal(remoteSettings.heartbeatSec, 11, "[TC-PDDESKTOP-020] read the server's settings");
+    await json(localUrl, "/desktop/server/fleet/settings", localCookie, "PUT", { heartbeatSec: 13 });
+    assert.equal((await json(serverUrl, "/fleet/settings", cloudCookie)).heartbeatSec, 13);
+    assert.equal((await json(localUrl, "/fleet/settings", localCookie)).heartbeatSec, 7, "[TC-PDDESKTOP-020] server edits never overwrite local settings");
+    assert.equal((await json(localUrl, "/desktop/server/fleet/scope", localCookie)).canManage, true);
+    assert.ok(Array.isArray(await json(localUrl, "/desktop/server/hosts", localCookie)));
+    const anonymousSettings = await fetch(`${localUrl}/desktop/server/fleet/settings`);
+    assert.equal(anonymousSettings.status, 401);
+    const unknownSettings = await fetch(`${localUrl}/desktop/server/account/settings`, { headers: { cookie: localCookie } });
+    assert.equal(unknownSettings.status, 403, "[TC-PDDESKTOP-020] no arbitrary server proxy");
+
     assert.ok(initialStatus.conflicts.some(item => item.key === "layout:default"));
     await json(localUrl, "/desktop/resolve", localCookie, "POST", { key: "layout:default", choice: "local" });
     await new Promise(resolve => setTimeout(resolve, 150));
@@ -134,6 +151,10 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
       });
     }
     await local.control("disconnect");
+    const closedSettings = await fetch(`${localUrl}/desktop/server/fleet/settings`, { method: "PUT", headers: { cookie: localCookie, "content-type": "application/json" }, body: JSON.stringify({ heartbeatSec: 17 }) });
+    assert.equal(closedSettings.status, 409, "[TC-PDDESKTOP-020] disconnect stops server writes");
+    assert.equal((await json(serverUrl, "/fleet/settings", cloudCookie)).heartbeatSec, 13);
+
     const cached = await json(localUrl, "/hosts", localCookie);
     assert.ok(cached.some(host => host.label === "server-owned" && host.origin.readOnly), "Keep a read-only server list after disconnect");
     await json(localUrl, `/hosts/${localHost.id}`, localCookie, "PATCH", { description: "still-local" });

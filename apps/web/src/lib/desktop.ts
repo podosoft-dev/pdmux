@@ -1,3 +1,17 @@
+import type { SyncConflict } from "@pdmux/desktop-protocol";
+
+export interface DesktopStatusView {
+  local: boolean;
+  connected?: boolean;
+  bridgeConnected?: boolean;
+  serverUrl?: string | null;
+  scopeId?: string | null;
+  organizations?: Array<{ id: string; name: string }>;
+  lastSync?: string | null;
+  error?: string | null;
+  conflicts?: SyncConflict[];
+}
+
 export interface DesktopConnectionBridge {
   connect(url: string): Promise<unknown>;
   authenticate(code: string): Promise<unknown>;

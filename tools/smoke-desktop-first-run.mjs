@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, appendFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
+import { verifyDesktopNavigation } from "./desktop-navigation.mjs";
 import { verifyDesktopFirstRun } from "./desktop-first-run.mjs";
 const repository = resolve(import.meta.dirname,"..");
 const directory = await mkdtemp(join(tmpdir(),"pdmux-first-run-"));
@@ -30,5 +31,6 @@ try {
  await page.waitForURL("**/connection");
  await page.locator('[data-testid="desktop-local-host"]').waitFor({timeout:10_000});
  await page.screenshot({path:"/tmp/pdmux-desktop-local-connection.png"});
+ await verifyDesktopNavigation(page, process.env.PDMUX_NAVIGATION_OUTPUT ?? join(directory,"navigation"));
  console.log(JSON.stringify({stage:"desktop-first-run",result:"passed"}));
 } finally { if (page && !page.isClosed()) { await page.screenshot({path:"/tmp/pdmux-desktop-first-run-last.png"}); console.log(JSON.stringify({stage:"desktop-first-run-page",url:page.url()})); } await application.close(); await rm(directory,{recursive:true,force:true}); }

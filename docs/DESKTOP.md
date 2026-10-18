@@ -23,6 +23,8 @@ replaces forwarded authority headers. This keeps installer URLs, MCP, cookies an
 connections on the same HTTP origin even with SvelteKit adapters that no longer accept `ORIGIN`.
 The API receives explicit provider settings, so it does not probe or connect to Redis, S3,
 or PostgreSQL. A persistent random authentication secret is stored with user-only file permissions.
+On Windows, runtime processes and backup helpers run with hidden consoles, including automatic
+recovery after a child exits. The app's terminal sessions remain inside the dashboard.
 
 SQLite stores PodoKit authentication tables, module settings and audit entries alongside pdmux's
 TypeORM entities. PostgreSQL JSON, timestamp, and array entity metadata is translated by one SQLite
@@ -47,6 +49,17 @@ Open **Server connection** from the user menu to connect one HTTPS server/accoun
 time. Authentication uses the system browser and PKCE; a manual authorization code supports
 platforms where a deep link cannot reopen the app. Cloud credentials are kept out of the renderer
 and protected with the OS credential store. Without a secure store, the session is memory-only.
+
+The sidebar's **Dashboard** button returns to the terminal screen from every product page,
+including Server connection. Host management, settings, CLI access and account pages share this
+navigation instead of repeating a dashboard breadcrumb above their headings.
+
+**Host common settings** separates **Local settings** from **Server settings**. Local settings
+configure hosts owned by the desktop and exclude server integrations. The server tab becomes
+available after login and reads and writes the selected server workspace directly, with the
+server's existing permissions. Changing one target does not overwrite the other's configuration.
+Disconnecting disables server settings while local settings remain available. The browser edition
+continues to configure its own server fleet.
 
 Connecting shares all current and future local hosts with that server. The desktop must remain
 running and signed in for the web to operate these hosts; closing to the tray keeps it running.

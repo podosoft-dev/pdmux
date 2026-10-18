@@ -117,20 +117,25 @@ export interface ServiceExposureInput {
   confirmPublic?: boolean;
 }
 
+export type SettingsTarget = "local" | "server";
+function settingsPath(path: string, target: SettingsTarget): string {
+  return target === "server" ? `/desktop/server${path}` : path;
+}
+
 export const cloudflareApi = {
-  get: (): Promise<CloudflareIntegrationView | null> =>
-    api.get<CloudflareIntegrationView | null>("/integrations/cloudflare"),
-  discover: (apiToken: string): Promise<CloudflareDiscoveryView> =>
-    api.post<CloudflareDiscoveryView>("/integrations/cloudflare/discover", { apiToken }),
+  get: (target: SettingsTarget = "local"): Promise<CloudflareIntegrationView | null> =>
+    api.get<CloudflareIntegrationView | null>(settingsPath("/integrations/cloudflare", target)),
+  discover: (apiToken: string, target: SettingsTarget = "local"): Promise<CloudflareDiscoveryView> =>
+    api.post<CloudflareDiscoveryView>(settingsPath("/integrations/cloudflare/discover", target), { apiToken }),
   connect: (input: {
     apiToken: string;
     zoneId: string;
     baseDomain: string;
     accessPolicyId: string;
-  }): Promise<CloudflareIntegrationView> =>
-    api.put<CloudflareIntegrationView>("/integrations/cloudflare", input),
-  disconnect: (): Promise<{ disconnected: true }> =>
-    api.del<{ disconnected: true }>("/integrations/cloudflare"),
+  }, target: SettingsTarget = "local"): Promise<CloudflareIntegrationView> =>
+    api.put<CloudflareIntegrationView>(settingsPath("/integrations/cloudflare", target), input),
+  disconnect: (target: SettingsTarget = "local"): Promise<{ disconnected: true }> =>
+    api.del<{ disconnected: true }>(settingsPath("/integrations/cloudflare", target)),
   exposures: (hostId: string): Promise<ServiceExposureView[]> =>
     api.get<ServiceExposureView[]>(`/hosts/${hostId}/exposures`),
   expose: (hostId: string, serviceId: string, input: ServiceExposureInput): Promise<ServiceExposureView> =>
@@ -390,7 +395,7 @@ export const prefsApi = {
 };
 
 export const fleetApi = {
-  settings: (): Promise<FleetSettingsView> => api.get<FleetSettingsView>("/fleet/settings"),
+  settings: (target: SettingsTarget = "local"): Promise<FleetSettingsView> => api.get<FleetSettingsView>(settingsPath("/fleet/settings", target)),
   /**
    * Writes the settings that CHANGED and answers with the whole document.
    *
@@ -400,8 +405,8 @@ export const fleetApi = {
    * declares — and `forbidNonWhitelisted` means anything it does not declare is a 400,
    * so the patch is built from the settings keys and nothing else.
    */
-  updateSettings: (input: Partial<FleetSettingsView>): Promise<FleetSettingsView> =>
-    api.put<FleetSettingsView>("/fleet/settings", input),
+  updateSettings: (input: Partial<FleetSettingsView>, target: SettingsTarget = "local"): Promise<FleetSettingsView> =>
+    api.put<FleetSettingsView>(settingsPath("/fleet/settings", target), input),
 };
 
 /**

@@ -27,6 +27,7 @@
   import LanguageSwitch from "#lib/components/language-switch.svelte";
   import ImpersonationBanner from "#lib/components/impersonation-banner.svelte";
   import ThemeToggle from "#lib/components/theme-toggle.svelte";
+  import DashboardIcon from "@lucide/svelte/icons/layout-dashboard";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import ServerIcon from "@lucide/svelte/icons/server";
   import SlidersIcon from "@lucide/svelte/icons/sliders-horizontal";
@@ -325,42 +326,23 @@
     onAddHost={data.canManage ? () => (addOpen = true) : undefined}
   >
     {#snippet header()}
-      <!--
-        ONE ROW, and the wordmark is what paid for it.
-
-        The column exists to hold cards; every pixel above the first one is overhead. The
-        controls had a row to themselves purely because "pdmux" occupied the row above —
-        and the product name is the one thing on this screen nobody needs telling, since
-        they are looking at it. Dropping it puts the controls where it was and gives the
-        height back to the fleet.
-
-        Two controls, and the difference between them is the point: ADD acts here, MANAGE
-        goes somewhere. The plus used to be the link — adding a machine began by leaving
-        the dashboard, and the operator arrived on a table to press a second Add. Now it
-        opens the same dialog that table opens, over the cards, and the new card appears
-        in this column. The link stays because host management is still a real screen
-        (services, tokens, per-host detail), and this row is now the ONLY way to it: the
-        terminal toolbar carried a second "Hosts" button in its top-right corner, saying
-        the same thing in the same window, and two doors to one screen is one too many.
-        The sidebar keeps it because the sidebar is where the fleet already is — and it
-        is the only one of the two a phone ever showed.
-
-        Icons rather than labels: the words were the widest thing in a column whose whole
-        job is to be narrow, and both already carried `title`/`aria-label`, so dropping the
-        text costs nothing a pointer or a screen reader can tell.
-
-        Administrators only: a member cannot change the fleet, and controls that lead to
-        403 are worse than none. The language, theme and account controls use `ms-auto`
-        rather than `justify-between` so they stay at the end for a member too, with
-        nothing on the left to space against.
-
-        THE ACCOUNT AVATAR IS HERE, not in the footer slot it used to occupy. A name and
-        an address pinned to the bottom of the column spent ~52px permanently on a fact
-        that is asked for once a session, in the one place on the screen whose whole job
-        is to fit host cards. The identity moved into the menu; the avatar joins a row
-        that already existed, so what used to cost a band of the column now costs nothing.
-      -->
-      <div class="flex items-center gap-1">
+      <!-- Keep navigation in the persistent sidebar, including the connection page. -->
+      <div class="flex flex-wrap items-center gap-1" data-testid="shell-toolbar">
+        <Button
+          href="/"
+          variant="ghost"
+          size="sm"
+          class="text-muted-foreground hover:text-foreground size-7 w-fit px-1.5 text-xs aria-[current=page]:text-foreground aria-[current=page]:bg-accent"
+          title={i18n.t.dash.title}
+          aria-label={i18n.t.dash.title}
+          data-testid="open-dashboard"
+          aria-current={onDashboard ? "page" : undefined}
+          onclick={(event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            void chooseView("terminal");
+          }}
+        ><DashboardIcon class="size-4" aria-hidden="true" /></Button>
         {#if data.canManage}
           <Button
             variant="ghost"

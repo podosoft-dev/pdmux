@@ -33,7 +33,6 @@
   import { causeMessage } from "#lib/dashboard/wording.js";
   import type { McpTokenPolicy, McpTokenView, MintedMcpToken } from "#lib/dashboard/types.js";
   import { fmt, getI18n } from "#lib/i18n/index.js";
-  import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
 
   const i18n = getI18n();
   const ENV_VAR = "PDMUX_MCP_TOKEN";
@@ -155,10 +154,6 @@
     return { text: i18n.t.dash.mcpTokens.live, variant: "secondary" };
   }
 
-  const crumbs = $derived([
-    { label: i18n.t.dash.title, href: "/", testId: "open-dashboard" },
-    { label: i18n.t.dash.mcpTokens.title },
-  ]);
 
   const columns = [
     { key: "label", label: i18n.t.dash.mcpTokens.colLabel, sortable: true },
@@ -189,7 +184,6 @@
   data-testid="mcp-tokens"
   data-pdmux-region="page"
 >
-  <ShellBreadcrumb {crumbs} label={i18n.t.dash.breadcrumbLabel} />
 
   <div>
     <h1 class="text-2xl font-semibold">{i18n.t.dash.mcpTokens.title}</h1>

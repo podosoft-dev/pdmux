@@ -1,8 +1,10 @@
+import { visibleWindowsConsoles, assertNoRuntimeConsoles, windowsRuntimeChildren } from "./windows-background.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { verifyDesktopFirstRun } from "./desktop-first-run.mjs";
+import { verifyDesktopNavigation } from "./desktop-navigation.mjs";
 import { desktopPaths } from "./desktop-package-paths.mjs";
 import { join, relative, resolve, sep } from "node:path";
 import { _electron as electron } from "playwright";
@@ -20,6 +22,7 @@ const configuration = process.env.PDMUX_SMOKE_CONFIG_ROOT ?? await mkdtemp(join(
 const relativeProfile = relative(tmpdir(), resolve(configuration));
 assert.ok(!relativeProfile.startsWith("..") && relativeProfile.split(sep)[0].startsWith("pdmux-"), "Smoke profiles must live in a pdmux temporary directory");
 const tmuxDirectory = join(configuration, "tmux"); await mkdir(tmuxDirectory, { recursive: true });
+const baselineConsoles = visibleWindowsConsoles();
 const application = await electron.launch({
   executablePath: paths.executable, timeout: 120_000, chromiumSandbox: true,
   args: [`--user-data-dir=${resolve(configuration)}`],
@@ -45,6 +48,20 @@ try {
   });
   assert.ok((await window.locator("body").innerText()).length > 30, "Render the local workspace");
   await verifyDesktopFirstRun(window, `${screenshot}.menu.png`, { fresh: !process.argv.includes("--expect-preserved") });
+  await verifyDesktopNavigation(window, `${screenshot}.navigation`);
+  if (process.platform === "win32") {
+    assertNoRuntimeConsoles(baselineConsoles);
+    const children = windowsRuntimeChildren(application.process().pid);
+    assert.equal(children.length, 2, "Require both embedded runtime processes");
+    const priorUrl = window.url();
+    process.kill(children[0]);
+    await window.waitForURL(url => url.href !== priorUrl, { timeout: 90_000 });
+    await window.waitForFunction(async () => (await window.pdmuxDesktop.localAgent.status()).phase === "ready");
+    assert.equal(windowsRuntimeChildren(application.process().pid).length, 2);
+    assertNoRuntimeConsoles(baselineConsoles);
+    console.log(JSON.stringify({ stage: "windows-background-recovery", result: "passed" }));
+  }
+
   await application.evaluate(async ({ app, dialog }) => {
     const { join } = process.getBuiltinModule("node:path");
     const { mkdir, writeFile } = process.getBuiltinModule("node:fs/promises");

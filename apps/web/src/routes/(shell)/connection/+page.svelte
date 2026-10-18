@@ -38,7 +38,7 @@
 </script>
 <svelte:head><title>{i18n.t.desktop.title} · PDMux</title></svelte:head>
 <div class="flex min-h-0 flex-col gap-5 overflow-y-auto p-6" data-pdmux-region="page" data-testid="desktop-connection">
-  <h1 class="text-xl font-semibold">{i18n.t.desktop.title}</h1>
+  <h1 class="text-2xl font-semibold">{i18n.t.desktop.title}</h1>
   <p class="text-muted-foreground text-sm">{i18n.t.desktop.localDescription}</p>
   <LocalHostCard />
   {#if data.status.local}

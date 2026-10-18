@@ -1055,6 +1055,15 @@
     "localHost": "This computer",
     "localAgentFailed": "The local agent could not start. Open desktop settings to retry.",
     "localAgentReady": "The local terminal is ready.",
-    "retryLocalAgent": "Prepare local terminal again"
+    "retryLocalAgent": "Prepare local terminal again",
+    "settings": {
+      "target": "Settings location",
+      "local": "Local settings",
+      "server": "Server settings",
+      "separate": "Local and server settings are stored separately. Choose which hosts to configure.",
+      "localDescription": "These settings apply to hosts managed by this desktop. Server host settings stay on the server.",
+      "serverDescription": "These settings apply to the signed-in server workspace. Saving here updates the server, including hosts used from the web.",
+      "signInRequired": "Sign in through Server connection to configure server hosts."
+    }
   }
 }

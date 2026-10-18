@@ -1,3 +1,4 @@
+import { verifyDesktopNavigation } from "./desktop-navigation.mjs";
 import assert from "node:assert/strict";
 import { _electron as electron } from "playwright";
 import { desktopPaths } from "./desktop-package-paths.mjs";
@@ -31,7 +32,9 @@ try {
   }
   const replay = await fetch(`${url}/api/auth/electron/token`, { method: "POST", headers: { "content-type": "application/json", origin: "dev.podosoft.pdmux:/" }, body: JSON.stringify({ token: authorization.electron_authorization_code, code_verifier: "invalid" }) });
   assert.ok(replay.status >= 400, "Authorization codes cannot be replayed");
+  if (process.env.PDMUX_NAVIGATION_OUTPUT) await verifyDesktopNavigation(page, process.env.PDMUX_NAVIGATION_OUTPUT, true);
   await page.evaluate(async () => window.pdmuxDesktop.connection.disconnect());
   assert.equal((await page.evaluate(async () => (await fetch("/api/desktop/status")).json())).connected, false);
+  if (process.env.PDMUX_NAVIGATION_OUTPUT) await verifyDesktopNavigation(page, process.env.PDMUX_NAVIGATION_OUTPUT, false);
   console.log(JSON.stringify({ stage: "desktop-native-pkce", result: "passed", replayRejected: true }));
 } finally { await application.close(); }

@@ -28,6 +28,8 @@ export interface SpawnRuntimeOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   stdio: "inherit" | ["pipe", "inherit", "inherit"];
+  /** Runtime recovery must not create a visible console on Windows. */
+  windowsHide: true;
 }
 
 export type SpawnRuntime = (
@@ -172,7 +174,7 @@ export class StackManager {
     const migration = this.dependencies.spawn(
       this.layout.bunExecutable,
       [this.layout.migrateEntry],
-      { cwd: dirname(this.layout.apiEntry), env: common, stdio: "inherit" },
+      { cwd: dirname(this.layout.apiEntry), env: common, stdio: "inherit", windowsHide: true },
     );
     const migrationCode = await exited(migration);
     if (migrationCode !== 0) throw new Error(`Desktop database migration exited with code ${migrationCode}`);
@@ -181,7 +183,7 @@ export class StackManager {
     const api = this.dependencies.spawn(
       this.layout.bunExecutable,
       [this.layout.apiEntry],
-      { cwd: dirname(this.layout.apiEntry), env: { ...common, PORT: String(apiPort), PDMUX_DESKTOP_RUNTIME: "1" }, stdio: ["pipe", "inherit", "inherit"] },
+      { cwd: dirname(this.layout.apiEntry), env: { ...common, PORT: String(apiPort), PDMUX_DESKTOP_RUNTIME: "1" }, stdio: ["pipe", "inherit", "inherit"], windowsHide: true },
     );
     api.stdin?.end(JSON.stringify({ capability: this.capability }));
     const web = this.dependencies.spawn(
@@ -195,11 +197,13 @@ export class StackManager {
           PROTOCOL_HEADER: "x-forwarded-proto",
           HOST_HEADER: "x-forwarded-host",
           BACKEND_INTERNAL_URL: apiUrl,
+          PDMUX_DESKTOP_RUNTIME: "1",
           // As in the web image: file transfers have no /api proxy deadline, so
           // the server may not close a silent request.
           CONNECTION_IDLE_TIMEOUT: "0",
         },
         stdio: "inherit",
+        windowsHide: true,
       },
     );
     this.children = [{ name: "api", process: api }, { name: "web", process: web }];

@@ -22,7 +22,7 @@ function runDatabaseCopy(
   destination: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, [script, source, destination], { stdio: "inherit" });
+    const child = spawn(executable, [script, source, destination], { stdio: "inherit", windowsHide: true });
     child.once("error", reject);
     child.once("exit", (code) => code === 0
       ? resolve()

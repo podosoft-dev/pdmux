@@ -1,3 +1,4 @@
+import type { DesktopStatusView } from "#lib/desktop.js";
 import { redirect } from "@sveltejs/kit";
 import type { LayoutServerLoad } from "./$types";
 import { requireBackendAvailable } from "#lib/server/guards.js";
@@ -66,11 +67,12 @@ export const load: LayoutServerLoad = async ({ locals, url, fetch, request }) =>
     if (mustEnrol) redirect(302, "/setup-2fa");
   }
 
-  const [hosts, prefs, fleet, scope] = await Promise.all([
+  const [hosts, prefs, fleet, scope, desktop] = await Promise.all([
     readJson<HostView[]>(fetch, "/api/hosts", []),
     readJson<PrefsView>(fetch, "/api/prefs", EMPTY_PREFS),
     readJson<FleetSettingsView>(fetch, "/api/fleet/settings", FLEET_FALLBACK),
     readJson<FleetScopeView>(fetch, "/api/fleet/scope", SCOPE_FALLBACK),
+    readJson<DesktopStatusView>(fetch, "/api/desktop/status", { local: process.env.PDMUX_DESKTOP_RUNTIME === "1" }),
   ]);
 
   // Any member may look at the fleet — they work on these machines every day. Who may
@@ -100,6 +102,7 @@ export const load: LayoutServerLoad = async ({ locals, url, fetch, request }) =>
    */
   return {
     user: locals.user,
+    desktopStatus: desktop.value,
     impersonating: Boolean(locals.session?.impersonatedBy),
     hosts: hosts.value,
     hostsOk: hosts.ok,

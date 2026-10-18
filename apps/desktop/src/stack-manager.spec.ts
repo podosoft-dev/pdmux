@@ -47,7 +47,7 @@ afterEach(async () => {
 });
 
 describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
-  it("migrates first, binds loopback services, and stops them in reverse order", async () => {
+  it("[TC-PDDESKTOP-021] migrates first, hides runtime consoles, and stops in reverse order", async () => {
     root = await mkdtemp(join(tmpdir(), "pdmux-stack-"));
     const layout: RuntimeLayout = {
       bunExecutable: "/runtime/bun",
@@ -87,6 +87,7 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
       layout.apiEntry,
       layout.webEntry,
     ]);
+    for (const call of calls) expect(call.options.windowsHide).toBe(true);
     expect(calls[1]?.options.env.HOST).toBe("127.0.0.1");
     expect(calls[1]?.options.env).toMatchObject({
       DATABASE_PROVIDER: "sqlite",

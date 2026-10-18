@@ -39,7 +39,6 @@
   import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
   import HostFormDialog from "#lib/dashboard/components/host-form-dialog.svelte";
   import HostInstallDialog from "#lib/dashboard/components/host-install-dialog.svelte";
-  import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
   import { hostAddress, hostState } from "#lib/dashboard/map.js";
   import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
   import { causeMessage, codeMessage, agentUpdateMessage } from "#lib/dashboard/wording.js";
@@ -112,10 +111,6 @@
   /** `0` when the fleet never opted in — and when the loader could not ask. */
   const staleRetentionDays = $derived(data.fleet.staleHostRetentionDays ?? 0);
 
-  const crumbs = $derived([
-    { label: i18n.t.dash.title, href: "/", testId: "open-dashboard" },
-    { label: i18n.t.dash.hosts.title },
-  ]);
 
   const filters = $derived<ToolbarFilter[]>([
     {
@@ -451,7 +446,6 @@
 
 <!-- The shell owns the viewport, so this column owns its own scrolling (ARCHITECTURE §7). -->
 <div class="flex min-h-0 flex-col gap-4 overflow-y-auto p-6" data-testid="hosts-panel" data-pdmux-region="page">
-  <ShellBreadcrumb {crumbs} label={i18n.t.dash.breadcrumbLabel} />
 
   <div class="flex items-center justify-between gap-2">
     <div>

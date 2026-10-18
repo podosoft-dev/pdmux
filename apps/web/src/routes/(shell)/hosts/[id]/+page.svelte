@@ -6,7 +6,7 @@
    * again" — the dialog therefore hands over the finished install command rather
    * than a bare secret to copy into a manual somewhere.
    *
-   * It renders in the shell's right-hand area, so the way back is the breadcrumb (and
+   * It renders in the shell's right-hand area, so navigation stays in the sidebar (and
    * the sidebar's nav), not a row of buttons that would repeat what the chrome says.
    */
   import { Badge } from "#lib/components/ui/badge/index.js";
@@ -43,7 +43,6 @@
   import HostFormDialog from "#lib/dashboard/components/host-form-dialog.svelte";
   import HostGitRootsCard from "#lib/dashboard/components/host-git-roots-card.svelte";
   import HostInstallDialog from "#lib/dashboard/components/host-install-dialog.svelte";
-  import ShellBreadcrumb from "#lib/dashboard/components/shell-breadcrumb.svelte";
   import { hostAddress, hostState, serviceUrl } from "#lib/dashboard/map.js";
   import { causeMessage, agentUpdateMessage } from "#lib/dashboard/wording.js";
   import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
@@ -72,11 +71,6 @@
    * polling — and it is what makes "waiting for the agent… → online" work here too.
    */
   const host = $derived(shell.feed.hosts.find((row) => row.id === data.host.id) ?? data.host);
-  const crumbs = $derived([
-    { label: i18n.t.dash.title, href: "/", testId: "open-dashboard" },
-    { label: i18n.t.dash.hosts.title, href: "/hosts" },
-    { label: host.label },
-  ]);
   /**
    * The header's status line.
    *
@@ -688,7 +682,6 @@
 
 <!-- The shell owns the viewport, so this column owns its own scrolling (ARCHITECTURE §7). -->
 <div class="flex min-h-0 flex-col gap-6 overflow-y-auto p-6" data-testid="hosts-panel" data-pdmux-region="page">
-  <ShellBreadcrumb {crumbs} label={i18n.t.dash.breadcrumbLabel} />
 
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div class="min-w-0">

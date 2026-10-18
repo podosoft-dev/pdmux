@@ -17,6 +17,11 @@ interface AccountState {
 }
 interface ClientState { deviceId: string; selected: string; accounts: Record<string, AccountState> }
 const contextSchema = z.object({ version: z.literal(DESKTOP_PROTOCOL_VERSION), userId: z.string(), scopeId: z.string(), organizations: z.array(z.object({ id: z.string(), name: z.string() })).optional() });
+const SERVER_SETTINGS_ROUTES = new Set([
+  "GET /fleet/settings", "PUT /fleet/settings", "GET /fleet/scope", "GET /hosts",
+  "GET /integrations/cloudflare", "PUT /integrations/cloudflare", "DELETE /integrations/cloudflare",
+  "POST /integrations/cloudflare/discover",
+]);
 
 export class DesktopClient {
   private state: ClientState = { deviceId: crypto.randomUUID(), selected: "", accounts: {} };
@@ -100,6 +105,23 @@ export class DesktopClient {
     const account = this.state.accounts[this.state.selected];
     if (!account) throw new AppException("DESKTOP_NOT_CONNECTED", "No server connection", 409);
     return account;
+  }
+  /** Settings belong to the selected server, never to a synchronized local copy. */
+  async serverSettingsRequest(session: AuthSession, method: string, path: string, body: unknown, signal: AbortSignal): Promise<Response> {
+    this.requireProfile(session);
+    if (!SERVER_SETTINGS_ROUTES.has(`${method} ${path}`)) throw new AppException("DESKTOP_OPERATION_DENIED", "Unsupported server settings operation", 403);
+    if (this.stopped) throw new AppException("DESKTOP_NOT_CONNECTED", "Sign in to configure the server", 409);
+    const epoch = this.epoch;
+    const account = this.account();
+    await this.checkSession();
+    if (epoch !== this.epoch || this.stopped) throw new AppException("DESKTOP_CONNECTION_CANCELLED", "Connection was cancelled", 409);
+    const response = await fetch(`${account.url}/api${path}`, {
+      method, headers: { cookie: this.cloudCookie, origin: account.url, "content-type": "application/json" },
+      body: method === "GET" || body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.any([signal, this.connectionAbort.signal, AbortSignal.timeout(15_000)]), redirect: "error",
+    });
+    if (epoch !== this.epoch || this.stopped) throw new AppException("DESKTOP_CONNECTION_CANCELLED", "Connection was cancelled", 409);
+    return new Response(response.body, { status: response.status, headers: safeHeaders(response.headers) });
   }
   async cloudRequest(input: BridgeRequest, body: ReadableStream<Uint8Array> | null, signal: AbortSignal): Promise<Response> {
     if (this.stopped) throw new AppException("DESKTOP_SERVER_OFFLINE", "Sign in to use server hosts", 503);
