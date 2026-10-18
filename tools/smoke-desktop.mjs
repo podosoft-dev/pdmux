@@ -51,13 +51,16 @@ try {
   await verifyDesktopNavigation(window, `${screenshot}.navigation`);
   if (process.platform === "win32") {
     assertNoRuntimeConsoles(baselineConsoles);
-    const children = windowsRuntimeChildren(application.process().pid);
+    // Playwright launches Electron through cmd.exe on Windows. Its process() PID
+    // belongs to that launcher; inspect the actual Electron main process instead.
+    const mainPid = await application.evaluate(() => process.pid);
+    const children = windowsRuntimeChildren(mainPid);
     assert.equal(children.length, 2, "Require both embedded runtime processes");
     const priorUrl = window.url();
     process.kill(children[0]);
     await window.waitForURL(url => url.href !== priorUrl, { timeout: 90_000 });
     await window.waitForFunction(async () => (await window.pdmuxDesktop.localAgent.status()).phase === "ready");
-    assert.equal(windowsRuntimeChildren(application.process().pid).length, 2);
+    assert.equal(windowsRuntimeChildren(mainPid).length, 2);
     assertNoRuntimeConsoles(baselineConsoles);
     console.log(JSON.stringify({ stage: "windows-background-recovery", result: "passed" }));
   }

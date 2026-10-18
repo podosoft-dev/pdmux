@@ -6,9 +6,13 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
   const status = await page.evaluate(() => window.pdmuxDesktop.localAgent.status());
   assert.equal(status.phase,"ready","[TC-PDDESKTOP-017] embedded local agent is ready");
   let output = "";
+  let input = "";
   let terminalReady = false;
   page.on("websocket", socket => {
     if (!socket.url().includes("/terminal/ws")) return;
+    socket.on("framesent", ({ payload }) => {
+      try { const frame = JSON.parse(String(payload)); if (frame.type === "input" && frame.termId === "slot-1") input += frame.data; } catch { /* Other transport frames are irrelevant. */ }
+    });
     socket.on("framereceived", ({ payload }) => {
       try { const frame = JSON.parse(String(payload)); if (frame.type === "output") output += frame.data; if (frame.type === "ready" && frame.termId === "slot-1") terminalReady = true; } catch { /* Other transport frames are irrelevant. */ }
     });
@@ -20,12 +24,20 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
     const area = pane.locator("textarea.xterm-helper-textarea");
     await area.waitFor({ state:"attached", timeout:30_000 });
     const readyDeadline = Date.now()+15_000;
-    while (!terminalReady && Date.now()<readyDeadline) await new Promise(resolve => setTimeout(resolve,50));
-    assert.ok(terminalReady, "Wait for the terminal ready frame before typing");
+    while ((!terminalReady || !output) && Date.now()<readyDeadline) await new Promise(resolve => setTimeout(resolve,50));
+    assert.ok(terminalReady && output, "Wait for the terminal ready frame and initial shell output before typing");
+    await page.bringToFront();
+    await page.locator("html[data-hydrated=true]").waitFor();
+    await pane.locator(".xterm-screen").click({ position: { x: 10, y: 10 } });
     await area.focus();
+    assert.ok(await area.evaluate(node => document.activeElement === node), "Focus the actual terminal input");
     const platform = await page.evaluate(() => window.pdmuxDesktop.platform);
-    await page.keyboard.type(platform === "win32" ? "Write-Output ('PDMUX_DESKTOP_' + 'READY')" : "printf 'PDMUX_DESKTOP_%s\\n' READY");
+    const command = platform === "win32" ? "Write-Output ('PDMUX_DESKTOP_' + 'READY')" : "printf 'PDMUX_DESKTOP_%s\\n' READY";
+    await page.keyboard.type(command, { delay: 20 });
     await page.keyboard.press("Enter");
+    const inputDeadline = Date.now()+5_000;
+    while ((!input.includes(command) || !input.endsWith("\r")) && Date.now()<inputDeadline) await new Promise(resolve => setTimeout(resolve,50));
+    assert.ok(input.includes(command) && input.endsWith("\r"), "[TC-PDDESKTOP-017] terminal forwards the typed command and Enter");
     const deadline = Date.now()+15_000;
     while (!output.includes("PDMUX_DESKTOP_READY") && Date.now()<deadline) await new Promise(resolve => setTimeout(resolve,100));
     assert.ok(output.includes("PDMUX_DESKTOP_READY"),"[TC-PDDESKTOP-017] #1 accepts input and receives actual shell output");
