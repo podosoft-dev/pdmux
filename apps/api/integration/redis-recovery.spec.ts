@@ -114,7 +114,9 @@ describe("[TC-PDHOST-036][TC-PDWEB-039] API and worker against a Redis that is d
       PORT: String(port),
       BETTER_AUTH_URL: origin,
       CORS_ORIGIN: origin,
-      ADMIN_EMAILS: email,
+      // The routes below need a session, not an administrator, and a production API
+      // refuses a placeholder administrator address.
+      ADMIN_EMAILS: "",
       AUTH_REQUIRE_SIGNUP_APPROVAL: "false",
       AUTH_HIBP_ENABLED: "false",
       CACHE_PROVIDER: "memory",
