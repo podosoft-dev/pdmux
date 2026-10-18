@@ -98,10 +98,13 @@ their own, never as the seeded `admin@example.com`:
   `pdmux e2e` organization, whose fleet holds the live host `pdmux-e2e-host` and
   eleven offline filler hosts. `pdmux-e2e-host.setup.ts` signs it up in the
   `setup` project and writes the host's agent token to
-  `playwright/.auth/pdmux-e2e-agent-token.txt`. List the address in
-  `ADMIN_EMAILS` before the account signs up: it creates the worker accounts,
-  and only an administrator changes an organization's fleet. Setup stops and
-  says so otherwise.
+  `playwright/.auth/pdmux-e2e-agent-token.txt`. The account must be an
+  administrator: it creates the worker accounts, and only an administrator
+  changes an organization's fleet. An `ADMIN_EMAILS` address may not sign up
+  (PodoKit 1.6.4), so when the account does not exist, as after `e2e:reset`,
+  setup signs in as the seeded `admin@example.com` and creates it with the
+  admin role through `/api/auth/admin/create-user`. On a new stack, create that
+  administrator first with `admin:bootstrap`, as the seed's error explains.
 - Each Playwright worker signs in as `pdmux-e2e-w<N>@example.com`, where `<N>`
   is the worker's `parallelIndex`. On a worker's first test, the `e2eState`
   fixture creates the account as an administrator, adds it to the organization,

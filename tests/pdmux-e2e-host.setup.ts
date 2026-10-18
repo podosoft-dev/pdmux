@@ -2,6 +2,7 @@ import { expect, test as setup } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { chmod, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { ADMIN } from "./helpers/accounts";
 import { E2E_OWNER, e2eAgentToken, e2eOwnerState, withEnglishLocale } from "./helpers/pdmux-accounts";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
@@ -23,10 +24,20 @@ const E2E_GIT_ROOT = process.env.E2E_GIT_ROOT ?? process.cwd().replace(/\/tests$
 setup("seed pdmux e2e host", async ({ playwright }) => {
   mkdirSync(dirname(e2eOwnerState), { recursive: true });
   const session = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: { origin: base } });
-  await session.post("/api/auth/sign-up/email", { data: E2E_OWNER }).catch(() => undefined); // idempotent
-  const signIn = await session.post("/api/auth/sign-in/email", {
-    data: { email: E2E_OWNER.email, password: E2E_OWNER.password },
-  });
+  const ownerSignIn = () =>
+    session.post("/api/auth/sign-in/email", { data: { email: E2E_OWNER.email, password: E2E_OWNER.password } });
+  let signIn = await ownerSignIn();
+  if (!signIn.ok()) {
+    // An ADMIN_EMAILS address may not sign up, so the seeded administrator creates the
+    // owner as an administrator. `e2e:reset` removes it, so this runs after each reset.
+    const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: { origin: base } });
+    const adminSignIn = await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
+    expect(adminSignIn.ok(), `sign-in ${ADMIN.email} to create ${E2E_OWNER.email}`).toBeTruthy();
+    const created = await admin.post("/api/auth/admin/create-user", { data: { ...E2E_OWNER, role: "admin" } });
+    expect(created.ok(), `create ${E2E_OWNER.email}: ${await created.text()}`).toBeTruthy();
+    await admin.dispose();
+    signIn = await ownerSignIn();
+  }
   expect(signIn.ok(), `sign-in ${E2E_OWNER.email}`).toBeTruthy();
   expect((await session.post("/api/auth/revoke-other-sessions")).ok(), "clear old e2e sessions").toBeTruthy();
 
@@ -46,7 +57,7 @@ setup("seed pdmux e2e host", async ({ playwright }) => {
   expect(active.ok(), `act in the e2e organization: ${await active.text()}`).toBeTruthy();
   expect(
     await (await session.get("/api/fleet/scope")).json(),
-    `${E2E_OWNER.email} manages the organization's fleet: list it in ADMIN_EMAILS before it signs up`,
+    `${E2E_OWNER.email} manages the organization's fleet: it must be an administrator`,
   ).toEqual({ personal: false, canManage: true });
 
   writeFileSync(e2eOwnerState, `${JSON.stringify(withEnglishLocale(await session.storageState(), base), null, 2)}\n`);
