@@ -85,7 +85,7 @@ jobs:
               return [match[2], match[1]];
             }));
             for (const name of (await readdir(root)).filter(name => name !== "DESKTOP-SHA256SUMS")) {
-              const digest = createHash("sha256").update(await Bun.file(`${root}/${name}`).arrayBuffer()).digest("hex");
+              const digest = createHash("sha256").update(new Uint8Array(await Bun.file(`${root}/${name}`).arrayBuffer())).digest("hex");
               assert.equal(digest, sums.get(name), `Published installer checksum mismatch: ${name}`);
             }
           '
