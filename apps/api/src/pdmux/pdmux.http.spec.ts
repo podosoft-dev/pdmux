@@ -263,6 +263,21 @@ describe("PDMUX HTTP boundary", () => {
     expect(handle).toHaveBeenCalledTimes(1);
   });
 
+  it("[TC-PDMCP-061] preserves raw MCP JSON for the transport when the desktop routing hook is installed", async () => {
+    const payload = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "boundary-test", version: "1" } } };
+    const handle = mock(async (request: Request): Promise<Response> => {
+      expect(request.bodyUsed).toBe(false);
+      return Response.json(await request.json());
+    });
+    const response = await application({ mcp: { handle } as unknown as PdmuxServices["mcp"] })
+      .handle(new Request("http://localhost/mcp", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+      }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(payload);
+    expect(handle).toHaveBeenCalledTimes(1);
+  });
+
   it("[TC-PDHOST-033] answers 503 before pdmux's database connects and keeps serving the agent kit", async () => {
     const list = mock(async () => []);
     const redeem = mock(async () => ({}));

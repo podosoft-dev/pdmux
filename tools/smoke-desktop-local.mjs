@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StackManager } from "../apps/desktop/src/stack-manager.ts";
 
 const root = await mkdtemp(join(tmpdir(), "pdmux-local-profile-"));
@@ -29,6 +31,16 @@ try {
   const view = await fetch(webUrl, { headers: { cookie }, redirect: "manual" });
   assert.equal(view.status, 200);
   assert.ok((await view.text()).includes("PDMux"));
+  const fleet = await fetch(`${apiUrl}/fleet/settings`, { method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ mcpUserTokens: true }) });
+  assert.equal(fleet.status, 200);
+  const tokenResponse = await fetch(`${apiUrl}/account/mcp-tokens`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ label: "Local smoke", tier: "admin", expiresInDays: 7 }) });
+  assert.equal(tokenResponse.status, 201);
+  const { token } = await tokenResponse.json();
+  const mcp = new Client({ name: "pdmux-local-smoke", version: "1" });
+  try {
+    await mcp.connect(new StreamableHTTPClientTransport(new URL("/mcp", webUrl), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
+    assert.ok((await mcp.listTools()).tools.some(tool => tool.name === "hosts_list"));
+  } finally { await mcp.close(); }
   const host = await fetch(`${apiUrl}/hosts`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ label: "local-profile-smoke" }) });
   assert.equal(host.status, 201);
   const created = await host.json();
