@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.3
+
 - Recover browser and desktop terminals after server upgrades without a page reload. Retain pane
   targets through offline-host retries, confirm terminal readiness before reporting reconnection,
   and keep desktop sign-in state through temporary server failures while bounding stalled handshakes.

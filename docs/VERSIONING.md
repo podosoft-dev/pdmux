@@ -11,7 +11,7 @@ that keep those promises.
 
 | Line | Source of truth | Today | When it moves |
 |---|---|---|---|
-| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.17.2` | every product release |
+| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.17.3` | every product release |
 | **The agent** | `AgentVersion` in `agent/internal/cli/version.go` | `0.1.28` | agent/protocol code or distribution signing changes |
 
 **Why they are not one number**: the agent is not something we deploy — it is something a
