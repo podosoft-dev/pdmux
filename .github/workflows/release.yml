@@ -99,8 +99,15 @@ jobs:
           PROFILE: ${{ vars.PODOKIT_DEPLOY_PROFILE }}
           RELEASE_TAG: ${{ inputs.releaseTag || github.ref_name }}
 
+  agent:
+    uses: ./.github/workflows/agent-binaries.yml
+    with:
+      signed: true
+      source_ref: ${{ inputs.releaseTag || github.ref_name }}
+    secrets: inherit
+
   build:
-    needs: verify
+    needs: [verify, agent]
     permissions:
       contents: read
       packages: write
@@ -129,6 +136,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.agent.outputs.artifact_name }}
+          path: ${{ runner.temp }}/agent-context
+      - name: Restore the canonical signed agent context
+        run: |
+          tar -xf "$RUNNER_TEMP/agent-context/agent-binaries.tar" -C "$RUNNER_TEMP/agent-context"
+          version="$(sed -nE 's/^[[:space:]]*(var|const)[[:space:]]+AgentVersion[[:space:]]*=[[:space:]]*"([^"]*)".*/\2/p' agent/internal/cli/version.go)"
+          bun tools/agent-artifacts.mjs verify "$RUNNER_TEMP/agent-context/agent/$version" --signed --source "apps/web/static/agent/$version"
+
       # Push by digest so the architecture jobs cannot overwrite one shared tag.
       - name: Build and push the API image by digest
         id: api
@@ -136,6 +153,8 @@ jobs:
         with:
           context: .
           file: apps/api/Dockerfile
+          build-args: AGENT_ARTIFACTS_BASE=pdmux-agent-artifacts
+          build-contexts: pdmux-agent-artifacts=${{ runner.temp }}/agent-context
           platforms: linux/${{ matrix.arch }}
           provenance: false
           outputs: type=image,name=${{ needs.verify.outputs.api }},push-by-digest=true,name-canonical=true,push=true
@@ -153,11 +172,20 @@ jobs:
         with:
           context: .
           file: apps/web/Dockerfile
+          build-args: AGENT_ARTIFACTS_BASE=pdmux-agent-artifacts
+          build-contexts: pdmux-agent-artifacts=${{ runner.temp }}/agent-context
           platforms: linux/${{ matrix.arch }}
           provenance: false
           outputs: type=image,name=${{ needs.verify.outputs.web }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=web-${{ matrix.arch }}
           cache-to: type=gha,scope=web-${{ matrix.arch }},mode=max
+
+      - name: Verify agent distribution in final images
+        run: bun tools/verify-agent-images.mjs "$API_IMAGE" "$WEB_IMAGE" "$AGENT_CONTEXT"
+        env:
+          API_IMAGE: ${{ needs.verify.outputs.api }}@${{ steps.api.outputs.digest }}
+          WEB_IMAGE: ${{ needs.verify.outputs.web }}@${{ steps.web.outputs.digest }}
+          AGENT_CONTEXT: ${{ runner.temp }}/agent-context/agent
 
       - name: Hand the digests to the publish job
         run: |
@@ -178,16 +206,18 @@ jobs:
   # path, and publish still needs verify, so nothing reaches the release unverified.
   # The signing step itself refuses any ref that is not the running vX.Y.Z tag.
   desktop:
+    needs: agent
     permissions:
       contents: read
     uses: ./.github/workflows/desktop.yml
     with:
       signed: true
       source_ref: ${{ inputs.releaseTag || github.ref_name }}
+      agent_artifact: ${{ needs.agent.outputs.artifact_name }}
     secrets: inherit
 
   publish:
-    needs: [verify, build, desktop]
+    needs: [verify, agent, build, desktop]
     permissions:
       contents: write
       packages: write
@@ -235,7 +265,7 @@ jobs:
           join '${{ needs.verify.outputs.api }}' api
           join '${{ needs.verify.outputs.web }}' web
 
-      # The desktop workflow builds the agent once for every installer and hands the
+      # The shared agent job prepares one canonical artifact and hands the
       # same archive here, so the release assets are the bytes the installers embed.
       # The check against both web images below still proves they are the bytes the
       # web serves.
@@ -303,12 +333,12 @@ jobs:
           tag_name: ${{ needs.verify.outputs.tag }}
           generate_release_notes: true
           body: |
-            macOS packages use a stable, free self-signed certificate, not Apple Developer ID or notarization.
-            Verify the DMG against DESKTOP-SHA256SUMS before installation. First launch may require
-            System Settings → Privacy & Security → Open Anyway.
+            macOS packages and Darwin host agents use Developer ID signing and Apple notarization.
+            Verify the DMG against DESKTOP-SHA256SUMS before installation.
+            Replace a legacy self-signed installation with the DMG once, preserving your data directory.
             See [macOS installation and security guidance](https://github.com/podosoft-dev/pdmux/blob/main/docs/DESKTOP.md#installing-on-macos).
 
-            Users of unsigned 0.12.1 or earlier macOS packages should quit pdmux and install the new DMG once,
+            Users of self-signed 0.17.0 or earlier macOS packages should quit pdmux and install the new DMG once,
             preserving their user-data directory. Future signed updates retain signature verification and
             backup-before-install. Windows and Linux installers are also attached below.
           files: |

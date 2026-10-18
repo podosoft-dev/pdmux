@@ -11,6 +11,8 @@ import {
 import electronUpdater from "electron-updater";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdirSync } from "node:fs";
+import { userDataDirectory } from "./user-data.js";
 import { BackupService } from "./backup.js";
 import { loadDesktopConfig, type DesktopConfig } from "./config.js";
 import { desktopMessages } from "./i18n.js";
@@ -198,6 +200,12 @@ async function initialize(): Promise<void> {
     { label: messages.quit, click: () => { quitting = true; app.quit(); } },
   ]));
   void updater.check().catch((error: unknown) => logError("Check desktop update", error));
+}
+
+const profile = userDataDirectory(process.argv);
+if (profile) {
+  mkdirSync(profile, { recursive: true, mode: 0o700 });
+  app.setPath("userData", profile);
 }
 
 if (!app.requestSingleInstanceLock()) {

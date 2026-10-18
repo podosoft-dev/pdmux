@@ -11,8 +11,8 @@ that keep those promises.
 
 | Line | Source of truth | Today | When it moves |
 |---|---|---|---|
-| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.17.0` | every product release |
-| **The agent** | `AgentVersion` in `agent/internal/cli/version.go` | `0.1.26` | only when `agent/**` or `packages/protocol/**` changes |
+| **The repository (pdmux itself)** | `version` in the root `package.json` | `0.17.1` | every product release |
+| **The agent** | `AgentVersion` in `agent/internal/cli/version.go` | `0.1.27` | agent/protocol code or distribution signing changes |
 
 **Why they are not one number**: the agent is not something we deploy — it is something a
 **host downloads**. A host compares its own version against what the server publishes and
@@ -235,3 +235,16 @@ answers 404, because that directory never existed in the image. Normal paths are
 To go back, roll the *deployment* back to the release whose image carried the version you
 want, rather than expecting one image to hold several. That is the same rule as everything
 else here: the image is the unit, and a version is a property of it.
+
+## Signed Darwin distributions
+
+From agent 0.1.27, release builds retain the reproducible unsigned source checksums above as the
+source verification record, then sign the Darwin binaries once and notarize them. Published
+`SHA256SUMS`, artifact `sha256`, and `bytes` describe the final distribution bytes. Each artifact also
+has `sourceSha256`; Darwin entries add `signing: { teamId, certificateSha256 }`. These additive fields
+do not change the installation URL, update protocol or interpretation of the existing checksum.
+
+Subsequent product releases reuse the canonical signed files from an existing published release.
+They must match the current unsigned source checksums and pinned signing certificate. Do not
+re-sign an existing agent version: a secure timestamp would change its bytes. The first signing
+transition has its own agent patch version and preserves all previously published artifacts.

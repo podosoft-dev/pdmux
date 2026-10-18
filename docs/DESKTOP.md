@@ -104,7 +104,8 @@ Installers are built on their native GitHub-hosted operating systems by
 - Windows: x64 NSIS installer;
 - Linux: x64 AppImage and Debian package.
 
-One Linux job cross-compiles the four host-agent binaries and hands them to every installer runner as
+One shared job cross-compiles the four host-agent binaries (native macOS for signed releases, Linux
+for PR validation) and hands them to every installer runner as
 an `agent-binaries` archive, so all installers embed the same bytes and no installer runner needs Go.
 Each installer runner then builds shared packages, the API and the SvelteKit app, copies the current
 platform's pinned Bun executable into the application resources, runs desktop tests, and uploads
@@ -116,44 +117,32 @@ The workflow uses standard GitHub-hosted runners, whose usage is free and unlimi
 repositories according to the [GitHub-hosted runners reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 Pull requests produce disposable self-signed macOS validation artifacts and unsigned Windows/Linux
 artifacts. Never distribute the disposable macOS builds as maintained releases.
-Release tags require the stable self-signed macOS identity. The `desktop-signing` GitHub environment
-must restrict deployments to `v*` **tags**, with no branch rules, and contain `DESKTOP_MAC_P12`
-(base64-encoded encrypted PKCS#12) and `DESKTOP_MAC_PASSWORD`. Windows/Linux do not receive these keys.
-Manual signed runs must execute on the release tag itself, not on `main`; the packaged source must
-match that tag. Missing credentials, a changed certificate, or failed signing stops publication.
+Release tags require Developer ID signing and Apple notarization. The `desktop-signing` GitHub
+environment permits only `v*` tags. It contains the certificate archive/password, certificate SHA-1,
+Developer ID G2 intermediate certificate, team ID, and App Store Connect API key/issuer/key ID.
+PR builds use disposable identities without production credentials. Signed manual runs must run on
+the release tag and package that exact source. A missing key, unexpected certificate or failed
+notarization stops the build.
 
 ## Installing on macOS
 
 Step-by-step guides: [macOS](install/macos.md), [Windows](install/windows.md),
 [Linux](install/linux.md), and [native builds](install/README.md#build-without-publishing).
 
-Starting with **0.12.3**, official macOS packages use a stable, app-specific self-signed certificate.
-This is free signing, **not Apple Developer ID signing or notarization**. macOS may still block the
-first launch because Apple has not identified the developer or checked the app for malware.
+Starting with **0.17.1**, official macOS apps and Darwin host agents use Developer ID signatures
+and Apple notarization. The app and DMG carry stapled tickets; ZIP updates contain the stapled app.
+Gatekeeper can show its normal first-download confirmation, but installation does not require an
+unidentified-developer exception, quarantine removal, or a custom trusted certificate.
 
-1. Download the DMG for your Mac and `DESKTOP-SHA256SUMS` from the same official GitHub release.
-   Run `shasum -a 256 <downloaded-dmg>` and compare its hash with the matching entry in that file.
-2. Quit pdmux completely using its tray menu. Copy `pdmux.app` from the DMG into Applications.
-3. Try opening it once, then use **System Settings → Privacy & Security → Open Anyway** for pdmux
-   if macOS blocks it. See [Apple's per-app exception instructions](https://support.apple.com/en-us/102445).
-4. If macOS instead reports the verified download as damaged and offers no exception, verify the
-   installed app before removing only its quarantine attribute:
+1. Download the native DMG and `DESKTOP-SHA256SUMS` from the same official GitHub release.
+   Compare `shasum -a 256 <downloaded-dmg>` with that file.
+2. Create a backup, quit pdmux from its tray menu, and copy `pdmux.app` into Applications.
+3. Open pdmux normally. Keep `~/Library/Application Support/pdmux-desktop`: it contains your data.
 
-   ```bash
-   codesign --verify --deep --strict "/Applications/pdmux.app"
-   xattr -dr com.apple.quarantine "/Applications/pdmux.app"
-   ```
-
-   Run the second command only if checksum and signature verification succeeded and you trust the
-   official source. This is an explicit exception for that one app, not Apple approval. Never disable
-   Gatekeeper globally, install a root certificate, or re-sign the installed app yourself. On a managed
-   Mac, ask your administrator if policy prohibits the exception.
-
-The unsigned **0.12.1 and earlier** macOS installations cannot be relied on to perform a signed
-automatic update. Use the new DMG once to replace the application; keep the existing user-data
-directory (`~/Library/Application Support/pdmux-desktop`) and back it up first. Do not delete that directory
-or the runtime database. Subsequent releases retain the same certificate for automatic updates;
-the existing backup-before-install gate and signature verification remain enabled.
+**Unsigned and self-signed versions through 0.17.0 require this manual replacement once.** Their
+signing identity cannot authenticate the new Developer ID identity. Later automatic updates retain
+signature verification and backup-before-install. Do not re-sign the app or disable Gatekeeper.
+Previously published downloads retain their original signatures and checksums.
 
 For a local artifact on the current operating system:
 
@@ -197,32 +186,39 @@ The published `0.12.1` macOS packages skipped signing. This probe is preparation
 distribution, not evidence that those existing packages have been repaired. Free ad-hoc signing
 does not provide Developer ID authentication or Apple notarization.
 
-### Self-signed product packaging
+### Developer ID product packaging
 
-After building and staging the shared runtime, `bun tools/package-macos-desktop.mjs` packages the
-actual product with an explicitly provisioned `CSC_KEYCHAIN` and `PDMUX_MAC_SIGNING_IDENTITY`.
-The command does not create a production identity, import credentials, or publish a release.
-It invokes the existing Bun package script, honoring electron-builder's Node CLI shebang. Node is
-required for that packaging tool (including its WASM icon converter), not for the embedded services.
-It rejects missing/ad-hoc identities, requires signing to succeed, keeps hardened runtime and
-strict verification enabled, and does not request Apple notarization. Production credentials are
-not enabled for pull-request signing.
+Maintainers can run `bun run desktop:package:mac:signed` on a native Mac with the eight `APPLE_*`
+credentials described below supplied by their secret-store adapter. It builds the embedded stack,
+prepares canonical signed agents, signs/notarizes the app and DMG, staples their tickets, and then
+refreshes the final DMG blockmap and update hashes. It never publishes. CI uses the separate
+`release-macos-signing.mjs` entrypoint, which retains the exact release-tag/repository checks;
+local execution cannot opt a CI job out of those checks.
 
-The signing overlay preserves the existing packaging configuration and explicitly includes Bun.
-Only the four downloadable host-agent binaries are excluded from re-signing: their published
-checksums must remain identical across desktop, web, and standalone downloads. They remain sealed
-resources of the outer app; they are not excluded from app integrity verification.
+The credential interface is `APPLE_CERTIFICATE_P12_BASE64`, `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_CODESIGN_IDENTITY` (SHA-1), `APPLE_DEVELOPER_ID_G2_CERT_BASE64`, `APPLE_DEVELOPER_TEAM_ID`,
+`APPLE_NOTARY_ISSUER_ID`, `APPLE_NOTARY_KEY_ID`, and `APPLE_NOTARY_KEY_P8_BASE64`. Secret values
+remain in process memory or private temporary files. The importer handles legacy PKCS#12 encryption,
+rewraps with a one-use password, imports into a temporary keychain without installing a trusted root,
+and removes the keychain and files on success or failure. Node runs electron-builder; the embedded
+API and web still run on Bun.
 
-`bun tools/verify-macos-desktop.mjs <artifact-directory>` requires one native DMG and ZIP. It verifies
-the DMG, copies its app off the read-only mount, extracts the ZIP independently, strictly verifies
-both app signatures and Bun, executes an in-memory SQLite query using the packaged Bun, and checks
-all four packaged agents against repository-owned checksums. In a disposable GitHub verification VM,
-`--runtime` additionally launches the actual packaged application using Playwright, checks its login
-page, exercises the packaged backup implementation against its migrated SQLite database and files,
-then checks data preservation when restarting from the other artifact. Certificate extraction and
-expiry checks run on both PR and release packages. Release verification also
-pins the package certificate to `apps/desktop/signing-certificate.pem`. No signing key or certificate
-trust is installed on these verification VMs. This is not an interactive browser-download Gatekeeper test.
+`agent-binaries.yml` builds all four agents once. It verifies the unsigned source build against the
+committed checksums, signs and notarizes the two Darwin agents, and updates their distribution
+checksums and sizes. The artifact is shared by both image architectures, every desktop installer,
+and GitHub downloads. Packaging excludes these already signed agents from re-signing so their bytes
+stay identical. The signature seals them as app resources too.
+
+Release verification sets `PDMUX_VERIFY_RELEASE_IDENTITY=1` and runs
+`bun tools/verify-macos-desktop.mjs <artifact-directory>`. It independently extracts the ZIP and DMG,
+verifies signatures, certificate pins, stapled tickets and Gatekeeper acceptance, runs the embedded
+Bun/SQLite, and compares the agents against the canonical artifact supplied in
+`PDMUX_AGENT_ARTIFACT_ROOT`. `--runtime` checks the real login page, transfers, backups and preservation
+across ZIP-to-DMG replacement. Every smoke launch uses an explicit temporary `--user-data-dir` before
+acquiring the app's instance lock. Local verification additionally requires
+`PDMUX_LOCAL_DESKTOP_SMOKE=1`; it does not spoof GitHub runner variables or access a real profile.
+No production private key or custom certificate trust is installed on clean verification runners.
+A real browser-download first launch remains a separate acceptance check.
 
 Pull-request runs of `desktop.yml` build the real product with disposable certificates
 (`--ci-probe`) on Intel and Tahoe ARM64, and separate fresh runners verify the artifacts without
@@ -234,25 +230,17 @@ destroyed and cannot sign future updates.
 
 ### Production signing-key lifecycle
 
-Designate a maintainer responsible for the stable, app-specific certificate/private key.
-Keep the encrypted key in an access-controlled secret store and maintain
-an independently encrypted recovery backup; never commit it or attach it to CI artifacts. Verify
-backup restoration and the certificate fingerprint before the first release. Record only the
-public certificate fingerprint and ownership/rotation policy in release operations documentation.
+The checked-in `apps/desktop/signing-certificate.pem` pins the public Developer ID Application
+certificate. Signing also checks its team, private-key match, validity and Developer ID G2 chain.
+Keep the certificate/private key and notarization API key in the approved secret store with recovery
+procedures. PRs never receive them. Certificate renewal or key rotation is an explicit transition;
+never weaken update verification or silently fall back to unsigned output.
 
-Only an explicitly approved release job may receive the key through a temporary keychain. PR jobs
-must use disposable keys and must never receive production credentials. Do not regenerate the key
-per build: existing installations must recognize the same signing identity. A replacement certificate
-can change that identity even if its display name is unchanged. Key loss or compromise requires an
-explicit recovery/transition plan; never weaken signature checks or silently switch to manual updates.
-
-The checked-in PEM contains only the public certificate; its SHA-256 fingerprint is
-`6D:99:AD:48:A4:0D:DF:32:35:4C:9B:BB:EA:58:88:6D:92:CD:49:DF:3C:EA:E9:BC:C4:CD:9D:1E:30:97:A3:FD`.
-`release-macos-signing.mjs` imports the encrypted identity into a temporary release-only keychain,
-checks the pinned certificate, signs the package and removes the keychain and private files.
-Only that disposable build VM trusts the self-signed certificate. Users do not install it.
-Browser-download Gatekeeper interaction and manual replacement of unsigned legacy installations
-remain separate user acceptance checks; automated package tests do not claim to cover those dialogs.
+Timestamped signatures are not reproducible byte for byte. The canonical agent cache is keyed by
+agent version, and released bytes take precedence over local cache entries. Later product releases
+reuse the published signed agents after checking source hashes, signatures and certificate pins.
+An existing unsigned version or changed source under the same version is rejected. Failed signing
+or notarization does not create a reusable cache entry. Only public release files enter the cache.
 
 Build the API and web app first, then compile the shell:
 

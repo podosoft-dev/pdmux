@@ -1,0 +1,60 @@
+name: agent binaries
+
+on:
+  workflow_call:
+    inputs:
+      signed:
+        type: boolean
+        default: false
+      source_ref:
+        type: string
+        default: ""
+    outputs:
+      artifact_name:
+        value: agent-binaries
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ${{ inputs.signed && 'macos-26' || 'ubuntu-24.04' }}
+    environment: ${{ inputs.signed && 'desktop-signing' || 'desktop-build' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Prepare reproducible validation agents
+        if: ${{ !inputs.signed }}
+        run: bun tools/agent-artifacts.mjs --output "$RUNNER_TEMP/agent-release/agent"
+      - name: Prepare canonical Developer ID agents
+        if: ${{ inputs.signed }}
+        run: bun tools/agent-artifacts.mjs --signed --output "$RUNNER_TEMP/agent-release/agent"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PDMUX_SIGNING_SOURCE_REF: ${{ inputs.source_ref || github.ref_name }}
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_DEVELOPER_ID_G2_CERT_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_G2_CERT_BASE64 }}
+          APPLE_DEVELOPER_TEAM_ID: ${{ secrets.APPLE_DEVELOPER_TEAM_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+      - name: Preserve executable modes in the shared artifact
+        run: tar -cf agent-binaries.tar -C "$RUNNER_TEMP/agent-release" agent
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-binaries
+          path: agent-binaries.tar
+          overwrite: true
+          if-no-files-found: error

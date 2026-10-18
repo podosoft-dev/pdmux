@@ -72,7 +72,7 @@ describe("release workflow", () => {
       "tag_name: ${{ needs.verify.outputs.tag }}",
       "uses: ./.github/workflows/desktop.yml",
       "source_ref: ${{ inputs.releaseTag || github.ref_name }}",
-      "needs: [verify, build, desktop]",
+      "needs: [verify, agent, build, desktop]",
       "pattern: pdmux-*",
       "bun tools/merge-desktop-update-metadata.mjs",
       "DESKTOP-SHA256SUMS",
@@ -111,12 +111,21 @@ describe("release workflow", () => {
     // One agent build feeds every installer, so all packages embed the same bytes.
     const agent = desktopWorkflow.match(/\n  agent:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:\n|$)/)?.[1] ?? "";
     const packageJob = desktopWorkflow.match(/\n  package:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:\n|$)/)?.[1] ?? "";
-    expect(agent).toContain("bun run build:agent");
-    expect(agent).toContain("name: agent-binaries");
-    expect(desktopWorkflow.match(/bun run build:agent/g)).toHaveLength(1);
+    expect(agent).toContain("uses: ./.github/workflows/agent-binaries.yml");
+    const shared = readFileSync(repositoryFile(".github/workflows/agent-binaries.yml"), "utf8");
+    expect(shared).toContain("bun tools/agent-artifacts.mjs --signed");
+    expect(shared).toContain("name: agent-binaries");
+    expect(workflow).toContain("agent_artifact: ${{ needs.agent.outputs.artifact_name }}");
+    expect(workflow.match(/build-contexts: pdmux-agent-artifacts=/g)).toHaveLength(2);
+    expect(workflow).toContain('bun tools/verify-agent-images.mjs "$API_IMAGE" "$WEB_IMAGE" "$AGENT_CONTEXT"');
+    expect(workflow.indexOf("Verify agent distribution in final images")).toBeLessThan(workflow.indexOf("Hand the digests to the publish job"));
     expect(packageJob).toContain("needs: agent");
-    expect(packageJob).toContain("name: agent-binaries");
+    expect(packageJob).toContain("inputs.agent_artifact || 'agent-binaries'");
     expect(packageJob).not.toContain("actions/setup-go");
+    const preserveSource = 'cp -R apps/web/static/agent "$RUNNER_TEMP/agent-source"';
+    expect(packageJob).toContain(preserveSource);
+    expect(packageJob.indexOf(preserveSource)).toBeLessThan(packageJob.indexOf("tar -xf .agent-binaries/agent-binaries.tar"));
+    expect(packageJob).toContain("PDMUX_AGENT_SOURCE_ROOT: ${{ runner.temp }}/agent-source");
   });
 
   test("[TC-PDDESKTOP-009] restricts stable signing to macOS releases and independently verifies artifacts", () => {
@@ -130,6 +139,10 @@ describe("release workflow", () => {
     expect(verify).toContain('bun tools/verify-macos-desktop.mjs "$PACKAGE_DIRECTORY" --runtime');
     expect(verify).not.toContain("secrets.");
     expect(verify).not.toContain("add-trusted-cert");
+    expect(desktopWorkflow).toContain("bun tools/probe-macos-developer-id-update.mjs --verify");
+    const updateVerifier = desktopWorkflow.match(/\n  verify-update-probe:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:|$)/)?.[1] ?? "";
+    expect(updateVerifier).toContain("needs: prepare-update-probe");
+    expect(updateVerifier).not.toContain("secrets.");
   });
 
   test("[TC-PDHOST-024] rejects committed agent metadata that is stale", () => {

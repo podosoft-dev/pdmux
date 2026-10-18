@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseAgentVersion } from "../apps/desktop/src/staging.ts";
 import { assertCertificate } from "./release-macos-signing.mjs";
+import { verifyAgentDirectory } from "./agent-artifacts.mjs";
 
 const repository = resolve(import.meta.dirname, "..");
 const agentNames = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"].map(arch => `pdmux-agent-${arch}`);
@@ -42,7 +43,14 @@ async function verifyApp(app) {
   const result = execFileSync(bun, ["-e", 'import { Database } from "bun:sqlite"; const db = new Database(":memory:"); console.log(JSON.stringify({arch:process.arch,answer:db.query("select 42 as answer").get().answer})); db.close();'], { encoding: "utf8", timeout: 30_000 });
   assert.deepEqual(JSON.parse(result.trim()), { arch: process.arch, answer: 42 });
   const version = parseAgentVersion(await readFile(join(repository, "agent/internal/cli/version.go"), "utf8"));
-  await verifyAgentResources(join(resources, "web/client/agent", version), join(repository, "apps/web/static/agent", version));
+  const agentResources = join(resources, "web/client/agent", version);
+  const reference = join(process.env.PDMUX_AGENT_ARTIFACT_ROOT ?? join(repository, "apps/web/static/agent"), version);
+  await verifyAgentResources(agentResources, reference);
+  if (process.env.PDMUX_VERIFY_RELEASE_IDENTITY === "1") {
+    await verifyAgentDirectory(agentResources, { signed: true, native: true, sourceDirectory: join(repository, "apps/web/static/agent", version) });
+    execFileSync("xcrun", ["stapler", "validate", app], { stdio: "inherit", timeout: 30_000 });
+    execFileSync("spctl", ["--assess", "--type", "execute", app], { stdio: "inherit", timeout: 60_000 });
+  }
 }
 
 export async function verifyMacArtifacts(directory, runtime = false) {
@@ -55,6 +63,10 @@ export async function verifyMacArtifacts(directory, runtime = false) {
       const matches = files.filter(name => name.endsWith(`.${extension}`));
       assert.equal(matches.length, 1, `Require exactly one ${extension} for this native architecture`);
       const artifact = join(directory, matches[0]);
+      if (extension === "dmg" && process.env.PDMUX_VERIFY_RELEASE_IDENTITY === "1") {
+        execFileSync("xcrun", ["stapler", "validate", artifact], { stdio: "inherit", timeout: 30_000 });
+        execFileSync("spctl", ["--assess", "--type", "open", "--context", "context:primary-signature", artifact], { stdio: "inherit", timeout: 60_000 });
+      }
       const extracted = join(temporary, extension);
       await mkdir(extracted);
       if (extension === "zip") {
@@ -87,7 +99,8 @@ export async function verifyMacArtifacts(directory, runtime = false) {
         await new Promise((resolve, reject) => {
           const child = spawn("node", [join(repository, "tools/smoke-macos-desktop.mjs"), app,
             join(directory, `desktop-${extension}.png`), ...(extension === "dmg" ? ["--expect-preserved"] : [])],
-          { stdio: "inherit", timeout: 180_000 });
+          { stdio: "inherit", timeout: 180_000,
+            env: { ...process.env, PDMUX_SMOKE_CONFIG_ROOT: join(temporary, "smoke-configuration") } });
           child.once("error", reject);
           child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`Packaged runtime failed (${code})`)));
         });

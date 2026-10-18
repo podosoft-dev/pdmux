@@ -28,7 +28,8 @@ async function smoke(directory, screenshot, configuration, preserve) {
   const result = execFileSync(paths.bun, ["-e", 'import {Database} from "bun:sqlite"; const db=new Database(":memory:"); console.log(JSON.stringify({arch:process.arch,value:db.query("select 42 as value").get().value}));db.close();'], { encoding: "utf8", timeout: 30_000 });
   assert.deepEqual(JSON.parse(result.trim()), { arch: process.arch, value: 42 });
   const version = parseAgentVersion(await readFile(join(repository, "agent/internal/cli/version.go"), "utf8"));
-  await verifyAgentResources(join(paths.resources, "web/client/agent", version), join(repository, "apps/web/static/agent", version));
+  await verifyAgentResources(join(paths.resources, "web/client/agent", version),
+    join(process.env.PDMUX_AGENT_ARTIFACT_ROOT ?? join(repository, "apps/web/static/agent"), version));
   await new Promise((accept, reject) => {
     const child = spawn("node", [join(repository, "tools/smoke-desktop.mjs"), directory, screenshot,
       ...(preserve ? ["--expect-preserved"] : [])], {

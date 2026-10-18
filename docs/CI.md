@@ -10,7 +10,7 @@ to accept** — but a speed-up must never drop something the release proves.
 |---|---|---|---|
 | `ci.yml` | push to `main`, every pull request (superseded runs cancelled) | `ubuntu-latest`, `ubuntu-24.04-arm` | build, lint, unit tests, migrations, database recovery, native migration images, agent version bump, reproducible agent binaries against the committed `SHA256SUMS` |
 | `readiness.yml` | pull request, manual | `ubuntu-24.04` | the production runtime with a real agent on SQLite and PostgreSQL |
-| `desktop.yml` | pull request touching desktop inputs, manual, called by `release.yml` | one Linux agent job, four native installer runners, four clean verification runners | installers for macOS Intel and Apple Silicon, Windows x64, Linux x64, verified on fresh machines |
+| `desktop.yml` | pull request touching desktop inputs, manual, called by `release.yml` | one shared agent job, four native installer runners, four clean verification runners | installers for macOS Intel and Apple Silicon, Windows x64, Linux x64, verified on fresh machines |
 | `release.yml` | `vX.Y.Z` tag, manual rebuild of an existing tag | Linux amd64 and arm64, plus `desktop.yml` | verified multi-architecture images, signed installers, agent binaries, checksums, the GitHub release |
 | `macos-update-probe.yml` | pull request touching the probe, manual | `macos-26` | self-signed update and relaunch between two disposable app versions |
 
@@ -142,3 +142,25 @@ release faster: the next speed-up has to shorten both the macOS Intel path and t
   Compare large binary values as bytes, not with a deep equal.
 - **Never trade a release proof for time**: signing, clean-runner verification, checksums, image and
   asset equality, the asset list, and the `verify` gate before `publish`.
+
+## Developer ID signing transition
+
+From 0.17.1, `release.yml` calls `agent-binaries.yml` once beside its verify job. That protected macOS
+job verifies a reproducible source build, reuses a previously published signed agent release when
+available, or signs/notarizes a new agent version. It supplies the same `agent-binaries` archive to
+both image architectures and to `desktop.yml` through its optional `agent_artifact` input. Standalone
+and PR desktop runs prepare their own artifact; PRs stay unsigned/disposable and receive no Apple
+credentials. Docker's `AGENT_ARTIFACTS_BASE` defaults to its reproducible source stage; releases
+explicitly select the `pdmux-agent-artifacts` named build context instead.
+
+The committed unsigned hashes remain the source verification gate. Clean installer checks use the
+canonical distribution hashes and additionally verify the Darwin certificate, hardened runtime,
+secure timestamps and notarization tickets. Both web images, API manifests, all installers and
+GitHub downloads must describe identical distribution bytes. The 22-asset release layout and the
+publish dependency on every verify/build/desktop gate remain intact.
+
+The 9.2-minute release and 8.2-minute validation measurements above predate notarization. Do not
+report them as timings for this path. Record the first protected workflow's per-step durations after
+it runs, including agent reuse, Apple submission waits, app notarization and DMG finalization.
+Local signing measurements and any unrun native CI checks are recorded separately in the private
+workspace operations record.

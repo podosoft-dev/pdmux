@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+ARG AGENT_ARTIFACTS_BASE=agent-build
 
 FROM oven/bun:1.4.0-alpine AS manifests
 WORKDIR /src
@@ -13,13 +14,16 @@ WORKDIR /app
 COPY --from=manifests /app ./
 RUN bun ci
 
-FROM oven/bun:1.4.0-alpine AS agent
+FROM oven/bun:1.4.0-alpine AS agent-build
 COPY --from=golang:1.26.5-alpine /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}" GOTOOLCHAIN=local
 WORKDIR /src
 COPY agent ./agent
 COPY tools/build-agent-binaries.mjs ./tools/
-RUN bun tools/build-agent-binaries.mjs
+RUN bun tools/build-agent-binaries.mjs && mv apps/web/static/agent /agent
+
+# Both release architectures consume the exact same signed agent bytes.
+FROM ${AGENT_ARTIFACTS_BASE} AS agent
 
 FROM oven/bun:1.4.0-alpine AS build
 WORKDIR /app
@@ -29,7 +33,8 @@ COPY --from=deps /app ./
 COPY . .
 # Vite copies static assets into the adapter output, so the release binaries must
 # exist before the web build starts.
-COPY --from=agent /src/apps/web/static/agent ./apps/web/static/agent
+COPY --from=agent /agent ./apps/web/static/agent
+RUN chmod -R a+rX ./apps/web/static/agent
 RUN if [ -d packages ]; then \
       for manifest in packages/*/package.json; do \
         [ -e "$manifest" ] || continue; \
