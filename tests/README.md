@@ -153,8 +153,11 @@ To run the whole suite on two workers against the containerized loop, with the
 exclusive tests' report in `playwright-report/exclusive`:
 
 ```bash
-E2E_BASE_URL=http://pdmux.localhost E2E_WORKERS=2 bun run test:e2e
+E2E_BASE_URL=http://pdmux.localhost E2E_WORKERS=2 E2E_SKIP_RATE_LIMIT=true bun run test:e2e
 ```
+
+Then run the rate-limit spec on its own, as [Rate limits](#rate-limits)
+describes.
 
 Before a whole run, remove the accounts and hosts earlier runs left behind with
 `bun run e2e:reset` from the repository root. It runs psql in the PostgreSQL
@@ -164,3 +167,32 @@ database settings from `.env.docker` and name that stack's container:
 ```bash
 (set -a && . ./.env.docker && set +a && E2E_POSTGRES_CONTAINER=pdmux-dev-postgres-1 bun run e2e:reset)
 ```
+
+## Rate limits
+
+A whole run sends more requests than the example limits in `.env.docker.example`
+allow (`RATE_LIMIT_TTL=60`, `RATE_LIMIT_MAX=100`, and 20 for `/api/auth` while
+`RATE_LIMIT_AUTH_MAX` is unset), so a local `.env.docker` raises them, for example
+to `RATE_LIMIT_TTL=5`, `RATE_LIMIT_MAX=2000`, and `RATE_LIMIT_AUTH_MAX=2000`.
+`api/rate-limit.api.spec.ts` cannot pass against raised limits: its requests
+never reach 2000 inside a five-second window, so it never sees a 429. Skip it in
+the whole run with `E2E_SKIP_RATE_LIMIT=true` and run it on its own against the
+example limits:
+
+1. Put the example values in `.env.docker` (delete the `RATE_LIMIT_AUTH_MAX`
+   line) and restart the stack with `podo dev down`, then `podo dev watch`. The
+   watch keeps the values it read when it started.
+2. Run the spec with the same limits in the runner's environment. It reads them
+   from there and expects 300 and 20 without them:
+
+   ```bash
+   RATE_LIMIT_MAX=100 RATE_LIMIT_AUTH_MAX=20 E2E_BASE_URL=http://pdmux.localhost \
+     bun run test:e2e --project=api api/rate-limit.api.spec.ts
+   ```
+
+3. Put the raised values back and restart the stack again.
+
+Measured on 2026-10-18: without `E2E_SKIP_RATE_LIMIT`, a whole two-worker run
+against the raised limits failed two of the four rate-limit tests, and running
+the file alone with the runner set to 2000 still failed one. Against the example
+limits, the four passed in 6.5 s.
