@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { desktopPaths } from "./desktop-package-paths.mjs";
 import { verifyAgentResources } from "./verify-macos-desktop.mjs";
 import { readFile } from "node:fs/promises";
@@ -21,6 +21,11 @@ export function windowsInstallArguments(destination) {
   assert.ok(!/[\r\n"]/.test(destination), "Invalid installation directory");
   // NSIS requires /D last and unquoted; it consumes the remaining command line.
   return ["/S", "/currentuser", `/D=${destination}`];
+}
+
+export async function linuxInstallationDirectory(executable = "/usr/bin/pdmux") {
+  // Debian's launcher follows alternatives; its bundle directory follows productName.
+  return dirname(await realpath(executable));
 }
 
 async function smoke(directory, screenshot, configuration, preserve) {
@@ -60,7 +65,7 @@ export async function verifyDesktopArtifacts(directory) {
     } else {
       const deb = join(directory, selectArtifact(files, ".deb"));
       execFileSync("sudo", ["apt-get", "install", "-y", deb], { stdio: "inherit", timeout: 180_000 });
-      await smoke("/opt/pdmux", join(directory, "desktop-deb.png"), configuration, false);
+      await smoke(await linuxInstallationDirectory(), join(directory, "desktop-deb.png"), configuration, false);
       const image = join(directory, selectArtifact(files, ".AppImage"));
       const { chmod } = await import("node:fs/promises");
       await chmod(image, 0o755);
