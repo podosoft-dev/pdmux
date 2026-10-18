@@ -1,5 +1,7 @@
 import { SQL } from "bun";
 import { describe, expect, it } from "bun:test";
+import { createSocket } from "node:dgram";
+import { Resolver } from "node:dns/promises";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { connect, createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -60,6 +62,45 @@ function probedSql(): ProbedSql {
     },
     close: () => target.close(),
   };
+}
+
+interface LocalDns {
+  resolver: Resolver;
+  close: () => void;
+}
+
+// A resolver that asks a DNS server on a local UDP port instead of the system's,
+// whose answers depend on the machine. The server answers every query with
+// NXDOMAIN, or never answers when `answers` is false.
+async function localDns(answers: boolean): Promise<LocalDns> {
+  const server = createSocket("udp4");
+  if (answers) {
+    server.on("message", (query, peer) => {
+      // The header and the question, flagged as a response with RCODE 3 and no records.
+      let end = 12;
+      while (end < query.length && query[end] !== 0) end += (query[end] ?? 0) + 1;
+      const response = Buffer.from(query.subarray(0, end + 5));
+      response[2] = 0x80 | ((query[2] ?? 0) & 0x01);
+      response[3] = 0x83;
+      response.writeUInt16BE(1, 4);
+      response.fill(0, 6, 12);
+      server.send(response, peer.port, peer.address);
+    });
+  }
+  await new Promise<void>((resolve) => server.bind(0, "127.0.0.1", resolve));
+  // Bun waits at least a second for an answer; a single try keeps that the whole wait.
+  const resolver = new Resolver({ timeout: 200, tries: 1 });
+  resolver.setServers([`127.0.0.1:${server.address().port}`]);
+  return { resolver, close: () => server.close() };
+}
+
+async function lookupError(answers: boolean): Promise<unknown> {
+  const dns = await localDns(answers);
+  try {
+    return await dns.resolver.resolve4("database.invalid").then(() => undefined, (reason: unknown) => reason);
+  } finally {
+    dns.close();
+  }
 }
 
 describe("database provider", () => {
@@ -266,11 +307,16 @@ describe("isDatabaseUnavailable", () => {
   });
 
   it("recognizes a real lookup of a host that does not exist", async () => {
-    // .invalid never resolves (RFC 2606). A resolver that does not answer at all
-    // fails with ETIMEOUT after about 16 seconds, which is recognized too.
-    const error: unknown = await fetch("http://database.invalid/").then(() => undefined, (reason: unknown) => reason);
+    const error = await lookupError(true);
+    expect((error as { code?: unknown }).code).toBe("ENOTFOUND");
     expect(isDatabaseUnavailable(error)).toBe(true);
-  }, 30_000);
+  });
+
+  it("recognizes a real lookup that the resolver never answers", async () => {
+    const error = await lookupError(false);
+    expect((error as { code?: unknown }).code).toBe("ETIMEOUT");
+    expect(isDatabaseUnavailable(error)).toBe(true);
+  });
 
   it("recognizes a real refused connection to localhost", async () => {
     const server = createServer();

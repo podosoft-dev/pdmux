@@ -1,7 +1,7 @@
 import type { APIRequestContext } from "@playwright/test";
 import { expect, test } from "../helpers/disposable-users";
 import { ADMIN, USER } from "../helpers/accounts";
-import { mailpitReachable, waitForOtp } from "../helpers/mailpit";
+import { skipUnlessMailReachesMailpit, waitForOtp } from "../helpers/mailpit";
 import { totpCode } from "../helpers/totp";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
@@ -171,7 +171,7 @@ test("a wrong password is not audited as a sign-in", async ({ playwright, dispos
 });
 
 test("an email code sign-in is audited once", async ({ playwright, disposableUsers }) => {
-  test.skip(!(await mailpitReachable()), "Mailpit not available");
+  await skipUnlessMailReachesMailpit();
   const admin = await signedIn(playwright, ADMIN);
   test.skip((await admin.get("/api/audit-logs")).status() === 404, "audit-log module not installed");
   const caps = await (await admin.get("/api/account/capabilities")).json();

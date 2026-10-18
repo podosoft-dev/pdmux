@@ -1,6 +1,6 @@
 import { expect, test } from "../helpers/disposable-users";
 import { ready } from "../helpers/hydration";
-import { mailpitReachable, waitForLink } from "../helpers/mailpit";
+import { skipUnlessMailReachesMailpit, waitForLink } from "../helpers/mailpit";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 
@@ -17,7 +17,7 @@ test("verification badges stay hidden when the feature is off", async ({ page })
 
 // Admin can trigger a password-reset email for a user (not verification-gated).
 test("admin sends a password reset email to a user", async ({ page, disposableUsers }) => {
-  test.skip(!(await mailpitReachable()), "Mailpit not available");
+  await skipUnlessMailReachesMailpit();
   await ready(page, "/admin/users");
   const email = `admin-reset-${Date.now()}@example.com`;
   await disposableUsers.create({ email, name: "AR" });

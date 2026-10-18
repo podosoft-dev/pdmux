@@ -16,10 +16,17 @@ The plugin records an action only when the request succeeded, so a wrong
 password or a forbidden admin call leaves no entry. Every sign-in method records
 `auth.login` with the method in `metadata.method` (`password`, `email-otp`,
 `magic-link`, `passkey`, `two-factor-totp`, ...) and, for social sign-in, the
-provider in `metadata.provider`. A two-factor sign-in is recorded when the second
-factor completes it, not at the password step. `auth.ts` pushes the plugin after
-every other plugin: Better Auth runs after hooks in plugin order, and two-factor
-changes the outcome of a password sign-in in its own after hook.
+provider in `metadata.provider`. A sign-in through an endpoint of a plugin the
+app adds, such as `@better-auth/electron`'s `/electron/token`, is recorded too,
+with the endpoint's path as the method: any request that ends with a new session
+it did not come with is a sign-in, except the endpoints in `NOT_SIGN_INS`
+(sign-up, impersonation, switching between a browser's sessions, and requests
+that replace the signed-in user's own session). Session reads and updates that
+refresh the request's own session, including bearer and API key requests, are
+not. A two-factor sign-in is recorded when the second factor completes it, not
+at the password step. `auth.ts` pushes the plugin after every other plugin:
+Better Auth runs after hooks in plugin order, and two-factor changes the outcome
+of a password sign-in in its own after hook.
 
 ## Audit your own Elysia routes
 
@@ -96,9 +103,12 @@ survives renames/deletes), `targetType/targetId/targetLabel`, `ip`, `metadata`
 ## Customize
 
 - **Auth actions:** `ACTIONS` in `audit-hook.ts` maps Better Auth endpoints to
-  action codes, and `SIGN_IN_METHODS` lists the endpoints that sign a user in.
-  The `audit-hook.spec.ts` test fails when the app's Better Auth gains a sign-in
-  endpoint that neither list classifies.
+  action codes, `SIGN_IN_METHODS` names the method of Better Auth's sign-in
+  endpoints, and `NOT_SIGN_INS` lists the endpoints that start or swap a session
+  without a sign-in. The `audit-hook.spec.ts` test fails when Better Auth or a
+  plugin PodoKit configures gains an endpoint that it has not classified; the
+  endpoints of plugins the app adds are recorded as sign-ins when they start a
+  session, without a change to these lists.
 - **Your routes:** call `AuditService.recordRequest()` after successful operations;
   pass `{ defer: true }` only for high-volume, non-security events.
 - **Schema:** add columns with a migration, and keep the

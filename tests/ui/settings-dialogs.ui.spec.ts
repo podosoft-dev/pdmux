@@ -57,8 +57,8 @@ test("settings: open and save the SMTP dialog", { tag: "@exclusive" }, async ({ 
   await page.getByRole("button", { name: "SMTP settings" }).click();
   const dialog = page.getByRole("dialog");
   try {
-    // Point at the same Mailpit the env already uses, so saving can't re-route mail
-    // for the other email specs.
+    // SMTP stays switched off, so saving these values can't re-route mail for the
+    // other email specs: the mailer keeps the environment's transport.
     await dialog.locator("#smtp-host").fill("localhost");
     await dialog.locator("#smtp-port").fill("1125");
     await dialog.getByRole("button", { name: "Save", exact: true }).click();

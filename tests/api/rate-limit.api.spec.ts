@@ -20,10 +20,40 @@ const origin = { origin: base };
 // RateLimit-Limit and RateLimit-Remaining headers. The spec reads the limits from
 // them, so it follows whatever limits the stack runs with. When the runner's
 // environment sets RATE_LIMIT_MAX, RATE_LIMIT_AUTH_MAX, or RATE_LIMIT_RUNTIME_MAX,
-// the spec also expects the stack to use that value. It sends one more request
-// than the general limit, so a run that should not spend that many on a raised
-// limit sets E2E_SKIP_RATE_LIMIT=true to skip the file.
+// the spec also expects the stack to use that value. A test that sends a budget's
+// worth of requests times the first ones and skips, with the reason, when the
+// rest would not fit in its time, as with raised local limits. A run that should
+// not send them at all sets E2E_SKIP_RATE_LIMIT=true to skip the file.
 test.skip(process.env.E2E_SKIP_RATE_LIMIT === "true", "E2E_SKIP_RATE_LIMIT is true");
+
+/** Requests a test times before it judges whether the rest fit in its time. */
+const PACE_SAMPLE = 50;
+
+let testStarted = Date.now();
+test.beforeEach(() => {
+  testStarted = Date.now();
+});
+
+function seconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
+/**
+ * Why `left` more requests, sent at the pace of the `sent` ones since `since`,
+ * would not end within half of the time this test has left, or undefined when
+ * they would. The other half leaves room for a slower stretch.
+ */
+function outOfTime(sent: number, since: number, left: number): string | undefined {
+  const { timeout } = test.info();
+  if (timeout === 0) return undefined;
+  const now = Date.now();
+  const perRequest = (now - since) / sent;
+  const needed = perRequest * left;
+  const available = timeout - (now - testStarted);
+  if (needed <= available / 2) return undefined;
+  const pace = Math.round(1000 / perRequest);
+  return `${left} more requests at ${pace} per second take about ${seconds(needed)}, more than half of the ${seconds(available)} this test has left`;
+}
 
 /** Requires a session, so a session's requests count under its user from the first one. */
 const PROBE = "/api/account/me";
@@ -64,11 +94,14 @@ async function inOneWindow(check: () => Promise<void>): Promise<void> {
 }
 
 /**
- * Requests the probe until the limiter answers 429, or null when the general
- * window keeps ending first. More remaining than on the request before means a
- * new window started, which starts the count over.
+ * Requests the probe until the limiter answers 429, or returns why it stopped
+ * first: the general window kept ending first, or the requests left to the
+ * limit would not fit in the test's time. More remaining than on the request
+ * before means a new window started, which starts the count over.
  */
-async function untilLimited(ctx: APIRequestContext, limit: number): Promise<APIResponse | null> {
+async function untilLimited(ctx: APIRequestContext, limit: number): Promise<APIResponse | string> {
+  const started = Date.now();
+  let sent = 0;
   let windows = 1;
   let counted = 0;
   let previous = Number.POSITIVE_INFINITY;
@@ -77,15 +110,21 @@ async function untilLimited(ctx: APIRequestContext, limit: number): Promise<APIR
     if (response.status() === 429) return response;
     expect(response.status(), `${PROBE} request ${counted + 1} of window ${windows}`).toBe(200);
     const { remaining } = budget(response);
+    sent += 1;
     if (remaining >= previous) {
       windows += 1;
       counted = 0;
-      if (windows > 3) return null;
+      if (windows > 3) return `the general window ends before this client sends ${limit} requests`;
     }
     previous = remaining;
     counted += 1;
     // A window holds at most `limit` served requests.
     expect(counted, `requests served in one general window`).toBeLessThanOrEqual(limit);
+    // Judged in each window, since a new one needs the whole limit again.
+    if (counted === PACE_SAMPLE) {
+      const late = outOfTime(sent, started, remaining + 1);
+      if (late) return `reaching the general limit (${limit}): ${late}`;
+    }
   }
 }
 
@@ -139,7 +178,6 @@ test("rate limit: health probes stay available while ordinary routes return 429 
   expect(probe.status()).toBe(200);
   const { limit } = budget(probe);
   expectConfigured("RATE_LIMIT_MAX", limit);
-  test.skip(limit > 10_000, `the general budget (${limit}) is too large to exhaust here`);
 
   // Health probes are not counted: they carry no budget and leave the general one as it was.
   await inOneWindow(async () => {
@@ -156,9 +194,12 @@ test("rate limit: health probes stay available while ordinary routes return 429 
 
   // A window serves `limit` requests and rejects the next one.
   const limited = await untilLimited(ctx, limit);
-  test.skip(limited === null, `the general window ends before this client sends ${limit} requests`);
-  expect(limited?.headers()["retry-after"]).toBeTruthy();
-  expect(await limited?.json()).toMatchObject({
+  if (typeof limited === "string") {
+    test.skip(true, limited);
+    return;
+  }
+  expect(limited.headers()["retry-after"]).toBeTruthy();
+  expect(await limited.json()).toMatchObject({
     success: false,
     error: { code: "RATE_LIMIT_EXCEEDED", statusCode: 429 },
   });
@@ -239,10 +280,14 @@ test("rate limit: session reads do not consume the strict authentication budget"
     reads + 1 > runtimeLimit,
     `the authentication budget (${authLimit}) is not far enough below the runtime budget (${runtimeLimit})`,
   );
-  test.skip(authLimit > 1000, `the authentication budget (${authLimit}) is too large to exhaust here`);
-  for (let i = 0; i < reads; i++) {
+  const started = Date.now();
+  for (let i = 1; i <= reads; i++) {
     const response = await ctx.get("/api/auth/get-session");
-    expect(response.status(), `session request ${i + 1}`).toBe(200);
+    expect(response.status(), `session request ${i}`).toBe(200);
+    if (i === PACE_SAMPLE) {
+      const late = outOfTime(i, started, reads - i);
+      test.skip(late !== undefined, `reading past the authentication budget (${authLimit}): ${late}`);
+    }
   }
   await ctx.dispose();
 });

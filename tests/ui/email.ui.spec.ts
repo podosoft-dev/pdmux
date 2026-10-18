@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { anonState } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
-import { mailpitReachable, waitForLink } from "../helpers/mailpit";
+import { skipUnlessMailReachesMailpit, waitForLink } from "../helpers/mailpit";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
@@ -10,7 +10,7 @@ const origin = { origin: base };
 test.use({ storageState: anonState });
 
 test("forgot password: request, open the emailed link, set a new password, sign in", async ({ page, playwright }) => {
-  test.skip(!(await mailpitReachable()), "Mailpit not available");
+  await skipUnlessMailReachesMailpit();
   const email = `ui-reset-${Date.now()}@example.com`;
   const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   const signup = await ctx.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "UIReset" } });

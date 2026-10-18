@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { mailpitReachable, waitForLink, waitForOtp } from "../helpers/mailpit";
+import { skipUnlessMailReachesMailpit, waitForLink, waitForOtp } from "../helpers/mailpit";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
 
 test("email one-time code signs a user in", async ({ playwright }) => {
-  test.skip(!(await mailpitReachable()), "Mailpit not available");
+  await skipUnlessMailReachesMailpit();
   const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   const caps = await (await ctx.get("/api/account/capabilities")).json();
   test.skip(!caps?.emailOtp, "email OTP not enabled");
@@ -49,7 +49,7 @@ test("organization invitation can be sent and accepted", async ({ playwright }) 
 });
 
 test("magic link signs a user in", async ({ playwright }) => {
-  test.skip(!(await mailpitReachable()), "Mailpit not available");
+  await skipUnlessMailReachesMailpit();
   const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   const caps = await (await ctx.get("/api/account/capabilities")).json();
   test.skip(!caps?.magicLink, "magic link not enabled");
@@ -74,7 +74,7 @@ function tokenFromRedirect(location: string): string | null {
 }
 
 test("password reset delivers an email and updates the password @smoke", async ({ playwright }) => {
-  test.skip(!(await mailpitReachable()), "Mailpit not available");
+  await skipUnlessMailReachesMailpit();
   const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   const email = `reset-${Date.now()}@example.com`;
   const signup = await ctx.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "Reset" } });
@@ -99,7 +99,7 @@ test("password reset delivers an email and updates the password @smoke", async (
 });
 
 test("email verification blocks sign-in until the address is confirmed", async ({ playwright }) => {
-  test.skip(!(await mailpitReachable()), "Mailpit not available");
+  await skipUnlessMailReachesMailpit();
   const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   const email = `verify-${Date.now()}@example.com`;
   const signup = await ctx.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "Verify", callbackURL: `${base}/admin` } });

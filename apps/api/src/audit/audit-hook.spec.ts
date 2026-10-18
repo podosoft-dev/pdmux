@@ -1,25 +1,82 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
+import { apiKey } from "@better-auth/api-key";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { envAuthConfig } from "@podosoft/podokit-auth";
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
+import { APIError, createAuthEndpoint } from "better-auth/api";
+import { setSessionCookie } from "better-auth/cookies";
 import { getAuthTables } from "better-auth/db";
-import { admin, emailOTP, jwt, magicLink, twoFactor } from "better-auth/plugins";
+import { admin, bearer, emailOTP, jwt, magicLink, multiSession, twoFactor } from "better-auth/plugins";
 import { buildAuth } from "../auth/auth";
 import { setAuditRecorder, type AuditEntry } from "./audit-events";
-import { auditPlugin, SIGN_IN_METHODS } from "./audit-hook";
+import { auditPlugin, NOT_SIGN_INS, SIGN_IN_METHODS } from "./audit-hook";
 
 const BASE_URL = "http://localhost:5002";
 const PASSWORD = "Podokit3e-Str0ng!pw";
 
-// Endpoints that look like a sign-in but never start a session of their own.
+// The plugins PodoKit's auth.ts and modules configure. Endpoints of other
+// plugins, such as one an application adds, are not classified below: the
+// audit plugin records their sign-ins by default.
+const PODOKIT_PLUGINS = new Set([
+  "podokit-feature-gate",
+  "podokit-revoke-every-other-session",
+  "two-factor",
+  "magic-link",
+  "email-otp",
+  "username",
+  "multi-session",
+  "phone-number",
+  "api-key",
+  "passkey",
+  "organization",
+  "bearer",
+  "jwt",
+  "oauth-provider",
+  "open-api",
+  "have-i-been-pwned",
+  "admin",
+  "podokit-audit",
+]);
+
+// Endpoints of Better Auth and of those plugins that never end with a session
+// other than the one the request came with, which some of them set again. A
+// Better Auth upgrade that adds an endpoint fails "classifies every endpoint"
+// until the endpoint is added here, to SIGN_IN_METHODS, or to NOT_SIGN_INS.
 const STARTS_NO_SESSION = new Set([
-  "/sign-in/magic-link", // emails the link that /magic-link/verify signs in with
-  "/passkey/verify-registration", // adds a passkey for the signed-in user
-  "/verify-password", // checks the signed-in user's password again
-  "/delete-user/callback", // confirms an account deletion
-  "/email-otp/check-verification-otp", // checks a code without using it
+  "/.well-known/oauth-authorization-server", "/.well-known/openid-configuration", "/account-info",
+  "/admin/ban-user", "/admin/create-user", "/admin/get-user", "/admin/has-permission",
+  "/admin/list-user-sessions", "/admin/list-users", "/admin/oauth2/create-client", "/admin/oauth2/resources",
+  "/admin/oauth2/resources/:identifier", "/admin/oauth2/resources/:identifier/clients/:client_id",
+  "/admin/oauth2/update-client", "/admin/remove-user", "/admin/revoke-user-session", "/admin/revoke-user-sessions",
+  "/admin/set-role", "/admin/set-user-password", "/admin/unban-user", "/admin/update-user",
+  "/api-key/create", "/api-key/delete", "/api-key/get", "/api-key/list", "/api-key/update",
+  "/change-email", "/delete-user", "/delete-user/callback",
+  "/email-otp/change-email", "/email-otp/check-verification-otp", "/email-otp/request-email-change",
+  "/email-otp/request-password-reset", "/email-otp/reset-password", "/email-otp/send-verification-otp",
+  "/error", "/forget-password/email-otp", "/get-access-token", "/get-session", "/is-username-available", "/jwks",
+  "/link-social", "/list-accounts", "/list-sessions", "/multi-session/list-device-sessions",
+  "/oauth2/authorize", "/oauth2/client/rotate-keys", "/oauth2/client/rotate-secret", "/oauth2/consent",
+  "/oauth2/continue", "/oauth2/create-client", "/oauth2/delete-client", "/oauth2/delete-consent",
+  "/oauth2/end-session", "/oauth2/end-session/confirm", "/oauth2/get-client", "/oauth2/get-clients",
+  "/oauth2/get-consent", "/oauth2/get-consents", "/oauth2/introspect", "/oauth2/public-client",
+  "/oauth2/public-client-prelogin", "/oauth2/register", "/oauth2/revoke", "/oauth2/token", "/oauth2/update-client",
+  "/oauth2/update-consent", "/oauth2/userinfo", "/ok", "/open-api/generate-schema",
+  "/organization/accept-invitation", "/organization/cancel-invitation", "/organization/check-slug",
+  "/organization/create", "/organization/delete", "/organization/get-active-member",
+  "/organization/get-active-member-role", "/organization/get-full-organization", "/organization/get-invitation",
+  "/organization/get-organization", "/organization/has-permission", "/organization/invite-member",
+  "/organization/leave", "/organization/list", "/organization/list-invitations", "/organization/list-members",
+  "/organization/list-user-invitations", "/organization/reject-invitation", "/organization/remove-member",
+  "/organization/set-active", "/organization/update", "/organization/update-member-role",
+  "/passkey/delete-passkey", "/passkey/generate-authenticate-options", "/passkey/generate-register-options",
+  "/passkey/list-user-passkeys", "/passkey/update-passkey", "/passkey/verify-registration",
+  "/phone-number/request-password-reset", "/phone-number/reset-password", "/phone-number/send-otp",
+  "/reference", "/refresh-token", "/request-password-reset", "/reset-password", "/reset-password/:token",
+  "/revoke-other-sessions", "/revoke-session", "/revoke-sessions", "/send-verification-email",
+  "/sign-in/magic-link", "/sign-out", "/token", "/two-factor/generate-backup-codes", "/two-factor/get-totp-uri",
+  "/two-factor/send-otp", "/unlink-account", "/update-session", "/update-user", "/verify-password",
 ]);
 
 interface Mailbox {
@@ -52,15 +109,42 @@ afterEach(() => restoreRecorder());
 const logins = (): AuditEntry[] => entries.filter((entry) => entry.action === "auth.login");
 const actions = (action: string): AuditEntry[] => entries.filter((entry) => entry.action === action);
 
-// The sign-in methods PodoKit's auth.ts enables, on an in-memory database, with
-// the audit plugin pushed last as the audit-log module does.
-function startAuth(enabled: () => Promise<boolean> = async () => true) {
+// Like @better-auth/electron's /electron/token, which a desktop app calls with
+// the code its browser sign-in handed over: an endpoint of an application's own
+// plugin that starts a session for a user it looks up.
+function desktopSignIn(): BetterAuthPlugin {
+  return {
+    id: "desktop-sign-in",
+    endpoints: {
+      desktopToken: createAuthEndpoint("/desktop/token", { method: "POST" }, async (ctx) => {
+        const { code } = (ctx.body ?? {}) as { code?: string };
+        const found = code ? await ctx.context.internalAdapter.findUserByEmail(code) : null;
+        if (!found) throw new APIError("NOT_FOUND", { message: "Invalid or expired token." });
+        const session = await ctx.context.internalAdapter.createSession(found.user.id);
+        await setSessionCookie(ctx, { session, user: found.user });
+        return ctx.json({ token: session.token });
+      }),
+    },
+  };
+}
+
+interface StartOptions {
+  enabled?: () => Promise<boolean>;
+  session?: BetterAuthOptions["session"];
+}
+
+// The sign-in methods PodoKit's auth.ts enables and plugins that set or swap
+// sessions without a sign-in, on an in-memory database, with the audit plugin
+// pushed last as the audit-log module does.
+function startAuth({ enabled = async () => true, session }: StartOptions = {}) {
   const mail: Mailbox = { magicLink: "", otp: "", verification: "" };
   const db: Record<string, Record<string, unknown>[]> = {};
   const options = {
     baseURL: BASE_URL,
     secret: "audit-hook-test-secret-0123456789abcdef",
     database: memoryAdapter(db),
+    ...(session ? { session } : {}),
+    user: { changeEmail: { enabled: true, updateEmailWithoutVerification: true } },
     emailAndPassword: { enabled: true },
     emailVerification: {
       autoSignInAfterVerification: true,
@@ -103,28 +187,37 @@ function startAuth(enabled: () => Promise<boolean> = async () => true) {
           mail.otp = otp;
         },
       }),
+      multiSession(),
+      apiKey({ enableSessionForAPIKeys: true, rateLimit: { enabled: false } }),
+      bearer({ requireSignature: true }),
       jwt({ disableSettingJwtHeader: true }),
       oauthProvider({ loginPage: "/login", consentPage: "/oauth2/consent" }),
       admin(),
+      desktopSignIn(),
       auditPlugin({ enabled }),
     ],
   };
   for (const table of Object.values(getAuthTables(options))) db[table.modelName] = [];
-  return { auth: betterAuth(options), mail };
+  return { auth: betterAuth(options), mail, db };
 }
 
-// A cookie jar in front of the Better Auth router, like a browser's.
+// A cookie jar in front of the Better Auth router, like a browser's, or a client
+// that sends the same headers with every request.
 class Browser {
   private readonly auth: AuthHandler;
+  private readonly sent: Record<string, string>;
   private readonly cookies = new Map<string, string>();
 
-  constructor(auth: AuthHandler) {
+  constructor(auth: AuthHandler, sent: Record<string, string> = {}) {
     this.auth = auth;
+    this.sent = sent;
   }
 
   /** Request headers that carry this browser's cookies, for a server-side auth.api call. */
   headers(): Headers {
-    return new Headers({ cookie: [...this.cookies].map(([name, value]) => `${name}=${value}`).join("; ") });
+    const headers = new Headers(this.sent);
+    if (this.cookies.size > 0) headers.set("cookie", [...this.cookies].map(([name, value]) => `${name}=${value}`).join("; "));
+    return headers;
   }
 
   get(path: string): Promise<Response> {
@@ -160,6 +253,10 @@ async function signUp(auth: AuthHandler, email: string): Promise<Browser> {
   return browser;
 }
 
+async function userId(browser: Browser): Promise<string> {
+  return ((await (await browser.get("/get-session")).json()) as { user: { id: string } }).user.id;
+}
+
 // The current code for an otpauth:// URI, as an authenticator app computes it.
 function totp(uri: string): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -179,6 +276,8 @@ describe("audit plugin", () => {
   test("records a password sign-in once and a wrong password not at all", async () => {
     const { auth } = startAuth();
     await signUp(auth, "password@example.com");
+    // Signing up starts a session too, recorded as the sign-up only.
+    expect(entries.map((entry) => entry.action)).toEqual(["auth.signup"]);
 
     const wrong = await new Browser(auth).post("/sign-in/email", { email: "password@example.com", password: "Wrong-password-1" });
     expect(wrong.status).toBe(401);
@@ -329,6 +428,28 @@ describe("audit plugin", () => {
     expect(signedIn.status).toBe(200);
     expect(await signedIn.json()).toMatchObject({ redirect: true, url: expect.stringContaining("code=") });
     expect(logins()).toEqual([expect.objectContaining({ actorEmail: "oauth@example.com", metadata: { method: "password" } })]);
+
+    // Authorizing again with that session and exchanging the code sign nobody in.
+    const again = await browser.get(`/oauth2/authorize?${query}`);
+    expect(again.status).toBe(302);
+    const code = new URL(again.headers.get("location") ?? "").searchParams.get("code") ?? "";
+    expect(code).not.toBe("");
+    const exchange = new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: "https://client.example.com/callback",
+      code_verifier: verifier,
+    });
+    const credentials = Buffer.from(`${client.client_id}:${client.client_secret ?? ""}`).toString("base64");
+    const token = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/oauth2/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${credentials}` },
+        body: exchange,
+      }),
+    );
+    expect(token.status).toBe(200);
+    expect(logins()).toHaveLength(1);
   });
 
   test("does not record failed account and admin requests", async () => {
@@ -354,8 +475,108 @@ describe("audit plugin", () => {
     expect(logins()).toEqual([]);
   });
 
+  test("records a sign-in through an endpoint of an application's plugin with its path", async () => {
+    const { auth } = startAuth();
+    await signUp(auth, "desktop@example.com");
+    entries = [];
+
+    const desktop = new Browser(auth);
+    expect((await desktop.post("/desktop/token", { code: "nobody@example.com" })).status).toBe(404);
+    expect(logins()).toEqual([]);
+    expect((await desktop.post("/desktop/token", { code: "desktop@example.com" })).status).toBe(200);
+    expect(logins()).toEqual([
+      expect.objectContaining({ actorEmail: "desktop@example.com", metadata: { method: "/desktop/token" } }),
+    ]);
+    // The session it started is then the desktop app's own.
+    expect((await desktop.get("/get-session")).status).toBe(200);
+    expect((await desktop.post("/update-user", { name: "Desktop" })).status).toBe(200);
+    expect(logins()).toHaveLength(1);
+  });
+
+  test("records no sign-in for reads and updates that refresh the session", async () => {
+    // Every session read extends the session and the cookie cache expires at once.
+    const { auth } = startAuth({ session: { updateAge: 0, cookieCache: { enabled: true, maxAge: 1 } } });
+    const owner = await signUp(auth, "refresh@example.com");
+    entries = [];
+    expect((await owner.get("/get-session")).status).toBe(200);
+    expect((await owner.get("/get-session?disableCookieCache=true")).status).toBe(200);
+    expect((await owner.post("/update-user", { name: "Refreshed" })).status).toBe(200);
+    expect((await owner.post("/change-email", { newEmail: "refreshed@example.com" })).status).toBe(200);
+    expect((await owner.post("/update-session", {})).status).toBeLessThan(500);
+    expect((await owner.get("/token")).status).toBe(200);
+    expect((await owner.get("/list-sessions")).status).toBe(200);
+    expect(actions("account.update")).toHaveLength(1);
+    expect(actions("auth.email_change")).toHaveLength(1);
+    expect(logins()).toEqual([]);
+  });
+
+  test("records no sign-in for bearer and API key requests", async () => {
+    const { auth } = startAuth({ session: { updateAge: 0 } });
+    const owner = await signUp(auth, "client@example.com");
+    const signIn = await new Browser(auth).post("/sign-in/email", { email: "client@example.com", password: PASSWORD });
+    const token = signIn.headers.get("set-auth-token") ?? "";
+    expect(token).not.toBe("");
+    const created = await owner.post("/api-key/create", {});
+    expect(created.status).toBe(200);
+    const { key } = (await created.json()) as { key: string };
+    entries = [];
+
+    for (const client of [new Browser(auth, { authorization: `Bearer ${token}` }), new Browser(auth, { "x-api-key": key })]) {
+      for (let i = 0; i < 3; i++) expect((await client.get("/get-session")).status).toBe(200);
+      expect((await client.post("/update-user", { name: "Client" })).status).toBe(200);
+      expect((await client.get("/list-sessions")).status).toBe(200);
+    }
+    expect(actions("account.update")).toHaveLength(2);
+    expect(logins()).toEqual([]);
+  });
+
+  test("records no sign-in when an administrator impersonates a user or a browser switches accounts", async () => {
+    const { auth, db } = startAuth();
+    const operator = await signUp(auth, "operator@example.com");
+    const operatorId = await userId(operator);
+    const row = db.user?.find((user) => user.id === operatorId);
+    if (row) row.role = "admin";
+    const target = await signUp(auth, "impersonated@example.com");
+    const targetId = await userId(target);
+    entries = [];
+
+    expect((await operator.post("/admin/impersonate-user", { userId: targetId })).status).toBe(200);
+    expect(await userId(operator)).toBe(targetId);
+    expect((await operator.post("/admin/stop-impersonating", {})).status).toBe(200);
+    expect(await userId(operator)).toBe(operatorId);
+    expect(actions("user.impersonate")).toHaveLength(1);
+    expect(actions("user.stop_impersonate")).toHaveLength(1);
+    expect(logins()).toEqual([]);
+
+    // Signing in to a second account in the same browser is a sign-in; switching
+    // between the two and signing one out are not.
+    const second = await operator.post("/sign-in/email", { email: "impersonated@example.com", password: PASSWORD });
+    expect(second.status).toBe(200);
+    expect(logins()).toEqual([expect.objectContaining({ actorEmail: "impersonated@example.com" })]);
+    const sessions = (await (await operator.get("/multi-session/list-device-sessions")).json()) as Array<{
+      session: { token: string };
+      user: { id: string };
+    }>;
+    const tokenOf = (id: string): string => sessions.find((entry) => entry.user.id === id)?.session.token ?? "";
+    expect((await operator.post("/multi-session/set-active", { sessionToken: tokenOf(operatorId) })).status).toBe(200);
+    expect(await userId(operator)).toBe(operatorId);
+    expect((await operator.post("/multi-session/revoke", { sessionToken: tokenOf(operatorId) })).status).toBe(200);
+    expect(await userId(operator)).toBe(targetId);
+    expect((await operator.post("/revoke-other-sessions", {})).status).toBe(200);
+    expect((await operator.post("/revoke-sessions", {})).status).toBe(200);
+    expect(logins()).toHaveLength(1);
+
+    const again = await new Browser(auth).post("/sign-in/email", { email: "operator@example.com", password: PASSWORD });
+    expect(again.status).toBe(200);
+    const signedOut = new Browser(auth);
+    await signedOut.post("/sign-in/email", { email: "operator@example.com", password: PASSWORD });
+    expect((await signedOut.post("/sign-out", {})).status).toBe(200);
+    expect(actions("auth.logout")).toHaveLength(1);
+    expect(logins()).toHaveLength(3);
+  });
+
   test("records nothing while auditing is off", async () => {
-    const { auth } = startAuth(async () => false);
+    const { auth } = startAuth({ enabled: async () => false });
     await signUp(auth, "off@example.com");
     expect((await new Browser(auth).post("/sign-in/email", { email: "off@example.com", password: PASSWORD })).status).toBe(200);
     expect(entries).toEqual([]);
@@ -370,16 +591,19 @@ describe("the app's Better Auth", () => {
     expect(instance.options.hooks?.after).toBeUndefined();
   });
 
-  test("classifies every endpoint that can sign a user in", () => {
+  test("classifies every endpoint of Better Auth and PodoKit's plugins", () => {
     const instance = buildAuth(envAuthConfig());
-    const paths = new Set(Object.values(instance.api as Record<string, { path?: string }>).map((endpoint) => endpoint.path ?? ""));
-    expect(Object.keys(SIGN_IN_METHODS).filter((path) => !paths.has(path))).toEqual([]);
-    const unclassified = [...paths].filter(
-      (path) =>
-        (path.startsWith("/sign-in/") || /callback|verify/.test(path)) &&
-        SIGN_IN_METHODS[path] === undefined &&
-        !STARTS_NO_SESSION.has(path),
+    type Endpoints = Record<string, { path?: string }> | undefined;
+    const pathsOf = (endpoints: Endpoints): string[] =>
+      Object.values(endpoints ?? {}).flatMap((endpoint) => (endpoint.path ? [endpoint.path] : []));
+    const plugins = instance.options.plugins as Array<{ id: string; endpoints?: Endpoints }>;
+    const applications = new Set(
+      plugins.filter((plugin) => !PODOKIT_PLUGINS.has(plugin.id)).flatMap((plugin) => pathsOf(plugin.endpoints)),
     );
-    expect(unclassified).toEqual([]);
+    const paths = new Set(pathsOf(instance.api as Endpoints).filter((path) => !applications.has(path)));
+    expect(Object.keys(SIGN_IN_METHODS).filter((path) => !paths.has(path))).toEqual([]);
+    const classified = (path: string): boolean =>
+      SIGN_IN_METHODS[path] !== undefined || NOT_SIGN_INS.has(path) || STARTS_NO_SESSION.has(path);
+    expect([...paths].filter((path) => !classified(path))).toEqual([]);
   });
 });

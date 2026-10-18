@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { anonState } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
-import { mailpitReachable, waitForOtp } from "../helpers/mailpit";
+import { skipUnlessMailReachesMailpit, waitForOtp } from "../helpers/mailpit";
 
 test.use({ storageState: anonState });
 
@@ -24,7 +24,7 @@ test("login: an emailed one-time code signs a user in", async ({ page, playwrigh
   const api = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   const caps = await (await api.get("/api/account/capabilities")).json();
   test.skip(!caps?.emailOtp, "email otp disabled");
-  test.skip(!(await mailpitReachable()), "mailpit unreachable");
+  await skipUnlessMailReachesMailpit();
 
   const email = `ui-otp-${Date.now()}@example.com`;
   await api.post("/api/auth/sign-up/email", { data: { email, password: "Podokit3e-Str0ng!pw", name: "OTP" } });
