@@ -29,7 +29,7 @@ try {
   await stack.control("attach");
   for (const path of ["/admin/users", "/api/auth/sign-up/email", "/api/auth/admin/list-users", "/api/auth/organization/list", "/account/settings"]) {
     const removed = await fetch(`${apiUrl}${path}`, { headers: { cookie } });
-    assert.equal(removed.status, 404, `[TC-PDDESKTOP-015] desktop excludes ${path}`);
+    assert.equal(removed.status, 404, `[TC-PDDESKTOP-022] desktop excludes ${path}`);
   }
   const tmuxDirectory = join(root, "tmux"); await mkdir(tmuxDirectory);
   agent = new LocalAgent(stack, layout, profile.profileId, "Local smoke", { environment: { ...process.env, TMUX_TMPDIR: tmuxDirectory } });

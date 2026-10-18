@@ -4,7 +4,7 @@ import { resolve, join } from "node:path";
 import { desktopClientProfile } from "../apps/web/desktop-client-profile.ts";
 import { desktopApiProfile, desktopRouteExcluded } from "./desktop-build-profile.mjs";
 const root = resolve(import.meta.dirname, "..");
-it("[TC-PDDESKTOP-015] builds local auth without administration, organizations or external infrastructure", async () => {
+it("[TC-PDDESKTOP-022] builds local auth without administration, organizations or external infrastructure", async () => {
   const api = join(root,"apps/api");
   // Isolate the bundler from API specs that mock source modules in this process.
   const child = Bun.spawn([process.execPath,"--eval", `
@@ -23,7 +23,7 @@ it("[TC-PDDESKTOP-015] builds local auth without administration, organizations o
   expect(inputs.some(path => path.endsWith("desktop/profile/auth.ts"))).toBe(true);
   expect(inputs.some(path => path.endsWith("desktop/profile/session-guard.ts"))).toBe(true);
 });
-it("[TC-PDDESKTOP-015] excludes server pages while retaining product screens and the original web routes", async () => {
+it("[TC-PDDESKTOP-022] excludes server pages while retaining product screens and the original web routes", async () => {
   for (const path of ["(admin)/admin/users", "(auth)/login", "(auth)/signup", "(app)/dashboard", "oauth2/consent", "setup-2fa", "(shell)/account", "desktop/connect"]) expect(desktopRouteExcluded(path)).toBe(true);
   for (const path of ["(shell)/settings", "(shell)/connection", "(shell)/hosts", "terminal", "install.sh", "agent"]) expect(desktopRouteExcluded(path)).toBe(false);
   const routes = await readdir(join(root,"apps/web/src/routes"));
@@ -32,7 +32,7 @@ it("[TC-PDDESKTOP-015] excludes server pages while retaining product screens and
   expect(menu).toContain('goto("/admin")'); expect(menu).toContain('goto("/account")');
 });
 
-it("[TC-PDDESKTOP-015] retains shared HTTP errors and sessions while excluding SDK administration plugins", async () => {
+it("[TC-PDDESKTOP-022] retains shared HTTP errors and sessions while excluding SDK administration plugins", async () => {
  const original = await readFile(join(root,"node_modules/@podosoft/podokit-api-client/dist/index.js"),"utf8");
  const desktop = desktopClientProfile(original);
  expect(desktop).not.toMatch(/adminClient|organizationClient|twoFactorClient|passkeyClient/);
