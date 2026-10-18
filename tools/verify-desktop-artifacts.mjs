@@ -46,6 +46,22 @@ async function smoke(directory, screenshot, configuration, preserve) {
   });
 }
 
+const REMOVE_RETRY_CODES = new Set(["EBUSY", "EPERM", "ENOTEMPTY"]);
+
+// Windows releases an exited process's file handles a moment later, so the installed
+// app's folder can still be busy right after its last smoke run.
+export async function removeWithRetry(path, { remove = rm, wait = ms => new Promise(done => setTimeout(done, ms)), attempts = 10, delayMs = 1000 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await remove(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt >= attempts || !REMOVE_RETRY_CODES.has(error?.code)) throw error;
+      await wait(delayMs);
+    }
+  }
+}
+
 export async function verifyDesktopArtifacts(directory) {
   assert.equal(process.env.GITHUB_ACTIONS, "true", "Install packages only on disposable CI runners");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted", "Do not install on self-hosted runners");
@@ -81,7 +97,7 @@ export async function verifyDesktopArtifacts(directory) {
       });
     }
   } finally {
-    await rm(temporary, { recursive: true, force: true });
+    await removeWithRetry(temporary);
   }
 }
 

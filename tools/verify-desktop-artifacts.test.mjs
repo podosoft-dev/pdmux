@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { linuxInstallationDirectory, selectArtifact, windowsInstallArguments, verifyDesktopArtifacts } from "./verify-desktop-artifacts.mjs";
+import { linuxInstallationDirectory, removeWithRetry, selectArtifact, windowsInstallArguments, verifyDesktopArtifacts } from "./verify-desktop-artifacts.mjs";
 
 describe("[TC-PDDESKTOP-009] native artifact verification", () => {
   it.skipIf(process.platform === "win32")("resolves the installed Linux command through alternatives after a display-name change", async () => {
@@ -17,6 +17,19 @@ describe("[TC-PDDESKTOP-009] native artifact verification", () => {
       await symlink(alternative, command);
       expect(await linuxInstallationDirectory(command)).toBe(installed);
     } finally { await rm(temporary, { recursive: true, force: true }); }
+  });
+  it("retries removing a folder that is still busy and stops on other errors", async () => {
+    const failing = code => Object.assign(new Error(code), { code });
+    const noWait = async () => {};
+    let calls = 0;
+    await removeWithRetry("busy", { remove: async () => { calls += 1; if (calls < 3) throw failing("EBUSY"); }, wait: noWait });
+    expect(calls).toBe(3);
+    calls = 0;
+    await expect(removeWithRetry("denied", { remove: async () => { calls += 1; throw failing("EACCES"); }, wait: noWait })).rejects.toThrow("EACCES");
+    expect(calls).toBe(1);
+    calls = 0;
+    await expect(removeWithRetry("held", { remove: async () => { calls += 1; throw failing("EBUSY"); }, wait: noWait, attempts: 4 })).rejects.toThrow("EBUSY");
+    expect(calls).toBe(4);
   });
   it("rejects missing or ambiguous installers before executing them", () => {
     expect(selectArtifact(["pdmux.exe", "pdmux.exe.blockmap"], ".exe")).toBe("pdmux.exe");
