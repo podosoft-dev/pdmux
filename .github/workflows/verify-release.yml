@@ -22,19 +22,19 @@ jobs:
         include:
           - name: macOS Intel
             runner: macos-15-intel
-            pattern: pdmux-*-mac-x64.*
+            pattern: mac-x64.*
             artifact: macos-intel
           - name: macOS Apple Silicon
             runner: macos-26
-            pattern: pdmux-*-mac-arm64.*
+            pattern: mac-arm64.*
             artifact: macos-apple-silicon
           - name: Windows x64
             runner: windows-2025
-            pattern: pdmux-*-win-x64.exe*
+            pattern: win-x64.exe*
             artifact: windows-x64
           - name: Linux x64
             runner: ubuntu-24.04
-            pattern: pdmux-*-linux-*
+            pattern: linux-*
             artifact: linux-x64
     env:
       PDMUX_AGENT_ARTIFACT_ROOT: ${{ github.workspace }}/.release-agents
@@ -68,7 +68,7 @@ jobs:
         run: |
           pdmux_agent_version="$(bun -e 'import { parseAgentVersion } from "./apps/desktop/src/staging.ts"; console.log(parseAgentVersion(await Bun.file("agent/internal/cli/version.go").text()))')"
           mkdir -p .release-installers ".release-agents/$pdmux_agent_version"
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir .release-installers --pattern "$INSTALLER_PATTERN" --pattern DESKTOP-SHA256SUMS
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir .release-installers --pattern "pdmux-${RELEASE_TAG#v}-$INSTALLER_PATTERN" --pattern DESKTOP-SHA256SUMS
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir ".release-agents/$pdmux_agent_version" --pattern 'pdmux-agent-*' --pattern SHA256SUMS --pattern manifest.json
 
       - name: Verify downloaded installer checksums
@@ -96,7 +96,13 @@ jobs:
 
       - name: Verify macOS signatures, tickets and installed runtimes
         if: runner.os == 'macOS'
-        run: bun tools/verify-macos-desktop.mjs .release-installers --runtime
+        run: |
+          for pdmux_attempt in 1 2 3; do
+            if bun tools/verify-macos-desktop.mjs .release-installers --runtime; then exit 0; fi
+            if [ "$pdmux_attempt" -eq 3 ]; then exit 1; fi
+            # Apple ticket lookup can lose its network connection after ZIP verification.
+            sleep 20
+          done
 
       - name: Verify Windows installation, console recovery and data preservation
         if: runner.os == 'Windows'
@@ -111,5 +117,6 @@ jobs:
         with:
           name: published-release-smoke-${{ matrix.artifact }}
           path: .release-installers/**/*.png
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 3
