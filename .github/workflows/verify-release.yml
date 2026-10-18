@@ -1,0 +1,115 @@
+name: verify published release
+
+on:
+  workflow_dispatch:
+    inputs:
+      releaseTag:
+        description: Published vX.Y.Z release whose exact files are verified
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Intel
+            runner: macos-15-intel
+            pattern: pdmux-*-mac-x64.*
+            artifact: macos-intel
+          - name: macOS Apple Silicon
+            runner: macos-26
+            pattern: pdmux-*-mac-arm64.*
+            artifact: macos-apple-silicon
+          - name: Windows x64
+            runner: windows-2025
+            pattern: pdmux-*-win-x64.exe*
+            artifact: windows-x64
+          - name: Linux x64
+            runner: ubuntu-24.04
+            pattern: pdmux-*-linux-*
+            artifact: linux-x64
+    env:
+      PDMUX_AGENT_ARTIFACT_ROOT: ${{ github.workspace }}/.release-agents
+      PDMUX_VERIFY_RELEASE_IDENTITY: "1"
+    steps:
+      - name: Validate the release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.releaseTag }}
+        run: '[[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.releaseTag }}
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - run: bun ci
+
+      # Download the published files instead of rebuilding or re-signing them.
+      # A failed matrix job can leave dependent groups skipped during a rerun.
+      - name: Download published installers and canonical agents
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.releaseTag }}
+          INSTALLER_PATTERN: ${{ matrix.pattern }}
+        run: |
+          pdmux_agent_version="$(bun -e 'import { parseAgentVersion } from "./apps/desktop/src/staging.ts"; console.log(parseAgentVersion(await Bun.file("agent/internal/cli/version.go").text()))')"
+          mkdir -p .release-installers ".release-agents/$pdmux_agent_version"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir .release-installers --pattern "$INSTALLER_PATTERN" --pattern DESKTOP-SHA256SUMS
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir ".release-agents/$pdmux_agent_version" --pattern 'pdmux-agent-*' --pattern SHA256SUMS --pattern manifest.json
+
+      - name: Verify downloaded installer checksums
+        shell: bash
+        run: |
+          bun -e '
+            import assert from "node:assert/strict";
+            import { createHash } from "node:crypto";
+            import { readdir } from "node:fs/promises";
+            const root = ".release-installers";
+            const sums = new Map((await Bun.file(`${root}/DESKTOP-SHA256SUMS`).text()).trim().split(/\r?\n/).map(line => {
+              const match = /^([a-f0-9]{64})  (.+)$/.exec(line);
+              assert.ok(match, "Invalid desktop checksum entry");
+              return [match[2], match[1]];
+            }));
+            for (const name of (await readdir(root)).filter(name => name !== "DESKTOP-SHA256SUMS")) {
+              const digest = createHash("sha256").update(await Bun.file(`${root}/${name}`).arrayBuffer()).digest("hex");
+              assert.equal(digest, sums.get(name), `Published installer checksum mismatch: ${name}`);
+            }
+          '
+
+      - name: Install Linux display dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb openssl
+
+      - name: Verify macOS signatures, tickets and installed runtimes
+        if: runner.os == 'macOS'
+        run: bun tools/verify-macos-desktop.mjs .release-installers --runtime
+
+      - name: Verify Windows installation, console recovery and data preservation
+        if: runner.os == 'Windows'
+        run: bun tools/verify-desktop-artifacts.mjs .release-installers
+
+      - name: Verify Debian and AppImage installation and runtimes
+        if: runner.os == 'Linux'
+        run: xvfb-run -a bun tools/verify-desktop-artifacts.mjs .release-installers
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: published-release-smoke-${{ matrix.artifact }}
+          path: .release-installers/**/*.png
+          if-no-files-found: ignore
+          retention-days: 3
