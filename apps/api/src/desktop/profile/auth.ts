@@ -6,6 +6,7 @@ import { authBaseUrl, authSecret } from "../../auth/auth-environment";
 import { authDatabase } from "../../auth/db";
 import { isMaintenanceCommand } from "../../auth/maintenance";
 import { desktopLocalAuth } from "../local-auth";
+import { DESKTOP_USER_FIELDS } from "./user-fields";
 
 // Only the native capability can create a local session. Server authentication,
 // administration, mail delivery and organization plugins are not in this build.
@@ -17,10 +18,7 @@ function desktopOptions(): BetterAuthOptions {
     emailAndPassword: { enabled: false },
     plugins: [desktopLocalAuth()],
     advanced: isMaintenanceCommand() ? { database: { validateSchema: false } } : {},
-    user: { additionalFields: {
-      role: { type: "string", defaultValue: "user", input: false },
-      signupApproved: { type: "boolean", defaultValue: true, input: false },
-    } },
+    user: { additionalFields: DESKTOP_USER_FIELDS },
   };
 }
 

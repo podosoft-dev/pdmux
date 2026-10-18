@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A desktop database created by 0.17.2 or 0.17.3 lacked the user ban columns that server code shared
+  with the desktop reads, such as for MCP user tokens; it worked only because SQLite read the missing
+  names as text. The desktop now declares them, and its next start adds them to such a database.
+
 ## 0.17.3
 
 - Recover browser and desktop terminals after server upgrades without a page reload. Retain pane
