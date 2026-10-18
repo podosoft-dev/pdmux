@@ -10,6 +10,8 @@
   it creates, on any endpoint, so sign-ins through an application's own Better Auth plugin are no
   longer missed. Sign-ups, impersonation, switching between sessions and password or two-factor
   changes are still not recorded as sign-ins.
+- Collapsing the sidebar on the dashboard no longer hides it on the hosts, settings, CLI access and
+  account pages, where its Dashboard button is the way back to the dashboard.
 
 ## 0.17.2
 
