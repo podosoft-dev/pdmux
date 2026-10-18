@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Saving a layout or editing hosts no longer waits behind other users' writes. Desktop sync and the
+  writes it compares against were one queue for the whole server; they now wait only for the same
+  workspace's host writes and the same user's preference writes. A theme or language change on the
+  desktop also waits for a running sync, which could otherwise overwrite it.
+- Listing hosts while a desktop sync was running could put an older copy of a desktop-owned host's
+  settings back over the synced one. Refreshing the cached host view now writes only that view.
+
 ## 0.17.1
 
 - Sign and notarize the macOS application and agent 0.1.27 with Developer ID. Staple the app and
