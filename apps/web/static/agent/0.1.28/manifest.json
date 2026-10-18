@@ -34,8 +34,8 @@
       "os": "windows",
       "arch": "amd64",
       "path": "/agent/0.1.28/pdmux-agent-windows-amd64",
-      "sha256": "fe28b20017ee6c8d58394f554dcff7dc681dedfdddeda1eba9821049ee09a164",
-      "bytes": 8967168
+      "sha256": "905a867d8839cb38034a0d87255f9fb77ad6a033c94f989ebe6723d3941e6be7",
+      "bytes": 8967680
     }
   ]
 }

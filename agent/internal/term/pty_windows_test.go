@@ -25,7 +25,7 @@ func windowsOutput(t *testing.T, process Process) (<-chan string, <-chan struct{
 func TestWindowsConPTY(t *testing.T) {
 	t.Run("[TC-PDDESKTOP-018] preserves Unicode, resize and final output before exit", func(t *testing.T) {
 		shell := resolveShell(os.Getenv)
-		process, err := Spawn(Spec{File: shell.File, Args: []string{"-NoLogo", "-NoProfile", "-Command", "$s = [Console]::ReadLine(); Write-Output ('RESULT:' + $s); Write-Output ('SIZE:' + [Console]::WindowWidth); exit 7"}, Cols: 80, Rows: 24})
+		process, err := Spawn(Spec{File: shell.File, Args: []string{"-NoLogo", "-NoProfile", "-Command", windowsShellInit + "; $s = [Console]::ReadLine(); Write-Output ('RESULT:' + $s); Write-Output ('SIZE:' + [Console]::WindowWidth); exit 7"}, Cols: 80, Rows: 24})
 		if err != nil {
 			t.Fatal(err)
 		}
