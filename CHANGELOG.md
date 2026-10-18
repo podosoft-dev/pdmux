@@ -17,6 +17,9 @@
   ban no longer appears as `user.ban`.
 - Listing an organization's members with a filter or an offset that matches no member returns an
   empty page instead of a server error.
+- Deleting a host while the dashboard was refreshing its host list could leave the terminal pane
+  pointed at that host on screen and in the saved layout. The pane now always becomes an empty cell
+  and the saved layout drops it.
 
 ## 0.17.0
 
