@@ -32,6 +32,18 @@ export function parseAgentVersion(source: string): string {
   return version;
 }
 
+async function normalizeRuntimePermissions(directory: string): Promise<void> {
+  await chmod(directory, 0o755);
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) await normalizeRuntimePermissions(path);
+    else if (entry.isFile()) {
+      const info = await stat(path);
+      await chmod(path, (info.mode & 0o111) !== 0 ? 0o755 : 0o644);
+    }
+  }
+}
+
 async function stageApi(repositoryRoot: string, destination: string): Promise<void> {
   const source = join(repositoryRoot, "apps", "api", "dist");
   await mkdir(destination, { recursive: true });
@@ -88,6 +100,10 @@ export async function stageDesktopRuntime(
     await mkdir(join(temporaryRoot, "bin"), { recursive: true, mode: 0o700 });
     await copyFile(options.bunExecutable, stagedBun);
     if (platform !== "win32") await chmod(stagedBun, 0o755);
+    if (platform !== "win32") {
+      await normalizeRuntimePermissions(join(temporaryRoot, "services"));
+      await normalizeRuntimePermissions(join(temporaryRoot, "bin"));
+    }
 
     await Promise.all([
       rm(servicesDestination, { recursive: true, force: true }),

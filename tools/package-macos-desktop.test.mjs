@@ -41,6 +41,14 @@ describe("[TC-PDDESKTOP-009] signed product package integrity", () => {
     expect(pattern.test(`${prefix}web/client/agent/0.1.0/other-helper`)).toBe(false);
     expect(pattern.test(`${prefix}web/client/agent/0.1.0/pdmux-agent-darwin-arm64/child`)).toBe(false);
   });
+  it("requires app notarization and a signed DMG for the production overlay", () => {
+    const base = { mac: { target: ["dmg", "zip"] }, dmg: { title: "fixture" } };
+    const config = macSigningConfiguration(base, "A".repeat(40), true);
+    expect(config.mac.notarize).toBe(true);
+    expect(config.dmg).toEqual({ title: "fixture", sign: true });
+    expect(config.forceCodeSigning).toBe(true);
+    expect(base.dmg.sign).toBeUndefined();
+  });
   it("rejects incomplete, duplicate, and unsafe checksum entries", () => {
     const line = `${"a".repeat(64)}  pdmux-agent-linux-amd64`;
     expect(() => parseAgentChecksums(line)).toThrow();

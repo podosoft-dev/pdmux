@@ -3,22 +3,29 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { desktopPaths } from "./desktop-package-paths.mjs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { _electron as electron } from "playwright";
 
 // Launch only a real package on a disposable verification VM, never a live desktop.
-assert.ok(process.env.GITHUB_ACTIONS === "true" || process.platform === "linux", "Non-Linux runs require a disposable CI runner");
-if (process.platform !== "linux") assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted", "Do not run native smoke tests on shared desktops");
+const local = process.env.PDMUX_LOCAL_DESKTOP_SMOKE === "1";
+if (!local) {
+  assert.ok(process.env.GITHUB_ACTIONS === "true" || process.platform === "linux", "Non-Linux runs require a disposable CI runner");
+  if (process.platform !== "linux") assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted", "Do not run native smoke tests on shared desktops");
+} else assert.notEqual(process.env.GITHUB_ACTIONS, "true", "CI must use its hosted-runner boundary");
 const bundle = resolve(process.argv[2]);
 const screenshot = resolve(process.argv[3]);
 const paths = desktopPaths(bundle, process.platform);
 const configuration = process.env.PDMUX_SMOKE_CONFIG_ROOT ?? await mkdtemp(join(tmpdir(), "pdmux-desktop-smoke-"));
+const relativeProfile = relative(tmpdir(), resolve(configuration));
+assert.ok(!relativeProfile.startsWith("..") && relativeProfile.split(sep)[0].startsWith("pdmux-"), "Smoke profiles must live in a pdmux temporary directory");
 const application = await electron.launch({
   executablePath: paths.executable, timeout: 120_000, chromiumSandbox: true,
+  args: [`--user-data-dir=${resolve(configuration)}`],
   env: { ...process.env, ...(process.platform === "linux" ? { XDG_CONFIG_HOME: configuration } : {}) },
 });
 let window;
 try {
+  assert.equal(await application.evaluate(({ app }) => app.getPath("userData")), resolve(configuration), "Isolate the real user's desktop data");
   window = await application.firstWindow({ timeout: 120_000 });
   await window.waitForURL(/http:\/\/127\.0\.0\.1:\d+\//, { timeout: 60_000 });
   // Username sign-in uses type=text for the same email/username field.

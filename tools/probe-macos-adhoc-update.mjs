@@ -134,7 +134,7 @@ export function probeMode(args) {
   return "adhoc";
 }
 
-export async function probe(mode = "adhoc") {
+export async function probe(mode = "adhoc", { verifyApp } = {}) {
   if (process.platform !== "darwin") throw new Error("Native macOS is required; this probe cannot be validated on Linux");
   const selfSigned = mode !== "adhoc";
   const archives = process.env.PDMUX_PROBE_ARCHIVES;
@@ -182,6 +182,7 @@ export async function probe(mode = "adhoc") {
       execFileSync("ditto", ["-x", "-k", join(output, zip), extracted]);
       const app = join(extracted, "PdmuxUpdateProbe.app");
       execFileSync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app], { stdio: "inherit" });
+      if (verifyApp) await verifyApp(app, version);
       apps.push(app);
     }
     // This is the same old-app designated requirement used by Squirrel.Mac.

@@ -40,6 +40,7 @@ apps/desktop/resources/bin/
 apps/desktop/resources/services/
 apps/desktop/resources/.stage-*/
 apps/desktop/release/
+apps/desktop/release-agent/
 
 # Deployment profiles name private hosts and paths. Only image repositories are
 # safe to publish through the deliberately minimal publish profile.

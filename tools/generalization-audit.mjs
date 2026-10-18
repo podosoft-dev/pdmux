@@ -302,6 +302,8 @@ const OPERATIONAL = [
 	// rather than `^tools/` because the rest of that directory is the traceability
 	// toolchain, which has no business naming anything.
 	/^tools\/pull-deploy-env\.sh$/,
+	// The private Apple-signing adapter uses the same deployment credential store.
+	/^tools\/apple-signing-secrets\.mjs$/,
 ];
 
 function trackedFiles(root, { required = true } = {}) {

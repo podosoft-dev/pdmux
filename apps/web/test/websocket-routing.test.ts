@@ -64,13 +64,17 @@ describe("WebSocket gateway routing", () => {
 });
 
 describe("Web image assets", () => {
-  it("builds agent downloads before the SvelteKit output is assembled", () => {
+  it("[TC-PDDESKTOP-009] assembles source or canonical agent downloads before the web build", () => {
     const dockerfile = read("apps/web/Dockerfile");
     const buildAgent = dockerfile.indexOf("RUN bun tools/build-agent-binaries.mjs");
-    const copyAgent = dockerfile.indexOf("COPY --from=agent /src/apps/web/static/agent");
+    const selectAgent = dockerfile.indexOf("FROM ${AGENT_ARTIFACTS_BASE} AS agent");
+    const copyAgent = dockerfile.indexOf("COPY --from=agent /agent ./apps/web/static/agent");
     const buildWeb = dockerfile.indexOf("RUN bun run --cwd apps/web build");
     expect(buildAgent).toBeGreaterThan(-1);
-    expect(copyAgent).toBeGreaterThan(buildAgent);
+    expect(dockerfile).toContain("ARG AGENT_ARTIFACTS_BASE=agent-build");
+    expect(dockerfile).toContain("&& mv apps/web/static/agent /agent");
+    expect(selectAgent).toBeGreaterThan(buildAgent);
+    expect(copyAgent).toBeGreaterThan(selectAgent);
     expect(buildWeb).toBeGreaterThan(copyAgent);
   });
 

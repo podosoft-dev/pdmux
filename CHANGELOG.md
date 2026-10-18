@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.17.1
+
+- Sign and notarize the macOS application and agent 0.1.27 with Developer ID. Staple the app and
+  DMG tickets and generate update checksums and blockmaps from the final notarized files.
+- Reuse one canonical signed agent artifact across all installers, server images and release
+  downloads while preserving reproducible source verification. Existing self-signed desktop
+  installations require one manual DMG replacement; user data and backup-before-update are preserved.
+
 ## 0.17.0
 
 - Update the PodoKit foundation to 1.6.0, then 1.6.1. The MCP switch moves to the admin Settings

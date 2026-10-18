@@ -4,6 +4,11 @@ dist
 **/dist
 .svelte-kit
 **/.svelte-kit
+apps/desktop/resources/bin
+apps/desktop/resources/services
+apps/desktop/resources/.stage-*
+apps/desktop/release
+apps/desktop/release-agent
 .git
 *.log
 

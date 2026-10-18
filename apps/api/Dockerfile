@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+ARG AGENT_ARTIFACTS_BASE=agent-build
 
 FROM oven/bun:1.4.0-alpine AS manifests
 WORKDIR /src
@@ -31,14 +32,20 @@ RUN if [ -d packages ]; then \
 RUN bun run --cwd apps/api build
 RUN mkdir -p /app/packages
 
-FROM oven/bun:1.4.0-alpine AS agent
+FROM oven/bun:1.4.0-alpine AS agent-build
 COPY --from=golang:1.26.5-alpine /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}" GOTOOLCHAIN=local
 WORKDIR /src
 COPY agent ./agent
 COPY tools/build-agent-binaries.mjs ./tools/
-RUN bun tools/build-agent-binaries.mjs \
- && find apps/web/static/agent -type f ! -name manifest.json -delete
+RUN bun tools/build-agent-binaries.mjs && mv apps/web/static/agent /agent
+
+# Releases override this stage with the shared, already signed artifact context.
+FROM ${AGENT_ARTIFACTS_BASE} AS agent
+
+FROM oven/bun:1.4.0-alpine AS agent-manifests
+COPY --from=agent /agent /agent
+RUN find /agent -type f ! -name manifest.json -delete && chmod -R a+rX /agent
 
 FROM oven/bun:1.4.0-alpine AS runtime
 WORKDIR /app
@@ -48,7 +55,7 @@ COPY --from=manifests /app/apps/api ./apps/api
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/scripts ./apps/api/scripts
-COPY --from=agent /src/apps/web/static/agent ./agent-releases
+COPY --from=agent-manifests /agent ./agent-releases
 ENV AGENT_RELEASE_DIR=/app/agent-releases
 ENV FILE_TRANSFER_DIR=/data/file-transfers
 RUN mkdir -p /data/file-transfers && chown bun:bun /data/file-transfers && chmod 700 /data/file-transfers

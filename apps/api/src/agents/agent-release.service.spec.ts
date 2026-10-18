@@ -178,7 +178,7 @@ describe("[TC-PDHOST-022] the image the api actually ships carries the releases"
 
   it("puts them where the runtime stage is told to look", () => {
     const runtime = dockerfile.slice(dockerfile.lastIndexOf("AS runtime"));
-    const copied = runtime.match(/COPY --from=agent \S+ \.\/(\S+)/);
+    const copied = runtime.match(/COPY --from=agent-manifests \S+ \.\/(\S+)/);
     const configured = runtime.match(/ENV AGENT_RELEASE_DIR=(\S+)/);
     expect(copied).not.toBeNull();
     expect(configured).not.toBeNull();

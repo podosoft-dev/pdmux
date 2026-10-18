@@ -41,7 +41,8 @@ import { join, resolve } from "node:path";
 const ROOT = resolve(import.meta.dirname, "..");
 const AGENT_DIR = join(ROOT, "agent");
 const VERSION_FILE = join(AGENT_DIR, "internal/cli/version.go");
-const OUT_ROOT = join(ROOT, "apps/web/static/agent");
+const OUT_ROOT = resolve(process.env.PDMUX_AGENT_OUTPUT_ROOT ?? join(ROOT, "apps/web/static/agent"));
+const GO_ENV = { ...process.env, GOTOOLCHAIN: `go${/^go ([\d.]+)$/m.exec(readFileSync(join(AGENT_DIR, "go.mod"), "utf8"))[1]}` };
 
 /** The import path of the package holding `AgentVersion`, for the linker's `-X`. */
 const VERSION_SYMBOL = "github.com/podosoft-dev/pdmux/agent/internal/cli.AgentVersion";
@@ -102,7 +103,7 @@ function rel(path) {
 
 function goVersion() {
   try {
-    return execFileSync("go", ["version"], { encoding: "utf8" }).trim();
+    return execFileSync("go", ["version"], { encoding: "utf8", env: GO_ENV }).trim();
   } catch {
     throw new Error(
       "No `go` on PATH. This script cross-compiles the agent, so it needs a Go toolchain " +
@@ -133,7 +134,7 @@ function buildTarget({ os, arch }, version, outDir) {
       cwd: AGENT_DIR,
       stdio: ["ignore", "inherit", "inherit"],
       env: {
-        ...process.env,
+        ...GO_ENV,
         GOOS: os,
         GOARCH: arch,
         // A cgo build links against the build machine's libc and stops being the

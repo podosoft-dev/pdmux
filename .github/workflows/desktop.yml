@@ -4,12 +4,17 @@ on:
   workflow_call:
     inputs:
       signed:
-        description: Use the stable self-signed macOS release identity (release tags only)
+        description: Use Developer ID signing and notarization (release tags only)
         required: false
         default: false
         type: boolean
       source_ref:
         description: Git ref whose application source is packaged
+        required: false
+        default: ""
+        type: string
+      agent_artifact:
+        description: Existing canonical agent artifact from this workflow run
         required: false
         default: ""
         type: string
@@ -23,6 +28,9 @@ on:
       - "tools/prepare-desktop-runtime.mjs"
       - "tools/merge-desktop-update-metadata.mjs"
       - "tools/*macos*"
+      - "tools/apple-signing*"
+      - "tools/agent-artifacts*"
+      - ".github/workflows/agent-binaries.yml"
       - "tools/*desktop*"
       - "bun.lock"
       - ".github/workflows/desktop.yml"
@@ -30,7 +38,7 @@ on:
   workflow_dispatch:
     inputs:
       signed:
-        description: Use the stable self-signed macOS release identity (release tags only)
+        description: Use Developer ID signing and notarization (release tags only)
         required: true
         default: false
         type: boolean
@@ -46,47 +54,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # The host-agent binaries are cross-compiled, so their bytes do not depend on the
-  # runner that builds them. Building them once here, with the Go module and build
-  # cache that `ci` warms, replaces a cold Go install and four cross-compiles on every
-  # installer runner (about two minutes on the Intel macOS runner, the slowest one).
-  # The verify jobs below still check the packaged copies against the committed
-  # SHA256SUMS, and the release compares these bytes with both web images.
   agent:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.source_ref || github.ref }}
-          persist-credentials: false
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.0
-
-      # Same action version and inputs as the `ci` agent job, so this restores the
-      # cache that `ci` saves on main instead of starting a separate one.
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: agent/go.mod
-          cache-dependency-path: agent/go.sum
-
-      - run: bun run build:agent
-
-      # Artifacts drop file modes; the archive keeps the binaries executable.
-      - name: Archive the host-agent release
-        run: tar -cf agent-binaries.tar -C apps/web/static agent
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: agent-binaries
-          path: agent-binaries.tar
-          if-no-files-found: error
+    if: ${{ !inputs.agent_artifact }}
+    uses: ./.github/workflows/agent-binaries.yml
+    with:
+      signed: ${{ inputs.signed || false }}
+      source_ref: ${{ inputs.source_ref || (inputs.signed && github.ref_name) || github.ref }}
+    secrets: inherit
 
   package:
     name: ${{ matrix.name }}
     needs: agent
+    if: ${{ !cancelled() && (needs.agent.result == 'success' || (needs.agent.result == 'skipped' && inputs.agent_artifact != '')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -132,12 +111,13 @@ jobs:
       # A relative path keeps GNU tar on Windows from reading a drive letter as a host.
       - uses: actions/download-artifact@v4
         with:
-          name: agent-binaries
+          name: ${{ inputs.agent_artifact || 'agent-binaries' }}
           path: .agent-binaries
 
       - name: Restore the shared host-agent binaries
         shell: bash
         run: |
+          cp -R apps/web/static/agent "$RUNNER_TEMP/agent-source"
           tar -xf .agent-binaries/agent-binaries.tar -C apps/web/static
           rm -rf .agent-binaries
 
@@ -161,12 +141,19 @@ jobs:
         if: ${{ runner.os == 'macOS' && !inputs.signed }}
         run: bun tools/package-macos-desktop.mjs --ci-probe
 
-      - name: Package macOS release with the stable signing identity
+      - name: Package macOS release with Developer ID and notarization
         if: ${{ runner.os == 'macOS' && inputs.signed }}
         run: bun tools/release-macos-signing.mjs
         env:
-          DESKTOP_MAC_P12: ${{ secrets.DESKTOP_MAC_P12 }}
-          DESKTOP_MAC_PASSWORD: ${{ secrets.DESKTOP_MAC_PASSWORD }}
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_DEVELOPER_ID_G2_CERT_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_G2_CERT_BASE64 }}
+          APPLE_DEVELOPER_TEAM_ID: ${{ secrets.APPLE_DEVELOPER_TEAM_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          PDMUX_AGENT_SOURCE_ROOT: ${{ runner.temp }}/agent-source
           PDMUX_SIGNING_SOURCE_REF: ${{ inputs.source_ref || github.ref_name }}
 
       - name: Preserve architecture-specific macOS update metadata
@@ -188,6 +175,65 @@ jobs:
           if-no-files-found: error
           # Installers, archives, and blockmaps are already compressed.
           compression-level: 0
+
+  prepare-update-probe:
+    if: ${{ inputs.signed }}
+    runs-on: macos-26
+    environment: desktop-signing
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun ci
+      - name: Prepare Developer ID update fixtures
+        run: bun tools/probe-macos-developer-id-update.mjs --prepare
+        env:
+          PDMUX_PROBE_ARCHIVES: ${{ runner.temp }}/developer-id-update
+          PDMUX_SIGNING_SOURCE_REF: ${{ inputs.source_ref || github.ref_name }}
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_CODESIGN_IDENTITY: ${{ secrets.APPLE_CODESIGN_IDENTITY }}
+          APPLE_DEVELOPER_ID_G2_CERT_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_G2_CERT_BASE64 }}
+          APPLE_DEVELOPER_TEAM_ID: ${{ secrets.APPLE_DEVELOPER_TEAM_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: developer-id-update-probe
+          path: |
+            ${{ runner.temp }}/developer-id-update/out-*/*.zip
+            ${{ runner.temp }}/developer-id-update/out-*/*.yml
+            ${{ runner.temp }}/developer-id-update/out-*/*.blockmap
+          retention-days: 1
+          if-no-files-found: error
+
+  verify-update-probe:
+    needs: prepare-update-probe
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: developer-id-update-probe
+          path: ${{ runner.temp }}/developer-id-update
+      - name: Verify Developer ID update and relaunch without imported keys
+        run: bun tools/probe-macos-developer-id-update.mjs --verify
+        env:
+          PDMUX_PROBE_ARCHIVES: ${{ runner.temp }}/developer-id-update
 
   verify-macos:
     needs: package
@@ -214,9 +260,17 @@ jobs:
         with:
           name: pdmux-${{ matrix.artifact }}
           path: ${{ runner.temp }}/desktop-verify
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.agent_artifact || 'agent-binaries' }}
+          path: ${{ runner.temp }}/agent-reference
+      - name: Restore canonical agent verification reference
+        shell: bash
+        run: tar -xf "$RUNNER_TEMP/agent-reference/agent-binaries.tar" -C "$RUNNER_TEMP/agent-reference"
       - name: Verify final macOS packages on a clean runner
         env:
           PACKAGE_DIRECTORY: ${{ runner.temp }}/desktop-verify
+          PDMUX_AGENT_ARTIFACT_ROOT: ${{ runner.temp }}/agent-reference/agent
           PDMUX_VERIFY_RELEASE_IDENTITY: ${{ inputs.signed && '1' || '0' }}
         run: bun tools/verify-macos-desktop.mjs "$PACKAGE_DIRECTORY" --runtime
       - uses: actions/upload-artifact@v4
@@ -255,11 +309,22 @@ jobs:
       - name: Install Linux display dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb openssl
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.agent_artifact || 'agent-binaries' }}
+          path: ${{ runner.temp }}/agent-reference
+      - name: Restore canonical agent verification reference
+        shell: bash
+        run: tar -xf "$RUNNER_TEMP/agent-reference/agent-binaries.tar" -C "$RUNNER_TEMP/agent-reference"
       - name: Verify Windows installation and runtime
+        env:
+          PDMUX_AGENT_ARTIFACT_ROOT: ${{ runner.temp }}/agent-reference/agent
         if: runner.os == 'Windows'
         shell: pwsh
         run: bun tools/verify-desktop-artifacts.mjs "$env:RUNNER_TEMP/desktop-verify"
       - name: Verify Debian and AppImage runtimes
+        env:
+          PDMUX_AGENT_ARTIFACT_ROOT: ${{ runner.temp }}/agent-reference/agent
         if: runner.os == 'Linux'
         run: xvfb-run -a bun tools/verify-desktop-artifacts.mjs "$RUNNER_TEMP/desktop-verify"
       - uses: actions/upload-artifact@v4
