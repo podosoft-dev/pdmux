@@ -3,6 +3,7 @@ package term
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -22,10 +23,21 @@ func windowsOutput(t *testing.T, process Process) (<-chan string, <-chan struct{
 	return chunks, done
 }
 
+// Extend the actual shell startup command so removing its encoding setup makes
+// the Unicode regression fail again.
+func windowsCommand(shell Resolved, script string) []string {
+	args := append([]string{"-NoProfile"}, shell.Args...)
+	if index := slices.Index(args, "-Command"); index >= 0 {
+		args[index+1] += "; " + script
+		return args
+	}
+	return append(args, "-Command", script)
+}
+
 func TestWindowsConPTY(t *testing.T) {
 	t.Run("[TC-PDDESKTOP-018] preserves Unicode, resize and final output before exit", func(t *testing.T) {
 		shell := resolveShell(os.Getenv)
-		process, err := Spawn(Spec{File: shell.File, Args: []string{"-NoLogo", "-NoProfile", "-Command", windowsShellInit + "; $s = [Console]::ReadLine(); Write-Output ('RESULT:' + $s); Write-Output ('SIZE:' + [Console]::WindowWidth); exit 7"}, Cols: 80, Rows: 24})
+		process, err := Spawn(Spec{File: shell.File, Args: windowsCommand(shell, "$s = [Console]::ReadLine(); Write-Output ('RESULT:' + $s); Write-Output ('SIZE:' + [Console]::WindowWidth); exit 7"), Cols: 80, Rows: 24})
 		if err != nil {
 			t.Fatal(err)
 		}
