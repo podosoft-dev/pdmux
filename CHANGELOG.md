@@ -9,6 +9,14 @@
 - Reuse one canonical signed agent artifact across all installers, server images and release
   downloads while preserving reproducible source verification. Existing self-signed desktop
   installations require one manual DMG replacement; user data and backup-before-update are preserved.
+- Update the PodoKit foundation to 1.6.2. The audit log records every sign-in as `auth.login`, not
+  only email and password ones: a social provider, a passkey or any other enabled method too, with
+  the method in `metadata.method` and the social provider in `metadata.provider`. A two-factor
+  sign-in is recorded once, when the second factor completes it. Failed requests are no longer
+  recorded as completed actions, so a wrong password no longer appears as `auth.login` and a refused
+  ban no longer appears as `user.ban`.
+- Listing an organization's members with a filter or an offset that matches no member returns an
+  empty page instead of a server error.
 
 ## 0.17.0
 
