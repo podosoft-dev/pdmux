@@ -1000,6 +1000,8 @@ test.describe.serial("pdmux shell fleet controls", () => {
   type Marked = HTMLElement & { __pdmuxMark?: number };
   const MARK = 165;
   const label = `${PREFIX}card-${Date.now().toString().slice(-6)}`;
+  /** The slots TC-PDUI-166 replaced with a pane on the host it deletes, until it puts them back. */
+  let slotsToRestore: string | null = null;
 
   test.afterAll(async ({ playwright, baseURL, e2eState }) => {
     // The worker's own state, not `admin.json`: fleet rows are scoped per organization,
@@ -1011,6 +1013,9 @@ test.describe.serial("pdmux shell fleet controls", () => {
     for (const host of hosts.filter((row) => row.label === label)) {
       await request.delete(`/api/hosts/${host.id}`);
     }
+    // The grid too. Left behind, that pane on a deleted host fails the next spec this worker
+    // runs, far from here: a full run lost TC-PDTERM-124 to it after TC-PDUI-166 failed.
+    if (slotsToRestore !== null) await putLayout(request, { slots: JSON.parse(slotsToRestore) as unknown[] });
     await request.dispose();
   });
 
@@ -1064,6 +1069,7 @@ test.describe.serial("pdmux shell fleet controls", () => {
      * this server will now refuse.
      */
     const original = await storedSlots(request);
+    slotsToRestore = original;
     await putLayout(request, {
       slots: [{ id: "s1", hostId, kind: "shell", session: null }],
       zoomId: null,
@@ -1131,6 +1137,7 @@ test.describe.serial("pdmux shell fleet controls", () => {
 
     // Leave the grid as the rest of the run expects to find it.
     await putLayout(request, { slots: JSON.parse(original) as unknown[] });
+    slotsToRestore = null;
   });
 });
 

@@ -118,7 +118,15 @@ test.describe("pdmux terminal on a phone", () => {
     // layout gets one here, or there would be no stored split to protect.
     const desktop = saved ?? { name: "default", payload: {}, isDefault: true };
     // Paging needs somewhere to go: a stored terminal and the spare empty cell after it.
-    const stored = Array.isArray(desktop.payload.slots) && desktop.payload.slots.length > 0;
+    // ⚠ A TERMINAL ON A HOST THAT STILL EXISTS. The shell renders a slot whose host was
+    // deleted as an empty cell, so a dead slot left by another spec counted as "stored"
+    // gave one empty cell and a disabled pager (a full run, after TC-PDUI-166 failed).
+    const fleet = new Set(((await (await request.get("/api/hosts")).json()) as HostRow[]).map((row) => row.id));
+    const kept = Array.isArray(desktop.payload.slots) ? (desktop.payload.slots as unknown[]) : [];
+    const stored = kept.some((slot) => {
+      const hostId = (slot as { hostId?: unknown } | null)?.hostId;
+      return typeof hostId === "string" && fleet.has(hostId);
+    });
     const host = stored ? null : await paneHost(request);
     test.skip(!stored && !host, "no host in the fleet — nothing to page between");
     const slots = host ? { slots: [{ id: "phone-pager", hostId: host.id, kind: "shell", session: null }] } : {};
