@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash, X509Certificate } from "node:crypto";
-import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseAgentVersion } from "../apps/desktop/src/staging.ts";
@@ -18,13 +18,20 @@ export async function normalizeAgentPermissions(directory) {
   for (const name of ["manifest.json", "SHA256SUMS"]) await chmod(join(directory, name), 0o644);
 }
 
-export async function verifyAgentDirectory(directory, { sourceDirectory, signed = false, native = false } = {}) {
+export async function verifyAgentDirectory(directory, { sourceDirectory, signed = false, native = false, subset = false } = {}) {
   const manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8"));
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/, "Invalid agent release version");
   assert.equal(manifest.artifacts?.length, agentTargets.length, "Require exactly four agent artifacts");
   const expectedCertificate = new X509Certificate(await readFile(join(repository, "apps/desktop/signing-certificate.pem")));
   const source = sourceDirectory ? JSON.parse(await readFile(join(sourceDirectory, "manifest.json"), "utf8")) : undefined;
   if (source) assert.equal(manifest.version, source.version, "Agent source version mismatch");
+  let seed;
+  if (subset) {
+    seed = JSON.parse(await readFile(join(directory, "desktop-catalog.json"), "utf8")).seed;
+    const expected = process.platform === "win32" ? null : `pdmux-agent-${process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
+    assert.equal(seed, expected, "Require the native desktop agent seed");
+    assert.deepEqual((await readdir(directory)).filter(name => name.startsWith("pdmux-agent-")).sort(), seed ? [seed] : []);
+  }
   const sums = [];
   for (const target of agentTargets) {
     const [os, arch] = target.split("-");
@@ -33,9 +40,12 @@ export async function verifyAgentDirectory(directory, { sourceDirectory, signed 
     const entry = entries[0];
     assert.equal(entry.path, `/agent/${manifest.version}/${filename(target)}`, "Unsafe agent artifact path");
     const binary = join(directory, filename(target));
-    const bytes = await readFile(binary);
-    assert.equal(digest(bytes), entry.sha256, `Agent checksum mismatch: ${target}`);
-    assert.equal(bytes.length, entry.bytes, `Agent size mismatch: ${target}`);
+    const present = !subset || seed === filename(target);
+    if (present) {
+      const bytes = await readFile(binary);
+      assert.equal(digest(bytes), entry.sha256, `Agent checksum mismatch: ${target}`);
+      assert.equal(bytes.length, entry.bytes, `Agent size mismatch: ${target}`);
+    }
     sums.push(`${entry.sha256}  ${filename(target)}`);
     if (signed) {
       assert.match(entry.sourceSha256 ?? "", /^[a-f0-9]{64}$/, "Missing reproducible source checksum");
@@ -44,7 +54,7 @@ export async function verifyAgentDirectory(directory, { sourceDirectory, signed 
       else {
         assert.equal(entry.signing?.certificateSha256, expectedCertificate.fingerprint256, "Unexpected agent signing certificate");
         assert.ok(expectedCertificate.subject.split("\n").includes(`OU=${entry.signing?.teamId}`), "Unexpected agent signing team");
-        if (native) await verifyMacAgent(binary, entry.signing);
+        if (native && present) await verifyMacAgent(binary, entry.signing);
       }
     }
   }

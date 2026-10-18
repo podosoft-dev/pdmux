@@ -1,3 +1,4 @@
+import { DESKTOP } from "../desktop/desktop.module";
 import { inlineSafe, mimeOf } from "@pdmux/core";
 import { FS_CAPS, FS_CHUNK_BYTES } from "@pdmux/protocol";
 import { AppException } from "@podosoft/podokit-contracts";
@@ -231,6 +232,7 @@ async function fileUpload(
 
 export const pdmuxHttpPlugin: AppPlugin = (context) => {
   const services = context.services.resolve(PDMUX);
+  const desktop = context.services.tryResolve(DESKTOP);
   return new Elysia({ name: "pdmux.http" })
     // The agent kit is read from the image, so it is served while the database is down.
     .get("/agent-kit/manifest", () => services.agentKit.manifest(), {
@@ -242,6 +244,9 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
     // Every route below needs pdmux's database. Elysia applies this hook only to
     // routes registered after it, in this plugin.
     .onBeforeHandle(() => services.database.assertReady())
+    .onBeforeHandle(({ request, body }) => desktop?.forward(request, body))
+    .onAfterResponse(({ request }) => desktop?.release(request))
+    .onError(({ request }) => { desktop?.release(request); })
     .get("/fleet/events", ({ request, server }) => {
       server?.timeout(request, 0);
       return fleetEventResponse(request, { auth: services.auth, hosts: services.hosts, events: services.hostEvents });
@@ -305,7 +310,8 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
     })
     .get("/hosts", async ({ request }) => {
       const session = await sessionFor(services, request);
-      return services.hosts.list(resolveScopeId(session));
+      const hosts = await services.hosts.list(resolveScopeId(session));
+      return desktop ? desktop.views(session, hosts) : hosts;
     })
     .get("/hosts/:hostId", async ({ request, params }) => {
       const session = await sessionFor(services, request);

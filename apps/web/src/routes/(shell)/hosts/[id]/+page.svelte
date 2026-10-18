@@ -684,7 +684,7 @@
   }
 </script>
 
-<svelte:head><title>{host.label} · pdmux</title></svelte:head>
+<svelte:head><title>{host.label} · PDMux</title></svelte:head>
 
 <!-- The shell owns the viewport, so this column owns its own scrolling (ARCHITECTURE §7). -->
 <div class="flex min-h-0 flex-col gap-6 overflow-y-auto p-6" data-testid="hosts-panel" data-pdmux-region="page">
@@ -990,7 +990,7 @@
       </Collapsible.Trigger>
       <Collapsible.Content>
         <Card.Content>
-          <HostAgentAccess {host} canManage={data.canManage} bind:keyCount />
+          <HostAgentAccess {host} canManage={data.canManage && (!host.origin || host.origin.kind === "local")} bind:keyCount />
         </Card.Content>
       </Collapsible.Content>
     </Card.Root>

@@ -10,4 +10,5 @@ export const APP_PUBLIC_PATHS: readonly string[] = [
   // The one-line agent installer is fetched by `curl` on a host, which has no
   // session; the enrollment code it carries is what authorizes the host.
   "/install.sh",
+  "/desktop/connect",
 ];

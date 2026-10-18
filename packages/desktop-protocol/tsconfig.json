@@ -1,0 +1,1 @@
+{"compilerOptions":{"module":"NodeNext","moduleResolution":"NodeNext","target":"ES2022","outDir":"dist","rootDir":"src","declaration":true,"strict":true,"noUnusedLocals":true,"noUnusedParameters":true,"noImplicitReturns":true,"noUncheckedIndexedAccess":true,"skipLibCheck":true,"types":["bun"]},"include":["src/**/*.ts"]}

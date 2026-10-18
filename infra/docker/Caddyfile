@@ -6,7 +6,7 @@
   # so an appended proxy address would be recorded in place of the client. With
   # `trusted_proxies` set for a proxy in front, {client_ip} is the first untrusted
   # address from the right; without it, the socket peer (docs/OPERATIONS.md §1-3).
-  @websockets path /terminal/ws /agent/ws
+  @websockets path /terminal/ws /agent/ws /desktop/bridge/ws
   handle @websockets {
     reverse_proxy api:5002 {
       header_up X-Forwarded-For {client_ip}

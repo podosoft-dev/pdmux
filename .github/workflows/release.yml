@@ -53,6 +53,7 @@ jobs:
       # must exist before lint resolves the workspace imports.
       - name: Build packages
         run: |
+          bun run --filter @pdmux/desktop-protocol build
           bun run --filter @pdmux/protocol build
           bun run --filter @pdmux/core build
           bun run --filter @pdmux/ui build

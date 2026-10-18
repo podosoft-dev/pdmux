@@ -13,6 +13,12 @@ async function transfer(name: string, ...args: unknown[]): Promise<unknown> {
 contextBridge.exposeInMainWorld("pdmuxDesktop", Object.freeze({
   isDesktop: true,
   platform: process.platform,
+  ...(process.argv?.includes("--pdmux-local-runtime=1") ? { connection: Object.freeze({
+    connect: (url: string): Promise<unknown> => ipcRenderer.invoke("pdmux:connection:connect", url),
+    authenticate: (code: string): Promise<unknown> => ipcRenderer.invoke("pdmux:connection:authenticate", code),
+    workspace: (id: string | null): Promise<unknown> => ipcRenderer.invoke("pdmux:connection:workspace", id),
+    disconnect: (): Promise<unknown> => ipcRenderer.invoke("pdmux:connection:disconnect"),
+  }) } : {}),
   transfers: Object.freeze({
     pickFolder: (): Promise<unknown> => transfer("pick-folder"),
     read: (token: string, path: string, offset: number, length: number): Promise<unknown> => transfer("read", token, path, offset, length),

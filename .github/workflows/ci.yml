@@ -30,6 +30,7 @@ jobs:
       # module-resolution error three jobs later.
       - name: build packages
         run: |
+          bun run --filter @pdmux/desktop-protocol build
           bun run --filter @pdmux/protocol build
           bun run --filter @pdmux/core build
           bun run --filter @pdmux/ui build
@@ -139,6 +140,7 @@ jobs:
       - run: bun ci
       - name: Build packages for the migration fixture
         run: |
+          bun run --filter @pdmux/desktop-protocol build
           bun run --filter @pdmux/protocol build
           bun run --filter @pdmux/core build
           bun run --filter @pdmux/ui build

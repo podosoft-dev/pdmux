@@ -6,7 +6,7 @@ import { signupOpenFrom } from "./feature-gate";
 /** Values used when neither the auth_config table nor the environment sets one.
  *  Other PodoKit modules add theirs below the marker. */
 export const AUTH_CONFIG_DEFAULTS: AuthConfigDefaults = {
-  appName: "pdmux",
+  appName: "PDMux",
   // podokit:begin:auth-config-defaults
   auditLog: true,
   // podokit:end:auth-config-defaults

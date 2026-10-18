@@ -94,7 +94,7 @@ export class PdmuxGateway {
       this.noteRefusal(outcome.refusal, outcome.hostId, request);
       throw Object.assign(new Error("invalid agent key"), { statusCode: 401 });
     }
-    const host = await this.services.hosts.getById(outcome.hostId);
+    const host = await this.services.hosts.getById(outcome.hostId, true);
     if (!host) {
       this.noteRefusal("host_deleted", outcome.hostId, request);
       throw Object.assign(new Error("invalid agent key"), { statusCode: 401 });

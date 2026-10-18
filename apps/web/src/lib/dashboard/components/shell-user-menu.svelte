@@ -18,6 +18,8 @@
    * are reused, and the trigger is rebuilt from the same dropdown primitive with the
    * same routes and the same message keys.
    */
+  import { onMount } from "svelte";
+  import { desktopConnection } from "#lib/desktop.js";
   import { goto } from "$app/navigation";
   import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
   import { Button } from "#lib/components/ui/button/index.js";
@@ -57,6 +59,8 @@
     return at > 0 ? { local: user.email.slice(0, at), domain: user.email.slice(at) } : { local: user.email, domain: "" };
   });
   const i18n = getI18n();
+  let desktop = $state(false);
+  onMount(() => { desktop = Boolean(desktopConnection()); });
 
   /**
    * The way into the platform console — the only one left, now that the account page's
@@ -107,11 +111,13 @@
     <DropdownMenu.Label class="flex items-center gap-2 py-1.5 font-normal" data-testid="shell-user-identity">
       <UserAvatar {user} class="size-8 shrink-0" />
       <span class="flex min-w-0 flex-col text-left leading-tight">
-        <span class="truncate text-sm font-medium">{user.name}</span>
+        <span class="truncate text-sm font-medium">{desktop && user.email.endsWith("@local.invalid") ? i18n.t.desktop.localOnly : user.name}</span>
         <!-- Split on purpose — see `emailParts`. Do not collapse back into one node. -->
+        {#if desktop}<span class="text-muted-foreground text-xs">{i18n.t.desktop.localOnly}</span>{:else}
         <span class="text-muted-foreground truncate text-xs"
           >{emailParts.local}<span>{emailParts.domain}</span></span
         >
+        {/if}
       </span>
     </DropdownMenu.Label>
     <DropdownMenu.Separator />
@@ -124,9 +130,13 @@
       </DropdownMenu.Item>
     {/if}
     <DropdownMenu.Separator />
+    {#if desktop}
+      <DropdownMenu.Item onSelect={() => goto("/connection")} data-testid="shell-server-connection">{i18n.t.desktop.title}</DropdownMenu.Item>
+    {:else}
     <DropdownMenu.Item onSelect={signOut} data-testid="shell-user-signout">
       <LogOutIcon class="mr-2 size-4" /> {i18n.t.nav.signOut}
     </DropdownMenu.Item>
+    {/if}
     <!-- Which pdmux this is. It belongs here rather than on a card because it is the
          SERVER's version, not any host's — a host's agent has its own, and the two
          are released independently.
@@ -140,7 +150,7 @@
       class="text-muted-foreground py-1 text-xs font-normal"
       data-testid="shell-user-version"
     >
-      pdmux v{APP_VERSION}
+      PDMux v{APP_VERSION}
     </DropdownMenu.Label>
   </DropdownMenu.Content>
 </DropdownMenu.Root>

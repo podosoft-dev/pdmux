@@ -37,7 +37,7 @@ step() {
 # The packages build first because the apps consume their compiled output — the same
 # order and the same reason as the workflow.
 build_packages() {
-	for pkg in @pdmux/protocol @pdmux/core @pdmux/ui @pdmux/mcp; do
+	for pkg in @pdmux/desktop-protocol @pdmux/protocol @pdmux/core @pdmux/ui @pdmux/mcp; do
 		bun run --filter "$pkg" build >/dev/null || return 1
 	done
 }

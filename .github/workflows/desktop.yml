@@ -103,6 +103,7 @@ jobs:
 
       - name: Build shared packages
         run: |
+          bun run --filter @pdmux/desktop-protocol build
           bun run --filter @pdmux/protocol build
           bun run --filter @pdmux/core build
           bun run --filter @pdmux/ui build

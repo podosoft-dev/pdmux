@@ -29,7 +29,17 @@ export function parseAgentChecksums(text) {
 export async function verifyAgentResources(resources, referenceDirectory) {
   const reference = await readFile(join(referenceDirectory, "SHA256SUMS"), "utf8");
   assert.equal(await readFile(join(resources, "SHA256SUMS"), "utf8"), reference, "Packaged agent checksum metadata changed");
+  let seed;
+  try { seed = JSON.parse(await readFile(join(resources, "desktop-catalog.json"), "utf8")).seed; }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
+  if (seed !== undefined) {
+    const expected = process.platform === "win32" ? null : `pdmux-agent-${process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
+    assert.equal(seed, expected);
+    assert.deepEqual((await readdir(resources)).filter(name => name.startsWith("pdmux-agent-")).sort(), seed ? [seed] : []);
+    assert.equal(await readFile(join(resources, "manifest.json"), "utf8"), await readFile(join(referenceDirectory, "manifest.json"), "utf8"));
+  }
   for (const [name, expected] of parseAgentChecksums(reference)) {
+    if (seed !== undefined && name !== seed) continue;
     const hash = createHash("sha256").update(await readFile(join(resources, name))).digest("hex");
     assert.equal(hash, expected, `Packaged agent bytes changed: ${name}`);
   }
@@ -47,7 +57,7 @@ async function verifyApp(app) {
   const reference = join(process.env.PDMUX_AGENT_ARTIFACT_ROOT ?? join(repository, "apps/web/static/agent"), version);
   await verifyAgentResources(agentResources, reference);
   if (process.env.PDMUX_VERIFY_RELEASE_IDENTITY === "1") {
-    await verifyAgentDirectory(agentResources, { signed: true, native: true, sourceDirectory: join(repository, "apps/web/static/agent", version) });
+    await verifyAgentDirectory(agentResources, { signed: true, native: true, subset: true, sourceDirectory: join(repository, "apps/web/static/agent", version) });
     execFileSync("xcrun", ["stapler", "validate", app], { stdio: "inherit", timeout: 30_000 });
     execFileSync("spctl", ["--assess", "--type", "execute", app], { stdio: "inherit", timeout: 60_000 });
   }

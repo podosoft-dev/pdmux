@@ -1,3 +1,6 @@
+import { electron } from "@better-auth/electron";
+import { desktopAuthOptions } from "../desktop/auth-options";
+import { desktopLocalAuth, isDesktopOwnerCreation } from "../desktop/local-auth";
 import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from "better-auth";
 import { APIError } from "better-auth/api";
 import { twoFactor, haveIBeenPwned, magicLink, emailOTP, username, multiSession, phoneNumber, organization, jwt, bearer, openAPI } from "better-auth/plugins";
@@ -62,6 +65,8 @@ export function buildAuth(config: AuthConfig) {
     featureGatePlugin(gateSettings),
     // "Sign out other sessions" revokes every other session, not only the first 100.
     revokeEveryOtherSession(),
+    desktopLocalAuth(),
+    electron({ clientID: "pdmux-desktop" }),
     // The issuer is the account name authenticator apps show.
     twoFactor({ issuer: config.appName }),
     magicLink({
@@ -155,6 +160,7 @@ export function buildAuth(config: AuthConfig) {
     user: {
       create: {
         before: async (user, context) => {
+          if (isDesktopOwnerCreation()) return { data: { ...user, role: "admin", signupApproved: true, emailVerified: true } };
           const adminEmail = adminEmails.has(user.email.toLowerCase());
           const createdByAdmin = context?.path === "/admin/create-user";
           assertUserCreationAllowed(await readSignupOpen(isSignupOpen), context?.path);
@@ -206,7 +212,7 @@ export function buildAuth(config: AuthConfig) {
 
   const session = sessionIdleOptions(config.sessionIdleTimeoutMinutes);
 
-  return betterAuth({
+  return betterAuth(desktopAuthOptions({
     appName: config.appName,
     database: authDatabase,
     emailAndPassword: {
@@ -299,7 +305,7 @@ export function buildAuth(config: AuthConfig) {
     // podokit:begin:auth-options
     trustedOrigins: (process.env.CORS_ORIGIN ?? "http://localhost:5001").split(",").map((origin) => origin.trim()),
     // podokit:end:auth-options
-  });
+  }));
 }
 
 // Bootstrap instance from environment config. Used by the better-auth CLI

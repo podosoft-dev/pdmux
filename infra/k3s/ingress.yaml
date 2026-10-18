@@ -34,6 +34,10 @@ spec:
             pathType: Exact
             backend:
               service: { name: api, port: { number: 3000 } }
+          - path: /desktop/bridge/ws
+            pathType: Exact
+            backend:
+              service: { name: api, port: { number: 3000 } }
           - path: /
             pathType: Prefix
             backend:
