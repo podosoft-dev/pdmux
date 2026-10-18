@@ -9,6 +9,12 @@
 - Reuse one canonical signed agent artifact across all installers, server images and release
   downloads while preserving reproducible source verification. Existing self-signed desktop
   installations require one manual DMG replacement; user data and backup-before-update are preserved.
+- The desktop app runs local-first as PDMux. It opens a local profile without signing in, on its own
+  SQLite store, and can sign in to a server (Electron PKCE, the session kept in the operating
+  system's secure storage) to sync hosts and preferences; signing out keeps the server's host list
+  as a read-only cache. The web app can operate local hosts through the running desktop app over
+  `/desktop/bridge/ws`. Installers bundle the agent for their own platform and verify the other
+  platforms' agents against this release's checksums before caching them.
 - Update the PodoKit foundation to 1.6.2. The audit log records every sign-in as `auth.login`, not
   only email and password ones: a social provider, a passkey or any other enabled method too, with
   the method in `metadata.method` and the social provider in `metadata.provider`. A two-factor
