@@ -65,22 +65,17 @@ interface Connection {
  * socket that opened it — no lookup table to get wrong, the id itself carries the
  * ownership.
  *
- * NOTHING HANGS: every failure (host offline, unknown pane, agent gone) produces
- * a `terminal error` frame first. A browser waiting on a pane that will never
- * answer is the worst outcome here, worse than a hard error.
+ * Temporary host failures close the transport so clients can reconnect with the
+ * same targets. An error/exit frame ends a pane permanently and belongs only to
+ * a terminal that actually failed or exited.
  */
 export class TerminalRelayService {
   private readonly logger = new ProductLogger(TerminalRelayService.name);
   private readonly connections = new Map<string, Connection>();
   private unsubscribe: (() => void)[] = [];
   /**
-   * How long a pane waits for its agent to come back before it is ended.
-   *
-   * ⚠ TWO MINUTES IS AN AGENT RESTART, NOT AN OUTAGE. An update swaps the binary and reattaches
-   * in seconds, and a machine rebooting takes rather longer than this — past that the honest
-   * answer is that the pane is gone, because holding one open forever is the "browser waiting on
-   * something that will never answer" this file's header calls the worst outcome. Injectable so a
-   * spec can watch both ends of it without waiting.
+   * Hold a brief agent restart on this socket. A longer outage closes the socket
+   * and lets the client's existing backoff retry; it must not destroy the pane.
    */
   private graceMs = 120_000;
 
@@ -162,7 +157,7 @@ export class TerminalRelayService {
     }
 
     if (frame.type === "close") {
-      this.forward(connection, { ...frame, termId: pane.agentTermId });
+      this.registry.sendToHost(connection.hostId, { type: "terminal", frame: { ...frame, termId: pane.agentTermId } });
       this.closePane(connection, pane, "client");
       return;
     }
@@ -194,12 +189,12 @@ export class TerminalRelayService {
   }
 
   /** Browser socket gone: kill its PTYs on the agent so nothing is left running. */
-  closeConnection(connectionId: string): void {
+  closeConnection(connectionId: string, reason = "socket-closed"): void {
     const connection = this.connections.get(connectionId);
     if (!connection) return;
     for (const pane of connection.panes.values()) {
-      this.forward(connection, { type: "close", termId: pane.agentTermId });
-      void this.audit(connection, pane, "terminal.close", "socket-closed");
+      this.registry.sendToHost(connection.hostId, { type: "terminal", frame: { type: "close", termId: pane.agentTermId } });
+      void this.audit(connection, pane, "terminal.close", reason);
     }
     connection.panes.clear();
     this.clearGrace(connection);
@@ -219,9 +214,8 @@ export class TerminalRelayService {
    *
    * So the panes WAIT. Input is refused while they do (there is nothing to type into), the host
    * reads as unreachable on screen because the fleet says so, and `handleHostConnect` re-opens
-   * them the moment an agent attaches. If none does within the grace period, the panes end the
-   * way they always did — a pane waiting forever is the failure this file's own header warns
-   * about.
+   * them the moment an agent attaches. If none does within the grace period, close the transport
+   * so clients retry. Sending error/exit here permanently removes their saved pane targets.
    */
   private handleHostDisconnect(hostId: string): void {
     for (const connection of this.connections.values()) {
@@ -265,18 +259,12 @@ export class TerminalRelayService {
     }
   }
 
-  /** The agent never came back: end the panes the way a lost pane has always ended. */
+  /** The brief hold expired; hand recovery back to the client's reconnect loop. */
   private giveUp(connectionId: string): void {
     const connection = this.connections.get(connectionId);
     if (!connection) return;
     connection.graceHandle = null;
-    for (const pane of connection.panes.values()) {
-      if (!pane.waiting) continue;
-      this.send(connection, { type: "error", termId: pane.clientTermId, message: "agent disconnected" });
-      this.send(connection, { type: "exit", termId: pane.clientTermId, code: null });
-      void this.audit(connection, pane, "terminal.close", "agent-disconnected");
-      connection.panes.delete(pane.clientTermId);
-    }
+    this.retryConnection(connection);
   }
 
   private clearGrace(connection: Connection): void {
@@ -293,11 +281,9 @@ export class TerminalRelayService {
     const agentTermId = `${connection.id}:${frame.termId}`;
     const forwarded: TerminalClientFrame = { ...frame, termId: agentTermId };
     if (!this.registry.sendToHost(connection.hostId, { type: "terminal", frame: forwarded })) {
-      // No agent attached: say so and close, rather than accept keystrokes that
-      // go nowhere.
-      this.send(connection, { type: "error", termId: frame.termId, message: "host offline" });
-      connection.socket.close(4001, "host offline");
-      this.connections.delete(connection.id);
+      // The API can be ready before its agents after a deployment. An error frame
+      // would release the browser's pane before its reconnect handler can reopen it.
+      this.retryConnection(connection);
       return;
     }
     const pane: Pane = {
@@ -345,11 +331,13 @@ export class TerminalRelayService {
 
   private forward(connection: Connection, frame: TerminalClientFrame): void {
     if (!this.registry.sendToHost(connection.hostId, { type: "terminal", frame })) {
-      const clientTermId = frame.termId.slice(frame.termId.indexOf(":") + 1);
-      this.send(connection, { type: "error", termId: clientTermId, message: "host offline" });
-      this.send(connection, { type: "exit", termId: clientTermId, code: null });
-      connection.panes.delete(clientTermId);
+      this.retryConnection(connection);
     }
+  }
+
+  private retryConnection(connection: Connection): void {
+    this.closeConnection(connection.id, "host-offline");
+    connection.socket.close(4001, "host offline");
   }
 
   private send(connection: Connection, frame: TerminalServerFrame): void {

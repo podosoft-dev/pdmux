@@ -23,6 +23,13 @@ const SERVER_SETTINGS_ROUTES = new Set([
   "POST /integrations/cloudflare/discover",
 ]);
 
+/** Injectable transport and timing keep outage recovery tests off the network. */
+export interface DesktopClientOptions {
+  createSocket?: (url: string, headers: Record<string, string>) => WebSocket;
+  syncIntervalMs?: number;
+  bridgeTimeoutMs?: number;
+}
+
 export class DesktopClient {
   private state: ClientState = { deviceId: crypto.randomUUID(), selected: "", accounts: {} };
   private session?: AuthSession;
@@ -31,6 +38,7 @@ export class DesktopClient {
   private timer?: ReturnType<typeof setInterval>;
   private socket?: WebSocket;
   private bridge?: DesktopBridge;
+  private bridgeTimer?: ReturnType<typeof setTimeout>;
   private running = false;
   private epoch = 0;
   private connectionAbort = new AbortController();
@@ -38,7 +46,7 @@ export class DesktopClient {
   private stopped = true;
   private error: string | null = null;
   private lastSync: string | null = null;
-  constructor(private readonly service: DesktopService, private readonly store: Repository<DesktopConnection>) {}
+  constructor(private readonly service: DesktopService, private readonly store: Repository<DesktopConnection>, private readonly options: DesktopClientOptions = {}) {}
 
   async attach(session: AuthSession, cookie: string): Promise<void> {
     if (this.session?.user.id !== session.user.id) {
@@ -85,21 +93,24 @@ export class DesktopClient {
     this.state.selected = key; this.service.connectionKey = key;
     this.cloudCookie = cookie; this.stopped = false;
     await this.save();
-    await this.sync();
-    if (this.stopped) return;
-    this.openBridge();
+    // Start recovery before the first sync: a deployment can interrupt it after
+    // context/login succeeded. A temporary failure must not strand a signed-in client.
     this.timer = setInterval(() => {
       void this.sync().catch(() => undefined);
-      if (!this.socket || this.socket.readyState === WebSocket.CLOSED) this.openBridge();
-    }, 5_000);
+      this.openBridge();
+    }, this.options.syncIntervalMs ?? 5_000);
+    try { await this.sync(); } catch (error) { if (this.stopped) throw error; }
+    if (connectingEpoch !== this.epoch || this.stopped) return;
+    this.openBridge();
   }
   private async idle(): Promise<void> { if (this.running) await new Promise<void>(resolve => this.idleWaiters.push(resolve)); }
   disconnect(): void {
     this.epoch += 1; this.connectionAbort.abort();
     this.stopped = true; this.cloudCookie = "";
     clearInterval(this.timer); this.timer = undefined;
+    clearTimeout(this.bridgeTimer); this.bridgeTimer = undefined;
     this.bridge?.close(); this.bridge = undefined;
-    this.socket?.close(); this.socket = undefined;
+    const socket = this.socket; this.socket = undefined; socket?.close();
   }
   private account(): AccountState {
     const account = this.state.accounts[this.state.selected];
@@ -140,8 +151,13 @@ export class DesktopClient {
   }
   private async checkSession(): Promise<void> {
     const account = this.account();
+    const epoch = this.epoch;
     const response = await fetch(`${account.url}/api/desktop/context`, { headers: { cookie: this.cloudCookie }, signal: AbortSignal.any([AbortSignal.timeout(10_000), this.connectionAbort.signal]), redirect: "error" });
-    if (!response.ok) { this.disconnect(); throw new AppException("DESKTOP_SESSION_EXPIRED", "Sign in again", 401); }
+    if (epoch !== this.epoch || this.stopped) throw new AppException("DESKTOP_CONNECTION_CANCELLED", "Connection was cancelled", 409);
+    if (response.status === 401 || response.status === 403) { this.disconnect(); throw new AppException("DESKTOP_SESSION_EXPIRED", "Sign in again", 401); }
+    // A gateway 502/503 or rate limit during a rollout says nothing about the
+    // session's validity. Keep the cookie and timer so the next poll can recover.
+    if (!response.ok) throw new AppException("DESKTOP_SERVER_UNAVAILABLE", "The server is temporarily unavailable", 503);
     const context = contextSchema.parse(await response.json());
     if (context.userId !== account.userId || context.scopeId !== account.scopeId) { this.disconnect(); throw new AppException("DESKTOP_SCOPE_CHANGED", "Reconnect after switching workspace", 409); }
   }
@@ -192,19 +208,37 @@ export class DesktopClient {
     } finally { this.running = false; for (const resolve of this.idleWaiters.splice(0)) resolve(); }
   }
   private openBridge(): void {
-    if (this.stopped) return;
+    if (this.stopped || (this.socket && this.socket.readyState !== WebSocket.CLOSED)) return;
     const account = this.account();
     const url = `${account.url.replace(/^https/, "wss")}${DESKTOP_BRIDGE_PATH}?deviceId=${encodeURIComponent(this.state.deviceId)}&version=${DESKTOP_PROTOCOL_VERSION}`;
-    const socket = new AuthenticatedWebSocket(url, { headers: { cookie: this.cloudCookie, origin: account.url } });
+    let socket: WebSocket;
+    try {
+      socket = this.options.createSocket?.(url, { cookie: this.cloudCookie, origin: account.url }) ?? new AuthenticatedWebSocket(url, { headers: { cookie: this.cloudCookie, origin: account.url } });
+    } catch { this.error = "DESKTOP_BRIDGE_UNAVAILABLE"; return; }
     this.socket = socket;
     const bridge = new DesktopBridge(data => {
       if (socket.bufferedAmount > 1024 * 1024) { socket.close(1008, "slow peer"); throw new Error("Bridge buffer exceeded"); }
       socket.send(data);
     }, (input, body, signal) => this.localRequest(input, body, signal), () => socket.close(1008));
     this.bridge = bridge;
+    const release = (): void => {
+      bridge.close();
+      if (this.socket !== socket) return;
+      clearTimeout(this.bridgeTimer); this.bridgeTimer = undefined;
+      this.socket = undefined; this.bridge = undefined;
+    };
+    const failed = (): void => {
+      if (this.socket === socket) this.error = "DESKTOP_BRIDGE_UNAVAILABLE";
+      release(); socket.close();
+    };
+    this.bridgeTimer = setTimeout(failed, this.options.bridgeTimeoutMs ?? 15_000);
+    socket.addEventListener("open", () => {
+      if (this.socket !== socket || this.stopped) { socket.close(); return; }
+      clearTimeout(this.bridgeTimer); this.bridgeTimer = undefined;
+    });
     socket.addEventListener("message", event => bridge.receive(event.data));
-    socket.addEventListener("error", () => { this.error = "DESKTOP_BRIDGE_UNAVAILABLE"; });
-    socket.addEventListener("close", () => { bridge.close(); });
+    socket.addEventListener("error", failed);
+    socket.addEventListener("close", release);
   }
   private async localRequest(input: BridgeRequest, body: ReadableStream<Uint8Array>, signal: AbortSignal): Promise<Response> {
     if (this.stopped || !this.session) throw new AppException("DESKTOP_OFFLINE", "Desktop disconnected", 503);

@@ -55,6 +55,7 @@ interface Harness {
   urls: string[];
   run(): void;
   statuses: string[];
+  retryDelays: number[];
 }
 
 function harness(): Harness {
@@ -62,6 +63,7 @@ function harness(): Harness {
   const urls: string[] = [];
   const timers: (() => void)[] = [];
   const statuses: string[] = [];
+  const retryDelays: number[] = [];
   const relay = new TerminalRelay({
     url: "ws://test/terminal/ws",
     createSocket: (url) => {
@@ -77,7 +79,7 @@ function harness(): Harness {
       failed: (message) => `failed: ${message}`,
     },
     onStatus: (status) => statuses.push(status),
-    schedule: (fn) => timers.push(fn),
+    schedule: (fn, ms) => { if (ms <= 8000) retryDelays.push(ms); return timers.push(fn); },
     cancel: () => undefined,
     random: () => 0.5,
   });
@@ -86,6 +88,7 @@ function harness(): Harness {
     sockets,
     urls,
     statuses,
+    retryDelays,
     run: () => {
       const pending = timers.splice(0, timers.length);
       for (const fn of pending) fn();
@@ -185,6 +188,55 @@ describe("[TC-PDTERM-103] a truncated stream says so", () => {
 });
 
 describe("[TC-PDTERM-104] reconnection is visible", () => {
+  it("keeps backing off until a pane is ready, without claiming a failed handshake restored it", () => {
+    const { relay, sockets, run, retryDelays } = harness();
+    const pane = relay.open(target);
+    const chunks: string[] = [];
+    pane.onData(chunk => chunks.push(chunk));
+    sockets[0]?.accept(); sockets[0]?.deliver({ type: "ready", termId: "t1", pid: 42 });
+    sockets[0]?.drop();
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      run(); sockets[attempt]?.accept();
+      expect(relay.status).toBe("reconnecting");
+      sockets[attempt]?.drop();
+    }
+    expect(retryDelays).toEqual([500, 1000, 2000, 4000]);
+    expect(chunks.filter(chunk => chunk.includes("relay lost"))).toHaveLength(1);
+    expect(chunks.filter(chunk => chunk.includes("relay back"))).toHaveLength(0);
+    run(); sockets[4]?.accept(); sockets[4]?.deliver({ type: "ready", termId: "t1", pid: 43 });
+    expect(relay.status).toBe("open");
+    expect(relay.paneCount).toBe(1);
+    expect(chunks.filter(chunk => chunk.includes("relay back"))).toHaveLength(1);
+    sockets[4]?.drop();
+    expect(retryDelays.at(-1)).toBe(500);
+    relay.dispose();
+  });
+
+  it("replaces a socket that never completes its handshake", () => {
+    const { relay, sockets, run } = harness();
+    relay.open(target);
+    run(); // connect deadline
+    run(); // retry
+    expect(sockets).toHaveLength(2);
+    expect(sockets[0]?.closed).toBe(true);
+    sockets[1]?.accept(); sockets[1]?.deliver({ type: "ready", termId: "t1", pid: 42 });
+    expect(relay.status).toBe("open");
+    relay.dispose();
+  });
+
+  it("retries a socket constructor failure without losing its pane", () => {
+    let attempts = 0;
+    const timers: Array<() => void> = [];
+    const socket = new FakeSocket();
+    const relay = new TerminalRelay({ createSocket: () => { if (attempts++ === 0) throw new Error("Network unavailable"); return socket; }, schedule: fn => timers.push(fn), cancel: () => undefined });
+    expect(() => relay.open(target)).not.toThrow();
+    timers.shift()?.();
+    socket.accept(); socket.deliver({ type: "ready", termId: "t1", pid: 42 });
+    expect(relay.paneCount).toBe(1);
+    expect(relay.status).toBe("open");
+    relay.dispose();
+  });
+
   it("tells the pane, backs off, reconnects and re-opens the pane", () => {
     const { relay, sockets, statuses, run } = harness();
     const connection = relay.open(target);
@@ -202,6 +254,7 @@ describe("[TC-PDTERM-104] reconnection is visible", () => {
     const second = sockets[1];
     expect(second).toBeDefined();
     second?.accept();
+    second?.deliver({ type: "ready", termId: "t1", pid: 43 });
     // The default target is a multiplexer session, so re-opening reattaches to work
     // that kept running while the socket was away.
     expect(second?.frames().filter((frame) => frame.type === "open")).toHaveLength(1);
@@ -230,6 +283,7 @@ describe("[TC-PDTERM-104] reconnection is visible", () => {
     relay.wake();
     expect(sockets, "waking the tab did not dial again").toHaveLength(2);
     sockets[1]?.accept();
+    sockets[1]?.deliver({ type: "ready", termId: "t1", pid: 43 });
     // The pane is re-opened, which is what reattaches to the multiplexer session.
     expect(sockets[1]?.frames().filter((frame) => frame.type === "open")).toHaveLength(1);
     expect(chunks.join("")).toContain("relay back");
@@ -267,6 +321,16 @@ describe("[TC-PDTERM-104] reconnection is visible", () => {
     expect(sockets).toHaveLength(1);
     expect(relay.paneCount).toBe(0);
   });
+
+  it("does not reconnect a pane the user closed while the server was away", () => {
+    const { relay, sockets, run } = harness();
+    const pane = relay.open(target);
+    sockets[0]?.accept(); sockets[0]?.drop();
+    pane.close(); run(); run();
+    expect(relay.paneCount).toBe(0);
+    expect(sockets).toHaveLength(1);
+    relay.dispose();
+  });
 });
 
 describe("[TC-PDTERM-105] the pane learns when its process is gone", () => {
@@ -281,6 +345,9 @@ describe("[TC-PDTERM-105] the pane learns when its process is gone", () => {
     socket?.deliver({ type: "exit", termId: "t1", code: 130 });
     expect(codes).toEqual([130]);
     expect(relay.paneCount).toBe(0);
+    socket?.drop();
+    relay.wake();
+    expect(sockets).toHaveLength(1);
   });
 
   it("surfaces a relay error in the pane rather than freezing it", () => {

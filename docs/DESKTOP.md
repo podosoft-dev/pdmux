@@ -84,6 +84,13 @@ stay visible as an offline read-only cache. Connection state and cached data are
 account and workspace. This is metadata synchronization, not a PostgreSQL-to-SQLite database copy.
 The legacy pinned `remote` mode below remains supported for existing configurations.
 
+Temporary server failures, including gateway 502/503 and rate limits, keep the cloud session and
+the synchronization retry loop. The desktop reconnects the bridge and reopens terminal targets
+after the server and its agents return, without reloading the window. A bridge or terminal
+handshake that stalls is bounded to 15 seconds. Session rejection (401/403), workspace changes,
+and an explicit disconnect still stop access. Persistent multiplexer sessions can reattach;
+an ephemeral plain shell cannot preserve its process across a disconnect.
+
 ## Data and backups
 
 The visible application name is **PDMux**. The legacy bundle/executable and user-data directory

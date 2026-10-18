@@ -211,9 +211,13 @@ three problems disappear **structurally**.
   connection and resumes on reattach — **including the agent's own restart**. When an agent goes
   away the PTY ids it held are meaningless, but the session is not, so the relay holds those panes
   (refusing input, which would be addressed to nothing) and re-opens them with the same `open`
-  frame when an agent attaches again. Only if none does within the grace period do they end.
-  Ending them immediately was the earlier behaviour and it left a pane frozen until the page was
-  reloaded, which from a phone is indistinguishable from a broken gesture.
+  frame when an agent attaches again. If the grace period expires, or an open reaches an offline
+  host, the relay closes the transport with code 4001. Clients retain the pane targets and keep
+  retrying with jittered backoff. Sending `error`/`exit` first would permanently release those
+  targets and leave the screen frozen until a reload.
+- A successful WebSocket upgrade alone does not confirm recovery. The client resets its backoff
+  and reports reconnection after `ready` or output confirms the terminal. A handshake that never
+  completes is closed after 15 seconds; retries stop when the pane is closed or its relay disposed.
 - A `shell` target is warned about in the UI as non-persistent (it dies with the connection).
 - Session names are limited by the contract to `A-Za-z0-9_-`, 1–32 characters — this value ends up
   as a command argument on the host.

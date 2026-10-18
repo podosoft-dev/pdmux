@@ -1,9 +1,15 @@
 import { AuthenticatedWebSocket } from "./authenticated-websocket";
 import { AppException } from "../common/app-exception";
 
+interface TerminalStreamOptions {
+  createSocket?: (url: string, headers: Record<string, string>) => WebSocket;
+  connectTimeoutMs?: number;
+}
+
 /** Each newline is one existing terminal protocol frame; no PTY identifiers are persisted. */
-export async function terminalStream(url: string, cookie: string, input: ReadableStream<Uint8Array>, signal: AbortSignal): Promise<Response> {
-  const socket = new AuthenticatedWebSocket(url, { headers: { cookie } });
+export async function terminalStream(url: string, cookie: string, input: ReadableStream<Uint8Array>, signal: AbortSignal, options: TerminalStreamOptions = {}): Promise<Response> {
+  if (signal.aborted) throw new AppException("DESKTOP_TERMINAL_UNAVAILABLE", "Terminal connection was cancelled", 503);
+  const socket = options.createSocket?.(url, { cookie }) ?? new AuthenticatedWebSocket(url, { headers: { cookie } });
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   let queued = 0;
   const output = new ReadableStream<Uint8Array>({
@@ -20,10 +26,25 @@ export async function terminalStream(url: string, cookie: string, input: Readabl
   });
   socket.addEventListener("close", () => { try { controller.close(); } catch { /* Already cancelled. */ } });
   signal.addEventListener("abort", () => socket.close(), { once: true });
-  await new Promise<void>((resolve, reject) => {
-    socket.addEventListener("open", () => resolve(), { once: true });
-    socket.addEventListener("error", () => reject(new AppException("DESKTOP_TERMINAL_UNAVAILABLE", "Terminal connection failed", 503)), { once: true });
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        socket.removeEventListener("open", opened);
+        socket.removeEventListener("error", failed);
+        socket.removeEventListener("close", failed);
+        signal.removeEventListener("abort", failed);
+      };
+      const opened = (): void => { cleanup(); resolve(); };
+      const failed = (): void => { cleanup(); reject(new AppException("DESKTOP_TERMINAL_UNAVAILABLE", "Terminal connection failed", 503)); };
+      const timer = setTimeout(failed, options.connectTimeoutMs ?? 15_000);
+      socket.addEventListener("open", opened, { once: true });
+      socket.addEventListener("error", failed, { once: true });
+      socket.addEventListener("close", failed, { once: true });
+      signal.addEventListener("abort", failed, { once: true });
+      if (signal.aborted) failed();
+    });
+  } catch (error) { socket.close(); throw error; }
   void (async () => {
     const reader = input.getReader(); const decoder = new TextDecoder(); let pending = "";
     try {

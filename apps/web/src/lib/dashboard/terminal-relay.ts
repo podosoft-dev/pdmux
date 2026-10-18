@@ -95,6 +95,8 @@ interface PaneEntry {
   buffered: string;
   /** True once the relay has confirmed this pane at least once. */
   started: boolean;
+  /** Confirmed on this socket, rather than merely attached before an outage. */
+  attached: boolean;
   closed: boolean;
 }
 
@@ -103,6 +105,7 @@ interface HostConnection {
   socket: RelaySocket | null;
   attempts: number;
   retryHandle: unknown;
+  connectHandle: unknown;
   hadConnection: boolean;
   panes: Map<string, PaneEntry>;
 }
@@ -166,6 +169,7 @@ export class TerminalRelay implements TerminalAdapter {
       exit: new Set(),
       buffered: "",
       started: false,
+      attached: false,
       closed: false,
     };
     connection.panes.set(entry.termId, entry);
@@ -201,6 +205,7 @@ export class TerminalRelay implements TerminalAdapter {
         entry.closed = true;
         this.send(connection, { type: "close", termId: entry.termId });
         connection.panes.delete(entry.termId);
+        this.refreshStatus();
         // The socket stays: opening another terminal on this host is the most likely
         // next action, and a live socket makes it instant.
       },
@@ -259,6 +264,7 @@ export class TerminalRelay implements TerminalAdapter {
       socket: null,
       attempts: 0,
       retryHandle: null,
+      connectHandle: null,
       hadConnection: false,
       panes: new Map(),
     };
@@ -274,6 +280,8 @@ export class TerminalRelay implements TerminalAdapter {
   }
 
   private closeSocket(connection: HostConnection): void {
+    if (connection.connectHandle !== null) this.cancel(connection.connectHandle);
+    connection.connectHandle = null;
     const socket = connection.socket;
     connection.socket = null;
     if (!socket) return;
@@ -306,10 +314,12 @@ export class TerminalRelay implements TerminalAdapter {
     let anyOpen = false;
     let anyConnecting = false;
     for (const connection of this.connections.values()) {
+      if (connection.panes.size === 0) continue;
       if (connection.retryHandle !== null || (connection.hadConnection && !connection.socket)) {
         return this.setStatus("reconnecting");
       }
-      if (connection.socket?.readyState === OPEN) anyOpen = true;
+      if (connection.socket?.readyState === OPEN && [...connection.panes.values()].every(pane => pane.attached)) anyOpen = true;
+      else if (connection.attempts > 0) return this.setStatus("reconnecting");
       else if (connection.socket) anyConnecting = true;
     }
     if (anyConnecting) return this.setStatus("connecting");
@@ -317,17 +327,22 @@ export class TerminalRelay implements TerminalAdapter {
   }
 
   private ensureSocket(connection: HostConnection): void {
-    if (this.disposed || connection.socket) return;
-    const socket = this.createSocket(this.socketUrl(connection.hostId));
+    if (this.disposed || connection.socket || connection.retryHandle !== null || connection.panes.size === 0) return;
+    let socket: RelaySocket;
+    try { socket = this.createSocket(this.socketUrl(connection.hostId)); }
+    catch { this.retry(connection); this.refreshStatus(); return; }
     connection.socket = socket;
+    connection.connectHandle = this.schedule(() => {
+      if (connection.socket === socket && socket.readyState !== OPEN) this.dropped(connection);
+    }, 15_000);
     this.refreshStatus();
     socket.onopen = (): void => {
-      connection.attempts = 0;
+      if (connection.connectHandle !== null) this.cancel(connection.connectHandle);
+      connection.connectHandle = null;
       connection.hadConnection = true;
       // Re-open every live pane. The default target is a multiplexer session, so
       // this reattaches to work that kept running while the socket was away.
       for (const pane of connection.panes.values()) {
-        if (pane.started) this.emit(pane, notice(this.messages.restored));
         this.sendOpen(connection, pane);
       }
       this.refreshStatus();
@@ -341,9 +356,10 @@ export class TerminalRelay implements TerminalAdapter {
     if (this.disposed || !connection.socket) return;
     this.closeSocket(connection);
     for (const pane of connection.panes.values()) {
-      if (pane.started) this.emit(pane, notice(this.messages.reconnecting));
+      if (pane.attached) this.emit(pane, notice(this.messages.reconnecting));
+      pane.attached = false;
     }
-    this.retry(connection);
+    if (connection.panes.size > 0) this.retry(connection);
     this.refreshStatus();
   }
 
@@ -404,10 +420,10 @@ export class TerminalRelay implements TerminalAdapter {
 
     switch (frame.type) {
       case "ready":
-        pane.started = true;
+        this.attached(connection, pane);
         break;
       case "output":
-        pane.started = true;
+        this.attached(connection, pane);
         if (frame.dropped > 0) this.emit(pane, notice(this.messages.dropped(frame.dropped)));
         this.emit(pane, frame.data);
         break;
@@ -419,6 +435,16 @@ export class TerminalRelay implements TerminalAdapter {
         this.release(connection, pane, null);
         break;
     }
+  }
+
+  private attached(connection: HostConnection, pane: PaneEntry): void {
+    // A successful upgrade is not a restored terminal: the agent may still be
+    // offline. Reset backoff and announce recovery only after terminal frames arrive.
+    if (pane.started && !pane.attached) this.emit(pane, notice(this.messages.restored));
+    pane.started = true;
+    pane.attached = true;
+    connection.attempts = 0;
+    this.refreshStatus();
   }
 
   private emit(pane: PaneEntry, chunk: string): void {
@@ -435,5 +461,6 @@ export class TerminalRelay implements TerminalAdapter {
     for (const listener of pane.exit) listener(code);
     pane.data.clear();
     pane.exit.clear();
+    this.refreshStatus();
   }
 }

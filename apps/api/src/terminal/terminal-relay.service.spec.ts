@@ -162,11 +162,12 @@ describe("TerminalRelayService", () => {
     relay.handleClientFrame(id, openFrame("dup"));
     expect(browser.frames.at(-1)).toEqual({ type: "error", termId: "dup", message: "terminal already open" });
 
-    // Host offline at open: error + clean close, not a socket that swallows keystrokes.
+    // A transport close preserves the browser's pane for its reconnect loop.
+    // Sending an error first permanently releases it before onclose can retry.
     const offline = new FakeBrowser();
     const offlineId = connect(offline, "user-1", OTHER_HOST);
     relay.handleClientFrame(offlineId, openFrame("t1"));
-    expect(offline.frames).toEqual([{ type: "error", termId: "t1", message: "host offline" }]);
+    expect(offline.frames).toEqual([]);
     expect(offline.closed).toEqual({ code: 4001, reason: "host offline" });
     expect(relay.paneCount(offlineId)).toBe(0);
   });
@@ -262,12 +263,7 @@ describe("TerminalRelayService", () => {
     expect(browser.types()).toEqual([]);
   });
 
-  it("[TC-PDTERM-054] gives up when the agent does not come back", async () => {
-    /**
-     * ⚠ HOLDING FOREVER IS THE OTHER FAILURE, and this file's header names it: a browser waiting
-     * on a pane that will never answer is worse than a hard error. Two minutes in production is
-     * an agent restart; past that the pane is genuinely gone and says so.
-     */
+  it("[TC-PDTERM-054] closes the transport after the grace period so the browser keeps retrying", async () => {
     const browser = new FakeBrowser();
     const id = connect(browser);
     relay.setGracePeriod(10);
@@ -277,13 +273,10 @@ describe("TerminalRelayService", () => {
     registry.unregister(HOST, agent);
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    expect(browser.frames).toEqual([
-      { type: "error", termId: "a", message: "agent disconnected" },
-      { type: "exit", termId: "a", code: null },
-    ]);
+    expect(browser.frames).toEqual([]);
     expect(relay.paneCount(id)).toBe(0);
-    // The socket stays open: another pane can be opened on it the moment a host is there.
-    expect(browser.closed).toBeNull();
+    expect(browser.closed).toEqual({ code: 4001, reason: "host offline" });
+    expect(relay.connectionCount()).toBe(0);
   });
 
   it("[TC-PDTERM-055] bounds in-flight output and passes the agent's dropped count through untouched", () => {
@@ -348,7 +341,7 @@ describe("TerminalRelayService", () => {
     expect(browser.frames).toEqual([]);
   });
 
-  it("[TC-PDTERM-053] ends the pane when the agent vanishes mid-session", () => {
+  it("[TC-PDTERM-053] reconnects when the agent vanishes before a disconnect notification", () => {
     const browser = new FakeBrowser();
     const id = connect(browser);
     relay.handleClientFrame(id, openFrame("t1"));
@@ -360,10 +353,9 @@ describe("TerminalRelayService", () => {
     registry.unregister(HOST, agent);
     relay.handleClientFrame(id, { type: "input", termId: "t1", data: "x" });
 
-    expect(browser.frames).toEqual([
-      { type: "error", termId: "t1", message: "host offline" },
-      { type: "exit", termId: "t1", code: null },
-    ]);
+    expect(browser.frames).toEqual([]);
+    expect(browser.closed).toEqual({ code: 4001, reason: "host offline" });
     expect(relay.paneCount(id)).toBe(0);
+    expect(relay.connectionCount()).toBe(0);
   });
 });
