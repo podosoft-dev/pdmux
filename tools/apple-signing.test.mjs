@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { X509Certificate } from "node:crypto";
-import { acceptedNotarization, appleCredentialKeys, assertAppleCredentials, parseKeychainList, signingDiagnostic, signingEnvironment, stapleWithRetry, withAppleSigning } from "./apple-signing.mjs";
+import { acceptedNotarization, appleCredentialKeys, assertAppleCredentials, parseKeychainList, signingDiagnostic, signingEnvironment, staplerWithRetry, withAppleSigning } from "./apple-signing.mjs";
 
 describe("[TC-PDDESKTOP-009] Apple signing credential boundary", () => {
   const fixture = Object.fromEntries(appleCredentialKeys.map(key => [key, "fixture"]));
@@ -24,19 +24,27 @@ describe("[TC-PDDESKTOP-009] Apple signing credential boundary", () => {
     expect(signingDiagnostic("The timestamp service is not available.")).toBe("The timestamp service is not available");
     expect(signingDiagnostic("password=secret-value")).toBe("output suppressed");
   });
-  it("retries stapling only while the fresh ticket is unavailable", async () => {
+  it("retries stapling and validation only while the fresh ticket is unavailable", async () => {
     const waits = [];
-    const runs = statuses => { const calls = []; return { calls, run: (...args) => { calls.push(args); return { status: statuses.shift(), stderr: "The staple and validate action failed! Error 68." }; } }; };
+    const runs = (statuses, stderr = "The staple and validate action failed! Error 68.") => { const calls = []; return { calls, run: (...args) => { calls.push(args); return { status: statuses.shift(), stderr }; } }; };
     const flaky = runs([68, 65, 0]);
-    await stapleWithRetry("a.dmg", {}, { run: flaky.run, wait: async ms => { waits.push(ms); } });
+    await staplerWithRetry("staple", "a.dmg", {}, { run: flaky.run, wait: async ms => { waits.push(ms); } });
     expect(flaky.calls.length).toBe(3);
+    expect(flaky.calls[0].slice(0, 2)).toEqual(["xcrun", ["stapler", "staple", "a.dmg"]]);
     expect(waits).toEqual([20_000, 20_000]);
     const broken = runs([1]);
-    await expect(stapleWithRetry("a.dmg", {}, { run: broken.run, wait: async () => {} })).rejects.toThrow("xcrun/stapler");
+    await expect(staplerWithRetry("staple", "a.dmg", {}, { run: broken.run, wait: async () => {} })).rejects.toThrow("xcrun/stapler staple");
     expect(broken.calls.length).toBe(1);
     const missing = runs([68, 68, 68]);
-    await expect(stapleWithRetry("a.dmg", {}, { attempts: 3, run: missing.run, wait: async () => {} })).rejects.toThrow("Error 68");
+    await expect(staplerWithRetry("staple", "a.dmg", {}, { attempts: 3, run: missing.run, wait: async () => {} })).rejects.toThrow("Error 68");
     expect(missing.calls.length).toBe(3);
+    // The 0.17.4 Intel DMG: validate exited 68 seconds after an Accepted receipt.
+    const validating = runs([68, 0], "The validate action failed! Error 68.");
+    await staplerWithRetry("validate", "a.dmg", {}, { run: validating.run, wait: async () => {} });
+    expect(validating.calls.map(call => call[1])).toEqual([["stapler", "validate", "a.dmg"], ["stapler", "validate", "a.dmg"]]);
+    const invalid = runs([68, 68], "The validate action failed! Error 68.");
+    await expect(staplerWithRetry("validate", "a.dmg", {}, { attempts: 2, run: invalid.run, wait: async () => {} })).rejects.toThrow("xcrun/stapler validate; The validate action failed! Error 68");
+    await expect(staplerWithRetry("remove", "a.dmg", {}, { run: invalid.run, wait: async () => {} })).rejects.toThrow("Unsupported stapler action");
   });
   it("cannot opt CI into the local signing entrypoint", async () => {
     await expect(withAppleSigning(() => { throw new Error("Must not run"); }, { local: true, env: { GITHUB_ACTIONS: "true" } })).rejects.toThrow("CI must use the release signing boundary");

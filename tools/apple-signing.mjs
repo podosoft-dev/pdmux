@@ -56,20 +56,22 @@ export function signingDiagnostic(stderr) {
   if (/MAC verification failed/.test(stderr)) return "PKCS12 integrity verification failed";
   if (/User interaction is not allowed/.test(stderr)) return "keychain interaction unavailable";
   if (/One or more parameters/.test(stderr)) return "unsupported keychain import parameters";
-  return stderr.match(/CSSMERR_[A-Z_]+|errSec[A-Za-z]+|no identity found|The staple and validate action failed! Error -?\d+|The timestamp service is not available|code failed to satisfy specified code requirement\(s\)|code object is not signed at all|invalid signature|main executable failed strict validation|unable to build chain to self-signed root|a sealed resource is missing or invalid|code or signature have been modified/)?.[0] ?? "output suppressed";
+  return stderr.match(/CSSMERR_[A-Z_]+|errSec[A-Za-z]+|no identity found|The (?:staple and )?validate action failed! Error -?\d+|The timestamp service is not available|code failed to satisfy specified code requirement\(s\)|code object is not signed at all|invalid signature|main executable failed strict validation|unable to build chain to self-signed root|a sealed resource is missing or invalid|code or signature have been modified/)?.[0] ?? "output suppressed";
 }
 
 /**
- * Staples a notarization ticket. Right after Apple accepts a submission its CDN can
- * still lack the ticket, and stapler exits 65 or 68: the 0.17.1 macOS Intel DMG
- * failed that way 7 s after an Accepted receipt. Those two codes are retried.
+ * Runs `xcrun stapler staple` or `validate`. Right after Apple accepts a submission
+ * its CDN can still lack the ticket, and stapler exits 65 or 68: the 0.17.1 macOS
+ * Intel DMG failed `staple` that way 7 s after an Accepted receipt, and the 0.17.2 and
+ * 0.17.4 Intel DMGs failed `validate` 7-8 s after one. Those two codes are retried.
  */
-export async function stapleWithRetry(path, env, { attempts = 6, delayMs = 20_000, run = spawnSync, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+export async function staplerWithRetry(action, path, env, { attempts = 6, delayMs = 20_000, run = spawnSync, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+  assert.ok(["staple", "validate"].includes(action), `Unsupported stapler action ${action}`);
   for (let attempt = 1; ; attempt++) {
-    const result = run("xcrun", ["stapler", "staple", path], { encoding: "utf8", timeout: 60_000, env });
+    const result = run("xcrun", ["stapler", action, path], { encoding: "utf8", timeout: 60_000, env });
     if (result.status === 0) return;
     if (attempt >= attempts || ![65, 68].includes(result.status)) {
-      assert.equal(result.status, 0, `Apple signing operation failed: xcrun/stapler; ${signingDiagnostic(result.stderr ?? "")}`);
+      assert.equal(result.status, 0, `Apple signing operation failed: xcrun/stapler ${action}; ${signingDiagnostic(result.stderr ?? "")}`);
     }
     await wait(delayMs);
   }

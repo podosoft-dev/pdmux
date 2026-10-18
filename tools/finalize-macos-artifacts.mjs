@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, join } from "node:path";
-import { signingCommand, stapleWithRetry } from "./apple-signing.mjs";
+import { signingCommand, staplerWithRetry } from "./apple-signing.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -32,8 +32,8 @@ export async function finalizeMacArtifacts(directory, context) {
   assert.equal(dmgs.length, 1, "Require one native DMG before finalization");
   const dmg = join(directory, dmgs[0]);
   await context.notarize(dmg);
-  await stapleWithRetry(dmg, context.env);
-  signingCommand("xcrun", ["stapler", "validate", dmg], { env: context.env });
+  await staplerWithRetry("staple", dmg, context.env);
+  await staplerWithRetry("validate", dmg, context.env);
   signingCommand("spctl", ["--assess", "--type", "open", "--context", "context:primary-signature", dmg], { env: context.env });
   // Stapling changes the DMG: recreate its blockmap and hashes only afterwards.
   await refreshMacMetadata(directory);
