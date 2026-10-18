@@ -1,11 +1,13 @@
 import { Database as SqliteDatabase } from "bun:sqlite";
 import type { SQL } from "bun";
+import { Kysely, PostgresDialect } from "kysely";
 import type { AuthConfigRow, ConfigVersions } from "@podosoft/podokit-auth";
 import type { DatabaseProviderName } from "@podosoft/podokit-runtime";
 import { validateEnv } from "../config/env.validation";
 import { PROVIDERS } from "../config/providers";
 import { databaseUrl, sqliteDatabasePath } from "../database/database";
 import { answersWithin, sharedProbe, type DatabaseProbe } from "./database-outage";
+import { EmptyListPlugin } from "./empty-lists";
 import { isMaintenanceCommand } from "./maintenance";
 import { AuthPostgresPool } from "./postgres-pool";
 
@@ -30,7 +32,17 @@ export const sqliteDatabase = provider === "sqlite"
   ? new SqliteDatabase(sqliteDatabasePath(url), { create: true, strict: true })
   : null;
 
-export const authDatabase = postgresPool ?? sqliteDatabase;
+/** The Kysely instance Better Auth queries PostgreSQL through, or null on SQLite. */
+export const postgresAuthQueries = postgresPool
+  ? new Kysely<object>({
+      dialect: new PostgresDialect({ pool: postgresPool }),
+      plugins: [new EmptyListPlugin()],
+    })
+  : null;
+
+export const authDatabase = postgresAuthQueries
+  ? { db: postgresAuthQueries, type: "postgres" as const, transaction: true }
+  : sqliteDatabase;
 if (!authDatabase) throw new Error("No authentication database is configured");
 
 /** Whether the authentication database answers `SELECT 1` within the readiness check timeout. */

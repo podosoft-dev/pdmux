@@ -10,11 +10,11 @@ async function chooseTheme(page: Page, mode: "Light" | "Dark" | "System"): Promi
 // mode-watcher marks <html> with `.dark` or `.light`, so component libraries
 // that follow either class, and fall back to the OS setting otherwise, match the
 // theme the visitor chose rather than the system one. The managed ThemeToggle
-// renders on the page app-paths.ts names as the account menu page.
+// renders on the page app-paths.ts names as themeToggle.
 test("the chosen theme is named on <html> in both modes", async ({ page }) => {
-  test.skip(paths.accountMenu === null, "no page renders the theme toggle (tests/helpers/app-paths.ts)");
+  test.skip(paths.themeToggle === null, "no page renders the theme toggle (tests/helpers/app-paths.ts)");
   await page.emulateMedia({ colorScheme: "dark" });
-  await ready(page, paths.accountMenu ?? "/");
+  await ready(page, paths.themeToggle ?? "/");
   const html = page.locator("html");
 
   await chooseTheme(page, "Light");

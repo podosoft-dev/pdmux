@@ -339,6 +339,17 @@ test("a user can create, list and delete an organization @smoke", async ({ playw
   const list = (await (await ctx.get("/api/auth/organization/list")).json()) as Array<{ id: string; slug: string }>;
   expect(list.some((o) => o.slug === slug)).toBeTruthy();
 
+  // A filter or a page that matches no member is an empty list, not a server error.
+  const userId = ((await (await ctx.get("/api/auth/get-session")).json()) as { user: { id: string } }).user.id;
+  const members = async (query: string): Promise<unknown> => {
+    const response = await ctx.get(`/api/auth/organization/list-members?organizationId=${orgId}&${query}`);
+    expect(response.status(), query).toBe(200);
+    return response.json();
+  };
+  expect(await members(`filterField=userId&filterValue=${userId}`)).toMatchObject({ members: [{ userId }], total: 1 });
+  expect(await members("filterField=userId&filterValue=not-a-member")).toEqual({ members: [], total: 0 });
+  expect(await members("offset=1")).toEqual({ members: [], total: 1 });
+
   const del = await ctx.post("/api/auth/organization/delete", { data: { organizationId: orgId } });
   expect(del.ok()).toBeTruthy();
   await ctx.dispose();

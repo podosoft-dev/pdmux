@@ -1,10 +1,21 @@
+import type { APIRequestContext } from "@playwright/test";
 import { expect, test } from "../helpers/disposable-users";
 import { ADMIN, USER } from "../helpers/accounts";
+import { mailpitReachable, waitForOtp } from "../helpers/mailpit";
+import { totpCode } from "../helpers/totp";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
+const PASSWORD = "Podokit3e-Str0ng!pw";
 
-type Entry = { id: string; action: string; actorEmail: string | null; targetLabel: string | null; createdAt: string };
+type Entry = {
+  id: string;
+  action: string;
+  actorEmail: string | null;
+  targetLabel: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+};
 
 async function signedIn(
   playwright: import("@playwright/test").PlaywrightWorkerArgs["playwright"],
@@ -17,6 +28,13 @@ async function signedIn(
 
 function auditQuery(params: Record<string, string>): string {
   return `/api/audit-logs?${new URLSearchParams(params).toString()}`;
+}
+
+// Sign-in methods recorded for the account, oldest first.
+async function signInMethods(admin: APIRequestContext, email: string): Promise<unknown[]> {
+  const entries = (await (await admin.get(auditQuery({ action: "auth.login", target: email, order: "asc" }))).json()) as Entry[];
+  expect(entries.every((entry) => entry.actorEmail === email)).toBe(true);
+  return entries.map((entry) => entry.metadata?.method);
 }
 
 test("audit log records auth/admin actions", async ({ playwright, disposableUsers }) => {
@@ -58,13 +76,22 @@ test("sending a verification email is audited", async ({ playwright, disposableU
   const admin = await signedIn(playwright, ADMIN);
   test.skip((await admin.get("/api/audit-logs")).status() === 404, "audit-log module not installed");
   const email = `verif-audit-${Date.now()}@example.com`;
-  const created = await admin.post("/api/auth/admin/create-user", {
-    data: { email, password: "Podokit3e-Str0ng!pw", name: "VA", role: "user" },
-  });
-  await disposableUsers.trackResponse(created);
-  await admin.post("/api/auth/send-verification-email", { data: { email, callbackURL: `${base}/admin` } });
-  const entries = (await (await admin.get(auditQuery({ action: "auth.verification_sent", target: email }))).json()) as Entry[];
+  await disposableUsers.create({ email, password: PASSWORD, name: "VA" });
+  const sent = async (): Promise<Entry[]> =>
+    (await (await admin.get(auditQuery({ action: "auth.verification_sent", target: email }))).json()) as Entry[];
+
+  // Better Auth sends a signed-in user's verification email only to their own address.
+  const refused = await admin.post("/api/auth/send-verification-email", { data: { email, callbackURL: `${base}/admin` } });
+  expect(refused.status()).toBe(400);
+  expect(await sent(), "a refused send is not audited").toEqual([]);
+
+  const user = await signedIn(playwright, { email, password: PASSWORD });
+  const own = await user.post("/api/auth/send-verification-email", { data: { email, callbackURL: `${base}/account` } });
+  expect(own.ok()).toBeTruthy();
+  const entries = await sent();
   expect(entries, "verification send should be audited").toHaveLength(1);
+  expect(entries[0]?.actorEmail).toBe(email);
+  await user.dispose();
   await admin.dispose();
 });
 
@@ -123,6 +150,68 @@ test("the audit log rejects bad paging parameters", async ({ playwright }) => {
   const badCursor = await admin.get(auditQuery({ cursor: "not-a-cursor" }));
   expect(badCursor.status()).toBe(400);
   expect(((await badCursor.json()) as { error: { code: string } }).error.code).toBe("INVALID_CURSOR");
+  await admin.dispose();
+});
+
+test("a wrong password is not audited as a sign-in", async ({ playwright, disposableUsers }) => {
+  const admin = await signedIn(playwright, ADMIN);
+  test.skip((await admin.get("/api/audit-logs")).status() === 404, "audit-log module not installed");
+  const email = `audit-password-${Date.now()}@example.com`;
+  await disposableUsers.create({ email, password: PASSWORD });
+
+  const visitor = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const wrong = await visitor.post("/api/auth/sign-in/email", { data: { email, password: "Wrong-password-1" } });
+  expect(wrong.status()).toBe(401);
+  expect(await signInMethods(admin, email), "a failed sign-in leaves no auth.login").toEqual([]);
+
+  expect((await visitor.post("/api/auth/sign-in/email", { data: { email, password: PASSWORD } })).ok()).toBeTruthy();
+  expect(await signInMethods(admin, email)).toEqual(["password"]);
+  await visitor.dispose();
+  await admin.dispose();
+});
+
+test("an email code sign-in is audited once", async ({ playwright, disposableUsers }) => {
+  test.skip(!(await mailpitReachable()), "Mailpit not available");
+  const admin = await signedIn(playwright, ADMIN);
+  test.skip((await admin.get("/api/audit-logs")).status() === 404, "audit-log module not installed");
+  const caps = await (await admin.get("/api/account/capabilities")).json();
+  test.skip(!caps?.emailOtp, "email OTP not enabled");
+  const email = `audit-otp-${Date.now()}@example.com`;
+  await disposableUsers.create({ email, password: PASSWORD });
+
+  const visitor = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const sent = await visitor.post("/api/auth/email-otp/send-verification-otp", { data: { email, type: "sign-in" } });
+  expect(sent.ok()).toBeTruthy();
+  const otp = await waitForOtp(email);
+  expect((await visitor.post("/api/auth/sign-in/email-otp", { data: { email, otp } })).ok()).toBeTruthy();
+  expect(await signInMethods(admin, email)).toEqual(["email-otp"]);
+  await visitor.dispose();
+  await admin.dispose();
+});
+
+test("a two-factor sign-in is audited when the code completes it", async ({ playwright, disposableUsers }) => {
+  const admin = await signedIn(playwright, ADMIN);
+  test.skip((await admin.get("/api/audit-logs")).status() === 404, "audit-log module not installed");
+  const caps = await (await admin.get("/api/account/capabilities")).json();
+  test.skip(!caps?.twoFactor, "two-factor not enabled");
+  const email = `audit-2fa-${Date.now()}@example.com`;
+  await disposableUsers.create({ email, password: PASSWORD });
+
+  const owner = await signedIn(playwright, { email, password: PASSWORD });
+  const enable = await (await owner.post("/api/auth/two-factor/enable", { data: { password: PASSWORD } })).json();
+  expect((await owner.post("/api/auth/two-factor/verify-totp", { data: { code: totpCode(enable.totpURI) } })).ok()).toBeTruthy();
+  expect(await signInMethods(admin, email), "turning on two-factor is not a sign-in").toEqual(["password"]);
+
+  const challenged = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  const pending = await (await challenged.post("/api/auth/sign-in/email", { data: { email, password: PASSWORD } })).json();
+  expect(pending.twoFactorRedirect).toBe(true);
+  expect(await signInMethods(admin, email), "the password step alone is not a sign-in").toEqual(["password"]);
+
+  const verified = await challenged.post("/api/auth/two-factor/verify-totp", { data: { code: totpCode(enable.totpURI) } });
+  expect(verified.ok()).toBeTruthy();
+  expect(await signInMethods(admin, email)).toEqual(["password", "two-factor-totp"]);
+  await owner.dispose();
+  await challenged.dispose();
   await admin.dispose();
 });
 

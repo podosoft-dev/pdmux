@@ -23,7 +23,7 @@ import { revokeEveryOtherSession } from "./revoke-other-sessions";
 // podokit:begin:auth-imports
 import { admin } from "better-auth/plugins";
 import { ac, roles } from "./permissions";
-import { auditAfterHook } from "../audit/audit-hook";
+import { auditPlugin } from "../audit/audit-hook";
 // podokit:end:auth-imports
 
 // Web origin(s) where the browser runs (WebAuthn ceremonies must match these).
@@ -202,12 +202,14 @@ export function buildAuth(config: AuthConfig) {
   // Request-time hooks. The feature gate turns the admin Settings toggles into a
   // real server boundary (disabled features 404) for endpoint calls, including
   // in-process auth.api calls the plugin above never sees. Other PodoKit modules
-  // add their own hooks below the marker.
+  // add their own hooks below the marker. The top-level `hooks.after` runs before
+  // every plugin's after hooks, so a hook that needs a request's final outcome is
+  // pushed below the marker as a plugin, after all the plugins above.
   const hooks: NonNullable<BetterAuthOptions["hooks"]> = {
     before: createFeatureGate(gateSettings),
   };
   // podokit:begin:auth-hooks
-  hooks.after = auditAfterHook;
+  plugins.push(auditPlugin());
   // podokit:end:auth-hooks
 
   const session = sessionIdleOptions(config.sessionIdleTimeoutMinutes);

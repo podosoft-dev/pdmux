@@ -20,9 +20,15 @@ export interface AppPaths {
    * `AccountMenu` for a signed-in user, or null when none does.
    */
   accountMenu: string | null;
+  /**
+   * A page that renders the managed `ThemeToggle` for the signed-in
+   * administrator, or null when none does. Defaults to `accountMenu`, and to
+   * the admin console, whose header renders the toggle, when that is null.
+   */
+  themeToggle: string | null;
 }
 
-const defaults: AppPaths = {
+const defaults: Omit<AppPaths, "themeToggle"> = {
   home: "/",
   homeReady: (page) => page.getByRole("heading", { level: 1 }),
   indexable: ["/"],
@@ -30,4 +36,9 @@ const defaults: AppPaths = {
   accountMenu: "/",
 };
 
-export const paths: AppPaths = { ...defaults, ...appPaths };
+const merged = { ...defaults, ...appPaths };
+
+export const paths: AppPaths = {
+  ...merged,
+  themeToggle: appPaths.themeToggle === undefined ? (merged.accountMenu ?? "/admin") : appPaths.themeToggle,
+};

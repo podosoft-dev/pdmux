@@ -34,7 +34,9 @@ Review these fields before planning:
   PostgreSQL also takes `maxConnections` (default 100) and `appPools` for pools the
   application opens itself, each sized by a `runtimeConfig` key (`sizeKey`) or a
   fixed `size` when the code sets it; the doctor and the plan check the connection budget
-  against them, so lower `DB_POOL_MAX`/`DB_AUTH_POOL_MAX` or replicas when they warn.
+  against them, counting every API and worker replica twice during a Kubernetes rollout
+  because replaced pods keep their pools until they exit, so lower
+  `DB_POOL_MAX`/`DB_AUTH_POOL_MAX` or replicas when they warn.
 - `secrets`: API/optional web Secret names and required key names, plus image-pull Secret
 - `runtimeConfig`: non-sensitive environment values only
 - `verification`: HTTPS origin and checks with exact statuses and optional JSON fields

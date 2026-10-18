@@ -22,7 +22,7 @@ Read the profile's `driver` first and say which one you are operating.
 7. Do not apply until the user explicitly approves that exact plan.
 8. Apply with `bunx --bun @podosoft/podokit deploy apply --profile <name> --release <stable-semver> --confirm <plan-hash>`.
 9. Run `bunx --bun @podosoft/podokit deploy status --profile <name> --json` and `bunx --bun @podosoft/podokit deploy verify --profile <name> --json`.
-10. Report the exact images, the revision, running replicas, restart totals, and the verification result. Report `syncDrift` too: a non-empty value means containers are running locally synced artifacts and the release tag does not describe what is serving.
+10. Report the exact images, the revision, running replicas, restart counts, and the verification result. On Kubernetes, each Deployment's `restartCount` covers only the running pods of its current revision, and `previousPods` gives the `count` and `restartCount` of the pods still listed from an earlier revision or terminating. Right after `apply` or `rollback` these are usually the replaced pods finishing their grace period: report them separately and never attribute their restarts to the new release. Report `syncDrift` too: a non-empty value means containers are running locally synced artifacts and the release tag does not describe what is serving.
 
 ## Iterating against a deployment is a different command
 

@@ -8,9 +8,18 @@ actor / action / target model. Every entry flows through one pipeline
 
 Nothing is recorded automatically except the built-in **auth/admin actions**
 (login, user create/update/delete, ban, role change, session revoke, ...),
-which the better-auth hook (`audit-hook.ts`) maps to semantic action codes like
+which the Better Auth plugin in `audit-hook.ts` maps to semantic action codes like
 `user.create` and `auth.login`. Everything else is **opt-in** — you decide what
 matters.
+
+The plugin records an action only when the request succeeded, so a wrong
+password or a forbidden admin call leaves no entry. Every sign-in method records
+`auth.login` with the method in `metadata.method` (`password`, `email-otp`,
+`magic-link`, `passkey`, `two-factor-totp`, ...) and, for social sign-in, the
+provider in `metadata.provider`. A two-factor sign-in is recorded when the second
+factor completes it, not at the password step. `auth.ts` pushes the plugin after
+every other plugin: Better Auth runs after hooks in plugin order, and two-factor
+changes the outcome of a password sign-in in its own after hook.
 
 ## Audit your own Elysia routes
 
@@ -86,7 +95,10 @@ survives renames/deletes), `targetType/targetId/targetLabel`, `ip`, `metadata`
 
 ## Customize
 
-- **Auth actions:** edit the `ACTIONS` map in `audit-hook.ts`.
+- **Auth actions:** `ACTIONS` in `audit-hook.ts` maps Better Auth endpoints to
+  action codes, and `SIGN_IN_METHODS` lists the endpoints that sign a user in.
+  The `audit-hook.spec.ts` test fails when the app's Better Auth gains a sign-in
+  endpoint that neither list classifies.
 - **Your routes:** call `AuditService.recordRequest()` after successful operations;
   pass `{ defer: true }` only for high-volume, non-security events.
 - **Schema:** add columns with a migration, and keep the
