@@ -153,11 +153,11 @@ To run the whole suite on two workers against the containerized loop, with the
 exclusive tests' report in `playwright-report/exclusive`:
 
 ```bash
-E2E_BASE_URL=http://pdmux.localhost E2E_WORKERS=2 E2E_SKIP_RATE_LIMIT=true bun run test:e2e
+E2E_BASE_URL=http://pdmux.localhost E2E_WORKERS=2 bun run test:e2e
 ```
 
-Then run the rate-limit spec on its own, as [Rate limits](#rate-limits)
-describes.
+Against raised limits two of the rate-limit tests skip. To run them, run the
+rate-limit spec on its own, as [Rate limits](#rate-limits) describes.
 
 Before a whole run, remove the accounts and hosts earlier runs left behind with
 `bun run e2e:reset` from the repository root. It runs psql in the PostgreSQL
@@ -174,25 +174,30 @@ A whole run sends more requests than the example limits in `.env.docker.example`
 allow (`RATE_LIMIT_TTL=60`, `RATE_LIMIT_MAX=100`, and 20 for `/api/auth` while
 `RATE_LIMIT_AUTH_MAX` is unset), so a local `.env.docker` raises them, for example
 to `RATE_LIMIT_TTL=5`, `RATE_LIMIT_MAX=2000`, and `RATE_LIMIT_AUTH_MAX=2000`.
-`api/rate-limit.api.spec.ts` cannot pass against raised limits: its requests
-never reach 2000 inside a five-second window, so it never sees a 429. Skip it in
-the whole run with `E2E_SKIP_RATE_LIMIT=true` and run it on its own against the
-example limits:
+
+`api/rate-limit.api.spec.ts` reads each budget's limit from the API's
+`RateLimit-Limit` header, so the whole run needs no `E2E_SKIP_RATE_LIMIT` against
+raised limits. Two of its four tests skip there: the 429 test, because a
+five-second window ends before one client sends 2000 requests, and the
+session-read test, because the authentication budget (2000) is not below the
+runtime one (1000). To run those two, run the spec on its own against the example
+limits:
 
 1. Put the example values in `.env.docker` (delete the `RATE_LIMIT_AUTH_MAX`
    line) and restart the stack with `podo dev down`, then `podo dev watch`. The
    watch keeps the values it read when it started.
-2. Run the spec with the same limits in the runner's environment. It reads them
-   from there and expects 300 and 20 without them:
+2. Run the spec. The runner needs no limits in its environment; when it sets
+   `RATE_LIMIT_MAX`, `RATE_LIMIT_AUTH_MAX`, or `RATE_LIMIT_RUNTIME_MAX`, the spec
+   expects the stack to use exactly that value:
 
    ```bash
-   RATE_LIMIT_MAX=100 RATE_LIMIT_AUTH_MAX=20 E2E_BASE_URL=http://pdmux.localhost \
-     bun run test:e2e --project=api api/rate-limit.api.spec.ts
+   E2E_BASE_URL=http://pdmux.localhost bun run test:e2e --project=api api/rate-limit.api.spec.ts
    ```
 
 3. Put the raised values back and restart the stack again.
 
-Measured on 2026-10-18: without `E2E_SKIP_RATE_LIMIT`, a whole two-worker run
-against the raised limits failed two of the four rate-limit tests, and running
-the file alone with the runner set to 2000 still failed one. Against the example
-limits, the four passed in 6.5 s.
+Measured on 2026-10-18 with PodoKit 1.6.2: two whole two-worker runs against the
+raised limits, without `E2E_SKIP_RATE_LIMIT`, passed two of the rate-limit tests
+and skipped the other two for the reasons above. The file alone against the
+example limits, with no limits in the runner's environment, passed all four in
+4.2 s.
