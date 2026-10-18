@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { X509Certificate } from "node:crypto";
-import { acceptedNotarization, appleCredentialKeys, assertAppleCredentials, parseKeychainList, signingDiagnostic, signingEnvironment, withAppleSigning } from "./apple-signing.mjs";
+import { acceptedNotarization, appleCredentialKeys, assertAppleCredentials, parseKeychainList, signingDiagnostic, signingEnvironment, stapleWithRetry, withAppleSigning } from "./apple-signing.mjs";
 
 describe("[TC-PDDESKTOP-009] Apple signing credential boundary", () => {
   const fixture = Object.fromEntries(appleCredentialKeys.map(key => [key, "fixture"]));
@@ -23,6 +23,20 @@ describe("[TC-PDDESKTOP-009] Apple signing credential boundary", () => {
     expect(signingDiagnostic("bin: errSecInternalComponent\n")).toBe("errSecInternalComponent");
     expect(signingDiagnostic("The timestamp service is not available.")).toBe("The timestamp service is not available");
     expect(signingDiagnostic("password=secret-value")).toBe("output suppressed");
+  });
+  it("retries stapling only while the fresh ticket is unavailable", async () => {
+    const waits = [];
+    const runs = statuses => { const calls = []; return { calls, run: (...args) => { calls.push(args); return { status: statuses.shift(), stderr: "The staple and validate action failed! Error 68." }; } }; };
+    const flaky = runs([68, 65, 0]);
+    await stapleWithRetry("a.dmg", {}, { run: flaky.run, wait: async ms => { waits.push(ms); } });
+    expect(flaky.calls.length).toBe(3);
+    expect(waits).toEqual([20_000, 20_000]);
+    const broken = runs([1]);
+    await expect(stapleWithRetry("a.dmg", {}, { run: broken.run, wait: async () => {} })).rejects.toThrow("xcrun/stapler");
+    expect(broken.calls.length).toBe(1);
+    const missing = runs([68, 68, 68]);
+    await expect(stapleWithRetry("a.dmg", {}, { attempts: 3, run: missing.run, wait: async () => {} })).rejects.toThrow("Error 68");
+    expect(missing.calls.length).toBe(3);
   });
   it("cannot opt CI into the local signing entrypoint", async () => {
     await expect(withAppleSigning(() => { throw new Error("Must not run"); }, { local: true, env: { GITHUB_ACTIONS: "true" } })).rejects.toThrow("CI must use the release signing boundary");
