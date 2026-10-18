@@ -26,7 +26,7 @@ output/lighthouse/
 
 # Released agent artifacts, produced by `bun run build:agent`.
 #
-# The four binaries do not belong in Git: each release adds about 32 MB of blobs,
+# The agent binaries do not belong in Git: each release adds about 32 MB of blobs,
 # while CI and the container build both reproduce them from the pinned Go toolchain.
 # Keep the small manifest and checksum record so a rebuild remains verifiable.
 # Directories must be re-included before the two metadata allow rules can match.
@@ -48,3 +48,6 @@ apps/desktop/release-agent/
 !.podokit/deploy/publish.json
 
 /apps/api/dist-desktop/
+/apps/web/.desktop/
+/apps/web/.svelte-kit-desktop/
+/apps/web/build-desktop/

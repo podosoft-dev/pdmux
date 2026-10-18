@@ -11,7 +11,7 @@ async function fixture(): Promise<{ directory: string; data: Uint8Array<ArrayBuf
   const directory = join(root, "seed", "0.1.27"); await mkdir(directory, { recursive: true });
   const data = new TextEncoder().encode("verified-agent"); const file = "pdmux-agent-linux-amd64";
   await writeFile(join(directory, "desktop-catalog.json"), JSON.stringify({ version: 1, releaseTag: "v0.17.1", seed: null, repository: "podosoft-dev/pdmux" }));
-  await writeFile(join(directory, "manifest.json"), JSON.stringify({ version: "0.1.27", artifacts: ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"].map(target => ({ path: `/agent/0.1.27/pdmux-agent-${target}`, bytes: data.length, sha256: createHash("sha256").update(data).digest("hex") })) }));
+  await writeFile(join(directory, "manifest.json"), JSON.stringify({ version: "0.1.27", artifacts: ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64", "windows-amd64"].map(target => ({ path: `/agent/0.1.27/pdmux-agent-${target}`, bytes: data.length, sha256: createHash("sha256").update(data).digest("hex") })) }));
   return { directory, data, file };
 }
 it("[TC-PDDESKTOP-014] deduplicates downloads, verifies bytes, and repairs a corrupt cache", async () => {

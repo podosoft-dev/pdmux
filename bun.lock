@@ -59,7 +59,9 @@
       },
       "devDependencies": {
         "@better-auth/electron": "1.7.9",
+        "@pdmux/core": "workspace:*",
         "@pdmux/desktop-protocol": "workspace:*",
+        "@pdmux/protocol": "workspace:*",
         "better-auth": "1.7.9",
         "electron": "44.2.0",
         "electron-builder": "^26.15.3",

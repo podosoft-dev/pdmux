@@ -62,7 +62,7 @@ describe("[TC-PDDESKTOP-009] signed product package integrity", () => {
     try {
       await mkdir(resources);
       await mkdir(reference);
-      const names = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"].map(arch => `pdmux-agent-${arch}`);
+      const names = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64", "windows-amd64"].map(arch => `pdmux-agent-${arch}`);
       const hash = createHash("sha256").update("original").digest("hex");
       const sums = names.map(name => `${hash}  ${name}`).join("\n");
       await writeFile(join(reference, "SHA256SUMS"), sums);

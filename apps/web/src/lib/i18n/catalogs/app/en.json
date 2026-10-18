@@ -1047,6 +1047,14 @@
     "available": "Available offline",
     "download": "Download",
     "workspace": "Workspace",
-    "personal": "Personal workspace"
+    "personal": "Personal workspace",
+    "createBackup": "Create backup",
+    "openData": "Open data folder",
+    "checkUpdates": "Check for updates",
+    "actionFailed": "The action failed. Try again.",
+    "localHost": "This computer",
+    "localAgentFailed": "The local agent could not start. Open desktop settings to retry.",
+    "localAgentReady": "The local terminal is ready.",
+    "retryLocalAgent": "Prepare local terminal again"
   }
 }

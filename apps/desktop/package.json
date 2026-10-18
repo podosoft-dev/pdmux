@@ -28,7 +28,9 @@
     "typescript": "^6.0.3",
     "better-auth": "1.7.9",
     "@better-auth/electron": "1.7.9",
-    "@pdmux/desktop-protocol": "workspace:*"
+    "@pdmux/desktop-protocol": "workspace:*",
+    "@pdmux/core": "workspace:*",
+    "@pdmux/protocol": "workspace:*"
   },
   "build": {
     "directories": {

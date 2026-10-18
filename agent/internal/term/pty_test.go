@@ -1,3 +1,5 @@
+//go:build !windows
+
 package term
 
 import (
@@ -13,8 +15,6 @@ import (
 // Every test here drives a REAL pty. That is the point: the thing being ported
 // is a syscall dance, and a mocked one proves nothing about whether a shell can
 // be typed into. Each is bounded by a deadline so a wedged child cannot hang CI.
-
-const ptyTimeout = 10 * time.Second
 
 // recorder drains a Process's Output for its whole life, which is the contract
 // Process states: a consumer that stops reading blocks the producer.
@@ -47,18 +47,6 @@ func (r *recorder) reset() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.buf.Reset()
-}
-
-func waitFor(t *testing.T, timeout time.Duration, what string, predicate func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if predicate() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
 }
 
 // shellPath is the one interpreter every unix has. A host without it cannot run

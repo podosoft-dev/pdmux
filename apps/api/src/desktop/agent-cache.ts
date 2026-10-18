@@ -15,7 +15,7 @@ export class DesktopAgentCache {
     const directory = join(this.root, version);
     const metadata = JSON.parse(await readFile(join(directory, "desktop-catalog.json"), "utf8")) as { version: number; releaseTag: string; seed: string | null; repository: string };
     const manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8")) as { version: string; artifacts: Artifact[] };
-    if (metadata.version !== 1 || metadata.repository !== "podosoft-dev/pdmux" || !/^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(metadata.releaseTag) || manifest.version !== version || manifest.artifacts.length !== 4) throw new Error("Invalid desktop agent catalog");
+    if (metadata.version !== 1 || metadata.repository !== "podosoft-dev/pdmux" || !/^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(metadata.releaseTag) || manifest.version !== version || ![4, 5].includes(manifest.artifacts.length)) throw new Error("Invalid desktop agent catalog");
     return { version, releaseTag: metadata.releaseTag, seed: metadata.seed, directory, artifacts: manifest.artifacts };
   }
   async current(): Promise<{ version: string; artifacts: object[] } | null> {
@@ -34,7 +34,7 @@ export class DesktopAgentCache {
     }));
   }
   async ensure(version: string, file: string): Promise<string> {
-    if (!/^pdmux-agent-(linux|darwin)-(amd64|arm64)$/.test(file)) throw new AppException("AGENT_NOT_FOUND", "Agent not found", 404);
+    if (!/^pdmux-agent-(linux|darwin|windows)-(amd64|arm64)$/.test(file)) throw new AppException("AGENT_NOT_FOUND", "Agent not found", 404);
     const catalog = await this.catalog(version);
     const artifact = catalog.artifacts.find(item => item.path === `/agent/${version}/${file}`);
     if (!artifact || !/^[a-f0-9]{64}$/.test(artifact.sha256) || !Number.isSafeInteger(artifact.bytes) || artifact.bytes < 1) throw new AppException("AGENT_NOT_FOUND", "Agent not found", 404);

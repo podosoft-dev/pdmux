@@ -56,7 +56,7 @@ export function desktopLocalAuth(): BetterAuthPlugin {
         if (ctx.body.profileId && !user) throw new APIError("NOT_FOUND", { message: "Local profile not found" });
         if (!user) user = await ownerCreation.run(true, () => ctx.context.internalAdapter.createUser({
           name: "Local", email: `desktop-${crypto.randomUUID()}@local.invalid`, emailVerified: true,
-          role: "admin", signupApproved: true,
+          role: "user", signupApproved: true,
         }, { method: "admin" }));
         await prepareProfile?.();
         const session = await ctx.context.internalAdapter.createSession(user.id);

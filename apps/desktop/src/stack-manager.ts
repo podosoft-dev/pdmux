@@ -119,6 +119,12 @@ export class StackManager {
   private capability = "";
   private localCookie = "";
 
+  async localRequest(path: string, init: RequestInit = {}): Promise<Response> {
+    if (!this.addresses || !path.startsWith("/") || path.startsWith("//")) throw new Error("Local runtime required");
+    const headers = new Headers(init.headers); headers.set("cookie", this.localCookie);
+    return fetch(`${this.addresses.apiUrl}${path}`, { ...init, headers, redirect: "error" });
+  }
+
   constructor(
     private readonly layout: RuntimeLayout,
     dependencies: Partial<StackDependencies> = {},
@@ -205,7 +211,8 @@ export class StackManager {
     try {
       this.gateway = await this.dependencies.startGateway(apiUrl, internalWebUrl, gatewayPort);
       await this.dependencies.waitForUrl(`${apiUrl}/health/ready`);
-      await this.dependencies.waitForUrl(webUrl);
+      // The local session is created after startup; probe an asset that needs no session.
+      await this.dependencies.waitForUrl(`${webUrl}/favicon.svg`);
     } catch (error) {
       await this.stop();
       throw error;

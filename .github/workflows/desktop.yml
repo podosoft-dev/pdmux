@@ -21,6 +21,7 @@ on:
   pull_request:
     paths:
       - ".gitattributes"
+      - "agent/**"
       - "apps/api/**"
       - "apps/web/**"
       - "apps/desktop/**"
@@ -61,6 +62,22 @@ jobs:
       signed: ${{ inputs.signed || false }}
       source_ref: ${{ inputs.source_ref || (inputs.signed && github.ref_name) || github.ref }}
     secrets: inherit
+
+  windows-terminal:
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Test native Windows pseudoconsole
+        working-directory: agent
+        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
 
   package:
     name: ${{ matrix.name }}
@@ -133,6 +150,7 @@ jobs:
         run: |
           bun run --filter pdmux-desktop lint
           bun run --filter pdmux-desktop test
+          bun test tools/desktop-build-profile.test.mjs tools/seed-desktop-agents.test.mjs
 
       - name: Package unsigned desktop application
         if: runner.os != 'macOS'
@@ -190,6 +208,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+      - uses: actions/setup-go@v5
+        if: runner.os == 'Windows'
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Test native Windows pseudoconsole
+        if: runner.os == 'Windows'
+        working-directory: agent
+        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
+
       - run: bun ci
       - name: Prepare Developer ID update fixtures
         run: bun tools/probe-macos-developer-id-update.mjs --prepare
@@ -226,6 +255,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+      - uses: actions/setup-go@v5
+        if: runner.os == 'Windows'
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Test native Windows pseudoconsole
+        if: runner.os == 'Windows'
+        working-directory: agent
+        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
+
       - run: bun ci
       - uses: actions/download-artifact@v4
         with:
@@ -256,6 +296,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+      - uses: actions/setup-go@v5
+        if: runner.os == 'Windows'
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Test native Windows pseudoconsole
+        if: runner.os == 'Windows'
+        working-directory: agent
+        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
+
       - run: bun ci
       - uses: actions/download-artifact@v4
         with:
@@ -302,6 +353,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
+      - uses: actions/setup-go@v5
+        if: runner.os == 'Windows'
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Test native Windows pseudoconsole
+        if: runner.os == 'Windows'
+        working-directory: agent
+        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
+
       - run: bun ci
       - uses: actions/download-artifact@v4
         with:

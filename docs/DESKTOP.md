@@ -329,3 +329,51 @@ semantics from the separate real API/agent suite; it does not prove the full pro
 For isolated end-to-end validation on Linux with Docker, see
 [`READINESS.md`](READINESS.md). It uses disposable accounts, real agent installation, and production
 API/web builds; it does not connect to an existing user's dashboard.
+
+
+## Desktop feature profile and the first local terminal
+
+The desktop API and web UI have their own build profiles. The standard web build
+continues to include administration, account security, registration, organizations,
+and browser sign-in. The desktop build excludes these routes and authentication
+plugins, including the shared client's admin, organization, passkey and two-factor
+plugins. It also omits PostgreSQL and Redis drivers, S3, BullMQ, server log browsing,
+and machine API-key endpoints. SQLite, memory providers, local files, product settings,
+MCP, Git, transfers, and optional server synchronization remain available.
+
+`desktop:prepare` builds `apps/api/dist-desktop` and `apps/web/build-desktop` without
+changing the ordinary API/web output. Build substitutions are application owned;
+generated toolkit modules and the source web routes retain their server behavior.
+The desktop menu provides settings, server connection, backup, data folder, and
+application update actions. Its native actions accept requests only from the main
+application frame and origin.
+
+On first launch, Electron verifies and copies the bundled native agent, creates a
+host in the selected local profile, and runs the agent as a supervised child. It
+waits for a real agent connection before assigning a plain shell terminal to cell
+#1. A populated layout is preserved; a layout deliberately cleared after setup stays
+empty on subsequent launches. The server connection page shows agent readiness and
+provides a retry action, including replacement credentials when needed.
+
+The embedded agent is separate from the standalone host installer. Electron owns
+its startup, bounded restart attempts, and shutdown. A stdin lifetime pipe cancels
+the agent if Electron disappears. Existing launchd/systemd agents are untouched.
+Credentials live only in the profile's private `runtime/local-agent/<profile>/agent.json`;
+they are never command arguments or environment variables. Each profile has its own
+host and process state. The native binary is checked against the canonical manifest
+before every start.
+
+The native target set adds Windows x64 in agent **0.1.28**. Windows uses PowerShell
+through [ConPTY](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session),
+with real terminal input, UTF-8 output and resize. This needs Windows 10 1809 or newer
+(or Windows Server 2019 or newer). The default terminal does not require tmux or WSL.
+Unix terminals keep their existing PTY implementation and login shell. Windows support
+here covers the embedded desktop agent; the standalone shell installer and service
+manager updater remain Unix workflows. Collection features that require Unix tools
+are unavailable on Windows. Native Windows terminal tests run in the desktop workflow,
+and each platform's packaged smoke test checks the first local terminal and menu.
+
+Agent catalogs retain every platform's checksums but installers bundle only their
+native agent. Additional remote-host binaries can be downloaded and verified later.
+Plain shells end when the desktop app or their connection closes; use tmux sessions
+on supported Unix hosts when work must survive a disconnect.

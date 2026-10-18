@@ -22,7 +22,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
   const repository = resolve(import.meta.dirname, "..");
   const layout = name => {
     const data = join(root, name);
-    return { bunExecutable: process.execPath, apiEntry: join(repository, "apps/api/dist/main.js"), migrateEntry: join(repository, "apps/api/dist/desktop-migrate.js"), webEntry: join(repository, "apps/web/build/index.js"), dataDirectory: data, filesDirectory: join(data, "files"), databasePath: join(data, "pdmux.sqlite"), secretPath: join(data, "auth.secret"), agentReleaseDirectory: join(repository, "apps/web/build/client/agent") };
+    return { bunExecutable: process.execPath, apiEntry: join(repository, name === "local" ? "apps/api/dist-desktop/main.js" : "apps/api/dist/main.js"), migrateEntry: join(repository, name === "local" ? "apps/api/dist-desktop/desktop-migrate.js" : "apps/api/dist/desktop-migrate.js"), webEntry: join(repository, name === "local" ? "apps/web/build-desktop/index.js" : "apps/web/build/index.js"), dataDirectory: data, filesDirectory: join(data, "files"), databasePath: join(data, "pdmux.sqlite"), secretPath: join(data, "auth.secret"), agentReleaseDirectory: join(repository, "apps/web/build/client/agent") };
   };
   let serverUrl; let tlsOrigin;
   const sockets = new Set();

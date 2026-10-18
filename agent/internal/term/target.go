@@ -3,7 +3,6 @@ package term
 import (
 	"os"
 	"regexp"
-	"strings"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
 
@@ -22,11 +21,6 @@ var SessionNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 
 // DefaultSession is what an open with no session name attaches to.
 const DefaultSession = "main"
-
-// fallbackShell is used when $SHELL is unset or not an absolute path. A
-// relative value would be resolved against PATH, which is not what a login
-// shell should ever be picked by.
-const fallbackShell = "/bin/bash"
 
 // Resolved is the argv a PTY should start, plus a label for the log line.
 type Resolved struct {
@@ -96,11 +90,7 @@ func ResolveTarget(target protocol.TerminalTarget, getenv func(string) string) (
 		getenv = os.Getenv
 	}
 	if target.Kind == protocol.TerminalShell {
-		shell := getenv("SHELL")
-		if !strings.HasPrefix(shell, "/") {
-			shell = fallbackShell
-		}
-		return Resolved{File: shell, Args: []string{"-l"}, Label: "shell"}, nil
+		return resolveShell(getenv), nil
 	}
 	// Absent means `main`; present-but-empty is a name that fails the pattern, and
 	// is refused rather than quietly turned into the default. The distinction is

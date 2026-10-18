@@ -1,4 +1,5 @@
 export interface DesktopMessages {
+  localHost: string;
   selectProfile: string;
   show: string;
   backup: string;
@@ -14,6 +15,7 @@ export interface DesktopMessages {
 }
 
 const ENGLISH: DesktopMessages = {
+  localHost: "This computer",
   selectProfile: "Choose your existing local profile",
   show: "Show PDMux",
   backup: "Create backup",
@@ -29,6 +31,7 @@ const ENGLISH: DesktopMessages = {
 };
 
 const KOREAN: DesktopMessages = {
+  localHost: "이 컴퓨터",
   selectProfile: "기존 로컬 프로필을 선택하세요",
   show: "PDMux 열기",
   backup: "백업 만들기",

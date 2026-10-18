@@ -1,8 +1,10 @@
 import { CloudConnection, registerDesktopProtocol } from "./cloud-connection.js";
+import { LocalAgent } from "./local-agent.js";
 import {
   app,
   BrowserWindow,
   dialog,
+  ipcMain,
   Menu,
   nativeImage,
   session,
@@ -30,6 +32,7 @@ let tray: Tray | undefined;
 let stack: StackManager | undefined;
 let fileTransfers: DesktopFileTransfers | undefined;
 let cloud: CloudConnection | undefined;
+let localAgent: LocalAgent | undefined;
 let pendingDeepLink: string | undefined;
 let quitting = false;
 let restartAttempts = 0;
@@ -50,14 +53,14 @@ function runtimeLayout(userData: string): RuntimeLayout {
     bunExecutable: app.isPackaged
       ? join(process.resourcesPath, "bin", process.platform === "win32" ? "bun.exe" : "bun")
       : process.env.PDMUX_BUN_EXECUTABLE ?? "bun",
-    apiEntry: join(root, app.isPackaged ? "api/main.js" : "apps/api/dist/main.js"),
-    migrateEntry: join(root, app.isPackaged ? "api/desktop-migrate.js" : "apps/api/dist/desktop-migrate.js"),
-    webEntry: join(root, app.isPackaged ? "web/index.js" : "apps/web/build/index.js"),
+    apiEntry: join(root, app.isPackaged ? "api/main.js" : "apps/api/dist-desktop/main.js"),
+    migrateEntry: join(root, app.isPackaged ? "api/desktop-migrate.js" : "apps/api/dist-desktop/desktop-migrate.js"),
+    webEntry: join(root, app.isPackaged ? "web/index.js" : "apps/web/build-desktop/index.js"),
     dataDirectory,
     filesDirectory: join(dataDirectory, "files"),
     databasePath: join(dataDirectory, "pdmux.sqlite"),
     secretPath: join(dataDirectory, "auth.secret"),
-    agentReleaseDirectory: join(root, app.isPackaged ? "web/client/agent" : "apps/web/build/client/agent"),
+    agentReleaseDirectory: join(root, app.isPackaged ? "web/client/agent" : "apps/web/build-desktop/client/agent"),
   };
 }
 
@@ -176,6 +179,8 @@ async function initialize(): Promise<void> {
       setTimeout(() => {
         void stack?.restart().then(async ({ webUrl }) => {
           await authenticateLocal(webUrl, userData);
+          appUrl = webUrl;
+          await localAgent?.start();
           fileTransfers?.setAppUrl(webUrl);
           await cloud?.setAppUrl(webUrl);
           return mainWindow?.loadURL(webUrl);
@@ -186,6 +191,10 @@ async function initialize(): Promise<void> {
     });
     appUrl = (await stack.start()).webUrl;
     localProfileId = await authenticateLocal(appUrl, userData);
+    if (localProfileId) {
+      localAgent = new LocalAgent(stack, layout, localProfileId, messages.localHost);
+      await localAgent.start();
+    }
   } else {
     appUrl = config.url;
     configureRemoteCertificatePin(config);
@@ -203,7 +212,6 @@ async function initialize(): Promise<void> {
     event.preventDefault();
     mainWindow?.hide();
   });
-  await window.loadURL(appUrl);
 
   const updateBackup = config.mode === "local"
     ? backup
@@ -218,6 +226,20 @@ async function initialize(): Promise<void> {
     });
     return result.response === 0;
   });
+  const requireSender = (event: Electron.IpcMainInvokeEvent): void => {
+    if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || new URL(event.senderFrame.url).origin !== new URL(appUrl).origin) throw new Error("Desktop origin required");
+  };
+  if (stack) {
+    ipcMain.handle("pdmux:desktop:action", async (event, action: unknown) => {
+      requireSender(event);
+      if (action === "backup") { const path = await backup.create("manual"); await dialog.showMessageBox(window, { message: messages.backupComplete, detail: path }); }
+      else if (action === "open-data") { const error = await shell.openPath(userData); if (error) throw new Error("Cannot open desktop data"); }
+      else if (action === "check-updates") await updater.check();
+      else throw new Error("Unknown desktop action");
+    });
+    ipcMain.handle("pdmux:local-agent:status", event => { requireSender(event); return localAgent?.status(); });
+    ipcMain.handle("pdmux:local-agent:retry", async event => { requireSender(event); await localAgent?.start(true); return localAgent?.status(); });
+  }
   autoUpdater.autoDownload = true;
   autoUpdater.on("update-downloaded", () => {
     void updater.installDownloadedUpdate().catch((error: unknown) => logError("Install desktop update", error));
@@ -245,6 +267,7 @@ async function initialize(): Promise<void> {
     { type: "separator" },
     { label: messages.quit, click: () => { quitting = true; app.quit(); } },
   ]));
+  await window.loadURL(localAgent?.status().phase === "failed" ? new URL("/connection", appUrl).href : appUrl);
   void updater.check().catch((error: unknown) => logError("Check desktop update", error));
 }
 
@@ -280,9 +303,11 @@ if (!app.requestSingleInstanceLock()) {
     cloud?.close(); cloud = undefined;
     const running = stack;
     const transfers = fileTransfers;
+    const agent = localAgent; localAgent = undefined;
     stack = undefined;
     fileTransfers = undefined;
-    void Promise.resolve(transfers?.close()).finally(() => running?.stop())
+    for (const name of ["pdmux:desktop:action", "pdmux:local-agent:status", "pdmux:local-agent:retry"]) ipcMain.removeHandler(name);
+    void Promise.resolve(transfers?.close()).finally(() => agent?.stop()).finally(() => running?.stop())
       .catch((error: unknown) => logError("Stop desktop runtime", error))
       .finally(() => app.quit());
   });

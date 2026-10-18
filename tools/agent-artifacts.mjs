@@ -8,7 +8,7 @@ import { parseAgentVersion } from "../apps/desktop/src/staging.ts";
 import { signingCommand, signingEnvironment, withAppleSigning } from "./apple-signing.mjs";
 
 const repository = resolve(import.meta.dirname, "..");
-export const agentTargets = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"];
+export const agentTargets = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64", "windows-amd64"];
 const filename = target => `pdmux-agent-${target}`;
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 
@@ -21,14 +21,14 @@ export async function normalizeAgentPermissions(directory) {
 export async function verifyAgentDirectory(directory, { sourceDirectory, signed = false, native = false, subset = false } = {}) {
   const manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8"));
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/, "Invalid agent release version");
-  assert.equal(manifest.artifacts?.length, agentTargets.length, "Require exactly four agent artifacts");
+  assert.equal(manifest.artifacts?.length, agentTargets.length, "Require exactly five agent artifacts");
   const expectedCertificate = new X509Certificate(await readFile(join(repository, "apps/desktop/signing-certificate.pem")));
   const source = sourceDirectory ? JSON.parse(await readFile(join(sourceDirectory, "manifest.json"), "utf8")) : undefined;
   if (source) assert.equal(manifest.version, source.version, "Agent source version mismatch");
   let seed;
   if (subset) {
     seed = JSON.parse(await readFile(join(directory, "desktop-catalog.json"), "utf8")).seed;
-    const expected = process.platform === "win32" ? null : `pdmux-agent-${process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
+    const expected = `pdmux-agent-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
     assert.equal(seed, expected, "Require the native desktop agent seed");
     assert.deepEqual((await readdir(directory)).filter(name => name.startsWith("pdmux-agent-")).sort(), seed ? [seed] : []);
   }
@@ -50,7 +50,7 @@ export async function verifyAgentDirectory(directory, { sourceDirectory, signed 
     if (signed) {
       assert.match(entry.sourceSha256 ?? "", /^[a-f0-9]{64}$/, "Missing reproducible source checksum");
       if (source) assert.equal(entry.sourceSha256, source.artifacts.find(item => item.os === os && item.arch === arch)?.sha256, "Agent source changed without a version update");
-      if (os === "linux") assert.equal(entry.sha256, entry.sourceSha256, "Linux agent bytes must not change after source verification");
+      if (os !== "darwin") assert.equal(entry.sha256, entry.sourceSha256, "Non-Darwin agent bytes must not change after source verification");
       else {
         assert.equal(entry.signing?.certificateSha256, expectedCertificate.fingerprint256, "Unexpected agent signing certificate");
         assert.ok(expectedCertificate.subject.split("\n").includes(`OU=${entry.signing?.teamId}`), "Unexpected agent signing team");

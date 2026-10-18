@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { desktopClientProfile } from "./desktop-client-profile.js";
+import adapter from "@sveltejs/adapter-bun";
 import { fileURLToPath } from "node:url";
 import type { Config as SvelteKitConfig } from "@sveltejs/kit/vite";
 import { loadEnv, type Plugin, type UserConfig, type UserConfigFnObject } from "vite";
@@ -19,6 +21,7 @@ const repoVersion = (
 ).version;
 
 const inDocker = process.env.VITE_DOCKER === "1";
+const desktopBuild = process.env.PDMUX_DESKTOP_BUILD === "1";
 
 /**
  * Never let the dev server tell a browser to cache anything for a year.
@@ -129,6 +132,11 @@ const devAllowedHosts = (process.env.DEV_ALLOWED_HOSTS ?? fileEnv.DEV_ALLOWED_HO
   .filter((host) => host !== "");
 
 export const appViteConfig: UserConfig | UserConfigFnObject = {
+  ...(desktopBuild ? { resolve: { alias: {
+    "#lib/dashboard/components/shell-user-menu.svelte": fileURLToPath(new URL("./src/lib/desktop/user-menu.svelte", import.meta.url)),
+    "#lib/components/impersonation-banner.svelte": fileURLToPath(new URL("./src/lib/desktop/empty.svelte", import.meta.url)),
+    "#lib/components/site-runtime.svelte": fileURLToPath(new URL("./src/lib/desktop/site-runtime.svelte", import.meta.url)),
+  } } } : {}),
   /**
    * ⚠ THE DIRECTORY NAME IS LOAD-BEARING. RENAME IT TO EVICT A POISONED BROWSER.
    *
@@ -155,7 +163,15 @@ export const appViteConfig: UserConfig | UserConfigFnObject = {
    * both stuck on a pre-fix generation.
    */
   cacheDir: "node_modules/.vite-2",
-  plugins: [revalidateInDev],
+  plugins: [revalidateInDev, ...(desktopBuild ? [{
+    name: "pdmux-desktop-auth-client",
+    enforce: "pre" as const,
+    transform(code: string, id: string): string | undefined {
+      if (id.replaceAll("\\", "/").endsWith("/@podosoft/podokit-api-client/dist/index.js")) return desktopClientProfile(code);
+      return undefined;
+    },
+  }] : [])],
+  ...(desktopBuild ? { ssr: { noExternal: ["@podosoft/podokit-api-client"] } } : {}),
   // Read through `$lib/version.ts`, which is the only module that names it.
   define: { __PDMUX_VERSION__: JSON.stringify(repoVersion ?? "") },
   /**
@@ -223,4 +239,7 @@ export const appViteConfig: UserConfig | UserConfigFnObject = {
  * PodoKit sets `adapter` and `preprocess`, and `paths.origin` from
  * PODOKIT_BUILD_ORIGIN at build time.
  */
-export const appSvelteKitConfig: SvelteKitConfig = {};
+export const appSvelteKitConfig: SvelteKitConfig = desktopBuild ? {
+  adapter: adapter({ out: "build-desktop" }),
+  files: { routes: ".desktop/routes" }, outDir: ".svelte-kit-desktop",
+} : {};

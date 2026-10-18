@@ -13,6 +13,7 @@
   import DataTable from "#lib/components/data-table.svelte";
   import { getI18n } from "#lib/i18n/index.js";
   import { desktopConnection } from "#lib/desktop.js";
+  import LocalHostCard from "#lib/desktop/local-host-card.svelte";
   let { data }: { data: PageData } = $props();
   const i18n = getI18n();
   let server = $state(""); let code = $state(""); let busy = $state(false); let pending = $state(false); let failed = $state(false);
@@ -39,6 +40,7 @@
 <div class="flex min-h-0 flex-col gap-5 overflow-y-auto p-6" data-pdmux-region="page" data-testid="desktop-connection">
   <h1 class="text-xl font-semibold">{i18n.t.desktop.title}</h1>
   <p class="text-muted-foreground text-sm">{i18n.t.desktop.localDescription}</p>
+  <LocalHostCard />
   {#if data.status.local}
     <Card.Root class="shrink-0">
       <Card.Header><Card.Title>{i18n.t.desktop.server}</Card.Title><Card.Description>{i18n.t.desktop.sharing}</Card.Description></Card.Header>

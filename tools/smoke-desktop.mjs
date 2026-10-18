@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { verifyDesktopFirstRun } from "./desktop-first-run.mjs";
 import { desktopPaths } from "./desktop-package-paths.mjs";
 import { join, relative, resolve, sep } from "node:path";
 import { _electron as electron } from "playwright";
@@ -18,10 +19,11 @@ const paths = desktopPaths(bundle, process.platform);
 const configuration = process.env.PDMUX_SMOKE_CONFIG_ROOT ?? await mkdtemp(join(tmpdir(), "pdmux-desktop-smoke-"));
 const relativeProfile = relative(tmpdir(), resolve(configuration));
 assert.ok(!relativeProfile.startsWith("..") && relativeProfile.split(sep)[0].startsWith("pdmux-"), "Smoke profiles must live in a pdmux temporary directory");
+const tmuxDirectory = join(configuration, "tmux"); await mkdir(tmuxDirectory, { recursive: true });
 const application = await electron.launch({
   executablePath: paths.executable, timeout: 120_000, chromiumSandbox: true,
   args: [`--user-data-dir=${resolve(configuration)}`],
-  env: { ...process.env, ...(process.platform === "linux" ? { XDG_CONFIG_HOME: configuration } : {}) },
+  env: { ...process.env, TMUX: "", TMUX_TMPDIR: tmuxDirectory, ...(process.platform === "linux" ? { XDG_CONFIG_HOME: configuration } : {}) },
 });
 let window;
 try {
@@ -42,6 +44,7 @@ try {
       status: "function", pauseDownload: "function", cancelDownload: "function" },
   });
   assert.ok((await window.locator("body").innerText()).length > 30, "Render the local workspace");
+  await verifyDesktopFirstRun(window, `${screenshot}.menu.png`, { fresh: !process.argv.includes("--expect-preserved") });
   await application.evaluate(async ({ app, dialog }) => {
     const { join } = process.getBuiltinModule("node:path");
     const { mkdir, writeFile } = process.getBuiltinModule("node:fs/promises");

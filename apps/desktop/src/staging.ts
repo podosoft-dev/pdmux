@@ -49,11 +49,11 @@ async function stageApi(repositoryRoot: string, destination: string): Promise<vo
   const source = join(repositoryRoot, "apps", "api", "dist-desktop");
   await mkdir(destination, { recursive: true });
   for (const required of ["main.js", "desktop-migrate.js"]) await stat(join(source, required));
-  await cp(source, destination, { recursive: true });
+  await cp(source, destination, { recursive: true, filter: path => !path.endsWith(".map") && !path.endsWith("build-profile.json") });
 }
 
 async function stageWeb(repositoryRoot: string, destination: string, agentVersion: string): Promise<void> {
-  await cp(join(repositoryRoot, "apps", "web", "build"), destination, { recursive: true });
+  await cp(join(repositoryRoot, "apps", "web", "build-desktop"), destination, { recursive: true });
   const agentRoot = join(destination, "client", "agent");
   const entries = await readdir(agentRoot, { withFileTypes: true });
   const current = entries.find((entry) => entry.isDirectory() && entry.name === agentVersion);
@@ -66,6 +66,7 @@ async function stageWeb(repositoryRoot: string, destination: string, agentVersio
     "pdmux-agent-linux-arm64",
     "pdmux-agent-darwin-amd64",
     "pdmux-agent-darwin-arm64",
+    "pdmux-agent-windows-amd64",
   ] as const) {
     try {
       await stat(join(currentRoot, required));

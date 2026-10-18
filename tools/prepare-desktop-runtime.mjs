@@ -7,6 +7,7 @@ import { stageDesktopRuntime } from "../apps/desktop/src/staging.ts";
 
 const root = resolve(import.meta.dirname, "..");
 await import("./build-desktop-api.mjs");
+await import("./build-desktop-web.mjs");
 const result = await stageDesktopRuntime({
   repositoryRoot: root,
   bunExecutable: process.execPath,

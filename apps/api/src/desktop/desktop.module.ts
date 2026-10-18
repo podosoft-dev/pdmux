@@ -46,6 +46,7 @@ export const desktopModule: PodokitModule = {
       .get("/desktop/capabilities", () => ({ version: DESKTOP_PROTOCOL_VERSION, local: isDesktopRuntime() }))
       .get("/desktop/context", async ({ request }) => {
         const session = await pdmux.auth.requireSession(request); await requireCurrentScope(session);
+        if (router.client) return { version: DESKTOP_PROTOCOL_VERSION, userId: session.user.id, scopeId: resolveScopeId(session), organizations: [] };
         const auth = await getAuth().$context;
         const members = await auth.adapter.findMany<{ organizationId: string }>({ model: "member", where: [{ field: "userId", value: session.user.id }], limit: 100 });
         const organizations = await Promise.all(members.map(member => auth.adapter.findOne<{ id: string; name: string }>({ model: "organization", where: [{ field: "id", value: member.organizationId }] })));
@@ -55,7 +56,7 @@ export const desktopModule: PodokitModule = {
         const session = await pdmux.auth.requireSession(request); await requireCurrentScope(session);
         return router.service.sync(session, body);
       }, { body: t.Unknown() })
-      .get("/desktop/agents", () => agents.current())
+      .get("/desktop/agents", async () => Response.json(await agents.current()))
       .get("/desktop/appearance", async ({ request }) => {
         const session = await pdmux.auth.requireSession(request);
         return (await router.service.bindings(session)).find(row => row.kind === "appearance")?.value ?? null;

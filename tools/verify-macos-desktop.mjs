@@ -10,7 +10,7 @@ import { assertCertificate } from "./release-macos-signing.mjs";
 import { verifyAgentDirectory } from "./agent-artifacts.mjs";
 
 const repository = resolve(import.meta.dirname, "..");
-const agentNames = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"].map(arch => `pdmux-agent-${arch}`);
+const agentNames = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64", "windows-amd64"].map(arch => `pdmux-agent-${arch}`);
 
 export function certificateExtractionArguments(prefix, app) {
   return ["--display", `--extract-certificates=${prefix}`, app];
@@ -18,11 +18,11 @@ export function certificateExtractionArguments(prefix, app) {
 
 export function parseAgentChecksums(text) {
   const entries = text.trim().split(/\r?\n/).map(line => {
-    const match = /^([a-f0-9]{64})\s+\*?(pdmux-agent-(?:linux|darwin)-(?:amd64|arm64))$/.exec(line);
+    const match = /^([a-f0-9]{64})\s+\*?(pdmux-agent-(?:linux|darwin|windows)-(?:amd64|arm64))$/.exec(line);
     assert.ok(match, "Invalid agent checksum entry");
     return [match[2], match[1]];
   });
-  assert.deepEqual(entries.map(([name]) => name).sort(), [...agentNames].sort(), "Require exactly the four published agents");
+  assert.deepEqual(entries.map(([name]) => name).sort(), [...agentNames].sort(), "Require exactly the five published agents");
   return entries;
 }
 
@@ -33,7 +33,7 @@ export async function verifyAgentResources(resources, referenceDirectory) {
   try { seed = JSON.parse(await readFile(join(resources, "desktop-catalog.json"), "utf8")).seed; }
   catch (error) { if (error.code !== "ENOENT") throw error; }
   if (seed !== undefined) {
-    const expected = process.platform === "win32" ? null : `pdmux-agent-${process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
+    const expected = `pdmux-agent-${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
     assert.equal(seed, expected);
     assert.deepEqual((await readdir(resources)).filter(name => name.startsWith("pdmux-agent-")).sort(), seed ? [seed] : []);
     assert.equal(await readFile(join(resources, "manifest.json"), "utf8"), await readFile(join(referenceDirectory, "manifest.json"), "utf8"));

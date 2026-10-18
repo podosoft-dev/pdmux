@@ -1,3 +1,5 @@
+//go:build !windows
+
 package term
 
 import (
@@ -5,22 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
 )
-
-func sessionTarget(name *string) protocol.TerminalTarget {
-	target := protocol.NewTerminalTarget()
-	target.Kind = protocol.TerminalSession
-	target.Session = name
-	return target
-}
-
-func shellTarget() protocol.TerminalTarget {
-	target := protocol.NewTerminalTarget()
-	target.Kind = protocol.TerminalShell
-	return target
-}
 
 func env(pairs map[string]string) func(string) string {
 	return func(key string) string { return pairs[key] }
