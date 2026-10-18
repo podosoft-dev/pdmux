@@ -85,7 +85,7 @@ message fail them instead of skipping.
 The `podo dev` stack runs no Mailpit, so its email tests skip, also when another
 project's Mailpit answers on port 8025: the probe email never reaches it.
 Measured on 2026-10-18 with PodoKit 1.6.3: with another project's Mailpit on
-port 8025 and no `MAILPIT_URL`, a whole two-worker run skipped all seven email
+port 8025 and no `MAILPIT_URL`, a whole two-worker run skipped all eight email
 tests with "does not receive this app's mail" and failed none of them.
 
 ## pdmux accounts, one per worker
