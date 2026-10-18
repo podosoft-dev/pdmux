@@ -208,17 +208,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-      - uses: actions/setup-go@v5
-        if: runner.os == 'Windows'
-        with:
-          go-version-file: agent/go.mod
-          cache-dependency-path: agent/go.sum
-
-      - name: Test native Windows pseudoconsole
-        if: runner.os == 'Windows'
-        working-directory: agent
-        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
-
       - run: bun ci
       - name: Prepare Developer ID update fixtures
         run: bun tools/probe-macos-developer-id-update.mjs --prepare
@@ -255,17 +244,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-      - uses: actions/setup-go@v5
-        if: runner.os == 'Windows'
-        with:
-          go-version-file: agent/go.mod
-          cache-dependency-path: agent/go.sum
-
-      - name: Test native Windows pseudoconsole
-        if: runner.os == 'Windows'
-        working-directory: agent
-        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
-
       - run: bun ci
       - uses: actions/download-artifact@v4
         with:
@@ -296,17 +274,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-      - uses: actions/setup-go@v5
-        if: runner.os == 'Windows'
-        with:
-          go-version-file: agent/go.mod
-          cache-dependency-path: agent/go.sum
-
-      - name: Test native Windows pseudoconsole
-        if: runner.os == 'Windows'
-        working-directory: agent
-        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
-
       - run: bun ci
       - uses: actions/download-artifact@v4
         with:
@@ -353,17 +320,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-      - uses: actions/setup-go@v5
-        if: runner.os == 'Windows'
-        with:
-          go-version-file: agent/go.mod
-          cache-dependency-path: agent/go.sum
-
-      - name: Test native Windows pseudoconsole
-        if: runner.os == 'Windows'
-        working-directory: agent
-        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
-
       - run: bun ci
       - uses: actions/download-artifact@v4
         with:
