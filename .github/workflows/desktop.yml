@@ -312,19 +312,19 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.agent_artifact || 'agent-binaries' }}
-          path: ${{ runner.temp }}/agent-reference
+          path: .agent-reference
       - name: Restore canonical agent verification reference
         shell: bash
-        run: tar -xf "$RUNNER_TEMP/agent-reference/agent-binaries.tar" -C "$RUNNER_TEMP/agent-reference"
+        run: tar -xf .agent-reference/agent-binaries.tar -C .agent-reference
       - name: Verify Windows installation and runtime
         env:
-          PDMUX_AGENT_ARTIFACT_ROOT: ${{ runner.temp }}/agent-reference/agent
+          PDMUX_AGENT_ARTIFACT_ROOT: ${{ github.workspace }}/.agent-reference/agent
         if: runner.os == 'Windows'
         shell: pwsh
         run: bun tools/verify-desktop-artifacts.mjs "$env:RUNNER_TEMP/desktop-verify"
       - name: Verify Debian and AppImage runtimes
         env:
-          PDMUX_AGENT_ARTIFACT_ROOT: ${{ runner.temp }}/agent-reference/agent
+          PDMUX_AGENT_ARTIFACT_ROOT: ${{ github.workspace }}/.agent-reference/agent
         if: runner.os == 'Linux'
         run: xvfb-run -a bun tools/verify-desktop-artifacts.mjs "$RUNNER_TEMP/desktop-verify"
       - uses: actions/upload-artifact@v4

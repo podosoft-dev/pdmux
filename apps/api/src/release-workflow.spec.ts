@@ -126,6 +126,10 @@ describe("release workflow", () => {
     expect(packageJob).toContain(preserveSource);
     expect(packageJob.indexOf(preserveSource)).toBeLessThan(packageJob.indexOf("tar -xf .agent-binaries/agent-binaries.tar"));
     expect(packageJob).toContain("PDMUX_AGENT_SOURCE_ROOT: ${{ runner.temp }}/agent-source");
+    const platformVerifier = desktopWorkflow.split("\n  verify-platforms:\n")[1] ?? "";
+    expect(platformVerifier).toContain("path: .agent-reference");
+    expect(platformVerifier).toContain("tar -xf .agent-reference/agent-binaries.tar -C .agent-reference");
+    expect(platformVerifier).not.toContain('tar -xf "$RUNNER_TEMP/agent-reference');
   });
 
   test("[TC-PDDESKTOP-009] restricts stable signing to macOS releases and independently verifies artifacts", () => {
