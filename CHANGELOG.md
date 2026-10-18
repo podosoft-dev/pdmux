@@ -5,6 +5,11 @@
 - Recover browser and desktop terminals after server upgrades without a page reload. Retain pane
   targets through offline-host retries, confirm terminal readiness before reporting reconnection,
   and keep desktop sign-in state through temporary server failures while bounding stalled handshakes.
+- Update the PodoKit foundation to 1.6.3. A desktop app sign-in is recorded as `auth.login`, with
+  `/electron/token` in `metadata.method`: the audit log now recognises a sign-in by the new session
+  it creates, on any endpoint, so sign-ins through an application's own Better Auth plugin are no
+  longer missed. Sign-ups, impersonation, switching between sessions and password or two-factor
+  changes are still not recorded as sign-ins.
 
 ## 0.17.2
 
