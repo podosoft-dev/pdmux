@@ -50,7 +50,8 @@ test.describe.serial("pdmux VM power from terminals", () => {
     await menu.locator("[data-pdmux-vm-action=reboot]").click();
     const confirm = page.getByTestId("vm-power-confirm");
     await expect(confirm).toContainText("1");
-    await page.getByRole("button", { name: "Cancel" }).click();
+    // Scoped to the dialog: the page also lists commits, and a subject can say "cancel".
+    await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(confirm).toBeHidden();
     expect(fleet.requests).toEqual([]);
   });
