@@ -58,7 +58,7 @@ try{
   const marker="local-update-preserved";
   const saved=await page.evaluate(async ({id,marker})=>(await fetch(`/api/hosts/${id}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({description:marker})})).status,{id:baseline.agent.hostId,marker});assert.equal(saved,200);
   await writeFile(join(labDirectory,"profile/lab-sentinel.txt"),marker);
-  async function check(){await page.locator('[data-testid="shell-user"]').click();await page.locator('[data-testid="desktop-menu-updates"]').click();}
+  async function check(){const settings=page.locator('[data-testid="settings-dialog"]');if(!await settings.isVisible()){await page.locator('[data-testid="shell-user"]').click();await page.locator('[data-testid="shell-user-settings"]').click();await settings.waitFor();}await page.locator('[data-testid="settings-tab-advanced"]').click();await page.locator('[data-testid="desktop-menu-updates"]').click();}
   stage("no-update-check");await check();
   await until(async()=> (await events()).some(event=>event.event==="dialog-result"),"Close the no-update notice");
   await page.screenshot({path:join(output,"baseline.png")});
