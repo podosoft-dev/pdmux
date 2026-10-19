@@ -20,6 +20,8 @@ import { UserMcpKey } from "../mcp/user-mcp-key.entity";
 import { HostMetricSample } from "../metrics/host-metric-sample.entity";
 import { UserHostPref } from "../prefs/user-host-pref.entity";
 import { UserLayout } from "../prefs/user-layout.entity";
+import { HostVm } from "../vm/host-vm.entity";
+import { VmProvider } from "../vm/vm-provider.entity";
 
 // This owned file is never overwritten by `podo update`. List the
 // application's TypeORM entities here: the migration data source loads them,
@@ -51,4 +53,6 @@ export const APP_ENTITIES = [
   UserHostPref,
   UserLayout,
   UserMcpKey,
+  HostVm,
+  VmProvider,
 ] satisfies AppEntities;

@@ -92,7 +92,7 @@ function rangeStart(header: string | null): number {
   return Number.isSafeInteger(start) && start >= 0 ? start : 0;
 }
 
-async function audit<T>(
+export async function audit<T>(
   services: PdmuxServices,
   request: Request,
   session: AuthSession,
@@ -114,7 +114,7 @@ async function audit<T>(
   return JSON.parse(JSON.stringify(result)) as T;
 }
 
-async function sessionFor(services: PdmuxServices, request: Request): Promise<AuthSession> {
+export async function sessionFor(services: PdmuxServices, request: Request): Promise<AuthSession> {
   return services.auth.requireSession(request);
 }
 

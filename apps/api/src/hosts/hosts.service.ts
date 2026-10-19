@@ -44,6 +44,7 @@ export type HostEnabledChangeListener = (hostId: string, enabled: boolean) => Pr
  */
 export type HostRemovedListener = (hostId: string) => Promise<void> | void;
 export type HostRemovingListener = (hostId: string, organizationId: string) => Promise<void> | void;
+export type HostViewExtension = (organizationId: string, views: HostView[]) => Promise<HostView[]>;
 export type HostMovingListener = (hostId: string, organizationId: string) => Promise<void> | void;
 
 /**
@@ -94,6 +95,9 @@ export class HostsService {
   private removingListener: HostRemovingListener = () => {};
   private nativeConnectionGuard: (scope: string, id: string) => Promise<void> = async () => undefined;
   private movingListener: HostMovingListener = () => {};
+  private readonly removingGuards: HostRemovingListener[] = [];
+  private readonly movingGuards: HostMovingListener[] = [];
+  private viewExtension: HostViewExtension = async (_organizationId, views) => views;
 
   constructor(
     private readonly hosts: Repository<Host>,
@@ -142,6 +146,27 @@ export class HostsService {
   }
 
   /**
+   * A check that may refuse a removal, run BEFORE the removing listener.
+   *
+   * ⚠ ORDER IS THE POINT. The removing listener deletes external resources (a tunnel, DNS) that
+   * cannot be put back; a refusal that came after it would leave a host standing without them.
+   * So anything that may say no says it first. Several modules may register one.
+   */
+  addRemovingGuard(guard: HostRemovingListener): void {
+    this.removingGuards.push(guard);
+  }
+
+  /** As `addRemovingGuard`, for a move to another scope. */
+  addMovingGuard(guard: HostMovingListener): void {
+    this.movingGuards.push(guard);
+  }
+
+  /** Adds module-owned blocks (a host's machine) to every view this service returns. */
+  setViewExtension(extension: HostViewExtension): void {
+    this.viewExtension = extension;
+  }
+
+  /**
    * One request paints the sidebar: rows + services + the latest heartbeat's
    * probe results, already joined and ordered.
    */
@@ -176,7 +201,7 @@ export class HostsService {
     }
     const { heartbeatSec } = settings;
     const now = Date.now();
-    return hosts.map((host) =>
+    return this.viewExtension(organizationId, hosts.map((host) =>
       toHostView(host, byHost.get(host.id) ?? [], {
         gitRootCount: resolveGitRoots(settings, rootsByHost.get(host.id) ?? []).length,
         heartbeatSec,
@@ -186,7 +211,7 @@ export class HostsService {
         latestAgentVersion: this.releases.latestFor(host.os, host.arch),
         exposures: exposuresByHost.get(host.id) ?? [],
       }),
-    );
+    ));
   }
 
   async getView(organizationId: string, id: string): Promise<HostView> {
@@ -197,7 +222,7 @@ export class HostsService {
     const exposures = this.exposures
       ? await this.exposures.find({ where: { hostId: host.id, provider: "cloudflare" } })
       : [];
-    return toHostView(host, services, {
+    const [view] = await this.viewExtension(organizationId, [toHostView(host, services, {
       gitRootCount: resolveGitRoots(settings, roots).length,
       heartbeatSec: settings.heartbeatSec,
       now: Date.now(),
@@ -205,7 +230,9 @@ export class HostsService {
 		terminal: this.terminalProbe(host.id),
       latestAgentVersion: this.releases.latestFor(host.os, host.arch),
       exposures,
-    });
+    })]);
+    if (!view) throw new AppException("HOST_NOT_FOUND", "Host not found", 404);
+    return view;
   }
 
   /**
@@ -345,6 +372,7 @@ export class HostsService {
    */
   async remove(organizationId: string, id: string): Promise<{ id: string; label: string }> {
     const host = await this.get(organizationId, id);
+    for (const guard of this.removingGuards) await guard(host.id, organizationId);
     await this.removingListener(host.id, organizationId);
     await this.hosts.delete({ id: host.id });
     await this.notifyRemoved(host.id);
@@ -466,6 +494,7 @@ export class HostsService {
    */
   async move(organizationId: string, id: string, targetEmail: string): Promise<Host> {
     const host = await this.get(organizationId, id);
+    for (const guard of this.movingGuards) await guard(host.id, organizationId);
     await this.movingListener(host.id, organizationId);
     const target = await this.resolveUserScope(targetEmail);
     if (target === organizationId) {

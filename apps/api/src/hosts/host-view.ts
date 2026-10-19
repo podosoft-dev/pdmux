@@ -12,6 +12,7 @@ import {
 import type { Host } from "./host.entity";
 import type { HostService, ProbeKind } from "./host-service.entity";
 import type { ServiceExposure } from "../integrations/service-exposure.entity";
+import type { HostVmView } from "../vm/host-vms.service";
 
 /**
  * Shapes the sidebar reads. Kept as pure functions over rows + the stored
@@ -108,6 +109,11 @@ export interface HostView {
    * diagnostic, not by this field.
    */
   listeners: Listener[] | null;
+  /**
+   * The machine behind this host, when a VM provider manages it — its power state, the one
+   * change in flight and who asked for it. Absent for a host no provider knows about.
+   */
+  vm?: HostVmView;
 }
 
 /**

@@ -5,6 +5,7 @@ import { RATE_LIMIT_ROUTES } from "@podosoft/podokit-runtime";
 import type { PodokitModule, ServiceRegistry } from "./core/services";
 import { FILE_TRANSFER_BUDGET } from "./file-transfers/file-transfer-budget";
 import { pdmuxModule } from "./pdmux/pdmux.module";
+import { vmModule } from "./vm/vm.module";
 
 // This owned extension slot is never overwritten by `podo update`. Register
 // application services during startup and add Elysia plugins without editing
@@ -18,4 +19,4 @@ export function configureServices(services: ServiceRegistry): void {
   services.tryResolve(RATE_LIMIT_ROUTES)?.register(FILE_TRANSFER_BUDGET);
 }
 
-export const extensionModules: PodokitModule[] = [pdmuxModule, desktopModule];
+export const extensionModules: PodokitModule[] = [pdmuxModule, desktopModule, vmModule];
