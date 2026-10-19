@@ -29,6 +29,10 @@ const application = await electron.launch({
   args: [`--user-data-dir=${resolve(configuration)}`],
   env: { ...process.env, TMUX: "", TMUX_TMPDIR: tmuxDirectory, ...(process.platform === "linux" ? { XDG_CONFIG_HOME: configuration } : {}) },
 });
+const electronProcess = application.process();
+electronProcess.stderr.on("data", chunk => process.stderr.write(chunk));
+electronProcess.once("exit", (code, signal) => console.log(JSON.stringify({ stage: "desktop-process-exit", code, signal })));
+electronProcess.once("close", (code, signal) => console.log(JSON.stringify({ stage: "desktop-process-close", code, signal })));
 let window;
 try {
   assert.equal(await application.evaluate(({ app }) => app.getPath("userData")), resolve(configuration), "Isolate the real user's desktop data");
@@ -140,9 +144,17 @@ try {
   // app.quit evaluation can wait indefinitely on Linux during async shutdown.
   console.log(JSON.stringify({ stage: "desktop-quit-requested" }));
   const closed = application.waitForEvent("close", { timeout: 15_000 });
-  await application.evaluate(({ app }) => { setTimeout(() => app.quit(), 50); });
+  await application.evaluate(({ app }) => {
+    for (const event of ["before-quit", "will-quit", "quit"]) app.on(event, () => {
+      process.stderr.write(`${JSON.stringify({ stage: "desktop-quit-event", event, resources: process.getActiveResourcesInfo() })}\n`);
+    });
+    setTimeout(() => app.quit(), 50);
+  });
   try { await closed; }
-  catch (error) { application.process().kill("SIGKILL"); throw error; }
+  catch (error) {
+    console.error(JSON.stringify({ stage: "desktop-quit-timeout", pid: electronProcess.pid, exitCode: electronProcess.exitCode, signalCode: electronProcess.signalCode }));
+    electronProcess.kill("SIGKILL"); throw error;
+  }
   console.log(JSON.stringify({ stage: "desktop-quit-completed" }));
   if (!process.env.PDMUX_SMOKE_CONFIG_ROOT) {
     await stopFixtureNativeSessions(configuration);
