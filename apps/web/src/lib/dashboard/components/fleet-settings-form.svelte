@@ -25,6 +25,7 @@
    * off is deliberately NOT gated — a control that is harder to switch off than on is
    * the wrong way round.
    */
+  import VmProvidersCard from "#lib/vm/vm-providers-card.svelte";
   import { untrack } from "svelte";
   import { invalidateAll } from "$app/navigation";
   import { toast } from "svelte-sonner";
@@ -235,6 +236,8 @@
   </Card.Root>
 
   {#if serverFeatures}<CloudflareIntegrationCard canManage={data.canManage} {target} />{/if}
+  <!-- Server only, and only for this server: the desktop app does not hold provider credentials. -->
+  {#if serverFeatures && target === "local"}<VmProvidersCard canManage={data.canManage} />{/if}
 
   <!--
     THE SWEEP, APART FROM EVERYTHING ABOVE IT.
