@@ -21,6 +21,9 @@
 - Run the clean-runner verification of desktop installers on releases again; it was skipped since
   0.17.1. Retry Apple notarization ticket checks through CloudKit connection losses on a longer
   schedule, during signing and verification.
+- Keep a commit's subject readable next to long branch names. Ref chips in the commit graph take
+  at most a quarter of the row and end in an ellipsis, the checked-out branch last, with the full
+  name in a tooltip; on a 390px phone a 30-character branch had left the subject 39px wide.
 
 ## 0.17.5
 
