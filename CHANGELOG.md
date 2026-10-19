@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Keep the agent's own settings out of what it starts for users. Agent 0.1.31's terminal shells,
+  the tmux server it starts and git hooks no longer inherit `PDMUX_TOKEN`, `PDMUX_CONFIG`,
+  `PDMUX_STATE_DIR`, `PDMUX_RESTART`, `PDMUX_DESKTOP_AGENT` or the agent's other `PDMUX_*`
+  variables. A tmux server started by an older agent keeps them until it restarts.
+- Give a tmux window its own `window-size` back when the last pdmux viewer of its session leaves.
+  The agent keeps `largest` only while pdmux viewers are attached, so a smaller ssh client resizes
+  the window again afterwards instead of seeing part of it.
 - Name the desktop's default local host after the platform and a short profile ID, such as
   `Mac 1A2B`, instead of the computer name, which often contains a person's name and is shared
   with the web workspace. A host still named by an earlier default, including the 0.17.5 computer
