@@ -55,6 +55,8 @@ interface Harness {
   urls: string[];
   run(): void;
   statuses: string[];
+  /** Every `[hostId, status]` the relay reported for one host. */
+  hostStatuses: [string, string][];
   retryDelays: number[];
 }
 
@@ -63,6 +65,7 @@ function harness(): Harness {
   const urls: string[] = [];
   const timers: (() => void)[] = [];
   const statuses: string[] = [];
+  const hostStatuses: [string, string][] = [];
   const retryDelays: number[] = [];
   const relay = new TerminalRelay({
     url: "ws://test/terminal/ws",
@@ -80,6 +83,7 @@ function harness(): Harness {
       failed: (message) => `failed: ${message}`,
     },
     onStatus: (status) => statuses.push(status),
+    onHostStatus: (hostId, status) => hostStatuses.push([hostId, status]),
     schedule: (fn, ms) => { if (ms <= 8000) retryDelays.push(ms); return timers.push(fn); },
     cancel: () => undefined,
     random: () => 0.5,
@@ -89,6 +93,7 @@ function harness(): Harness {
     sockets,
     urls,
     statuses,
+    hostStatuses,
     retryDelays,
     run: () => {
       const pending = timers.splice(0, timers.length);
@@ -391,6 +396,75 @@ describe("[TC-PDTERM-105] the pane learns when its process is gone", () => {
     socket?.deliver({ type: "error", termId: "t1", message: "host offline" });
     expect(chunks.join("")).toContain("failed: host offline");
     expect(codes).toEqual([null]);
+  });
+});
+
+describe("[TC-PDVM-021] each host's panes show that host's connection", () => {
+  it("reports a retrying host without dragging a healthy host's panes along", () => {
+    const { relay, sockets, statuses } = harness();
+    relay.open(target);
+    relay.open({ ...target, slotId: "t2", hostId: "h2" });
+    sockets[0]?.accept();
+    sockets[0]?.deliver({ type: "ready", termId: "t1", pid: 1 });
+    sockets[1]?.accept();
+    sockets[1]?.deliver({ type: "ready", termId: "t2", pid: 2 });
+    expect(relay.statusOf("h1")).toBe("open");
+    expect(relay.statusOf("h2")).toBe("open");
+
+    sockets[1]?.drop();
+
+    // The banner is still the worst host — that is what the toolbar should say…
+    expect(statuses.at(-1)).toBe("reconnecting");
+    // …but only the host that dropped says so on its own panes.
+    expect(relay.statusOf("h1")).toBe("open");
+    expect(relay.statusOf("h2")).toBe("reconnecting");
+  });
+
+  it("tells the page each time one host's state changes, and closes them all on dispose", () => {
+    const { relay, sockets, hostStatuses } = harness();
+    relay.open(target);
+    sockets[0]?.accept();
+    sockets[0]?.deliver({ type: "ready", termId: "t1", pid: 1 });
+    sockets[0]?.drop();
+    relay.dispose();
+
+    expect(hostStatuses).toEqual([
+      ["h1", "connecting"],
+      ["h1", "open"],
+      ["h1", "reconnecting"],
+      ["h1", "closed"],
+    ]);
+    expect(relay.statusOf("h1")).toBe("closed");
+  });
+
+  it("dials a host that came back at once instead of waiting out the backoff its absence grew", () => {
+    const { relay, sockets } = harness();
+    relay.open(target);
+    sockets[0]?.accept();
+    sockets[0]?.deliver({ type: "ready", termId: "t1", pid: 1 });
+    relay.noteReachable(["h1"]);
+    sockets[0]?.drop();
+    relay.noteReachable([]);
+    expect(sockets, "an unreachable host is not dialled early").toHaveLength(1);
+
+    relay.noteReachable(["h1"]);
+
+    expect(sockets, "the returning host was not dialled").toHaveLength(2);
+  });
+
+  it("leaves the backoff alone when a poll only repeats that the host is reachable", () => {
+    const { relay, sockets } = harness();
+    relay.open(target);
+    sockets[0]?.accept();
+    sockets[0]?.deliver({ type: "ready", termId: "t1", pid: 1 });
+    relay.noteReachable(["h1"]);
+    sockets[0]?.drop();
+
+    // The server is the one refusing (an agent restart behind a healthy card): no transition.
+    relay.noteReachable(["h1"]);
+    relay.noteReachable(["h1"]);
+
+    expect(sockets).toHaveLength(1);
   });
 });
 

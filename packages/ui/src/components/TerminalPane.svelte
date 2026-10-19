@@ -223,10 +223,39 @@
 		: slot);
 	let nativeViewport = $state<{ x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean; alternate?: boolean; history?: number } | null>(null);
 
+	/**
+	 * A pane whose terminal ended comes back when its HOST comes back.
+	 *
+	 * ⚠ AN EXIT IS NOT ALWAYS THE USER'S. When a machine powers off, reboots or restarts its
+	 * agent, the terminals on it end with it — the relay reports a real `exit` — and the pane is
+	 * released for good. The host returning a minute later used to leave that pane dark until
+	 * somebody reloaded the page, while every other pane on screen reattached by itself. So an
+	 * ended pane remembers whether its host has been unreachable since, and opens again (a
+	 * session target reattaches, a shell gets a new one) the moment the host is reachable. An
+	 * exit while the host stays reachable is the program's own ending and is left alone.
+	 */
+	let ended = $state(false);
+	let lostSinceEnd = $state(false);
+	let reopenTicket = $state(0);
+
+	$effect(() => {
+		if (!ended) return;
+		if (!reachable) {
+			lostSinceEnd = true;
+			return;
+		}
+		if (!lostSinceEnd) return;
+		lostSinceEnd = false;
+		ended = false;
+		reopenTicket += 1;
+	});
+
 	$effect(() => {
 		const host = surfaceHost;
 		// Read the target synchronously so a retarget re-runs this effect.
 		const target = { slotId: slot.id, hostId: slot.hostId, ...toProtocolTarget(slot) };
+		// …and the reopen ticket, so an ended pane whose host came back opens again.
+		void reopenTicket;
 		if (!host) return;
 		resolvedSessionId = null;
 		let disposed = false;
@@ -269,7 +298,13 @@
 					refreshScrollable();
 				}),
 			);
-			cleanups.push(opened.onExit((code) => onExit?.(slot.id, code)));
+			cleanups.push(
+				opened.onExit((code) => {
+					ended = true;
+					lostSinceEnd = !reachable;
+					onExit?.(slot.id, code);
+				}),
+			);
 			// Shift+wheel on a buffer with no local history. The surface decides that it
 			// has nothing to scroll; what to do about it is this pane's business.
 			cleanups.push(created.onScrollbackRequest((direction, lines) => { if (slot.backend === 'native') { opened.scrollHistory?.(-(lines ?? direction * Math.max(1, nativeViewport?.rows ?? geometry.rows))); return true; } return askScrollback(); }));

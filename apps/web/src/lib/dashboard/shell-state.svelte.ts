@@ -115,6 +115,8 @@ export class ShellState {
 
   layout = $state<TerminalLayout>(defaultLayout());
   relayStatus = $state<RelayStatus>("idle");
+  /** Each host's own transport state, for its panes — see `TerminalRelay.onHostStatus`. */
+  hostTransports = $state<Record<string, RelayStatus>>({});
   /**
    * Which region a narrow screen is showing.
    *
@@ -136,6 +138,8 @@ export class ShellState {
       url: browser ? defaultRelayUrl(window.location) : "",
       messages: seed.relayMessages,
       onStatus: (status: RelayStatus) => (this.relayStatus = status),
+      onHostStatus: (hostId: string, status: RelayStatus) =>
+        (this.hostTransports = { ...this.hostTransports, [hostId]: status }),
     });
     const initial = initialLayout(seed);
     this.layout = initial.layout;

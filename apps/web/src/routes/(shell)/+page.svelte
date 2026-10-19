@@ -76,6 +76,11 @@
 
   const layout = $derived(shell.layout);
   const grid = $derived(gridHosts(shell.feed.hosts));
+  // A host that was away and is reachable again is dialled at once, not after the backoff
+  // its absence grew to (see `TerminalRelay.noteReachable`).
+  $effect(() => {
+    shell.relay.noteReachable(grid.filter((host) => host.online).map((host) => host.id));
+  });
 
   /**
    * A narrow screen renders ONE pane — and renders it from a projection, never by writing
@@ -425,6 +430,7 @@
     onReadHistory={readHistory}
     {diagnostics}
     transport={shell.relayStatus}
+    transportFor={(hostId: string) => shell.hostTransports[hostId] ?? "idle"}
   />
 </div>
 

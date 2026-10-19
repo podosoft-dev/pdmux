@@ -56,6 +56,12 @@ export interface TerminalRelayOptions {
   createSocket?: (url: string) => RelaySocket;
   messages?: Partial<RelayMessages>;
   onStatus?: (status: RelayStatus) => void;
+  /**
+   * One host's status changed. The page shows it on that host's panes only — the
+   * whole-screen `onStatus` is the worst host, which is the right banner and the
+   * wrong pane label: a healthy host's pane must not say it is reconnecting.
+   */
+  onHostStatus?: (hostId: string, status: RelayStatus) => void;
   /** Backoff base/cap in ms. Exposed so a test does not wait seconds. */
   retryBaseMs?: number;
   retryMaxMs?: number;
@@ -124,6 +130,10 @@ interface HostConnection {
   /** The relay's last close said the host has no agent; cleared once a pane attaches. */
   hostOffline: boolean;
   panes: Map<string, PaneEntry>;
+  /** Last status reported through `onHostStatus`. */
+  status: RelayStatus;
+  /** Whether the fleet last said this host is reachable — see `noteReachable`. */
+  reachable: boolean | null;
 }
 
 export class TerminalRelay implements TerminalAdapter {
@@ -131,6 +141,7 @@ export class TerminalRelay implements TerminalAdapter {
   private readonly createSocket: (url: string) => RelaySocket;
   private readonly messages: RelayMessages;
   private readonly onStatus: (status: RelayStatus) => void;
+  private readonly onHostStatus: (hostId: string, status: RelayStatus) => void;
   private readonly retryBaseMs: number;
   private readonly retryMaxMs: number;
   private readonly random: () => number;
@@ -148,6 +159,7 @@ export class TerminalRelay implements TerminalAdapter {
       options.createSocket ?? ((url: string) => new WebSocket(url) as unknown as RelaySocket);
     this.messages = { ...DEFAULT_MESSAGES, ...(options.messages ?? {}) };
     this.onStatus = options.onStatus ?? ((): void => {});
+    this.onHostStatus = options.onHostStatus ?? ((): void => {});
     this.retryBaseMs = options.retryBaseMs ?? 500;
     this.retryMaxMs = options.retryMaxMs ?? 8000;
     this.random = options.random ?? Math.random;
@@ -255,16 +267,50 @@ export class TerminalRelay implements TerminalAdapter {
    */
   wake(): void {
     if (this.disposed) return;
-    for (const connection of this.connections.values()) {
-      if (connection.socket) continue;
-      if (connection.retryHandle !== null) {
-        this.cancel(connection.retryHandle);
-        connection.retryHandle = null;
-      }
-      connection.attempts = 0;
-      this.ensureSocket(connection);
-    }
+    for (const connection of this.connections.values()) this.wakeConnection(connection);
     this.refreshStatus();
+  }
+
+  /**
+   * The fleet's view of which hosts are reachable, from every poll.
+   *
+   * ⚠ A HOST THAT COMES BACK SHOULD NOT WAIT OUT A BACKOFF THAT GREW WHILE IT WAS AWAY. A host
+   * that was asleep, powered off or rebooting has had its socket refused for minutes, so the
+   * retry delay has reached its cap — and the panes would keep showing "reconnecting" for up to
+   * that long after the card already says the host is online. The transition is the signal:
+   * only a host that was unreachable and now is reachable is dialled at once, so a poll that
+   * merely repeats what it said before costs nothing.
+   */
+  noteReachable(hostIds: Iterable<string>): void {
+    if (this.disposed) return;
+    const reachable = new Set(hostIds);
+    let woke = false;
+    for (const connection of this.connections.values()) {
+      const now = reachable.has(connection.hostId);
+      if (now && connection.reachable === false) {
+        this.wakeConnection(connection);
+        woke = true;
+      }
+      connection.reachable = now;
+    }
+    if (woke) this.refreshStatus();
+  }
+
+  /** This host's status, as its panes should show it. */
+  statusOf(hostId: string): RelayStatus {
+    if (this.disposed) return "closed";
+    const connection = this.connections.get(hostId);
+    return connection ? this.connectionStatus(connection) : "idle";
+  }
+
+  private wakeConnection(connection: HostConnection): void {
+    if (connection.socket) return;
+    if (connection.retryHandle !== null) {
+      this.cancel(connection.retryHandle);
+      connection.retryHandle = null;
+    }
+    connection.attempts = 0;
+    this.ensureSocket(connection);
   }
 
   /** Close every socket for good — call it when the page unmounts. */
@@ -276,6 +322,10 @@ export class TerminalRelay implements TerminalAdapter {
       for (const pane of connection.panes.values()) pane.closed = true;
       connection.panes.clear();
       this.closeSocket(connection);
+      if (connection.status !== "closed") {
+        connection.status = "closed";
+        this.onHostStatus(connection.hostId, "closed");
+      }
     }
     this.connections.clear();
     this.setStatus("closed");
@@ -293,6 +343,8 @@ export class TerminalRelay implements TerminalAdapter {
       hadConnection: false,
       hostOffline: false,
       panes: new Map(),
+      status: "idle",
+      reachable: null,
     };
     this.connections.set(hostId, created);
     return created;
@@ -337,22 +389,35 @@ export class TerminalRelay implements TerminalAdapter {
    */
   private refreshStatus(): void {
     if (this.disposed) return this.setStatus("closed");
+    let anyReconnecting = false;
     let anyOpen = false;
     let anyConnecting = false;
     for (const connection of this.connections.values()) {
-      if (connection.panes.size === 0) continue;
-      // An offline host is not a transport fault: its panes say so themselves, and
-      // counting it would mark every healthy pane on the screen as reconnecting.
-      if (connection.hostOffline) continue;
-      if (connection.retryHandle !== null || (connection.hadConnection && !connection.socket)) {
-        return this.setStatus("reconnecting");
+      const status = this.connectionStatus(connection);
+      if (status !== connection.status) {
+        connection.status = status;
+        this.onHostStatus(connection.hostId, status);
       }
-      if (connection.socket?.readyState === OPEN && [...connection.panes.values()].every(pane => pane.attached)) anyOpen = true;
-      else if (connection.attempts > 0) return this.setStatus("reconnecting");
-      else if (connection.socket) anyConnecting = true;
+      if (status === "reconnecting") anyReconnecting = true;
+      else if (status === "connecting") anyConnecting = true;
+      else if (status === "open") anyOpen = true;
     }
+    if (anyReconnecting) return this.setStatus("reconnecting");
     if (anyConnecting) return this.setStatus("connecting");
     this.setStatus(anyOpen ? "open" : "idle");
+  }
+
+  /** One host's state: the same rules as the whole screen, without the other hosts. */
+  private connectionStatus(connection: HostConnection): RelayStatus {
+    if (connection.panes.size === 0) return "idle";
+    // An offline host is not a transport fault: its panes say so themselves, and counting it
+    // would mark every healthy pane on the screen as reconnecting — in the toolbar's total and
+    // in the per-host banner alike, which is why the rule lives here and not in the total.
+    if (connection.hostOffline) return "idle";
+    if (connection.retryHandle !== null || (connection.hadConnection && !connection.socket)) return "reconnecting";
+    if (connection.socket?.readyState === OPEN && [...connection.panes.values()].every((pane) => pane.attached)) return "open";
+    if (connection.attempts > 0) return "reconnecting";
+    return connection.socket ? "connecting" : "idle";
   }
 
   private ensureSocket(connection: HostConnection): void {

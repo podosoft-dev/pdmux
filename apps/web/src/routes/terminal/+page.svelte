@@ -10,7 +10,7 @@
    */
   import "@pdmux/ui/styles.css";
   import "@xterm/xterm/css/xterm.css";
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { browser } from "$app/env";
   import { replaceState } from "$app/navigation";
   import type { TerminalPaneActionContext } from "@pdmux/ui";
@@ -21,11 +21,17 @@
   import { getI18n } from "#lib/i18n/index.js";
   import { TerminalRelay, defaultRelayUrl, type RelayStatus } from "#lib/dashboard/terminal-relay.js";
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
+  import { hostsApi } from "#lib/dashboard/api.js";
+  import { FleetEvents } from "#lib/dashboard/fleet-events.js";
+  import { gridHosts } from "#lib/dashboard/map.js";
   import { readTerminalHistory } from "#lib/dashboard/terminal-history.js";
+  import type { HostView } from "#lib/dashboard/types.js";
 
   let {
     data,
-  }: { data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string; backend?: "native"; sessionId?: string } } = $props();
+  }: {
+    data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string; host: HostView | null; backend?: "native"; sessionId?: string };
+  } = $props();
 
   const i18n = getI18n();
   const t = $derived(uiTranslate(i18n.t));
@@ -60,9 +66,45 @@
         : [],
     })),
   );
-  const hosts = untrack(() => [{ id: data.hostId, name: data.hostLabel, online: true }]);
+  /**
+   * The host as the server last described it.
+   *
+   * ⚠ THIS WINDOW USED TO CALL ITS HOST ONLINE FOR EVER. With no feed of its own it hard-coded
+   * `online: true`, so a machine that powered off left a pane that looked alive and swallowed
+   * keystrokes, and a machine that came back was not noticed until the backoff happened to
+   * retry. It now reads the one host it shows — on the fleet's invalidation events and at the
+   * heartbeat pace the dashboard polls at — and only falls back to "online" before the first
+   * answer, which is what it showed before.
+   */
+  let host = $state<HostView | null>(untrack(() => data.host));
+  const hosts = $derived(
+    host ? gridHosts([host]) : [{ id: untrack(() => data.hostId), name: untrack(() => data.hostLabel), online: true }],
+  );
+  $effect(() => {
+    relay.noteReachable(hosts.filter((entry) => entry.online).map((entry) => entry.id));
+  });
 
-  onDestroy(() => relay.dispose());
+  async function readHost(): Promise<void> {
+    if (!data.hostId) return;
+    try {
+      host = await hostsApi.get(data.hostId);
+    } catch {
+      // A failed read keeps the last answer on screen, as the dashboard's feed does.
+    }
+  }
+  const events = new FleetEvents(readHost, readHost);
+  let poll: ReturnType<typeof setInterval> | null = null;
+  onMount(() => {
+    events.start();
+    void readHost();
+    poll = setInterval(() => void readHost(), 5_000);
+  });
+
+  onDestroy(() => {
+    events.stop();
+    if (poll) clearInterval(poll);
+    relay.dispose();
+  });
 </script>
 
 {#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone />{/snippet}

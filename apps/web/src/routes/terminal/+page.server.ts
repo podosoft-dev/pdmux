@@ -23,12 +23,16 @@ export const load: PageServerLoad = async ({ locals, url, fetch }) => {
   const sessionId = candidate && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate) ? candidate : undefined;
 
   let hostLabel = hostId;
+  let host: HostView | null = null;
   try {
     const response = await fetch(`/api/hosts/${hostId}`);
-    if (response.ok) hostLabel = ((await response.json()) as HostView).label;
+    if (response.ok) {
+      host = (await response.json()) as HostView;
+      hostLabel = host.label;
+    }
   } catch {
     // A missing label costs the window's title, not the terminal.
   }
 
-  return { hostId, kind, session, hostLabel, backend, sessionId };
+  return { hostId, kind, session, hostLabel, host, backend, sessionId };
 };

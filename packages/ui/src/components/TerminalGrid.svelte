@@ -81,6 +81,11 @@
 		diagnostics?: boolean;
 		/** What the transport is doing — every pane says so while it is not `open`. */
 		transport?: 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
+		/**
+		 * The transport for ONE host, when the adapter can tell hosts apart. A pane shows its
+		 * own host's state; `transport` remains the answer for adapters that cannot.
+		 */
+		transportFor?: (hostId: string) => 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
 		/** Passed straight to the pane — `null` means the ask failed. See `TerminalPane`. */
 		onReadHistory?: (
 			slot: TerminalSlot,
@@ -114,6 +119,7 @@
 		onReadHistory,
 		diagnostics = false,
 		transport = 'open',
+		transportFor,
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -273,7 +279,7 @@
 			{onScrollback}
 			{onReadHistory}
 			{diagnostics}
-			{transport}
+			transport={transportFor ? transportFor(slot.hostId) : transport}
 			onDragStart={(index) => {
 				dragFrom = index;
 				rects = measure();

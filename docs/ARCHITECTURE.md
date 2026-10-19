@@ -221,6 +221,13 @@ three problems disappear **structurally**.
 - A successful WebSocket upgrade alone does not confirm recovery. The client resets its backoff
   and reports reconnection after `ready` or output confirms the terminal. A handshake that never
   completes is closed after 15 seconds; retries stop when the pane is closed or its relay disposed.
+- Each host's panes show **that host's** transport state; the toolbar keeps the worst of them. When
+  the fleet reports a host reachable again after it was not, the client dials it at once instead of
+  waiting out the backoff its absence grew to.
+- A machine that powers off or reboots ends its terminals for real, so the relay does report `exit`.
+  A pane that ended this way — its host became unreachable after the ending — opens again with the
+  same target when the host is reachable again. An exit on a host that stays reachable is the
+  program's own ending and is left alone.
 - A `shell` target is warned about in the UI as non-persistent (it dies with the connection).
 - Session names are limited by the contract to `A-Za-z0-9_-`, 1–32 characters — this value ends up
   as a command argument on the host.
