@@ -43,7 +43,8 @@ type Spec struct {
 	// Dir is the working directory; empty means the user's home.
 	Dir string
 	// Env replaces the environment when non-nil. Nil means the agent's own
-	// environment with TERM set, which is what every current caller wants.
+	// environment without its control variables (sys.AgentEnv), with TERM and an
+	// encoding set on unix, which is what every current caller wants.
 	Env []string
 }
 

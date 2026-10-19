@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -71,6 +72,22 @@ func TestReadOnlyEnforcement(t *testing.T) {
 			if found == "" || !strings.Contains(found, needle) {
 				t.Fatalf("%s = %q, want it to carry %q", key, found, needle)
 			}
+		}
+	})
+
+	// Hooks, diff drivers, credential helpers and ssh are user code that git
+	// starts with this environment.
+	t.Run("[TC-PDTERM-152] keeps the agent's control variables from the programs git runs", func(t *testing.T) {
+		t.Setenv("PDMUX_TOKEN", "pdmux-host-secret")
+		t.Setenv("PDMUX_USER_NOTE", "kept")
+		env := environ()
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "PDMUX_TOKEN=") {
+				t.Fatalf("git would hand the host token to its children: %q", entry)
+			}
+		}
+		if !slices.Contains(env, "PDMUX_USER_NOTE=kept") {
+			t.Fatal("a user variable that shares the prefix was dropped")
 		}
 	})
 

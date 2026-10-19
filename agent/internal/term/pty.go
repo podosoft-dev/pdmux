@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+
+	"github.com/podosoft-dev/pdmux/agent/internal/sys"
 )
 
 // Spawn starts a command in a real pseudo-terminal.
@@ -38,7 +40,7 @@ func Spawn(spec Spec) (Process, error) {
 	}
 	cmd.Env = spec.Env
 	if cmd.Env == nil {
-		cmd.Env = terminalEnv(os.Environ())
+		cmd.Env = spawnEnv()
 	}
 
 	cols, rows := clampWindow(spec.Cols, spec.Rows)
@@ -195,7 +197,11 @@ func signalGroup(pid int, signal syscall.Signal) {
 	_ = syscall.Kill(pid, signal)
 }
 
-// terminalEnv is the environment every pane's child gets.
+// spawnEnv is the environment every pane's child gets: the agent's own without
+// its control variables (sys.AgentEnv), adjusted by terminalEnv.
+func spawnEnv() []string { return terminalEnv(sys.ChildEnv()) }
+
+// terminalEnv adds what a pane's child needs to draw.
 //
 // ⚠ IT HAS TO SUPPLY A CHARACTER ENCODING, because a service manager does not. An
 // agent started by launchd or systemd inherits no LANG, no LC_ALL and no LC_CTYPE —

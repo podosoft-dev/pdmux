@@ -232,6 +232,19 @@ group** (an interactive shell ignores SIGTERM, so killing only the wrapper leave
 as a ghost), what dies for a `session` target is only the tmux **client**, and runaway
 output drops **the oldest bytes at the buffer cap and reports how many via `output.dropped`**.
 
+### What a terminal inherits
+
+A pane's child starts from the agent's environment without the variables that configure the
+agent itself (`sys.AgentEnv`): `PDMUX_CONFIG`, `PDMUX_SERVER`, `PDMUX_TOKEN`, `PDMUX_HOSTNAME`,
+`PDMUX_LOG_LEVEL`, `PDMUX_STATE_DIR`, `PDMUX_RESTART`, `PDMUX_GIT_BIN` and the desktop app's
+`PDMUX_DESKTOP_AGENT`. `PDMUX_TOKEN` is the host's credential, and when a `session` terminal
+starts the tmux server, that server's global environment, and so every later session, would
+otherwise keep all of them. Everything else passes through, including other `PDMUX_*` names;
+on Linux and macOS the pane also gets `TERM=xterm-256color` and, when no locale is set, a
+UTF-8 `LC_CTYPE`. Git calls drop the same variables because git runs hooks, diff drivers,
+credential helpers and ssh. A tmux server started by an older agent keeps what it was given
+until it is restarted.
+
 ### Shared session geometry
 
 Session attachments select `window-size largest` on the attached session's current window.

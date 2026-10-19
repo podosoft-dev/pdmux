@@ -10,6 +10,8 @@ import (
 	"syscall"
 
 	"github.com/UserExistsError/conpty"
+
+	"github.com/podosoft-dev/pdmux/agent/internal/sys"
 )
 
 // Spawn uses the operating system's pseudoconsole; no WSL or tmux is required.
@@ -28,7 +30,7 @@ func Spawn(spec Spec) (Process, error) {
 	}
 	environment := spec.Env
 	if environment == nil {
-		environment = os.Environ()
+		environment = spawnEnv()
 	}
 	cols, rows := clampWindow(spec.Cols, spec.Rows)
 	console, err := conpty.Start(strings.Join(argv, " "), conpty.ConPtyDimensions(int(cols), int(rows)), conpty.ConPtyWorkDir(directory), conpty.ConPtyEnv(environment))
@@ -82,3 +84,6 @@ func (p *windowsProcess) Kill() {
 }
 
 func HomeDir() string { home, _ := os.UserHomeDir(); return home }
+
+// spawnEnv is the agent's environment without its control variables (sys.AgentEnv).
+func spawnEnv() []string { return sys.ChildEnv() }

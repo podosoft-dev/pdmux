@@ -155,13 +155,17 @@ func NewRunnerWithBinary(repo, gitBin string) Runner {
 	}
 }
 
-// environ is the agent's environment plus the three variables every git call in
-// this package depends on.
+// environ is the agent's environment, without its control variables, plus the
+// variables every git call in this package depends on.
+//
+// The control variables are dropped because git runs user code: hooks such as
+// fsmonitor, diff and textconv drivers, credential helpers and ssh. None of them
+// should read the host's token.
 //
 // Appending is enough to override: exec.Cmd documents that when Env holds a
 // duplicated key, the LAST value is the one used.
 func environ() []string {
-	return append(os.Environ(),
+	return append(sys.ChildEnv(),
 		// See the lock note in NewRunnerWithBinary.
 		"GIT_OPTIONAL_LOCKS=0",
 		// A repository with a credential-prompting remote must not park a hidden
