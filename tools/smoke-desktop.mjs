@@ -30,7 +30,8 @@ const application = await electron.launch({
   env: { ...process.env, TMUX: "", TMUX_TMPDIR: tmuxDirectory, ...(process.platform === "linux" ? { XDG_CONFIG_HOME: configuration } : {}) },
 });
 const electronProcess = application.process();
-electronProcess.stderr.on("data", chunk => process.stderr.write(chunk));
+let electronErrors = "";
+electronProcess.stderr.on("data", chunk => { electronErrors = (electronErrors + chunk).slice(-65_536); });
 electronProcess.once("exit", (code, signal) => console.log(JSON.stringify({ stage: "desktop-process-exit", code, signal })));
 electronProcess.once("close", (code, signal) => console.log(JSON.stringify({ stage: "desktop-process-close", code, signal })));
 let window;
@@ -140,19 +141,19 @@ try {
     console.log(JSON.stringify({ stage: "desktop-window", url: window.url(), title: await window.title() }));
     await window.screenshot({ path: screenshot });
   }
-  // Return the inspector evaluation before quitting. Playwright's direct
-  // app.quit evaluation can wait indefinitely on Linux during async shutdown.
+  // A surviving child can retain a harness pipe after Electron exits on Linux.
+  // Require a clean process exit before releasing only the fixture's streams.
   console.log(JSON.stringify({ stage: "desktop-quit-requested" }));
   const closed = application.waitForEvent("close", { timeout: 15_000 });
-  await application.evaluate(({ app }) => {
-    for (const event of ["before-quit", "will-quit", "quit"]) app.on(event, () => {
-      process.stderr.write(`${JSON.stringify({ stage: "desktop-quit-event", event, resources: process.getActiveResourcesInfo() })}\n`);
-    });
-    setTimeout(() => app.quit(), 50);
+  const exited = new Promise(resolve => electronProcess.once("exit", (code, signal) => resolve({ code, signal }))).then(result => {
+    assert.deepEqual(result, { code: 0, signal: null }, "Require graceful desktop process shutdown");
+    for (const stream of [electronProcess.stdin, electronProcess.stdout, electronProcess.stderr]) stream?.destroy();
   });
-  try { await closed; }
+  await application.evaluate(({ app }) => { setTimeout(() => app.quit(), 50); });
+  try { await Promise.all([exited, closed]); }
   catch (error) {
     console.error(JSON.stringify({ stage: "desktop-quit-timeout", pid: electronProcess.pid, exitCode: electronProcess.exitCode, signalCode: electronProcess.signalCode }));
+    console.error(electronErrors);
     electronProcess.kill("SIGKILL"); throw error;
   }
   console.log(JSON.stringify({ stage: "desktop-quit-completed" }));
