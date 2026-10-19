@@ -232,7 +232,7 @@
 					</span>
 					<span class="pdmux-graph-chips">
 						{#each refChips(commit?.refs, remotes) as chip (chip.kind + chip.label)}
-							<span class="pdmux-graph-chip" data-kind={chip.kind}>{chip.label}</span>
+							<span class="pdmux-graph-chip" data-kind={chip.kind} title={chip.label}>{chip.label}</span>
 						{/each}
 					</span>
 					<span class="pdmux-graph-author">{row.kind === 'uncommitted' ? '' : (commit?.author ?? '')}</span>

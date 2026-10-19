@@ -1995,20 +1995,35 @@
 	text-overflow: ellipsis;
 }
 
+/* Chips are markers; the subject is what a person reads. A chip used to take its branch
+   name's whole width: measured at 390px, a 30-character branch on the latest commit left
+   the subject 39px (`chor…`). The chips now take at most a quarter of the row and each one
+   ends in an ellipsis; the whole name is in the chip's tooltip and in the commit detail.
+   A quarter is what keeps the subject above 120px on a 390px phone (`[TC-PDUI-234]`). */
 .pdmux-graph-chips {
 	flex: none;
+	max-width: 25%;
 	display: flex;
 	gap: 3px;
+	overflow: hidden;
 }
 
 .pdmux-graph-chip {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	font-size: 10px;
 	padding: 0 5px;
 	border-radius: 999px;
 	border: 1px solid var(--pdmux-line);
 }
 
+/* The checked-out branch is the chip a person looks for, so the others give way first. It
+   still ends in an ellipsis once it alone is wider than the chips' column. */
 .pdmux-graph-chip[data-kind='head'] {
+	flex-shrink: 0;
+	max-width: 100%;
 	background: #16a34a;
 	border-color: #16a34a;
 	color: #fff;

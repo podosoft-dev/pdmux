@@ -295,6 +295,20 @@
 	 * component-side sort would produce in the product.
 	 */
 	const filesDir = $derived({ ...filesSource, entries: sortFsEntries(filesSource.entries, filesSort) });
+
+	/**
+	 * The commit list alone, at the width the spec asks for, with the latest commit carrying
+	 * `?refs=` (comma-separated, as `git log --decorate` writes them). A branch name is as
+	 * long as a person makes it, and a chip that kept its whole text took the subject down
+	 * to 39px on a 390px phone — so the spec has to choose the names, not the harness.
+	 */
+	const graphRefs = (
+		(typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('refs')) ?? 'HEAD -> main'
+	)
+		.split(',')
+		.map((ref) => ref.trim())
+		.filter(Boolean);
+	const graphCommits = commits.map((commit, i) => (i === 0 ? { ...commit, refs: graphRefs } : commit));
 </script>
 
 {#if screen === 'files'}
@@ -323,6 +337,19 @@
 					? filesSelected.filter((other) => other !== name)
 					: [...filesSelected, name])}
 			onCheckAll={(names) => (filesSelected = names)}
+		/>
+	</div>
+{:else if screen === 'graph'}
+	<div class="pdmux pdmux-graph" data-harness="graph" style="width:{filesWidth}px;height:420px">
+		<GitGraph
+			commits={graphCommits}
+			refs={[
+				{ name: 'main', kind: 'local', sha: graphCommits[0]?.sha },
+				{ name: 'origin/main', kind: 'remote', sha: graphCommits[0]?.sha },
+			]}
+			head={graphCommits[0]?.sha}
+			selectedSha={selected}
+			onSelect={(sha) => (selected = sha)}
 		/>
 	</div>
 {:else if screen === 'tree'}

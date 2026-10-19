@@ -1065,6 +1065,99 @@ test.describe('pdmux ui geometry', () => {
 		});
 	}
 
+	/**
+	 * REPORTED BY THE SUITE, NOT A PERSON: a branch named `agent-terminal-env-window-size` on
+	 * the latest commit failed `[TC-PDUI-157]` on a 390px phone. The chip kept its whole name
+	 * and the subject — the one column a person reads — was left 39px (`chor…`). Chips now
+	 * yield first and each one ends in an ellipsis, with the whole name in its tooltip.
+	 */
+	const graphGeometry = (page: import('@playwright/test').Page) =>
+		page.evaluate(() => {
+			const row = document.querySelector('.pdmux-graph-row') as HTMLElement;
+			const box = (node: Element | null) => {
+				if (!node) return null;
+				const rect = node.getBoundingClientRect();
+				return { left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width) };
+			};
+			return {
+				row: box(row),
+				subject: box(row.querySelector('.pdmux-graph-subject')),
+				chips: box(row.querySelector('.pdmux-graph-chips')),
+				date: box(row.querySelector('.pdmux-graph-date')),
+				sha: box(row.querySelector('.pdmux-graph-sha')),
+				rowSpills: row.scrollWidth > row.clientWidth + 1,
+				lanes: Number.parseFloat(getComputedStyle(row).paddingLeft),
+				chip: [...row.querySelectorAll<HTMLElement>('.pdmux-graph-chip')].map((chip) => ({
+					text: chip.textContent,
+					title: chip.getAttribute('title'),
+					width: Math.round(chip.getBoundingClientRect().width),
+					right: Math.round(chip.getBoundingClientRect().right),
+					cut: chip.scrollWidth > chip.clientWidth + 1,
+					ellipsis: getComputedStyle(chip).textOverflow,
+				})),
+			};
+		});
+	const longBranch = 'a-thirty-character-branch-name';
+	const decorated = ['HEAD -> main', 'origin/main', longBranch, 'tag: v1.0.0'];
+	const graphUrl = (width: number, refs: readonly string[]) =>
+		`/?screen=graph&width=${width}&refs=${encodeURIComponent(refs.join(','))}`;
+
+	test.describe('on a phone', () => {
+		test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+		// The branch that failed the suite on its own, the decoration every `main` tip carries,
+		// and both together.
+		const cases = [[longBranch], ['HEAD -> main', 'origin/main', 'origin/HEAD'], decorated];
+		for (const refs of cases) {
+			test(`[TC-PDUI-234] ref chips leave the subject readable at 390px (${refs.length} refs)`, async ({ page }, testInfo) => {
+				await page.goto(graphUrl(390, refs));
+				await page.waitForSelector('.pdmux-graph-row');
+				const geometry = await graphGeometry(page);
+				console.log(`TC-PDUI-234 390px ${refs.length} refs ${JSON.stringify(geometry)}`);
+				await page.screenshot({ path: testInfo.outputPath(`graph-chips-390-${refs.length}.png`), animations: 'disabled' });
+
+				// The bar `[TC-PDUI-157]` sets for the same phone, on the row that failed it.
+				expect(geometry.subject?.width ?? 0, 'the subject is what a person reads').toBeGreaterThan(120);
+				expect(geometry.chip.length).toBe(refs.length);
+				if (refs.includes(longBranch)) {
+					const long = geometry.chip.find((chip) => chip.title === longBranch);
+					expect(long, 'the long branch keeps its whole name in the tooltip').toBeTruthy();
+					expect(long?.cut, 'the long branch is shortened, not given the subject').toBe(true);
+					expect(long?.ellipsis).toBe('ellipsis');
+				}
+				// The checked-out branch keeps its name; the other chips give way first.
+				if (refs[0] === 'HEAD -> main') expect(geometry.chip[0]).toMatchObject({ text: 'main', cut: false });
+				for (const chip of geometry.chip) {
+					expect(chip.title, 'every chip names its ref in full').toBe(chip.text);
+					expect(chip.width, `${chip.text} is still a chip`).toBeGreaterThan(0);
+				}
+				// The chips stay in their own column: nothing runs under the date, and the row
+				// does not overflow — it clips, but clipping is the last line of defence.
+				expect(geometry.chips?.right ?? 0).toBeLessThanOrEqual((geometry.date?.left ?? 0) + 1);
+				expect(geometry.rowSpills).toBe(false);
+			});
+		}
+	});
+
+	test('[TC-PDUI-234] a wide dock shows ordinary refs whole, a narrow one caps them at a quarter', async ({ page }) => {
+		const refs = ['HEAD -> main', 'origin/main', 'origin/HEAD'];
+		// `DOCK_WIDTH_MAX`: a quarter of the row is room enough for the decoration of a `main` tip.
+		await page.goto(graphUrl(900, refs));
+		await page.waitForSelector('.pdmux-graph-row');
+		const wide = await graphGeometry(page);
+		console.log(`TC-PDUI-234 900px ${JSON.stringify(wide)}`);
+		expect(wide.chip.map((chip) => chip.text)).toEqual(['main', 'origin/main', 'origin/HEAD']);
+		expect(wide.chip.filter((chip) => chip.cut)).toEqual([]);
+
+		// The default dock: a quarter of the row, and the checked-out branch still whole.
+		await page.goto(graphUrl(420, refs));
+		await page.waitForSelector('.pdmux-graph-row');
+		const narrow = await graphGeometry(page);
+		console.log(`TC-PDUI-234 420px ${JSON.stringify(narrow)}`);
+		expect(narrow.chips?.width ?? 0).toBeLessThanOrEqual(((narrow.row?.width ?? 0) - narrow.lanes) / 4 + 1);
+		expect(narrow.chip[0]).toMatchObject({ text: 'main', cut: false });
+	});
+
 	test.describe('on a coarse pointer', () => {
 		test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 

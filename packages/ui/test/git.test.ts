@@ -1,6 +1,8 @@
 /**
  * Read-only commit graph, detail panel and patch rendering.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { pendingNote, uncommittedSummary } from '@pdmux/core';
@@ -22,6 +24,36 @@ const REFS = [
 	{ name: 'main', kind: 'local' as const, sha: 'm1' },
 	{ name: 'origin/main', kind: 'remote' as const, sha: 'm1' },
 ];
+
+describe('[TC-PDUI-234] a ref chip never takes the width the subject needs', () => {
+	it('names every ref in full in its tooltip', () => {
+		const long = 'a-thirty-character-branch-name';
+		const commits = [{ ...COMMITS[0]!, refs: ['HEAD -> main', 'origin/main', long] }, ...COMMITS.slice(1)];
+		const { container } = render(GitGraph, { props: { commits, refs: REFS, head: commits[0]!.sha } });
+		const chips = [...container.querySelectorAll('.pdmux-graph-row')[0]!.querySelectorAll('.pdmux-graph-chip')];
+		expect(chips.map((chip) => [chip.textContent, chip.getAttribute('title')])).toEqual([
+			['main', 'main'],
+			['origin/main', 'origin/main'],
+			[long, long],
+		]);
+	});
+
+	it('caps the chips and ends each one in an ellipsis', () => {
+		// jsdom has no layout, and the browser geometry spec is opt-in, so CI would not see
+		// these rules reverted. They are the ones that spec measured at 390px.
+		const css = readFileSync(join(import.meta.dirname, '../src/styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+		const rule = (selector: string): string => css.match(new RegExp(`\\n${selector.replace(/[.[\]'=]/g, '\\$&')}\\s*\\{[^}]*\\}`))?.[0] ?? '';
+		const chips = rule('.pdmux-graph-chips');
+		for (const declaration of ['max-width: 25%', 'overflow: hidden']) {
+			expect(chips, `.pdmux-graph-chips lost ${declaration}`).toContain(declaration);
+		}
+		const chip = rule('.pdmux-graph-chip');
+		for (const declaration of ['min-width: 0', 'overflow: hidden', 'text-overflow: ellipsis', 'white-space: nowrap']) {
+			expect(chip, `.pdmux-graph-chip lost ${declaration}`).toContain(declaration);
+		}
+		expect(rule(".pdmux-graph-chip[data-kind='head']")).toContain('flex-shrink: 0');
+	});
+});
 
 describe('[TC-PDUI-020] the graph draws one clickable row per commit', () => {
 	it('renders lanes, chips and reports the selected sha', () => {
