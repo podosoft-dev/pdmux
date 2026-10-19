@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { createServer } from "node:https";
@@ -9,6 +9,7 @@ import { request as upstream } from "node:http";
 import { createHash } from "node:crypto";
 import { StackManager } from "../apps/desktop/src/stack-manager.ts";
 import { parseAgentVersion } from "../apps/desktop/src/staging.ts";
+import { stopFixtureNativeSessions } from "./native-session-fixture.mjs";
 
 if (!process.env.PDMUX_SYNC_FIXTURE) {
   // macOS Unix sockets allow short paths; its default per-user tmpdir is too
@@ -299,22 +300,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
     await local.stop(); await server.stop();
     // Engines intentionally outlive agents and Electron. Clean up only endpoints
     // below this fixture's private root, using its own agent executable.
-    async function stopNativeEngines(directory) {
-      for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
-        const path = join(directory, entry.name);
-        if (entry.isDirectory() && entry.name !== "engines") await stopNativeEngines(path);
-        if (entry.isFile() && entry.name === "endpoint.json") {
-          try {
-            const infos = JSON.parse(execFileSync(agentBinary, ["session", "list", "--root", directory, "--json"], { encoding: "utf8" }));
-            for (const info of infos) execFileSync(agentBinary, ["session", "terminate", info.id, "--root", directory], { stdio: "ignore" });
-            for (let attempt = 0; attempt < 50; attempt++) {
-              try { execFileSync(agentBinary, ["session", "stop", "--root", directory], { stdio: "ignore" }); break; } catch { await new Promise(resolve => setTimeout(resolve, 20)); }
-            }
-          } catch { /* The isolated engine may already have exited. */ }
-        }
-      }
-    }
-    await stopNativeEngines(root);
+    await stopFixtureNativeSessions(root, agentBinary);
     if (process.env.PDMUX_RECOVERY_UI === "1" || process.env.PDMUX_RESIZE_UI === "1" || process.env.PDMUX_NATIVE_UI === "1") {
       for (const name of ["server-tmux", "native-tmux"]) {
         try { execFileSync("tmux", ["-S", join(root, name, `tmux-${process.getuid()}`, "default"), "kill-server"], { stdio: "ignore", env: { ...process.env, TMUX: "" } }); } catch { /* A private server that was never started needs no cleanup. */ }

@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { createHash, X509Certificate } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
+import { stopFixtureNativeSessions } from "./native-session-fixture.mjs";
 import { mkdtemp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -119,6 +120,7 @@ export async function verifyMacArtifacts(directory, runtime = false) {
       console.log(JSON.stringify({ stage: "verify-final-mac-package", format: extension, arch: process.arch, result: "passed" }));
     }
   } finally {
+    await stopFixtureNativeSessions(join(temporary, "smoke-configuration"));
     if (!mounted) await rm(temporary, { recursive: true, force: true });
     else console.error(`Retained fixture with an attached read-only disk image: ${temporary}`);
   }

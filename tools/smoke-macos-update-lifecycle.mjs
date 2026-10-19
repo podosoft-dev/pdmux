@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { fixtureNativeEngines, fixtureNativeSessions, stopFixtureNativeSessions } from './native-session-fixture.mjs';
 assert.equal(process.platform, 'darwin', 'Run the window lifecycle probe on native macOS');
 const repository=resolve(import.meta.dirname, '..');
 const require=createRequire(join(repository,'package.json'));
@@ -96,7 +97,10 @@ try {
  const rows=execFileSync('ps',['-axo','pid=,ppid=,comm='],{encoding:'utf8'}).trim().split('\n').map(line=>{const m=line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);return m?{pid:Number(m[1]),parent:Number(m[2]),command:m[3]}:null;}).filter(Boolean);
  const parentIds=new Set([pid]);
  for(let pass=0;pass<5;pass++) for(const row of rows) if(parentIds.has(row.parent))parentIds.add(row.pid);
- children=rows.filter(row=>parentIds.has(row.pid)&&row.pid!==pid&&(/\/bun$|pdmux-agent$/.test(row.command))).map(row=>row.pid);
+ const engines=await fixtureNativeEngines(root);
+ const nativeBefore=engines.map(engine=>({engine,sessions:fixtureNativeSessions(engine)}));
+ assert.ok(nativeBefore.some(item=>item.sessions.length>0),'Capture the fixture native session before the update');
+ children=rows.filter(row=>parentIds.has(row.pid)&&row.pid!==pid&&(/\/bun$|pdmux-agent$/.test(row.command))&&!row.command.includes('/sessions/')).map(row=>row.pid);
  assert.ok(children.length>=2,'Capture this fixture API and web processes');
  const checks=await application.evaluate(()=>globalThis.__pdmuxFixture.checkCalls);
  await application.evaluate(()=>{globalThis.__pdmuxFixture.restartChoice=0;});
@@ -114,9 +118,11 @@ try {
  assert.ok(backups.some(name=>!name.startsWith('.')),'Complete an update backup');
  await new Promise(resolve=>setTimeout(resolve,500));
  for(const child of children){let running=true;try{process.kill(child,0);}catch{running=false;}assert.equal(running,false,`Stop fixture runtime process ${child}`);}
- const evidence={stage:'desktop-update-shutdown',result:'passed',...result,gatewayStopped:stopped,runtimeProcessesStopped:children.length,backupCount:backups.length,geometry,checks,measurements,nativeInstallation:'Network and native dialog choices stubbed; real progress windows, Electron window and local runtime'};
+ for(const {engine,sessions} of nativeBefore)assert.deepEqual(fixtureNativeSessions(engine).map(({id,pid})=>({id,pid})),sessions.map(({id,pid})=>({id,pid})),'Preserve native programs across installer handoff');
+ const evidence={stage:'desktop-update-shutdown',result:'passed',...result,gatewayStopped:stopped,runtimeProcessesStopped:children.length,nativeSessionsPreserved:true,backupCount:backups.length,geometry,checks,measurements,nativeInstallation:'Network and native dialog choices stubbed; real progress windows, Electron window and local runtime'};
  await writeFile(join(output,'result.json'),JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence));
 }finally{
  if(application)await application.close().catch(()=>undefined);
+ await stopFixtureNativeSessions(root);
  await rm(root,{recursive:true,force:true});
 }
