@@ -529,19 +529,20 @@
 	   `scrollbar-gutter: stable` reserves the scrollbar's width OUTSIDE the content box,
 	   so a plain `padding: 16px` does not render as 16px on both sides: measured at
 	   1440px, every card and the control row ended 32px clear of the column's right edge
-	   against 16px on its left. It was always there and became impossible to miss once
-	   the account avatar sat flush at the end of that row.
-	   `thin` pins the gutter at 11px (measured; `auto` reserves 16 here), so 5px is what
-	   is left to spend on padding. THE TWO NUMBERS ARE ONE NUMBER — change one and the
-	   other has to move with it. `(pointer: coarse)` puts the full 16px back, because an
-	   overlay scrollbar reserves nothing to make up the difference.
+	   against 16px on its left. The right padding is what the scrollbar leaves of 16px.
+
+	   ⚠ THE SCROLLBAR'S WIDTH IS THE PLATFORM'S, SO `HostSidebar` MEASURES IT into
+	   `--pdmux-sidebar-gutter`. A constant was right on one machine only: `thin` reserved
+	   11px in Mac Chrome (2026-08) and 10px in Chromium 151 on Linux, headless and headed,
+	   at dpr 1 and 2 (2026-10-19), so a 5px padding read 16 left against 15 right there.
+	   An overlay scrollbar measures 0 and gets the full 16px. 11px is only the first
+	   paint, before the measurement.
 
 	   ⚠ THE 1px `border-right` BELOW IS NOT PART OF THIS SUM, and a measurement that
 	   includes it will read the right gap as 17 against a left of 16. The gap a person
-	   sees runs from the card to the border, not past it — `[TC-PDUI-195]` spent a
-	   while looking like a padding bug because it compared a left edge without the
-	   border to a right edge with it. */
-	padding: 16px 5px 16px 16px;
+	   sees runs from the card to the border, not past it. */
+	--pdmux-sidebar-pad-right: max(0px, calc(16px - var(--pdmux-sidebar-gutter, 11px)));
+	padding: 16px var(--pdmux-sidebar-pad-right) 16px 16px;
 	border-right: 1px solid var(--pdmux-line);
 	background: var(--pdmux-bg);
 	scrollbar-gutter: stable;
@@ -556,10 +557,10 @@
 .pdmux-sidebar-foot {
 	position: sticky;
 	bottom: -16px;
-	/* Each margin cancels the padding on its own side, and the right one is 5px because
-	   that is what the padding there is — see `.pdmux-sidebar`. `-16px` would bleed 11px
-	   into the scrollbar's gutter and put the footer under the thumb. */
-	margin: auto -5px -16px -16px;
+	/* Each margin cancels the padding on its own side, and the right one is whatever the
+	   scrollbar left of 16px — see `.pdmux-sidebar`. `-16px` would bleed into the
+	   scrollbar's gutter and put the footer under the thumb. */
+	margin: auto calc(-1 * var(--pdmux-sidebar-pad-right)) -16px -16px;
 	padding: 8px 16px;
 	background: var(--pdmux-bg);
 	border-top: 1px solid var(--pdmux-line);
@@ -2582,16 +2583,6 @@
 	.pdmux-detail,
 	.pdmux-refs {
 		scrollbar-gutter: auto;
-	}
-
-	/* …and with no gutter reserved, the 5px the sidebar spends on its right padding is
-	   the WHOLE right gap rather than the remainder of one. Give the 16px back. */
-	.pdmux-sidebar {
-		padding-right: 16px;
-	}
-
-	.pdmux-sidebar-foot {
-		margin-right: -16px;
 	}
 }
 

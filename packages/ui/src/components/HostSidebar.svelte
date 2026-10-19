@@ -68,9 +68,39 @@
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
+
+	/**
+	 * The scrollbar width this platform reserves, for the stylesheet's right padding
+	 * (`--pdmux-sidebar-gutter`, see `.pdmux-sidebar`). It is measured because it is not
+	 * a constant: 11px in Mac Chrome, 10px in Chromium on Linux, 0 for an overlay
+	 * scrollbar. Zoom changes it in CSS pixels, and the content box with it, so the
+	 * observer measures again.
+	 */
+	let sidebar: HTMLElement | null = $state(null);
+	let gutter: number | null = $state(null);
+	$effect(() => {
+		const element = sidebar;
+		if (!element) return;
+		const measure = (): void => {
+			const style = getComputedStyle(element);
+			const borders = (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.borderRightWidth) || 0);
+			gutter = Math.max(0, element.offsetWidth - element.clientWidth - borders);
+		};
+		measure();
+		if (typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver(measure);
+		observer.observe(element);
+		return () => observer.disconnect();
+	});
 </script>
 
-<aside class="pdmux pdmux-sidebar" data-pdmux-sidebar aria-label={tr('pdmux.sidebar.label', 'hosts')}>
+<aside
+	class="pdmux pdmux-sidebar"
+	data-pdmux-sidebar
+	aria-label={tr('pdmux.sidebar.label', 'hosts')}
+	bind:this={sidebar}
+	style:--pdmux-sidebar-gutter={gutter === null ? undefined : `${gutter}px`}
+>
 	{#if header}{@render header()}{/if}
 	{#if cards.length}
 		{#each cards as entry (entry.host.id)}

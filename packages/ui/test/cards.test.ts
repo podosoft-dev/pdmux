@@ -1,6 +1,8 @@
 /**
  * Card surface: what each widget renders, and what it calls back.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -600,5 +602,39 @@ describe('[TC-PDUI-031] every user-facing string can be replaced by the consumer
 		expect(container.querySelector('[data-pdmux-empty="hosts"]')?.textContent).toContain('[pdmux.sidebar.empty]');
 		const launcher = render(ServiceLauncher, { props: { options: SERVICES, t } });
 		expect(launcher.container.querySelector('button')?.textContent).toContain('[pdmux.services.open]');
+	});
+});
+
+describe('[TC-PDUI-195] the sidebar pads its right side by the scrollbar it measured', () => {
+	/** The width the platform's scrollbar reserves is `offsetWidth - clientWidth` less the borders. */
+	function measured(offset: number, client: number): string {
+		const offsetWidth = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(offset);
+		const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(client);
+		try {
+			const { container } = render(HostSidebar, { props: { cards: [] } });
+			const aside = container.querySelector('[data-pdmux-sidebar]') as HTMLElement;
+			return aside.style.getPropertyValue('--pdmux-sidebar-gutter');
+		} finally {
+			offsetWidth.mockRestore();
+			clientWidth.mockRestore();
+		}
+	}
+
+	it('hands the stylesheet the scrollbar this platform reserves', () => {
+		// Chromium on Linux reserved 10px for `thin`, Mac Chrome 11px; a constant was right on one.
+		expect(measured(300, 290)).toBe('10px');
+		expect(measured(300, 289)).toBe('11px');
+		// An overlay scrollbar reserves nothing, and the padding takes the whole 16px.
+		expect(measured(300, 300)).toBe('0px');
+	});
+
+	it('spends exactly what the scrollbar leaves of 16px, in the padding and in the footer', () => {
+		const css = readFileSync(join(import.meta.dirname, '../src/styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+		const rule = (selector: string): string => css.match(new RegExp(`\\n${selector.replace('.', '\\.')}\\s*\\{[^}]*\\}`))?.[0] ?? '';
+		expect(rule('.pdmux-sidebar')).toContain('--pdmux-sidebar-pad-right: max(0px, calc(16px - var(--pdmux-sidebar-gutter, 11px)))');
+		expect(rule('.pdmux-sidebar')).toContain('padding: 16px var(--pdmux-sidebar-pad-right) 16px 16px');
+		expect(rule('.pdmux-sidebar-foot')).toContain('margin: auto calc(-1 * var(--pdmux-sidebar-pad-right)) -16px -16px');
+		// No second, constant answer anywhere else in the file.
+		expect(css).not.toMatch(/\.pdmux-sidebar\s*\{[^}]*padding-right:/);
 	});
 });
