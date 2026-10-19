@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.6
+
 - Keep terminal programs running without tmux. Agent 0.1.30 adds native persistent sessions on
   macOS, Linux and Windows: a detached helper owns the terminals, so closing a pane, quitting the
   desktop, restarting the agent or deploying the server leaves the programs running, and viewers
