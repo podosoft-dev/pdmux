@@ -23,9 +23,11 @@
   let {
     actions,
     compact = false,
+    standalone = false,
   }: {
     actions: TerminalPaneActionContext;
     compact?: boolean;
+    standalone?: boolean;
   } = $props();
 
   const i18n = getI18n();
@@ -34,6 +36,7 @@
 
 <Tooltip.Provider delayDuration={300}>
   <span class="pdmux-pane-acts" data-testid="pane-actions">
+    {#if !standalone}
     <Tooltip.Root>
       <Tooltip.Trigger>
         {#snippet child({ props })}
@@ -52,6 +55,7 @@
       </Tooltip.Trigger>
       <Tooltip.Content side="bottom">{i18n.t.pdmux.pane.retarget}</Tooltip.Content>
     </Tooltip.Root>
+    {/if}
 
     {#if !compact && actions.canScrollback}
       <Tooltip.Root>
@@ -94,7 +98,7 @@
       <Tooltip.Content side="bottom">{i18n.t.pdmux.pane.history}</Tooltip.Content>
     </Tooltip.Root>
 
-    {#if !compact}
+    {#if !compact && !standalone}
       <Tooltip.Root>
         <Tooltip.Trigger>
           {#snippet child({ props })}
@@ -121,6 +125,7 @@
       </Tooltip.Root>
     {/if}
 
+    {#if !standalone || actions.viewport || actions.terminate}
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
         {#snippet child({ props })}
@@ -162,21 +167,26 @@
             {i18n.t.pdmux.pane.scrollback}
           </DropdownMenu.Item>
         {/if}
+        {#if !standalone}
         <DropdownMenu.Item onSelect={actions.detach} data-pdmux-detach>
           <ExternalLinkIcon class="mr-2 size-4" />
           {i18n.t.pdmux.pane.detach}
         </DropdownMenu.Item>
         <DropdownMenu.Separator />
+        {/if}
         {#if actions.terminate}
           <DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={actions.terminate} data-pdmux-terminate>
             <SquareIcon class="mr-2 size-4" />{i18n.t.pdmux.pane.terminate}
           </DropdownMenu.Item>
         {/if}
+        {#if !standalone}
         <DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={actions.close} data-pdmux-close>
           <XIcon class="mr-2 size-4" />
           {i18n.t.pdmux.pane.close}
         </DropdownMenu.Item>
+        {/if}
       </DropdownMenu.Content>
     </DropdownMenu.Root>
+    {/if}
   </span>
 </Tooltip.Provider>
