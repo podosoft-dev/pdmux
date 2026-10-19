@@ -20,6 +20,7 @@ import { userDataDirectory } from "./user-data.js";
 import { BackupService } from "./backup.js";
 import { loadDesktopConfig, type DesktopConfig } from "./config.js";
 import { desktopMessages } from "./i18n.js";
+import { logError } from "./log.js";
 import { certificateMatches, isAllowedAppNavigation, isAllowedExternalUrl } from "./security.js";
 import { StackManager, type RuntimeLayout } from "./stack-manager.js";
 import { UpdateCoordinator } from "./updater.js";
@@ -37,15 +38,6 @@ let localAgent: LocalAgent | undefined;
 let pendingDeepLink: string | undefined;
 let quitting = false;
 let restartAttempts = 0;
-
-function logError(action: string, error: unknown, context: Record<string, unknown> = {}): void {
-  process.stderr.write(`${JSON.stringify({
-    level: "error",
-    action,
-    message: error instanceof Error ? error.message : String(error),
-    ...context,
-  })}\n`);
-}
 
 async function stopRuntime(): Promise<void> {
   cloud?.close(); cloud = undefined;

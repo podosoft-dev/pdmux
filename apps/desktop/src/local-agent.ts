@@ -9,13 +9,14 @@ import { compareVersionStrings } from "@pdmux/protocol";
 import { z } from "zod";
 import type { RuntimeLayout, StackManager } from "./stack-manager.js";
 import { desktopMessages } from "./i18n.js";
+import { logError } from "./log.js";
 
 const execFileAsync = promisify(execFile);
 const legacyLabels = [desktopMessages("en").localHost, desktopMessages("ko").localHost];
 const configuration = z.object({ hostId: z.string().uuid(), token: z.string().default(""), server: z.string(), hostname: z.string(), layoutPrepared: z.boolean().default(false), computerNameApplied: z.boolean().default(false) });
 type Configuration = z.infer<typeof configuration>;
 export interface LocalAgentStatus { phase: "starting" | "ready" | "failed" | "stopped"; hostId?: string; code?: string }
-export interface LocalAgentDependencies { spawn: typeof spawn; platform: NodeJS.Platform; arch: string; environment: NodeJS.ProcessEnv; computerName: () => Promise<string> }
+export interface LocalAgentDependencies { spawn: typeof spawn; platform: NodeJS.Platform; arch: string; environment: NodeJS.ProcessEnv; computerName: () => Promise<string>; log: typeof logError }
 
 async function computerName(platform: NodeJS.Platform): Promise<string> {
   if (platform === "darwin") {
@@ -42,7 +43,7 @@ export class LocalAgent {
   private serial: Promise<void> = Promise.resolve();
 
   constructor(private readonly stack: Pick<StackManager, "start" | "localRequest">, private readonly layout: RuntimeLayout, profileId: string, private readonly fallbackLabel: string, dependencies: Partial<LocalAgentDependencies> = {}) {
-    this.dependencies = { spawn, platform: process.platform, arch: process.arch, environment: process.env, computerName: () => computerName(dependencies.platform ?? process.platform), ...dependencies };
+    this.dependencies = { spawn, platform: process.platform, arch: process.arch, environment: process.env, computerName: () => computerName(dependencies.platform ?? process.platform), log: logError, ...dependencies };
     this.directory = join(layout.dataDirectory, "local-agent", createHash("sha256").update(profileId).digest("hex").slice(0, 24));
     this.configPath = join(this.directory, "agent.json");
   }
@@ -109,9 +110,12 @@ export class LocalAgent {
       if (existing.status === 404) config = undefined;
       else if (!existing.ok) throw new Error("Cannot read the local host");
       else if (!config.computerNameApplied) {
-        const host = await existing.json() as { label: string };
-        if (legacyLabels.includes(host.label)) await this.request(`/hosts/${config.hostId}`, "PATCH", { label: await this.defaultLabel(config.hostId) });
-        config.computerNameApplied = true;
+        // A rename is cosmetic: keep the old name and retry on a later launch instead of blocking the agent.
+        try {
+          const host = await existing.json() as { label: string };
+          if (legacyLabels.includes(host.label)) await this.request(`/hosts/${config.hostId}`, "PATCH", { label: await this.defaultLabel(config.hostId) });
+          config.computerNameApplied = true;
+        } catch (error) { this.dependencies.log("Rename the local desktop host", error, { hostId: config.hostId }); }
       }
     }
     if (!config) {

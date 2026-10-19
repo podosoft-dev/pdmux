@@ -16,6 +16,7 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
   run: () => Promise<void>; payload: () => Record<string, unknown>; setPayload: (value: Record<string, unknown>) => void;
   calls: Array<{ path: string; body?: object }>; spawned: Array<{ executable: string; args: readonly string[]; options: SpawnOptions }>; directory: string;
   label: () => string; setLabel: (value: string) => void; setComputerName: (value: string) => void; otherLabels: string[]; legacyConfig: () => Promise<void>;
+  failures: Set<"list" | "rename">; logs: Array<{ action: string; error: unknown; context?: Record<string, unknown> }>; config: () => Promise<Record<string, unknown>>;
 }> {
   root = await mkdtemp(join(tmpdir(), "pdmux-local-agent-"));
   const releases = join(root, "agents"); const directory = join(releases, "0.1.28"); await mkdir(directory, { recursive: true });
@@ -28,15 +29,19 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
   const spawned: Array<{ executable: string; args: readonly string[]; options: SpawnOptions }> = [];
   let payload: Record<string, unknown> = { slots: [] }; let created = false; let label = ""; let computerName = "Design workstation";
   const otherLabels: string[] = [];
+  const failures = new Set<"list" | "rename">();
+  const logs: Array<{ action: string; error: unknown; context?: Record<string, unknown> }> = [];
   const stack = {
     start: async () => ({ apiUrl:"http://127.0.0.1:10001", webUrl:"http://127.0.0.1:10002" }),
     localRequest: async (path: string, init?: RequestInit): Promise<Response> => {
       const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       calls.push({ path, ...(body && typeof body === "object" ? { body } : {}) });
       if (path === "/hosts" && init?.method === "POST" && body && typeof body === "object" && "label" in body) { created = true; label = String(body.label); return Response.json({ id: hostId }); }
+      if (path === "/hosts" && failures.has("list")) return Response.json({ success: false }, { status: 500 });
       if (path === "/hosts") return Response.json([...otherLabels.map(label => ({ id: crypto.randomUUID(), label })), ...(created ? [{ id: hostId, label }] : [])]);
       if (path === `/hosts/${hostId}/tokens`) return Response.json({ token: "private-agent-token" });
       if (path === `/hosts/${hostId}`) {
+        if (init?.method === "PATCH" && failures.has("rename")) return Response.json({ success: false }, { status: 500 });
         if (init?.method === "PATCH" && body && typeof body === "object" && "label" in body) label = String(body.label);
         return Response.json({ id:hostId, label, connected:created });
       }
@@ -49,7 +54,7 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
     spawned.push({ executable, args, options });
     return spawn(process.execPath, ["-e", 'process.stdin.resume(); process.stdin.on("end", () => process.exit(0));'], options);
   }) as typeof spawn;
-  agent = new LocalAgent(stack, layout, "local-profile", "This computer", { platform, computerName: async () => computerName, spawn: launch, environment:{ ...process.env, TMUX:"private-fixture", PDMUX_TOKEN:"inherited-token", PDMUX_SERVER:"https://invalid.test", PDMUX_RESTART:"service", INVOCATION_ID:"inherited-service" } });
+  agent = new LocalAgent(stack, layout, "local-profile", "This computer", { platform, computerName: async () => computerName, spawn: launch, log: (action, error, context) => { logs.push({ action, error, ...(context ? { context } : {}) }); }, environment:{ ...process.env, TMUX:"private-fixture", PDMUX_TOKEN:"inherited-token", PDMUX_SERVER:"https://invalid.test", PDMUX_RESTART:"service", INVOCATION_ID:"inherited-service" } });
   return { run: () => agent!.start(), payload:() => payload, setPayload:value => { payload = value; }, calls, spawned, directory,
     label: () => label, setLabel: value => { label = value; }, setComputerName: value => { computerName = value; }, otherLabels,
     legacyConfig: async () => {
@@ -57,6 +62,8 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
       const config = JSON.parse(await readFile(path,"utf8")); delete config.computerNameApplied;
       await writeFile(path,JSON.stringify(config));
     },
+    failures, logs,
+    config: async () => { const profiles = join(root,"local-agent"); return JSON.parse(await readFile(join(profiles,(await readdir(profiles))[0]!,"agent.json"),"utf8")); },
   };
 }
 
@@ -89,6 +96,21 @@ it("[TC-PDDESKTOP-017] preserves custom names and applies the legacy name migrat
   expect(agent?.status().phase).toBe("ready");
   expect(state.label()).toBe(desktopMessages("en").localHost);
 });
+for (const failure of ["rename", "list"] as const) {
+  it(`[TC-PDDESKTOP-017] starts the agent and keeps the old name when ${failure === "rename" ? "renaming the host" : "listing hosts"} fails`, async () => {
+    const state = await fixture(); await state.run();
+    state.setLabel(desktopMessages("en").localHost); await state.legacyConfig();
+    state.failures.add(failure); await state.run();
+    expect(agent?.status()).toEqual({ phase:"ready", hostId });
+    expect(state.label()).toBe(desktopMessages("en").localHost);
+    expect(state.logs).toHaveLength(1);
+    expect(state.logs[0]?.action).toBe("Rename the local desktop host");
+    expect(JSON.stringify(state.logs)).not.toContain("private-agent-token");
+    expect((await state.config()).computerNameApplied).not.toBe(true);
+    state.failures.clear(); await state.run();
+    expect(state.label()).toBe("Design workstation");
+  });
+}
 it("[TC-PDDESKTOP-017] fits long computer names within the host limit and avoids existing labels", async () => {
   const state = await fixture(); const name = "W".repeat(80); state.setComputerName(` ${name} `);
   state.otherLabels.push(name.slice(0,64), `${name.slice(0,60)} (2)`);
