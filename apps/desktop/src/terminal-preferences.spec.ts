@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DEFAULT_TERMINAL_PREFERENCES, type TerminalPreferences } from "@pdmux/core";
 import { TerminalPreferencesFile } from "./terminal-preferences.js";
 
-describe("[TC-PDDESKTOP-023] stable local terminal preferences", () => {
+describe("[TC-PDDESKTOP-025] stable local terminal preferences", () => {
   it("persists across launches and preserves the last valid file on rejected input", async () => {
     const root = await mkdtemp(join(tmpdir(), "pdmux-preferences-"));
     try {
