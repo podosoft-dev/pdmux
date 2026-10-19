@@ -74,7 +74,7 @@ describe("VmLifecycleService — create", () => {
   it("[TC-PDVM-028] names the machine as a DNS label from the host's label", () => {
     expect(machineName("Build Box", 503)).toBe("build-box");
     expect(machineName("  ci__runner.01 ", 503)).toBe("ci-runner-01");
-    expect(machineName("빌드 서버", 507)).toBe("pdmux-507");
+    expect(machineName("★ ★", 507)).toBe("pdmux-507");
     expect(machineName("x".repeat(80), 503)).toHaveLength(63);
   });
 
