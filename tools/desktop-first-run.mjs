@@ -16,7 +16,7 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
       try { const frame = JSON.parse(String(payload)); if (frame.type === "input" && frame.termId === "slot-1") input += frame.data; } catch { /* Other transport frames are irrelevant. */ }
     });
     socket.on("framereceived", ({ payload }) => {
-      try { const frame = JSON.parse(String(payload)); if (frame.type === "output") output += frame.data; if (frame.type === "ready" && frame.termId === "slot-1") terminalReady = true; } catch { /* Other transport frames are irrelevant. */ }
+      try { const frame = JSON.parse(String(payload)); if (frame.type === "output" || frame.type === "screen") output += frame.data; if (frame.type === "ready" && frame.termId === "slot-1") terminalReady = true; } catch { /* Other transport frames are irrelevant. */ }
     });
   });
   if (fresh) {

@@ -8,6 +8,7 @@ import { desktopPaths } from "./desktop-package-paths.mjs";
 import { verifyAgentResources } from "./verify-macos-desktop.mjs";
 import { readFile } from "node:fs/promises";
 import { parseAgentVersion } from "../apps/desktop/src/staging.ts";
+import { stopFixtureNativeSessions } from "./native-session-fixture.mjs";
 
 const repository = resolve(import.meta.dirname, "..");
 
@@ -97,6 +98,7 @@ export async function verifyDesktopArtifacts(directory) {
       });
     }
   } finally {
+    await stopFixtureNativeSessions(configuration);
     await removeWithRetry(temporary);
   }
 }

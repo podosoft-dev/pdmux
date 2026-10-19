@@ -8,6 +8,7 @@ import { verifyDesktopNavigation } from "./desktop-navigation.mjs";
 import { desktopPaths } from "./desktop-package-paths.mjs";
 import { join, relative, resolve, sep } from "node:path";
 import { _electron as electron } from "playwright";
+import { stopFixtureNativeSessions } from "./native-session-fixture.mjs";
 
 // Launch only a real package on a disposable verification VM, never a live desktop.
 const local = process.env.PDMUX_LOCAL_DESKTOP_SMOKE === "1";
@@ -136,5 +137,8 @@ try {
     await window.screenshot({ path: screenshot });
   }
   await application.close();
-  if (!process.env.PDMUX_SMOKE_CONFIG_ROOT) await rm(configuration, { recursive: true, force: true });
+  if (!process.env.PDMUX_SMOKE_CONFIG_ROOT) {
+    await stopFixtureNativeSessions(configuration);
+    await rm(configuration, { recursive: true, force: true });
+  }
 }
