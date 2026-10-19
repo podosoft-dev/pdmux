@@ -312,6 +312,7 @@ same "clicking does nothing" bug three times while every DOM query insisted the 
 | [MCP.md](docs/MCP.md) | The two credentials, why `hostId` became a parameter and what replaced the guarantee it removed, and why a destructive tool describes before it acts |
 | [CONTRACTS.md](docs/CONTRACTS.md) | The agent↔server protocol: envelopes, enrollment, remote update, and the additions-only rule |
 | [OPERATIONS.md](docs/OPERATIONS.md) | Deployment, agent onboarding, retention, backup and recovery, and a table of symptoms |
+| [VM-PROVIDERS.md](docs/VM-PROVIDERS.md) | Powering, creating and deleting the virtual machines behind hosts on your own Proxmox VE, and the template that enrolls itself |
 | [AGENT_GO.md](docs/AGENT_GO.md) | The agent's layout, what is generated versus hand-written, and the `go generate` procedure |
 | [VERSIONING.md](docs/VERSIONING.md) | Two SemVer lines and why they move apart, `PROTOCOL_VERSION`, and the CI checks behind them |
 | [COMPONENTS.md](docs/COMPONENTS.md) | `@pdmux/ui` props and events, and where the style boundary sits |

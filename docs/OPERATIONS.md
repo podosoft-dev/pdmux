@@ -515,6 +515,19 @@ resource.
 | `Installing connector` does not progress | The host must reach GitHub release metadata/assets and Cloudflare over outbound HTTPS. Inspect the agent log for the stable connector error code. |
 | Exposure removal or host deletion returns an error | Provider cleanup failed safely. Correct token/network access and retry; do not delete database rows by hand. |
 
+### 2-8. Virtual machines at a provider
+
+When hosts are virtual machines on a Proxmox VE you run, connect it under **Settings → VM
+providers**, and pdmux powers them from their terminals — sleep, wake, restart — and creates
+machines from a template that enrolls itself on first boot. Token privileges, the template
+recipe and the codes are in [VM-PROVIDERS.md](VM-PROVIDERS.md).
+
+| Symptom | Cause and fix |
+|---|---|
+| A new machine stays at "waiting for its agent", then `VM_ENROLL_TIMEOUT` | Its template does not enroll on first boot, or the machine cannot reach the provider's *Address new machines reach pdmux at*. Fix the template or the address, then **Retry registration** |
+| Two machines from one template get the same address | The template kept its `/etc/machine-id`, so every clone has the same DHCP client id. Empty it in the template |
+| A machine is asleep but a scheduled backup of it failed | Hibernated Proxmox machines are locked. Fence sleep with *Only hibernate machines tagged*, and take those machines out of the backup schedule (pdmux can back up before sleep) |
+
 ---
 
 ## 3. Retention and capacity
