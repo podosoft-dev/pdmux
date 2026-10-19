@@ -1,4 +1,85 @@
 {
+  "vm": {
+    "menu": "Power",
+    "menuFor": "Power — {name}",
+    "state": {
+      "running": "Running",
+      "hibernated": "Asleep",
+      "stopped": "Off",
+      "paused": "Paused",
+      "unknown": "State unknown",
+      "missing": "Not found at the provider"
+    },
+    "action": {
+      "wake": "Wake",
+      "start": "Start",
+      "hibernate": "Sleep",
+      "shutdown": "Shut down",
+      "reboot": "Restart",
+      "stop": "Force off",
+      "reset": "Force restart"
+    },
+    "hint": {
+      "wake": "Resumes the machine where it was put to sleep",
+      "start": "Powers the machine on",
+      "hibernate": "Saves memory to disk and stops; waking resumes it",
+      "shutdown": "Asks the guest to power off",
+      "reboot": "Asks the guest to restart",
+      "stop": "Cuts power at once — unsaved work in the guest is lost",
+      "reset": "Restarts at once — unsaved work in the guest is lost"
+    },
+    "operation": {
+      "start": "Starting",
+      "hibernate": "Putting to sleep",
+      "shutdown": "Shutting down",
+      "stop": "Forcing off",
+      "reboot": "Restarting",
+      "reset": "Forcing a restart",
+      "create": "Creating",
+      "delete": "Deleting",
+      "enroll": "Registering"
+    },
+    "step": {
+      "backup": "backing up first",
+      "request": "asking the provider",
+      "wait": "waiting for the provider"
+    },
+    "progress": "{operation} · {name} asked · {seconds}s",
+    "progressStep": "{operation} ({step}) · {name} asked · {seconds}s",
+    "someone": "someone",
+    "veil": {
+      "asleep": "This machine is asleep",
+      "off": "This machine is off",
+      "paused": "This machine is paused",
+      "missing": "The provider no longer has this machine",
+      "waiting": "Waiting for the agent to connect…",
+      "noPermission": "Ask a fleet administrator to start it"
+    },
+    "confirm": {
+      "title": "{action} {name}?",
+      "attached": "{attached} terminal connections to this machine's sessions will be cut, {mine} of them on this screen.",
+      "noneAttached": "No terminal is attached to this machine's sessions right now.",
+      "forced": "This does not wait for the guest. Unsaved work on the machine is lost.",
+      "cancel": "Cancel"
+    },
+    "error": {
+      "VM_TASK_TIMEOUT": "The guest did not respond in time",
+      "VM_TASK_TIMEOUT_ADMIN": "The guest did not respond in time — you can force it",
+      "VM_BACKUP_FAILED": "The backup before sleep failed, so the machine was not put to sleep",
+      "VM_OPERATION_IN_PROGRESS": "{name} is already changing this machine",
+      "VM_ACTION_NOT_AVAILABLE": "The machine's state does not allow this now",
+      "VM_PROVIDER_FORBIDDEN": "The provider credentials may not do this",
+      "VM_PROVIDER_UNAVAILABLE": "The provider could not be reached",
+      "VM_PROVIDER_TIMEOUT": "The provider did not answer in time",
+      "VM_PROVIDER_TLS_FAILED": "The provider's certificate could not be verified",
+      "VM_PROVIDER_AUTH_FAILED": "The provider rejected the credentials",
+      "VM_NOT_FOUND": "The provider has no such machine",
+      "VM_LOCKED": "The machine is busy with another task at the provider",
+      "generic": "The power change failed ({code})"
+    },
+    "badge": "VM",
+    "accepted": "{operation} {name}"
+  },
   "pdmux": {
     "card": {
       "collapse": "collapse card",

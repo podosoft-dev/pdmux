@@ -32,6 +32,7 @@ import {
   uncommittedSummary,
 } from "@pdmux/core";
 import type { HostDetail, HostResources, HostState, HostSummary, HostUpdateMark, PickerHost, RepoHead } from "@pdmux/ui";
+import { vmReachable } from "#lib/vm/power.js";
 import type {
   GraphCommitRow,
   HostServiceView,
@@ -76,8 +77,9 @@ export function gridHosts(hosts: readonly HostView[]): GridHost[] {
     id: host.id,
     name: host.label,
     // A disabled host cannot answer a terminal open, so it is not "online" here
-    // even if its last heartbeat is recent.
-    online: host.enabled && host.online,
+    // even if its last heartbeat is recent. Neither is a machine that is asleep, off or on
+    // its way there: its own state says so before three heartbeats are missed.
+    online: host.enabled && host.online && vmReachable(host.vm),
     sessions: host.sessions ?? [],
     nativeSessions: host.terminal?.nativeSessions === true && host.terminal.screenProtocol === 1,
   }));

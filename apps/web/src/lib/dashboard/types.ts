@@ -7,6 +7,7 @@
  * so JSON is what this file describes. Anything that is a real contract between
  * three programs lives in `@pdmux/protocol` instead and is imported from there.
  */
+import type { HostVmView } from "#lib/vm/types.js";
 import type {
   AgentDiagnostic,
   AgentUsage,
@@ -145,6 +146,8 @@ export interface HostView {
    * its `listeners.unavailable` diagnostic separates that one.
    */
   listeners: Listener[] | null;
+  /** The machine behind this host, when a VM provider manages it. Absent otherwise. */
+  vm?: HostVmView;
 }
 
 /** `GET /hosts/:id/metrics?window=` — aligned arrays, oldest first. */
