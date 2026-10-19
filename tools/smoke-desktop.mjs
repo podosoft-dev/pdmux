@@ -147,7 +147,8 @@ try {
   const closed = application.waitForEvent("close", { timeout: 15_000 });
   const exited = new Promise(resolve => electronProcess.once("exit", (code, signal) => resolve({ code, signal }))).then(result => {
     assert.deepEqual(result, { code: 0, signal: null }, "Require graceful desktop process shutdown");
-    for (const stream of [electronProcess.stdin, electronProcess.stdout, electronProcess.stderr]) stream?.destroy();
+    // Include Playwright's extra debugging pipes, not just stdin/out/err.
+    for (const stream of electronProcess.stdio) stream?.destroy();
   });
   await application.evaluate(({ app }) => { setTimeout(() => app.quit(), 50); });
   try { await Promise.all([exited, closed]); }
