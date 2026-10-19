@@ -140,12 +140,16 @@ func attachSession(ctx context.Context, client *session.Client, action, name str
 		return exitRefused
 	}
 	fd := int(os.Stdin.Fd())
-	if !xterm.IsTerminal(fd) {
+	outputFD := int(os.Stdout.Fd())
+	if !xterm.IsTerminal(fd) || !xterm.IsTerminal(outputFD) {
 		fmt.Fprintln(deps.Stderr, "A terminal is required for interactive attachment")
 		return exitRefused
 	}
-	cols, rows, err := xterm.GetSize(fd)
+	// Windows reads console dimensions from the screen buffer (stdout), while
+	// raw input mode belongs to stdin. Unix PTYs accept either descriptor.
+	cols, rows, err := xterm.GetSize(outputFD)
 	if err != nil {
+		fmt.Fprintln(deps.Stderr, "Could not read terminal size:", err)
 		return exitFailed
 	}
 	request := session.Request{Action: "attach", Name: name, Cols: cols, Rows: rows}
@@ -164,6 +168,12 @@ func attachSession(ctx context.Context, client *session.Client, action, name str
 		return exitFailed
 	}
 	defer xterm.Restore(fd, previous)
+	restoreOutput, err := enableOutputVT(outputFD)
+	if err != nil {
+		fmt.Fprintln(deps.Stderr, "Could not enable terminal rendering:", err)
+		return exitFailed
+	}
+	defer restoreOutput()
 	defer fmt.Fprint(deps.Stdout, "\x1b[0m\x1b[?7h\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?1049l")
 	input := make(chan []byte, 1)
 	go func() {
@@ -205,7 +215,7 @@ func attachSession(ctx context.Context, client *session.Client, action, name str
 		case <-ctx.Done():
 			return exitOK
 		case <-ticker.C:
-			c, r, err := xterm.GetSize(fd)
+			c, r, err := xterm.GetSize(outputFD)
 			if err == nil && (c != cols || r != rows) {
 				cols, rows = c, r
 				_ = attachment.Send(session.Request{Action: "resize", Cols: c, Rows: r})

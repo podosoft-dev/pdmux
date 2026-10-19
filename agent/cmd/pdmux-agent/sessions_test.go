@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,6 +41,8 @@ func TestNativeSessionCLI(t *testing.T) {
 		client := &session.Client{Root: root, Executable: binary}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		var outputMu sync.Mutex
+		var output []byte
 		t.Cleanup(func() {
 			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -62,7 +65,9 @@ func TestNativeSessionCLI(t *testing.T) {
 				}
 				time.Sleep(20 * time.Millisecond)
 			}
-			t.Fatalf("native CLI timed out: %s", label)
+			outputMu.Lock()
+			defer outputMu.Unlock()
+			t.Fatalf("native CLI timed out: %s; output: %s", label, ansi.Strip(string(output)))
 		}
 		// Neither the interactive client nor its detached engine can find tmux.
 		environment := append(os.Environ(), "HOME="+directory, "SHELL=/bin/sh", "PATH="+directory,
@@ -75,7 +80,13 @@ func TestNativeSessionCLI(t *testing.T) {
 			}
 			t.Cleanup(process.Kill)
 			go func() {
-				for range process.Output() {
+				for chunk := range process.Output() {
+					outputMu.Lock()
+					output = append(output, chunk...)
+					if len(output) > 65536 {
+						output = output[len(output)-65536:]
+					}
+					outputMu.Unlock()
 				}
 			}()
 			return process
