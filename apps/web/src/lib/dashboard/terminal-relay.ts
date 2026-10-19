@@ -87,7 +87,14 @@ export function defaultRelayUrl(location: { protocol: string; host: string }): s
   return `${scheme}//${location.host}${TERMINAL_WS_PATH}`;
 }
 
+interface NativeViewport { x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean }
 interface PaneEntry {
+  backend?: "native" | "tmux";
+  sessionId?: string;
+  intent?: "create" | "attach" | "ensure";
+  sessionListeners: Set<(id: string) => void>;
+  viewListeners: Set<(viewport: NativeViewport) => void>;
+  viewport?: NativeViewport;
   termId: string;
   hostId: string;
   kind: "session" | "shell";
@@ -171,6 +178,10 @@ export class TerminalRelay implements TerminalAdapter {
       termId: target.slotId,
       hostId: target.hostId,
       kind: target.kind,
+      ...(target.backend ? { backend: target.backend } : {}),
+      ...(target.sessionId ? { sessionId: target.sessionId } : {}),
+      ...(target.intent ? { intent: target.intent } : {}),
+      sessionListeners: new Set(), viewListeners: new Set(),
       ...(target.session ? { session: target.session } : {}),
       cols: target.cols,
       rows: target.rows,
@@ -187,6 +198,10 @@ export class TerminalRelay implements TerminalAdapter {
     this.sendOpen(connection, entry);
 
     return {
+      scrollHistory: (delta: number): void => { this.send(connection, { type: "viewport", termId: entry.termId, x: 0, y: 0, follow: false, history: delta }); },
+      viewport: (x: number, y: number, follow = false): void => { this.send(connection, { type: "viewport", termId: entry.termId, x, y, follow }); },
+      onViewport: (listener: (viewport: NativeViewport) => void): (() => void) => { entry.viewListeners.add(listener); if (entry.viewport) listener(entry.viewport); return () => entry.viewListeners.delete(listener); },
+      onSession: (listener: (id: string) => void): (() => void) => { entry.sessionListeners.add(listener); if (entry.sessionId) listener(entry.sessionId); return () => entry.sessionListeners.delete(listener); },
       send: (data: string): void => {
         if (entry.closed) return;
         this.send(connection, { type: "input", termId: entry.termId, data });
@@ -404,6 +419,9 @@ export class TerminalRelay implements TerminalAdapter {
       target: {
         kind: pane.kind,
         ...(pane.session ? { session: pane.session } : {}),
+        ...(pane.backend ? { backend: pane.backend } : {}),
+        ...(pane.sessionId ? { sessionId: pane.sessionId } : {}),
+        ...(pane.intent ? { intent: pane.intent } : {}),
         cols: pane.cols,
         rows: pane.rows,
       },
@@ -441,8 +459,19 @@ export class TerminalRelay implements TerminalAdapter {
 
     switch (frame.type) {
       case "ready":
+        if (frame.backend === "native" && frame.sessionId) {
+          pane.backend = "native"; pane.sessionId = frame.sessionId; pane.intent = "attach";
+          for (const listener of pane.sessionListeners) listener(frame.sessionId);
+        }
         this.attached(connection, pane);
         break;
+      case "screen":
+        this.attached(connection, pane);
+        pane.viewport = { x: frame.x, y: frame.y, cols: frame.cols, rows: frame.rows, canvasCols: frame.canvasCols, canvasRows: frame.canvasRows, follow: frame.follow };
+        for (const listener of pane.viewListeners) listener(pane.viewport);
+        this.emit(pane, frame.data);
+        break;
+      case "session-result": break;
       case "output":
         this.attached(connection, pane);
         if (frame.dropped > 0) this.emit(pane, notice(this.messages.dropped(frame.dropped)));

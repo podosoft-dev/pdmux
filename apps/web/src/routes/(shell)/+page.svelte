@@ -33,7 +33,6 @@
     focusSlot,
     movePage,
     pageCount,
-    parseAnsiLines,
     pickerApply,
     removeSlot,
     setDockTarget,
@@ -59,11 +58,13 @@
   import FilesDockPanel from "#lib/dashboard/components/files-dock.svelte";
   import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
   import TerminalToolbar from "#lib/dashboard/components/terminal-toolbar.svelte";
+  import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
   import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
   import { gridHosts, pickerHosts } from "#lib/dashboard/map.js";
   import { dismissOnOutside } from "#lib/dashboard/popover-dismiss.svelte.ts";
   import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
+  import { readTerminalHistory } from "#lib/dashboard/terminal-history.js";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -148,6 +149,9 @@
   );
 
   // --- terminal target picker -----------------------------------------------
+  let terminating = $state<TerminalSlot | null>(null);
+  let terminateOpen = $state(false);
+
   type Anchor = { x: number; y: number };
   let picker = $state<{ index: number | null; hostId: string | null; anchor: Anchor } | null>(null);
 
@@ -168,7 +172,7 @@
 
   function applyPicker(target: PickerTarget, index: number | null): void {
     shell.apply(
-      pickerApply(layout, index, { hostId: target.hostId, kind: target.kind, session: target.session ?? null }),
+      pickerApply(layout, index, { hostId: target.hostId, kind: target.kind, session: target.session ?? null, ...(target.backend ? { backend: target.backend } : {}), ...(target.sessionId ? { sessionId: target.sessionId } : {}) }),
     );
     picker = null;
   }
@@ -176,6 +180,8 @@
   function detach(slot: TerminalSlot): void {
     const params = new URLSearchParams({ host: slot.hostId, kind: slot.kind });
     if (slot.session) params.set("session", slot.session);
+    if (slot.backend) params.set("backend", slot.backend);
+    if (slot.sessionId) params.set("sessionId", slot.sessionId);
     window.open(`/terminal?${params.toString()}`, "_blank", "noopener");
   }
 
@@ -192,6 +198,7 @@
   }
 
   async function scrollback(slot: TerminalSlot, action: "enter" | "exit"): Promise<void> {
+    if (slot.backend === "native") return;
     const session = muxSession(slot);
     if (!session) return;
     try {
@@ -213,19 +220,7 @@
     const session = muxSession(slot);
     if (!session) return null;
     try {
-      const { lines, screenOnly } = await terminalApi.history(slot.hostId, session);
-      // ⚠ THE PARSE HAPPENS HERE, NOT ON THE SERVER. What crosses the wire is what tmux
-      // wrote, escapes included; turning it into runs is a rendering decision and it
-      // keeps the API from having an opinion about colour it would then have to keep.
-      const parsed = parseAnsiLines(lines);
-      /**
-       * ⚠ AN EMPTY ANSWER IS NOT A FAILURE, AND THE DIFFERENCE IS THE WHOLE POINT OF THIS
-       * ROUND TRIP. Returning `null` for both meant the sheet fell back to the visible screen
-       * with a note about the multiplexer holding the history — which is a lie when the
-       * multiplexer holds nothing, and that is exactly the case a coding agent's TUI creates
-       * (`screenOnly`). So an empty answer is reported as an answer.
-       */
-      return { lines: parsed, scrollback: parsed.length > 0, screenOnly };
+      return await readTerminalHistory(slot);
     } catch (cause) {
       /**
        * ⚠ SILENCE HERE COST SOMEBODY A TRIP TO ANOTHER MACHINE. The sheet used to keep the
@@ -417,6 +412,12 @@
     onSwap={(from: number, to: number) => shell.apply(swapSlots(layout, from, to))}
     onDetach={detach}
     onScrollback={(slot: TerminalSlot, action: "enter" | "exit") => void scrollback(slot, action)}
+    onTerminateSession={(slot: TerminalSlot) => { terminating = slot; terminateOpen = true; }}
+    onSessionResolved={(slotId: string, sessionId: string) => {
+      const current = layout.slots.find(slot => slot?.id === slotId);
+      if (!current || current.sessionId === sessionId && current.kind === "attach") return;
+      shell.apply({ ...layout, slots: layout.slots.map(slot => slot?.id === slotId ? { ...slot, backend: "native", sessionId, kind: "attach", intent: "attach" } : slot) });
+    }}
     onReadHistory={readHistory}
     {diagnostics}
     transport={shell.relayStatus}
@@ -484,6 +485,8 @@
     </div>
   {/if}
 </div>
+
+<SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
 
 <ConfirmDialog
   bind:open={closeOpen}

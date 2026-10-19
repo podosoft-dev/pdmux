@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { createServer } from "node:https";
 import { request as upstream } from "node:http";
+import { createHash } from "node:crypto";
 import { StackManager } from "../apps/desktop/src/stack-manager.ts";
 import { parseAgentVersion } from "../apps/desktop/src/staging.ts";
 
@@ -60,7 +61,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
   // example.test. This isolated stack sends no mail, and `.internal` is reserved for
   // private networks, so the address cannot belong to anybody.
   const smokeAccount = { name: "Desktop smoke", email: "desktop-smoke@pdmux-smoke.internal", password: "Isolated-Desktop-42!password" };
-  const personalWorkspace = process.env.PDMUX_RESIZE_UI === "1";
+  const personalWorkspace = process.env.PDMUX_RESIZE_UI === "1" || process.env.PDMUX_NATIVE_UI === "1";
   const serverLayout = layout("server");
   // PodoKit refuses a sign-up for an ADMIN_EMAILS address that has not proven it, so the
   // workspace administrator is created with admin:bootstrap between the server's
@@ -204,7 +205,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
         });
       });
     }
-    if (process.env.PDMUX_RECOVERY_UI === "1" || process.env.PDMUX_RESIZE_UI === "1") {
+    if (process.env.PDMUX_RECOVERY_UI === "1" || process.env.PDMUX_RESIZE_UI === "1" || process.env.PDMUX_NATIVE_UI === "1") {
       assert.equal(process.platform, "darwin", "The native recovery rehearsal uses macOS tmux sessions");
       const enrollment = await json(tlsOrigin, "/api/agent/enroll", "", "POST", { code: remoteHost.enrollment.code, hostname: "recovery-server" });
       const config = join(root, "server-agent.json");
@@ -213,12 +214,23 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
       delete agentEnv.TMUX; delete agentEnv.PDMUX_TOKEN; delete agentEnv.PDMUX_SERVER;
       const tmuxSocket = join(tmux, `tmux-${process.getuid()}`, "default");
       await mkdir(join(tmux, `tmux-${process.getuid()}`), { mode: 0o700 });
-      execFileSync("tmux", ["-S", tmuxSocket, "-f", "/dev/null", "new-session", "-d", "-s", "recovery-fixture"], { env: agentEnv, stdio: "ignore" });
+      if (process.env.PDMUX_NATIVE_UI !== "1") execFileSync("tmux", ["-S", tmuxSocket, "-f", "/dev/null", "new-session", "-d", "-s", "recovery-fixture"], { env: agentEnv, stdio: "ignore" });
+      let existingTmux;
+      const muxFacts = () => ({
+        processes: execFileSync("tmux", ["-S", tmuxSocket, "display-message", "-p", "-t", "=shared-size:", "#{pid}|#{pane_pid}"], { env: agentEnv, encoding: "utf8" }).trim(),
+        options: execFileSync("tmux", ["-S", tmuxSocket, "show-window-options", "-t", "=shared-size:"], { env: agentEnv, encoding: "utf8" }),
+        global: execFileSync("tmux", ["-S", tmuxSocket, "show-window-options", "-g"], { env: agentEnv, encoding: "utf8" }),
+      });
+      if (process.env.PDMUX_NATIVE_UI === "1") {
+        execFileSync("tmux", ["-S", tmuxSocket, "-f", "/dev/null", "new-session", "-d", "-s", "shared-size", "/bin/sh"], { env: agentEnv });
+        execFileSync("tmux", ["-S", tmuxSocket, "send-keys", "-t", "=shared-size:", "PDMUX_EXISTING=TMUX_STATE", "Enter"], { env: agentEnv });
+        existingTmux = muxFacts();
+      }
       if (process.env.PDMUX_RESIZE_UI === "1") {
         execFileSync("tmux", ["-S", tmuxSocket, "set-window-option", "-g", "window-size", "smallest"], { env: agentEnv, stdio: "ignore" });
         execFileSync("tmux", ["-S", tmuxSocket, "set-option", "-g", "status", "off"], { env: agentEnv, stdio: "ignore" });
       }
-      const tmuxPid = execFileSync("tmux", ["-S", tmuxSocket, "display-message", "-p", "#{pid}"], { env: agentEnv, encoding: "utf8" }).trim();
+      const tmuxPid = process.env.PDMUX_NATIVE_UI === "1" ? "" : execFileSync("tmux", ["-S", tmuxSocket, "display-message", "-p", "#{pid}"], { env: agentEnv, encoding: "utf8" }).trim();
       const startAgent = async () => {
         // The Go fixture uses the isolated loopback API; TLS is kept on the real
         // browser/desktop path without installing a test CA in the system keychain.
@@ -235,7 +247,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
       };
       await startAgent();
       await new Promise((accept, reject) => {
-        const probe = process.env.PDMUX_RESIZE_UI === "1" ? "smoke-terminal-size-ui.mjs" : "smoke-terminal-recovery-ui.mjs";
+        const probe = process.env.PDMUX_NATIVE_UI === "1" || process.env.PDMUX_RESIZE_UI === "1" ? "smoke-terminal-size-ui.mjs" : "smoke-terminal-recovery-ui.mjs";
         const child = spawn("node", [join(repository, "tools", probe)], { stdio: ["pipe", "inherit", "inherit", "ipc"], env: { ...process.env, PDMUX_BUN_EXECUTABLE: process.execPath }, timeout: 120_000 });
         let serial = Promise.resolve();
         child.on("message", message => {
@@ -250,13 +262,15 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
               outageMode = false;
             } else if (message.action === "agent-online") {
               await startAgent();
-              assert.equal(execFileSync("tmux", ["-S", tmuxSocket, "display-message", "-p", "#{pid}"], { env: agentEnv, encoding: "utf8" }).trim(), tmuxPid, "Keep the same private multiplexer server");
+              if (process.env.PDMUX_NATIVE_UI !== "1") assert.equal(execFileSync("tmux", ["-S", tmuxSocket, "display-message", "-p", "#{pid}"], { env: agentEnv, encoding: "utf8" }).trim(), tmuxPid, "Keep the same private multiplexer server");
+            } else if (message.action === "native-coexistence") {
+              facts = muxFacts(); assert.deepEqual(facts, existingTmux, "Native operations must leave the existing tmux process and options intact");
             } else if (message.action === "facts") facts = execFileSync("tmux", ["-S", tmuxSocket, "list-panes", "-a", "-F", "#{session_name} #{pane_in_mode} #{pane_current_command}"], { env: agentEnv, encoding: "utf8" }).trim();
             else throw new Error("Unknown recovery fixture action");
             if (child.connected) child.send({ id: message.id, ok: true, facts });
           }).catch(() => { if (child.connected) child.send({ id: message.id, ok: false }); });
         });
-        child.stdin.end(JSON.stringify({ url: tlsOrigin, cookie: cloudCookie, workspaceId: organization.id, profile: join(root, "recovery-native"), tmux: join(root, "native-tmux"), serverTmuxSocket: tmuxSocket, output: process.env.PDMUX_RECOVERY_OUTPUT ?? join(repository, "../output/playwright/terminal-recovery") }));
+        child.stdin.end(JSON.stringify({ url: tlsOrigin, cookie: cloudCookie, workspaceId: organization.id, profile: join(root, "recovery-native"), tmux: join(root, "native-tmux"), serverTmuxSocket: tmuxSocket, native: process.env.PDMUX_NATIVE_UI === "1", agentBinary, nativeRoot: join(root, "server-agent-state", "sessions", createHash("sha256").update(config).digest("hex").slice(0,24)), output: process.env.PDMUX_RECOVERY_OUTPUT ?? join(repository, "../output/playwright/terminal-recovery") }));
         child.once("error", reject); child.once("exit", code => code === 0 ? accept() : reject(new Error("Terminal recovery UI smoke failed")));
       });
     }
@@ -283,7 +297,25 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
     if (agent && agent.exitCode === null) { agent.kill("SIGTERM"); await new Promise(accept => agent.once("exit", accept)); }
     if (fileFixture) await rm(fileFixture, { recursive: true, force: true });
     await local.stop(); await server.stop();
-    if (process.env.PDMUX_RECOVERY_UI === "1" || process.env.PDMUX_RESIZE_UI === "1") {
+    // Engines intentionally outlive agents and Electron. Clean up only endpoints
+    // below this fixture's private root, using its own agent executable.
+    async function stopNativeEngines(directory) {
+      for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory() && entry.name !== "engines") await stopNativeEngines(path);
+        if (entry.isFile() && entry.name === "endpoint.json") {
+          try {
+            const infos = JSON.parse(execFileSync(agentBinary, ["session", "list", "--root", directory, "--json"], { encoding: "utf8" }));
+            for (const info of infos) execFileSync(agentBinary, ["session", "terminate", info.id, "--root", directory], { stdio: "ignore" });
+            for (let attempt = 0; attempt < 50; attempt++) {
+              try { execFileSync(agentBinary, ["session", "stop", "--root", directory], { stdio: "ignore" }); break; } catch { await new Promise(resolve => setTimeout(resolve, 20)); }
+            }
+          } catch { /* The isolated engine may already have exited. */ }
+        }
+      }
+    }
+    await stopNativeEngines(root);
+    if (process.env.PDMUX_RECOVERY_UI === "1" || process.env.PDMUX_RESIZE_UI === "1" || process.env.PDMUX_NATIVE_UI === "1") {
       for (const name of ["server-tmux", "native-tmux"]) {
         try { execFileSync("tmux", ["-S", join(root, name, `tmux-${process.getuid()}`, "default"), "kill-server"], { stdio: "ignore", env: { ...process.env, TMUX: "" } }); } catch { /* A private server that was never started needs no cleanup. */ }
       }

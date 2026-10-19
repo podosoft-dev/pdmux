@@ -184,6 +184,12 @@ export class TerminalRelayService {
       this.deliverOutput(connection, pane, frame.data, frame.dropped);
       return;
     }
+	if (frame.type === "ready" && frame.backend === "native" && frame.sessionId) {
+		pane.open.target = { ...pane.open.target, backend: "native", sessionId: frame.sessionId, intent: "attach" };
+	}
+	if (frame.type === "screen" && connection.socket.bufferedAmount + Buffer.byteLength(frame.data, "utf8") > connection.bufferBytes) {
+		this.retryConnection(connection); return;
+	}
     this.send(connection, { ...frame, termId: clientTermId });
     if (frame.type === "exit") this.closePane(connection, pane, "agent");
   }
@@ -245,6 +251,14 @@ export class TerminalRelayService {
       if (waiting.length === 0) continue;
       this.clearGrace(connection);
       for (const pane of waiting) {
+		if (pane.open.target.backend === "native") {
+			if (!this.registry.hasHello(hostId)) continue;
+			const ability = this.registry.terminalAbility(hostId);
+			if (!ability.nativeSessions || ability.screenProtocol !== 1) {
+				this.send(connection, { type: "error", termId: pane.clientTermId, message: "NATIVE_SESSIONS_UNSUPPORTED" });
+				this.closePane(connection, pane, "agent"); continue;
+			}
+		}
         if (!this.registry.sendToHost(connection.hostId, { type: "terminal", frame: pane.open })) {
           // It went away again between the event and this line; the grace timer owns it.
           connection.graceHandle = setTimeout(() => this.giveUp(connection.id), this.graceMs);
@@ -274,6 +288,11 @@ export class TerminalRelayService {
   }
 
   private openPane(connection: Connection, frame: Extract<TerminalClientFrame, { type: "open" }>): void {
+	if (frame.target.backend === "native") {
+		if (!this.registry.hasHello(connection.hostId)) { this.retryConnection(connection); return; }
+		const ability = this.registry.terminalAbility(connection.hostId);
+		if (!ability.nativeSessions || ability.screenProtocol !== 1) { this.send(connection, { type: "error", termId: frame.termId, message: "NATIVE_SESSIONS_UNSUPPORTED" }); return; }
+	}
     if (connection.panes.has(frame.termId)) {
       this.send(connection, { type: "error", termId: frame.termId, message: "terminal already open" });
       return;

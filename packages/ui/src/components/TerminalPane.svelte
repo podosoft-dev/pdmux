@@ -101,6 +101,8 @@
 		onDragMove?: (index: number, point: { x: number; y: number }) => void;
 		onDragEnd?: (index: number, point: { x: number; y: number }) => void;
 		onExit?: (slotId: string, code: number | null) => void;
+		onSessionResolved?: (slotId: string, sessionId: string) => void;
+		onTerminateSession?: (slot: TerminalSlot) => void;
 		/**
 		 * Put this pane's multiplexer into its own scroll mode, or take it back out.
 		 *
@@ -185,6 +187,8 @@
 		onDragMove,
 		onDragEnd,
 		onExit,
+		onSessionResolved,
+		onTerminateSession,
 		onScrollback,
 		onReadHistory,
 		diagnostics = false,
@@ -211,6 +215,7 @@
 	let surfaceHost = $state<HTMLDivElement | null>(null);
 	let surface: TerminalSurface | null = null;
 	let connection: TerminalConnection | null = null;
+	let nativeViewport = $state<{ x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean } | null>(null);
 
 	$effect(() => {
 		const host = surfaceHost;
@@ -241,6 +246,8 @@
 				return;
 			}
 			connection = opened;
+			if (opened.onSession) cleanups.push(opened.onSession(id => onSessionResolved?.(slot.id, id)));
+			if (opened.onViewport) cleanups.push(opened.onViewport(value => { nativeViewport = value; }));
 			// Ask once now and then after every write: a pane that attaches to a multiplexer is
 			// already in the alternate buffer before its first byte arrives.
 			refreshScrollable();
@@ -254,7 +261,7 @@
 			cleanups.push(opened.onExit((code) => onExit?.(slot.id, code)));
 			// Shift+wheel on a buffer with no local history. The surface decides that it
 			// has nothing to scroll; what to do about it is this pane's business.
-			cleanups.push(created.onScrollbackRequest(() => askScrollback()));
+			cleanups.push(created.onScrollbackRequest(direction => { if (slot.backend === 'native') { opened.scrollHistory?.(-direction * Math.max(1, geometry.rows-1)); return true; } return askScrollback(); }));
 			// Subscribed only when asked for: a watcher that ran always would be a listener per
 			// pane doing nothing but allocating.
 			if (diagnostics) {
@@ -286,6 +293,7 @@
 			surface?.dispose();
 			connection = null;
 			surface = null;
+			nativeViewport = null;
 		};
 	});
 
@@ -444,6 +452,12 @@
 	}
 
 	function toggleScrollMode(): void {
+		if (slot.backend === 'native') {
+			if (nativeViewport?.follow === false) connection?.viewport?.(0, 0, true);
+			else connection?.scrollHistory?.(Math.max(1, nativeViewport?.rows ?? 24));
+			surface?.focus();
+			return;
+		}
 		if (!onScrollback) return;
 		lastAsk = Date.now();
 		scrollMode = !scrollMode;
@@ -628,11 +642,15 @@
 	}
 
 	const actionContext = $derived<TerminalPaneActionContext>({
+		viewport: nativeViewport,
+		pan: (dx, dy) => { if (nativeViewport) connection?.viewport?.(Math.max(0, nativeViewport.x+dx), Math.max(0, nativeViewport.y+dy)); },
+		followCursor: () => connection?.viewport?.(0, 0, true),
+		...(slot.backend === 'native' && slot.sessionId && onTerminateSession ? { terminate: () => onTerminateSession?.(slot) } : {}),
 		slot,
 		index,
 		zoomed,
-		scrollMode,
-		canScrollback: onScrollback !== undefined,
+		scrollMode: slot.backend === 'native' ? nativeViewport?.follow === false : scrollMode,
+		canScrollback: slot.backend === 'native' || onScrollback !== undefined,
 		retarget: (anchor: HTMLElement) => onAssign?.(index, anchor),
 		toggleScrollback: toggleScrollMode,
 		showOutput: () => void openHistory(),

@@ -97,7 +97,16 @@
       "scrollbackHint": "이전 내용 보는 중 — 휠로 이동, Esc 로 종료",
       "scrollbackFailed": "이 세션을 스크롤하지 못했습니다: {reason}",
       "scrollbackNoMux": "에이전트가 이 호스트에서 tmux 를 찾지 못했습니다 — 에이전트를 업데이트하세요",
-      "scrollbackUnavailable": "호스트가 응답하지 않았습니다"
+      "scrollbackUnavailable": "호스트가 응답하지 않았습니다",
+      "panLeft": "화면 왼쪽으로 이동",
+      "panRight": "화면 오른쪽으로 이동",
+      "panUp": "화면 위로 이동",
+      "panDown": "화면 아래로 이동",
+      "followCursor": "커서 따라가기",
+      "terminate": "세션 종료",
+      "terminateTitle": "이 세션을 종료할까요?",
+      "terminateWarning": "세션과 그 안에서 실행 중인 모든 프로그램이 종료됩니다. 패널 닫기는 접속만 해제합니다.",
+      "terminateFailed": "세션을 종료하지 못했습니다. 호스트 연결을 확인하고 다시 시도하세요."
     },
     "picker": {
       "addTitle": "터미널 추가",

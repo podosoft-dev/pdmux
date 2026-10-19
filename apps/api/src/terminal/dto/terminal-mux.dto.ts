@@ -1,5 +1,5 @@
 import { SESSION_NAME_PATTERN } from "@pdmux/protocol";
-import { IsIn, IsString, Matches } from "class-validator";
+import { IsIn, IsString, IsOptional, IsUUID, Matches } from "class-validator";
 
 /**
  * ⚠ THE NAME BECOMES `tmux -t <name>`. `exec` runs the binary directly with no shell,
@@ -18,6 +18,12 @@ export class MuxCopyModeDto {
 }
 
 export class MuxHistoryDto {
+	@IsOptional()
+	@IsIn(["native", "tmux"])
+	backend?: "native" | "tmux";
+	@IsOptional()
+	@IsUUID()
+	sessionId?: string;
   @IsString()
   @Matches(SESSION_NAME_PATTERN, { message: "session must be 1-32 word characters" })
   session!: string;

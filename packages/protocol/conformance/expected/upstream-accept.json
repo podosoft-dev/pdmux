@@ -127,6 +127,10 @@
 				"hostname": "build-01",
 				"os": "linux",
 				"protocolVersion": 1,
+				"terminal": {
+					"nativeSessions": false,
+					"screenProtocol": 0
+				},
 				"update": {
 					"canRestart": false,
 					"restartMode": "none"
@@ -340,6 +344,45 @@
 				"shellPanes": 0,
 				"targetVersion": null
 			}
+		},
+		"terminal-native-ready": {
+			"frame": {
+				"backend": "native",
+				"pid": 123,
+				"sessionId": "11111111-2222-4333-8444-555555555555",
+				"termId": "native",
+				"type": "ready"
+			},
+			"type": "terminal"
+		},
+		"terminal-native-screen": {
+			"frame": {
+				"canvasCols": 120,
+				"canvasRows": 40,
+				"cols": 40,
+				"data": "\u001b[Hhello",
+				"follow": false,
+				"rows": 12,
+				"sequence": 1,
+				"termId": "native",
+				"type": "screen",
+				"x": 30,
+				"y": 10
+			},
+			"type": "terminal"
+		},
+		"terminal-native-history-result": {
+			"frame": {
+				"error": "",
+				"lines": [
+					"one",
+					"two"
+				],
+				"screenOnly": false,
+				"termId": "control",
+				"type": "session-result"
+			},
+			"type": "terminal"
 		}
 	},
 	"rejected": {}

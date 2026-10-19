@@ -43,7 +43,7 @@
 	 * sessions had merely exited, and "New session" stayed enabled — so the only way
 	 * to learn the truth was to click it and read an error.
 	 */
-	const hasMux = $derived(host?.multiplexer !== false);
+	const hasMux = $derived(host?.nativeSessions === true || host?.multiplexer !== false);
 	const gridHosts = $derived(hosts.map((h) => ({ id: h.id, name: h.name, online: h.online, sessions: h.sessions })));
 	let name = $state('');
 	const suggestion = $derived(host ? nextSessionName(gridHosts, host.id, taken) : 'w1');
@@ -121,14 +121,15 @@
 	</div>
 
 	<div class="pdmux-meta">{tr('pdmux.picker.sessions', 'Existing sessions')} ({sessions.length})</div>
-	{#each sessions as session (session.name)}
+	{#each sessions as session (`${session.backend ?? 'tmux'}:${session.sessionId ?? session.name}`)}
 		<button
 			class="pdmux-pick-row"
 			type="button"
 			data-pdmux-session={session.name}
-			onclick={() => host && apply({ hostId: host.id, kind: 'attach', session: session.name })}
+			data-pdmux-backend={session.backend ?? 'tmux'}
+			onclick={() => host && apply({ hostId: host.id, kind: 'attach', session: session.name, ...(session.backend ? { backend: session.backend } : {}), ...(session.sessionId ? { sessionId: session.sessionId } : {}) })}
 		>
-			<span>{session.name}</span>
+			<span>{session.name}{#if host?.nativeSessions}<small> · {session.backend === 'native' ? 'PDMux' : 'tmux'}</small>{/if}</span>
 			<span class="pdmux-meta"
 				>{session.attached ?? 0} {tr('pdmux.picker.clients', 'clients')} · {session.windows ?? 0}
 				{tr('pdmux.picker.windows', 'windows')}</span
@@ -151,7 +152,7 @@
 			data-pdmux-action="new"
 			disabled={!host || !valid || !hasMux}
 			title={hasMux ? undefined : tr('pdmux.picker.noMux', 'This host has no terminal multiplexer installed')}
-			onclick={() => host && valid && hasMux && apply({ hostId: host.id, kind: 'new', session: proposed })}
+			onclick={() => host && valid && hasMux && apply({ hostId: host.id, kind: 'new', session: proposed, ...(host.nativeSessions ? { backend: 'native' } : {}) })}
 			>＋ {tr('pdmux.picker.newSession', 'New session')}</button
 		>
 		<input

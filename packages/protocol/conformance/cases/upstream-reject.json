@@ -127,6 +127,28 @@
 					}
 				]
 			}
+		},
+		{
+			"id": "terminal-native-invalid-screen",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "screen",
+					"termId": "native",
+					"data": "",
+					"sequence": 1,
+					"cols": 0,
+					"rows": 12,
+					"canvasCols": 120,
+					"canvasRows": 40,
+					"x": 0,
+					"y": 0,
+					"follow": true
+				}
+			}
 		}
 	]
 }

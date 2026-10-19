@@ -27,7 +27,7 @@ func main() {
 	defer stop()
 	// Embedded agents are supervised by Electron through a lifetime pipe. EOF
 	// cancels the daemon even when the parent crashes, without touching host agents.
-	if os.Getenv("PDMUX_DESKTOP_AGENT") == "1" {
+	if os.Getenv("PDMUX_DESKTOP_AGENT") == "1" && (len(os.Args) < 2 || os.Args[1] != "session") {
 		go func() { _, _ = io.Copy(io.Discard, os.Stdin); stop() }()
 	}
 

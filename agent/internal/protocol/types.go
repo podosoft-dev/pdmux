@@ -198,9 +198,11 @@ const (
 // shape is generic on purpose — `attached` and `windows` are what a target
 // picker needs to show).
 type MuxSession struct {
-	Name     string `json:"name"`
-	Attached int    `json:"attached"`
-	Windows  int    `json:"windows"`
+	Backend   *string `json:"backend,omitempty"`
+	SessionID *string `json:"sessionId,omitempty"`
+	Name      string  `json:"name"`
+	Attached  int     `json:"attached"`
+	Windows   int     `json:"windows"`
 }
 
 // UsageWindow is one usage window reported by a coding agent (e.g. a session
@@ -700,7 +702,10 @@ type RepoSnapshot struct {
 
 // TerminalTarget is what a terminal attaches to.
 type TerminalTarget struct {
-	Kind TerminalKind `json:"kind"`
+	Backend   *string      `json:"backend,omitempty"`
+	SessionID *string      `json:"sessionId,omitempty"`
+	Intent    *string      `json:"intent,omitempty"`
+	Kind      TerminalKind `json:"kind"`
 	// Session is the session name for Kind == TerminalSession; ignored for a shell.
 	//
 	// ⚠ THE PATTERN ON THIS FIELD IS A SECURITY CONTROL, NOT A TIDINESS RULE.
@@ -747,7 +752,8 @@ type AgentConnectorAbility struct {
 
 // AgentHello is the first frame on every connection.
 type AgentHello struct {
-	ProtocolVersion int `json:"protocolVersion"`
+	Terminal        AgentTerminalAbility `json:"terminal"`
+	ProtocolVersion int                  `json:"protocolVersion"`
 	// AgentVersion is ⚠ FREE-FORM ON PURPOSE — do not tighten it to a SemVer
 	// pattern. It is validated on the frame an ALREADY-INSTALLED agent sends: a
 	// host reporting `0.1.0-dev+g1a2b3c` would fail the check, never reach the
@@ -770,6 +776,11 @@ type AgentHello struct {
 	// Update is absent from every agent built before remote update — the default says "no".
 	Update     AgentUpdateAbility    `json:"update"`
 	Connectors AgentConnectorAbility `json:"connectors"`
+}
+
+type AgentTerminalAbility struct {
+	NativeSessions bool `json:"nativeSessions"`
+	ScreenProtocol int  `json:"screenProtocol"`
 }
 
 // UpdateStatus is progress AND outcome of a remote update, in one type.

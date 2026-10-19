@@ -50,6 +50,8 @@ export const epochSeconds = z.number().int().nonnegative();
  */
 export const muxSessionSchema = z.object({
 	name: z.string().min(1).max(128),
+	backend: z.enum(['native', 'tmux']).optional(),
+	sessionId: z.string().uuid().optional(),
 	attached: z.number().int().nonnegative().default(0),
 	windows: z.number().int().nonnegative().default(0),
 });
@@ -677,6 +679,9 @@ export const SESSION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
  */
 export const terminalTargetSchema = z.object({
 	kind: z.enum(['session', 'shell']).default('session'),
+	backend: z.enum(['native', 'tmux']).optional(),
+	sessionId: z.string().uuid().optional(),
+	intent: z.enum(['create', 'attach', 'ensure']).optional(),
 	/** Session name for `kind: 'session'`; ignored for `shell`. */
 	session: z.string().regex(SESSION_NAME_PATTERN).optional(),
 	cols: z.number().int().positive().max(1000).default(80),
@@ -686,6 +691,8 @@ export type TerminalTarget = z.infer<typeof terminalTargetSchema>;
 
 /** Browser -> server -> agent. */
 export const terminalClientFrameSchema = z.discriminatedUnion('type', [
+	z.object({ type: z.literal('viewport'), termId: z.string().min(1).max(64), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean().default(false), history: z.number().int().min(-5000).max(5000).default(0) }),
+	z.object({ type: z.literal('session-control'), termId: z.string().min(1).max(64), action: z.enum(['history', 'terminate']), sessionId: z.string().uuid() }),
 	z.object({ type: z.literal('open'), termId: z.string().min(1).max(64), target: terminalTargetSchema }),
 	z.object({ type: z.literal('input'), termId: z.string().min(1).max(64), data: z.string() }),
 	z.object({
@@ -700,7 +707,9 @@ export type TerminalClientFrame = z.infer<typeof terminalClientFrameSchema>;
 
 /** Agent -> server -> browser. */
 export const terminalServerFrameSchema = z.discriminatedUnion('type', [
-	z.object({ type: z.literal('ready'), termId: z.string(), pid: z.number().int().nullable().default(null) }),
+	z.object({ type: z.literal('ready'), termId: z.string(), pid: z.number().int().nullable().default(null), backend: z.enum(['native', 'tmux']).optional(), sessionId: z.string().uuid().optional() }),
+	z.object({ type: z.literal('screen'), termId: z.string(), data: z.string().max(65536), sequence: z.number().int().nonnegative(), cols: z.number().int().positive().max(1000), rows: z.number().int().positive().max(500), canvasCols: z.number().int().positive().max(1000), canvasRows: z.number().int().positive().max(500), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean() }),
+	z.object({ type: z.literal('session-result'), termId: z.string(), lines: z.array(z.string()), screenOnly: z.boolean().default(false), error: z.string().max(512).default('') }),
 	z.object({
 		type: z.literal('output'), termId: z.string(), data: z.string(),
 		/**
@@ -775,6 +784,10 @@ export const agentConnectorAbilitySchema = z.object({
 });
 export type AgentConnectorAbility = z.infer<typeof agentConnectorAbilitySchema>;
 
+/** Growable object: older servers strip it without rejecting the agent hello. */
+export const agentTerminalAbilitySchema = z.object({ nativeSessions: z.boolean().default(false), screenProtocol: z.number().int().nonnegative().default(0) });
+export type AgentTerminalAbility = z.infer<typeof agentTerminalAbilitySchema>;
+
 export const agentHelloSchema = z.object({
 	protocolVersion: z.number().int().positive(),
 	/**
@@ -811,6 +824,7 @@ export const agentHelloSchema = z.object({
 	update: agentUpdateAbilitySchema.default({}),
 	/** A growable object, not a closed capability enum, so old servers ignore it safely. */
 	connectors: agentConnectorAbilitySchema.default({ cloudflared: false }),
+	terminal: agentTerminalAbilitySchema.default({}),
 });
 export type AgentHello = z.infer<typeof agentHelloSchema>;
 
@@ -1058,6 +1072,7 @@ export const agentDownstreamSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('fsTransfer'), transfer: fsTransferRequestSchema }),
 	z.object({
 		type: z.literal('welcome'),
+		terminalScreenProtocol: z.number().int().nonnegative().default(0),
 		hostId: z.string().uuid(),
 		config: agentConfigSchema,
 		/** Server's own SemVer. Advisory — logged by the agent, never a gate. */

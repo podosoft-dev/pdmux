@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/user"
 	"strings"
+	"time"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/config"
 	"github.com/podosoft-dev/pdmux/agent/internal/log"
+	"github.com/podosoft-dev/pdmux/agent/internal/session"
 	"github.com/podosoft-dev/pdmux/agent/internal/sys"
 )
 
@@ -130,6 +132,9 @@ func (d Deps) withDefaults() Deps {
 // Main runs one command and returns the process exit code.
 func Main(ctx context.Context, argv []string, deps Deps) int {
 	deps = deps.withDefaults()
+	if len(argv) > 0 && argv[0] == "session" {
+		return commandSessions(ctx, argv[1:], deps)
+	}
 	args := Parse(argv)
 	if len(args.Unknown) > 0 {
 		// Refused, not ignored: a mistyped flag in a unit file (`--sever`) would
@@ -387,6 +392,19 @@ func commandDoctor(ctx context.Context, args Args, deps Deps) int {
 		Which:      deps.Which,
 		Connect: func(url, token string) ProbeResult {
 			return deps.Probe(ctx, url, token)
+		},
+		NativeCheck: func() Check {
+			probe, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			client := session.LocalClient(resolved.ConfigPath, deps.Executable)
+			reply, err := client.Request(probe, session.Request{Action: "list"})
+			if err == nil {
+				return Check{Name: "native sessions", OK: true, Detail: fmt.Sprintf("engine %s, protocol %d, %d session(s)", reply.Version, reply.Protocol, len(reply.Sessions))}
+			}
+			if err.Error() == "SESSION_ENGINE_NOT_RUNNING" {
+				return Check{Name: "native sessions", OK: true, Detail: "built in; engine starts on first attachment"}
+			}
+			return Check{Name: "native sessions", Detail: err.Error()}
 		},
 	})
 	fmt.Fprintln(deps.Stdout, FormatChecks(checks))

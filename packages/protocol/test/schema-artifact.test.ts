@@ -64,6 +64,7 @@ const EXPECTED_DEFS = [
 	'agentExec',
 	'agentHello',
 	'agentServiceConfig',
+	'agentTerminalAbility',
 	'agentUpdate',
 	'agentUpdateAbility',
 	'agentUpstream',

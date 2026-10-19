@@ -86,6 +86,8 @@ export interface CreatedHost extends Host {
 export class HostsService {
   private readonly logger = new ProductLogger(HostsService.name);
   private connectedProbe: ConnectedProbe = () => false;
+	private terminalProbe: (id: string) => AgentHello["terminal"] = () => ({ nativeSessions: false, screenProtocol: 0 });
+	setTerminalProbe(probe: (id: string) => AgentHello["terminal"]): void { this.terminalProbe = probe; }
   private enrollmentIssuer: EnrollmentIssuer | null = null;
   private enabledChangeListener: HostEnabledChangeListener = () => {};
   private removedListener: HostRemovedListener = () => {};
@@ -180,6 +182,7 @@ export class HostsService {
         heartbeatSec,
         now,
         connected: this.connectedProbe(host.id),
+		terminal: this.terminalProbe(host.id),
         latestAgentVersion: this.releases.latestFor(host.os, host.arch),
         exposures: exposuresByHost.get(host.id) ?? [],
       }),
@@ -199,6 +202,7 @@ export class HostsService {
       heartbeatSec: settings.heartbeatSec,
       now: Date.now(),
       connected: this.connectedProbe(host.id),
+		terminal: this.terminalProbe(host.id),
       latestAgentVersion: this.releases.latestFor(host.os, host.arch),
       exposures,
     });

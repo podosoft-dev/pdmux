@@ -17,7 +17,7 @@ module github.com/podosoft-dev/pdmux/agent
 go 1.26.5
 ```
 
-Four dependencies, and that is all:
+The main dependencies are:
 
 | Module | Used for |
 |---|---|
@@ -25,6 +25,10 @@ Four dependencies, and that is all:
 | `github.com/creack/pty` | a real PTY. Why the `script(1)` fallback and its limits (§5) are gone |
 | `github.com/santhosh-tekuri/jsonschema/v6` | validating frames against the embedded contract |
 | `golang.org/x/text` | UTF-8 boundary handling for terminal output |
+| `github.com/UserExistsError/conpty` | Windows native pseudoconsole |
+| `github.com/charmbracelet/x/vt` and `ultraviolet` | native-session screen state and Unicode cells |
+| `github.com/Microsoft/go-winio` | private Windows named-pipe IPC |
+| `golang.org/x/term` and `x/sys` | interactive attachment and OS IPC permissions |
 
 Built with **`CGO_ENABLED=0`**. Turning cgo on links against the build machine's libc, and
 at that moment the promise of "no assumptions about the target" is broken.
@@ -54,6 +58,7 @@ agent/
     ├── git/                read-only snapshots · commits · diffs · the detail ledger
     ├── fs/                 home-confined access · durable staged transfers · expiry cleanup
     ├── term/               PTY ownership · target resolution · output coalescing and caps
+    ├── session/            detached native engine · VT state · viewports · authenticated local IPC
     ├── update/             remote update: verify→commit, the probation marker, self-refusal
     ├── state/              resolving the state directory (system=/var/lib, user=~/.local/state)
     ├── log/                one-line structured logging + **secret masking**
@@ -61,6 +66,10 @@ agent/
 ```
 
 A few of these placements are worth keeping the reason for.
+
+- **`session` owns persistent programs independently of `agent`.** Native sessions
+  survive a network-agent replacement and coexist with unchanged tmux sessions.
+  See [Native sessions](NATIVE-SESSIONS.md) for the CLI, limits and compatibility.
 
 - **`cmd/` holds no decisions.** Every judgement lives in `internal/cli`, so there is
   nothing to mock. And the daemon is started from exactly one place, `daemon.go`, so a CLI

@@ -79,6 +79,7 @@ export function gridHosts(hosts: readonly HostView[]): GridHost[] {
     // even if its last heartbeat is recent.
     online: host.enabled && host.online,
     sessions: host.sessions ?? [],
+    nativeSessions: host.terminal?.nativeSessions === true && host.terminal.screenProtocol === 1,
   }));
 }
 

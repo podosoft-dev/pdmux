@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/config"
@@ -48,6 +49,8 @@ type DoctorInput struct {
 	Which func(command string) bool
 	// Connect performs the connectivity check; see Probe.
 	Connect func(url, token string) ProbeResult
+	// NativeCheck is read-only: an idle engine is available on first attachment.
+	NativeCheck func() Check
 }
 
 // RunDoctor produces the report, in the order it is printed.
@@ -84,11 +87,18 @@ func RunDoctor(in DoctorInput) []Check {
 	}
 	checks = append(checks, Check{Name: "token", OK: in.Token != "", Detail: tokenDetail})
 
+	if in.NativeCheck != nil {
+		checks = append(checks, in.NativeCheck())
+	}
 	tmux := in.Which("tmux")
+	tmuxDetail := pick(tmux, "found", "missing — sessions will be empty and `session` terminals cannot open")
+	if !tmux && in.NativeCheck != nil {
+		tmuxDetail = "not installed — optional; native sessions remain available"
+	}
 	checks = append(checks, Check{
 		Name:   "tmux",
-		OK:     tmux,
-		Detail: pick(tmux, "found", "missing — sessions will be empty and `session` terminals cannot open"),
+		OK:     tmux || in.NativeCheck != nil,
+		Detail: tmuxDetail,
 	})
 	git := in.Which("git")
 	checks = append(checks, Check{
@@ -97,7 +107,11 @@ func RunDoctor(in DoctorInput) []Check {
 		Detail: pick(git, "found", "missing — repository snapshots will be skipped"),
 	})
 
-	checks = append(checks, Check{Name: "pty", OK: true, Detail: ptyDetail})
+	pty := ptyDetail
+	if runtime.GOOS == "windows" {
+		pty = "native Windows ConPTY (UTF-8; resize supported)"
+	}
+	checks = append(checks, Check{Name: "pty", OK: true, Detail: pty})
 
 	if in.WSURL != "" && in.Token != "" {
 		result := in.Connect(in.WSURL, in.Token)

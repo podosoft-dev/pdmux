@@ -87,6 +87,33 @@ describe("TerminalRelayService", () => {
     });
   }
 
+  it("[TC-PDTERM-023] resumes the same native UUID and never substitutes a same-name tmux session", () => {
+    registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
+    const browser = new FakeBrowser();
+    const id = connect(browser);
+    relay.handleClientFrame(id, { type: "open", termId: "native", target: { kind: "session", backend: "native", intent: "create", session: "same" } });
+    const sessionId = "11111111-2222-4333-8444-555555555555";
+    relay.handleAgentFrame(HOST, { type: "ready", termId: `${id}:native`, pid: 42, backend: "native", sessionId });
+    registry.unregister(HOST, agent);
+    const replacement = new FakeAgent();
+    registry.register(HOST, replacement, "token-1");
+    expect(replacement.terminalFrames()).toHaveLength(0);
+    registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
+    expect(replacement.terminalFrames()).toEqual([{ type: "open", termId: `${id}:native`, target: { kind: "session", backend: "native", intent: "attach", session: "same", sessionId, cols: 80, rows: 24 } }]);
+  });
+
+  it("[TC-PDTERM-022] reconnects a slow native viewer instead of losing screen updates", () => {
+    registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
+    const browser = new FakeBrowser();
+    const id = connect(browser);
+    relay.handleClientFrame(id, { type: "open", termId: "native", target: { backend: "native", intent: "create", session: "same" } });
+    browser.bufferedAmount = 100_000;
+    relay.handleAgentFrame(HOST, { type: "screen", termId: `${id}:native`, data: "snapshot", sequence: 1, cols: 40, rows: 12, canvasCols: 120, canvasRows: 40, x: 0, y: 0, follow: true });
+    expect(browser.closed).not.toBeNull();
+    expect(browser.frames.filter(frame => frame.type === "screen")).toHaveLength(0);
+    expect(agent.terminalFrames().at(-1)).toEqual({ type: "close", termId: `${id}:native` });
+  });
+
   it("[TC-PDTERM-051] namespaces termIds per browser connection so two tabs cannot address each other", () => {
     const alice = new FakeBrowser();
     const bob = new FakeBrowser();

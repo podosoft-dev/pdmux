@@ -38,6 +38,7 @@ var objectDefs = map[string]objectUnderTest{
 	"agentCloudflaredConfig": {func() any { return new(AgentCloudflaredConfig) }, func() any { v := NewAgentCloudflaredConfig(); return &v }},
 	"agentConfig":            {func() any { return new(AgentConfig) }, func() any { v := NewAgentConfig(); return &v }},
 	"agentConnectorAbility":  {func() any { return new(AgentConnectorAbility) }, func() any { v := NewAgentConnectorAbility(); return &v }},
+	"agentTerminalAbility":   {func() any { return new(AgentTerminalAbility) }, func() any { v := NewAgentTerminalAbility(); return &v }},
 	"agentDiagnostic":        {func() any { return new(AgentDiagnostic) }, func() any { v := NewAgentDiagnostic(); return &v }},
 	"agentHello":             {func() any { return new(AgentHello) }, func() any { v := NewAgentHello(); return &v }},
 	"agentServiceConfig":     {func() any { return new(AgentServiceConfig) }, func() any { v := NewAgentServiceConfig(); return &v }},

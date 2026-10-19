@@ -289,6 +289,7 @@ describe("HostsService", () => {
     const laptop = await ctx.service.create(ORG_A, { label: "laptop" });
     const fresh = await ctx.service.create(ORG_A, { label: "never-connected" });
     await ctx.service.applyHello(server.id, {
+      terminal: { nativeSessions: false, screenProtocol: 0 },
       protocolVersion: 1,
       agentVersion: "1.2.0",
       hostname: "build-01",
@@ -300,6 +301,7 @@ describe("HostsService", () => {
       connectors: { cloudflared: true },
     });
     await ctx.service.applyHello(laptop.id, {
+      terminal: { nativeSessions: false, screenProtocol: 0 },
       protocolVersion: 1,
       agentVersion: "1.2.0",
       hostname: "laptop",

@@ -100,6 +100,28 @@ function harness(): Harness {
 const target = { slotId: "t1", hostId: "h1", kind: "session" as const, session: "main", cols: 80, rows: 24 };
 
 describe("[TC-PDTERM-101] opening a pane", () => {
+  it("reconnects a native pane by UUID and forwards viewport controls", () => {
+    const { relay, sockets, run } = harness();
+    const connection = relay.open({ ...target, backend: "native", intent: "create" });
+    const first = sockets[0]!;
+    first.accept();
+    const sessionId = "11111111-2222-4333-8444-555555555555";
+    const resolved: string[] = [];
+    connection.onSession?.(id => resolved.push(id));
+    first.deliver({ type: "ready", termId: "t1", backend: "native", sessionId });
+    expect(resolved).toEqual([sessionId]);
+    const received: string[] = [];
+    connection.onData(data => received.push(data));
+    first.deliver({ type: "screen", termId: "t1", data: "paint", sequence: 1, cols: 40, rows: 12, canvasCols: 120, canvasRows: 40, x: 20, y: 0, follow: false });
+    expect(received).toEqual(["paint"]);
+    connection.viewport?.(30, 5, false);
+    expect(first.frames().at(-1)).toEqual({ type: "viewport", termId: "t1", x: 30, y: 5, follow: false });
+    first.drop(); run();
+    const second = sockets[1]!;
+    second.accept();
+    expect(second.frames().find(frame => frame.type === "open")).toMatchObject({ target: { backend: "native", intent: "attach", sessionId } });
+    relay.dispose();
+  });
   it("dials the host's own socket and buffers output that beats the listener", () => {
     const { relay, sockets, urls } = harness();
     const connection = relay.open(target);

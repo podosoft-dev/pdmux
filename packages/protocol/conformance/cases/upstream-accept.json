@@ -165,6 +165,61 @@
 					"currentVersion": "0.1.0"
 				}
 			}
+		},
+		{
+			"id": "terminal-native-ready",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "ready",
+					"termId": "native",
+					"backend": "native",
+					"sessionId": "11111111-2222-4333-8444-555555555555",
+					"pid": 123
+				}
+			}
+		},
+		{
+			"id": "terminal-native-screen",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "screen",
+					"termId": "native",
+					"data": "\u001b[Hhello",
+					"sequence": 1,
+					"cols": 40,
+					"rows": 12,
+					"canvasCols": 120,
+					"canvasRows": 40,
+					"x": 30,
+					"y": 10,
+					"follow": false
+				}
+			}
+		},
+		{
+			"id": "terminal-native-history-result",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "session-result",
+					"termId": "control",
+					"lines": [
+						"one",
+						"two"
+					]
+				}
+			}
 		}
 	]
 }

@@ -7,9 +7,56 @@ import { AgentExecService } from "../agents/agent-exec.service";
 import { AppException } from "../common/app-exception";
 import { MuxCopyModeDto, MuxHistoryDto } from "./dto/terminal-mux.dto";
 import { TerminalMuxController } from "./terminal-mux.controller";
+import { AgentRegistryService } from "../agents/agent-registry.service";
+import type { HostsService } from "../hosts/hosts.service";
+import type { AgentDownstream } from "@pdmux/protocol";
 
 const HOST = "11111111-2222-3333-4444-555555555555";
 const SESSION = { user: { id: "u1" }, session: { activeOrganizationId: "org-a" } } as AuthSession;
+const NATIVE_ID = "11111111-2222-4333-8444-555555555555";
+
+describe("[TC-PDTERM-136] native history and termination use the selected engine", () => {
+  it("authorizes the host scope and addresses the native UUID without executing tmux", async () => {
+    const registry = new AgentRegistryService();
+    const sent: AgentDownstream[] = [];
+    registry.register(HOST, {
+      send: (data: string): void => {
+        const frame = JSON.parse(data) as AgentDownstream;
+        sent.push(frame);
+        if (frame.type !== "terminal" || frame.frame.type !== "session-control") return;
+        const termId = frame.frame.termId;
+        // A second host cannot supply a matching control reply.
+        registry.emitTerminalFrame("other-host", { type: "session-result", termId, lines: ["wrong host"], screenOnly: false, error: "" });
+        registry.emitTerminalFrame(HOST, { type: "session-result", termId, lines: ["native history"], screenOnly: false, error: "" });
+      }, close: (): void => {},
+    }, "token");
+    registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
+    const get = mock(async () => ({ enabled: true }));
+    const exec = { run: mock(async () => { throw new Error("native request executed tmux"); }) } as unknown as AgentExecService;
+    const controller = new TerminalMuxController(exec, registry, { get } as unknown as HostsService);
+    const dto = { session: "same", backend: "native" as const, sessionId: NATIVE_ID };
+    expect(await controller.history(SESSION, HOST, dto)).toEqual({ lines: ["native history"], screenOnly: false, reachedOldest: true });
+    expect(await controller.terminate(SESSION, HOST, dto)).toEqual({ ok: true });
+    expect(get).toHaveBeenCalledWith("org-a", HOST);
+    expect(exec.run).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({ type: "terminal", frame: { type: "session-control", action: "terminate", sessionId: NATIVE_ID } });
+  });
+
+  it("refuses unsupported agents and inaccessible hosts before sending controls", async () => {
+    const registry = new AgentRegistryService();
+    const send = mock(() => {});
+    registry.register(HOST, { send, close: (): void => {} }, "token");
+    const exec = {} as AgentExecService;
+    const dto = { session: "same", backend: "native" as const, sessionId: NATIVE_ID };
+    const allowed = new TerminalMuxController(exec, registry, { get: async () => ({ enabled: true }) } as unknown as HostsService);
+    await expect(allowed.terminate(SESSION, HOST, dto)).rejects.toThrow("Update the host agent");
+    registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
+    const denied = new TerminalMuxController(exec, registry, { get: async () => { throw new AppException("HOST_NOT_FOUND", "Host not found", 404); } } as unknown as HostsService);
+    await expect(denied.terminate(SESSION, HOST, dto)).rejects.toThrow("Host not found");
+    expect(send).not.toHaveBeenCalled();
+  });
+});
 
 function ok(stdout = ""): ExecResult {
   return { commandId: "c", exitCode: 0, stdout, stderr: "", truncated: false, timedOut: false, code: null, message: "" };

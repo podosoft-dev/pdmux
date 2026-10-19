@@ -4,6 +4,9 @@ import type { AuthSession } from "../auth/auth.service";
 import { AppException } from "../common/app-exception";
 import { resolveScopeId } from "../fleet/session-scope";
 import { MuxCopyModeDto, MuxHistoryDto } from "./dto/terminal-mux.dto";
+import { AgentRegistryService } from "../agents/agent-registry.service";
+import { HostsService } from "../hosts/hosts.service";
+import { randomUUID } from "node:crypto";
 
 /**
  * Reaching a pane's SCROLLBACK, which is not in the browser.
@@ -22,11 +25,11 @@ import { MuxCopyModeDto, MuxHistoryDto } from "./dto/terminal-mux.dto";
  * anyone who asks — from outside the session, without touching the program inside.
  * That is all this controller does.
  *
- * ⚠ NO NEW WIRE CONTRACT. This rides the existing `exec` capability (CONTRACTS §C6):
+ * The tmux adapter rides the existing `exec` capability (CONTRACTS §C6):
  * the agent runs a binary with argv it never assembles into a shell command, and
  * answers with an exit code. Adding a terminal frame for it would have meant a
- * protocol version, an agent handler, and a relay path — for a fixed pair of commands
- * the fleet can already run.
+ * protocol version, an agent handler, and a relay path. Native sessions instead
+ * use negotiated session-control frames and UUIDs; they never execute tmux.
  *
  * ⚠ THE PROGRAM INSIDE IS NEVER SENT A KEY. Every alternative considered here ended in
  * typing something into somebody's session: the multiplexer's own prefix (which the
@@ -55,7 +58,47 @@ export class TerminalMuxController {
   /** A ceiling on round trips, so a pathological pane cannot hold the request open. */
   private static readonly MAX_WINDOWS = 40;
 
-  constructor(private readonly exec: AgentExecService) {}
+  constructor(private readonly exec: AgentExecService, private readonly registry?: AgentRegistryService, private readonly hosts?: HostsService) {}
+
+  async terminate(session: AuthSession, hostId: string, dto: MuxHistoryDto): Promise<{ ok: true }> {
+    await this.nativeAction(session, hostId, dto, "terminate");
+    return { ok: true };
+  }
+
+  private async nativeAction(
+    session: AuthSession, hostId: string, dto: MuxHistoryDto, action: "history" | "terminate",
+  ): Promise<{ lines: string[]; screenOnly: boolean }> {
+    if (!this.hosts || !this.registry || !dto.sessionId || dto.backend !== "native") {
+      throw new AppException("NATIVE_SESSIONS_UNSUPPORTED", "Native sessions are unavailable", 409);
+    }
+    const host = await this.hosts.get(resolveScopeId(session), hostId);
+    if (!host.enabled) throw new AppException("HOST_DISABLED", "This host is disabled", 409);
+    const registry = this.registry;
+    const ability = registry.terminalAbility(hostId);
+    if (!ability.nativeSessions || ability.screenProtocol !== 1) {
+      throw new AppException("NATIVE_SESSIONS_UNSUPPORTED", "Update the host agent to use native sessions", 409);
+    }
+    const sessionId = dto.sessionId;
+    const termId = `control-${randomUUID()}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        off();
+        reject(new AppException("SESSION_TIMEOUT", "The session engine did not answer", 504));
+      }, 5_000);
+      const off = registry.onTerminalFrame((source, frame) => {
+        if (source !== hostId || frame.termId !== termId || frame.type !== "session-result") return;
+        clearTimeout(timer);
+        off();
+        if (frame.error) reject(new AppException(frame.error, "The session operation failed", 409));
+        else resolve({ lines: frame.lines, screenOnly: frame.screenOnly });
+      });
+      if (!registry.sendToHost(hostId, { type: "terminal", frame: { type: "session-control", termId, action, sessionId } })) {
+        clearTimeout(timer);
+        off();
+        reject(new AppException("HOST_OFFLINE", "The host is offline", 409));
+      }
+    });
+  }
 
   async copyMode(
     session: AuthSession,
@@ -78,6 +121,10 @@ export class TerminalMuxController {
     hostId: string,
     dto: MuxHistoryDto,
   ): Promise<{ lines: string[]; reachedOldest: boolean; screenOnly: boolean }> {
+    if (dto.backend === "native") {
+      const result = await this.nativeAction(session, hostId, dto, "history");
+      return { ...result, reachedOldest: true };
+    }
     const { WINDOW_LINES, MAX_LINES, MAX_WINDOWS } = TerminalMuxController;
     /** Newest-first while gathering; reversed once, at the end. */
     const chunks: string[][] = [];

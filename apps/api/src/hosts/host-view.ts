@@ -43,6 +43,7 @@ export interface HostServiceView {
 }
 
 export interface HostView {
+	terminal: { nativeSessions: boolean; screenProtocol: number };
   id: string;
   label: string;
   address: string | null;
@@ -170,6 +171,7 @@ export function toHostView(
     heartbeatSec: number;
     now: number;
     connected: boolean;
+	terminal?: { nativeSessions: boolean; screenProtocol: number };
     /**
      * Resolved by the caller, which is the only side that can ask the release
      * lookup. Passing the answer rather than the service keeps this file a pure
@@ -206,6 +208,7 @@ export function toHostView(
     lastSeenAt: host.lastSeenAt ? host.lastSeenAt.toISOString() : null,
     online: isOnline(host.lastSeenAt, options.heartbeatSec, options.now),
     connected: options.connected,
+	terminal: options.terminal ?? { nativeSessions: false, screenProtocol: 0 },
     resource: heartbeat?.resource ?? null,
     sessions: heartbeat?.sessions ?? [],
     usage: heartbeat?.usage ?? [],

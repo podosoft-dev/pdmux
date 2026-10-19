@@ -158,7 +158,7 @@ for (const failure of ["rename", "list"] as const) {
 it("[TC-PDDESKTOP-017] prepares #1 once, reuses the host and preserves an intentionally cleared layout", async () => {
   const state = await fixture(); await state.run();
   expect(agent?.status()).toEqual({ phase:"ready", hostId });
-  expect(state.payload().slots).toEqual([{ id:"slot-1",hostId,kind:"shell",session:null }]);
+  expect(state.payload().slots).toEqual([{ id:"slot-1",hostId,kind:"new",session:"main",backend:"native",intent:"ensure" }]);
   state.setPayload({ slots: [], mode:"split4" });
   await state.run();
   expect(state.payload()).toEqual({ slots:[],mode:"split4" });

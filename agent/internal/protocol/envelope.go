@@ -78,20 +78,24 @@ const (
 type TerminalServerType string
 
 const (
-	TermReady  TerminalServerType = "ready"
-	TermOutput TerminalServerType = "output"
-	TermExit   TerminalServerType = "exit"
-	TermError  TerminalServerType = "error"
+	TermReady         TerminalServerType = "ready"
+	TermOutput        TerminalServerType = "output"
+	TermExit          TerminalServerType = "exit"
+	TermError         TerminalServerType = "error"
+	TermScreen        TerminalServerType = "screen"
+	TermSessionResult TerminalServerType = "session-result"
 )
 
 // TerminalClientType discriminates browser -> server -> agent terminal frames.
 type TerminalClientType string
 
 const (
-	TermOpen   TerminalClientType = "open"
-	TermInput  TerminalClientType = "input"
-	TermResize TerminalClientType = "resize"
-	TermClose  TerminalClientType = "close"
+	TermOpen           TerminalClientType = "open"
+	TermInput          TerminalClientType = "input"
+	TermResize         TerminalClientType = "resize"
+	TermClose          TerminalClientType = "close"
+	TermViewport       TerminalClientType = "viewport"
+	TermSessionControl TerminalClientType = "session-control"
 )
 
 // ---------------------------------------------------------------------------
@@ -285,9 +289,10 @@ func (f *UpdateStatusFrame) stampUpstream() UpstreamType {
 
 // WelcomeFrame answers a HelloFrame and hands the agent its identity and config.
 type WelcomeFrame struct {
-	Type   DownstreamType `json:"type"`
-	HostID string         `json:"hostId"`
-	Config AgentConfig    `json:"config"`
+	TerminalScreenProtocol int            `json:"terminalScreenProtocol"`
+	Type                   DownstreamType `json:"type"`
+	HostID                 string         `json:"hostId"`
+	Config                 AgentConfig    `json:"config"`
 	// ServerVersion is the server's own SemVer. Advisory — logged by the agent, never a gate.
 	ServerVersion string `json:"serverVersion"`
 	// TokenExpiresAt is when the credential this connection was accepted with stops
@@ -522,9 +527,66 @@ func (f *DetailAckFrame) stampDownstream() DownstreamType {
 
 // TerminalReady says the PTY is up.
 type TerminalReady struct {
-	Type   TerminalServerType `json:"type"`
-	TermID string             `json:"termId"`
-	Pid    *int               `json:"pid"`
+	Backend   *string            `json:"backend,omitempty"`
+	SessionID *string            `json:"sessionId,omitempty"`
+	Type      TerminalServerType `json:"type"`
+	TermID    string             `json:"termId"`
+	Pid       *int               `json:"pid"`
+}
+
+type TerminalScreen struct {
+	Type       TerminalServerType `json:"type"`
+	TermID     string             `json:"termId"`
+	Data       string             `json:"data"`
+	Sequence   int                `json:"sequence"`
+	Cols       int                `json:"cols"`
+	Rows       int                `json:"rows"`
+	CanvasCols int                `json:"canvasCols"`
+	CanvasRows int                `json:"canvasRows"`
+	X          int                `json:"x"`
+	Y          int                `json:"y"`
+	Follow     bool               `json:"follow"`
+}
+
+func (f *TerminalScreen) stampTerminalServer() TerminalServerType { f.Type = TermScreen; return f.Type }
+
+type TerminalSessionResult struct {
+	Type       TerminalServerType `json:"type"`
+	TermID     string             `json:"termId"`
+	Lines      []string           `json:"lines"`
+	ScreenOnly bool               `json:"screenOnly"`
+	Error      string             `json:"error"`
+}
+
+func (f *TerminalSessionResult) stampTerminalServer() TerminalServerType {
+	f.Type = TermSessionResult
+	return f.Type
+}
+
+type TerminalViewport struct {
+	History int                `json:"history"`
+	Type    TerminalClientType `json:"type"`
+	TermID  string             `json:"termId"`
+	X       int                `json:"x"`
+	Y       int                `json:"y"`
+	Follow  bool               `json:"follow"`
+}
+
+func (f *TerminalViewport) stampTerminalClient() TerminalClientType {
+	f.Type = TermViewport
+	return f.Type
+}
+
+type TerminalSessionControl struct {
+	Type      TerminalClientType `json:"type"`
+	TermID    string             `json:"termId"`
+	Action    string             `json:"action"`
+	SessionID string             `json:"sessionId"`
+}
+
+func (f *TerminalSessionControl) stampTerminalClient() TerminalClientType {
+	f.Type = TermSessionControl
+	return f.Type
 }
 
 // TerminalOutput is a burst of PTY output, already coalesced by the producer.
@@ -786,6 +848,10 @@ func decodeTerminalServer(raw []byte) (TerminalServerFrame, error) {
 	}
 	var frame TerminalServerFrame
 	switch TerminalServerType(kind) {
+	case TermScreen:
+		frame = new(TerminalScreen)
+	case TermSessionResult:
+		frame = new(TerminalSessionResult)
 	case TermReady:
 		frame = new(TerminalReady)
 	case TermOutput:
@@ -811,6 +877,10 @@ func decodeTerminalClient(raw []byte) (TerminalClientFrame, error) {
 	}
 	var frame TerminalClientFrame
 	switch TerminalClientType(kind) {
+	case TermViewport:
+		frame = new(TerminalViewport)
+	case TermSessionControl:
+		frame = new(TerminalSessionControl)
 	case TermOpen:
 		frame = new(TerminalOpen)
 	case TermInput:
