@@ -22,6 +22,7 @@
   import * as Dialog from "#lib/components/ui/dialog/index.js";
   import { Input } from "#lib/components/ui/input/index.js";
   import { Label } from "#lib/components/ui/label/index.js";
+  import * as Tabs from "#lib/components/ui/tabs/index.js";
   import { toast } from "svelte-sonner";
   import { getI18n } from "#lib/i18n/index.js";
   import { hostsApi } from "#lib/dashboard/api.js";
@@ -29,6 +30,9 @@
   import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
   import { causeMessage, codeMessage } from "#lib/dashboard/wording.js";
   import type { CreatedHostEnrollment, HostView } from "#lib/dashboard/types.js";
+  import { vmApi } from "#lib/vm/api.js";
+  import type { VmProviderView } from "#lib/vm/types.js";
+  import VmCreateForm from "#lib/vm/vm-create-form.svelte";
 
   let {
     open = $bindable(false),
@@ -45,6 +49,18 @@
   const editing = $derived(host !== null);
   let form = $state({ label: "", address: "", description: "", tags: "" });
   let saving = $state(false);
+  /** A new host is installed by hand, or — when the fleet has a VM provider — created as a VM. */
+  let mode = $state<"install" | "vm">("install");
+  let providers = $state<VmProviderView[]>([]);
+
+  async function loadProviders(): Promise<void> {
+    try {
+      providers = await vmApi.providers();
+    } catch {
+      // A server without VM providers (or the desktop app) offers the install path only.
+      providers = [];
+    }
+  }
 
   /**
    * Seed the fields when the dialog OPENS, and at no other time.
@@ -65,6 +81,8 @@
             tags: (host.tags ?? []).join(", "),
           }
         : { label: "", address: "", description: "", tags: "" };
+      mode = "install";
+      if (!host) void loadProviders();
     });
   });
 
@@ -133,6 +151,24 @@
     <Dialog.Header>
       <Dialog.Title>{editing ? i18n.t.dash.hosts.editTitle : i18n.t.dash.hosts.addTitle}</Dialog.Title>
     </Dialog.Header>
+    {#if !editing && providers.length > 0}
+      <Tabs.Root bind:value={() => mode, (value) => (mode = value === "vm" ? "vm" : "install")}>
+        <Tabs.List data-testid="host-add-mode">
+          <Tabs.Trigger value="install" data-testid="host-add-install">{i18n.t.vm.create.tabInstall}</Tabs.Trigger>
+          <Tabs.Trigger value="vm" data-testid="host-add-vm">{i18n.t.vm.create.tabVm}</Tabs.Trigger>
+        </Tabs.List>
+      </Tabs.Root>
+    {/if}
+    {#if mode === "vm" && !editing}
+      <VmCreateForm
+        {providers}
+        onCreated={async () => {
+          open = false;
+          await refresh();
+        }}
+        onCancel={() => (open = false)}
+      />
+    {:else}
     <form onsubmit={submit} class="flex flex-col gap-3">
       <div class="flex flex-col gap-1.5">
         <Label for="host-label">{i18n.t.dash.hosts.label}</Label>
@@ -159,6 +195,7 @@
         </Button>
       </Dialog.Footer>
     </form>
+    {/if}
   </Dialog.Content>
 </Dialog.Root>
 

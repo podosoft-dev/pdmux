@@ -9,7 +9,7 @@ import type { HostView } from "$lib/dashboard/types";
 import { attachedClients, elapsedSeconds, powerItems, vmPhase, vmReachable } from "$lib/vm/power";
 import type { HostVmView } from "$lib/vm/types";
 
-const ALL = { start: true, hibernate: true, shutdown: true, stop: true, reboot: true, reset: true, delete: false };
+const ALL = { start: true, hibernate: true, shutdown: true, stop: true, reboot: true, reset: true, delete: false, enroll: false };
 
 function vm(over: Partial<HostVmView> = {}): HostVmView {
   return {
@@ -80,6 +80,15 @@ describe("[TC-PDVM-020] a machine's state becomes the same display and menu ever
     expect(gridHosts([host(vm({ state: "hibernated", operation: { action: "start", step: "wait", startedAt: "2026-10-19T09:00:00.000Z", requestedBy: { id: null, name: null } } }))])[0]?.online).toBe(false);
     // A provider that cannot be asked says nothing about the machine; the heartbeat decides.
     expect(vmReachable(vm({ state: "unknown" }))).toBe(true);
+  });
+
+  it("[TC-PDVM-028] keeps a machine's panes off line while it is being created, re-enrolled or deleted", () => {
+    const during = (action: "create" | "enroll" | "delete") =>
+      vm({ operation: { action, step: "start", startedAt: "2026-10-19T09:00:00.000Z", requestedBy: { id: null, name: null } } });
+    expect(vmReachable(during("create"))).toBe(false);
+    expect(vmReachable(during("enroll"))).toBe(false);
+    expect(vmReachable(during("delete"))).toBe(false);
+    expect(powerItems(during("create"), true)).toEqual([]);
   });
 
   it("counts every client attached to the machine's sessions", () => {

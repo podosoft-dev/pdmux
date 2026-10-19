@@ -750,7 +750,7 @@
     Measured on the fleet settings screen: scrollHeight 434 against clientHeight
     160, one field of four reachable.
   -->
-  <VmHostCard {host} canManage={data.canManage} now={shell.feed.now} onChanged={() => shell.feed.refresh()} />
+  <VmHostCard {host} canManage={data.canManage} now={shell.feed.now} onChanged={() => shell.feed.refresh()} onDeleted={() => goto("/hosts")} />
 
   <Card.Root class="shrink-0" data-testid="host-services">
     <Card.Header>

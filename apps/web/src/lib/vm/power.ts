@@ -12,8 +12,11 @@ import type { HostVmView, VmAction, VmOperationKind, VmState } from "./types";
 /** Forced changes can lose unsaved work; the server keeps them for fleet administrators. */
 export const FORCED_ACTIONS: ReadonlySet<VmAction> = new Set(["stop", "reset"]);
 
-/** Changes after which the host's terminals are gone until the machine is back. */
-const GOING_AWAY: ReadonlySet<VmOperationKind> = new Set(["hibernate", "shutdown", "stop", "reboot", "reset", "delete"]);
+/**
+ * Changes after which the host's terminals are gone until the machine is back. A machine being
+ * created has none yet, and re-enrolling restarts it.
+ */
+const GOING_AWAY: ReadonlySet<VmOperationKind> = new Set(["hibernate", "shutdown", "stop", "reboot", "reset", "delete", "create", "enroll"]);
 
 export type PowerItemKind = "primary" | "normal" | "danger";
 

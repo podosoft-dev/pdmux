@@ -21,18 +21,22 @@
   import { elapsedSeconds, powerItems } from "./power";
   import { useVmPower } from "./power-controller.svelte";
   import type { VmCatalog, VmProviderView } from "./types";
+  import VmDeleteDialog from "./vm-delete-dialog.svelte";
 
   let {
     host,
     canManage,
     now,
     onChanged,
+    onDeleted,
   }: {
     host: HostView;
     canManage: boolean;
     now: number;
     /** Ask the shell to read the fleet again after a link change. */
     onChanged: () => Promise<void>;
+    /** Where to go once a delete is accepted: the host is about to disappear from under this page. */
+    onDeleted?: () => Promise<void>;
   } = $props();
 
   const i18n = getI18n();
@@ -48,6 +52,21 @@
   let vmid = $state("");
   let linking = $state(false);
   let unlinkOpen = $state(false);
+  let deleteOpen = $state(false);
+  let reenrolling = $state(false);
+
+  async function reenroll(): Promise<void> {
+    reenrolling = true;
+    try {
+      const view = await vmApi.reenroll(host.id);
+      toast.success(fmt(i18n.t.vm.reenroll.accepted, { name: view.name }));
+      await onChanged();
+    } catch (error) {
+      toast.error(power?.describe(error) ?? String(error));
+    } finally {
+      reenrolling = false;
+    }
+  }
 
   onMount(() => {
     if (!canManage || vm) return;
@@ -154,6 +173,20 @@
               {i18n.t.vm.section.unlink}
             </Button>
           </div>
+        {:else if canManage && (vm.available.enroll || vm.available.delete)}
+          <!-- A machine pdmux created: it can be given a new code, or deleted with its disks. -->
+          <div class="flex flex-wrap gap-2 border-t pt-3">
+            {#if vm.available.enroll}
+              <Button size="sm" variant="outline" disabled={reenrolling} title={i18n.t.vm.reenroll.hint} data-testid="host-vm-reenroll" onclick={reenroll}>
+                {i18n.t.vm.reenroll.action}
+              </Button>
+            {/if}
+            {#if vm.available.delete}
+              <Button size="sm" variant="ghost" class="text-destructive" data-testid="host-vm-delete" onclick={() => (deleteOpen = true)}>
+                {i18n.t.vm.remove.action}
+              </Button>
+            {/if}
+          </div>
         {/if}
       {:else if providers}
         <div class="grid gap-3 sm:grid-cols-3" data-testid="host-vm-link">
@@ -204,5 +237,6 @@
       testId="host-vm-unlink-confirm"
       onConfirm={unlink}
     />
+    <VmDeleteDialog bind:open={deleteOpen} {host} onDone={onDeleted ?? onChanged} />
   {/if}
 {/if}

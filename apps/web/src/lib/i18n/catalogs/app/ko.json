@@ -47,6 +47,8 @@
         "sleepTagHint": "재워 둔 VM 은 정기 백업이 실패합니다. 백업 일정에서 뺀 VM 에 붙인 태그를 적습니다.",
         "backup": "재우기 전 백업할 저장소",
         "backupHint": "가장 최근 백업이 하루보다 오래됐을 때만.",
+        "enrollUrl": "새 VM 이 pdmux 에 접속할 주소",
+        "enrollUrlHint": "비워 두면 이 서버 주소({url})를 씁니다. 사설망이면 http 도 됩니다.",
         "save": "저장",
         "cancel": "취소",
         "permissions": "토큰 권한: 풀에 VM.Audit·VM.PowerMgmt·VM.Clone·VM.Allocate·VM.Config.*, 저장소에 Datastore.AllocateSpace, 브리지에 SDN.Use."
@@ -115,7 +117,17 @@
     "step": {
       "backup": "먼저 백업하는 중",
       "request": "프로바이더에 요청하는 중",
-      "wait": "프로바이더를 기다리는 중"
+      "wait": "프로바이더를 기다리는 중",
+      "clone": "템플릿 복제 중",
+      "configure": "설정하는 중",
+      "firmware": "등록 코드 전달 중",
+      "start": "켜는 중",
+      "restart": "다시 시작하는 중",
+      "enroll": "에이전트를 기다리는 중",
+      "clear": "마무리하는 중",
+      "stop": "전원을 끄는 중",
+      "remove": "프로바이더에서 삭제하는 중",
+      "release": "호스트를 정리하는 중"
     },
     "progress": "{operation} · {name} 님 요청 · {seconds}초",
     "progressStep": "{operation}({step}) · {name} 님 요청 · {seconds}초",
@@ -148,10 +160,47 @@
       "VM_PROVIDER_AUTH_FAILED": "프로바이더가 자격증명을 거부했습니다",
       "VM_NOT_FOUND": "프로바이더에 그런 VM 이 없습니다",
       "VM_LOCKED": "프로바이더에서 다른 작업이 이 VM 을 쓰는 중입니다",
-      "generic": "전원 작업에 실패했습니다({code})"
+      "VM_ENROLL_TIMEOUT": "VM 이 15분 안에 등록되지 않았습니다 — 템플릿이 첫 부팅 때 등록하도록 되어 있어야 합니다",
+      "VM_ID_RANGE_FULL": "프로바이더 번호 범위에 VM·백업이 없는 빈 번호가 없습니다",
+      "VM_TEMPLATE_REQUIRED": "템플릿을 고르거나 프로바이더에 기본 템플릿을 정하세요",
+      "VM_DELETE_NAME_MISMATCH": "입력한 이름이 VM 이름과 다릅니다",
+      "VM_NOT_CREATED_BY_PDMUX": "pdmux 가 만든 VM 만 삭제할 수 있습니다. 이 VM 은 연결 해제하세요",
+      "VM_ID_TAKEN": "프로바이더에서 다른 VM 이 그 번호를 먼저 썼습니다",
+      "VM_DELETE_FAILED": "삭제하려고 VM 전원을 끄지 못했습니다",
+      "VM_TASK_FAILED": "프로바이더 작업이 실패했습니다",
+      "VM_ALREADY_LINKED": "이 호스트에는 이미 VM 이 있습니다",
+      "VM_PROVIDER_IN_USE": "이 프로바이더에 연결된 VM 이 남아 있습니다",
+      "VM_PROVIDER_NAME_TAKEN": "같은 이름의 프로바이더가 이미 있습니다",
+      "VM_PROVIDER_CA_INVALID": "CA 인증서를 PEM 인증서로 읽을 수 없습니다",
+      "generic": "VM 작업에 실패했습니다({code})"
     },
     "badge": "VM",
-    "accepted": "{name} {operation}"
+    "accepted": "{name} {operation}",
+    "create": {
+      "tabInstall": "직접 설치",
+      "tabVm": "VM 만들기",
+      "hint": "프로바이더의 템플릿으로 새 VM 을 만듭니다. 첫 부팅 때 스스로 등록하므로 붙여 넣을 것이 없습니다.",
+      "provider": "프로바이더",
+      "template": "템플릿",
+      "templateDefault": "{name}(프로바이더 기본값)",
+      "cores": "코어",
+      "memory": "메모리(MiB)",
+      "submit": "만들기",
+      "accepted": "{name} 을(를) 만드는 중입니다 — 등록되면 바로 보입니다",
+      "noTemplate": "이 프로바이더에는 템플릿이 없고 기본 템플릿도 정해져 있지 않습니다."
+    },
+    "remove": {
+      "action": "VM 삭제",
+      "title": "{name} 을(를) 삭제할까요?",
+      "body": "{provider} 에서 VM 과 디스크를 삭제한 뒤 이 호스트와 세션을 지웁니다. 백업은 남겨 둡니다.",
+      "typeName": "확인하려면 {name} 을(를) 입력하세요",
+      "accepted": "{name} 을(를) 삭제하는 중입니다"
+    },
+    "reenroll": {
+      "action": "등록 다시 시도",
+      "hint": "새 등록 코드를 넣고 VM 을 다시 시작합니다",
+      "accepted": "새 등록 코드로 {name} 을(를) 다시 시작합니다"
+    }
   },
   "pdmux": {
     "card": {

@@ -47,6 +47,8 @@
         "sleepTagHint": "Hibernated machines fail scheduled backups; mark the ones you took out of the schedule.",
         "backup": "Back up before sleep to storage",
         "backupHint": "When the newest backup is older than a day.",
+        "enrollUrl": "Address new machines reach pdmux at",
+        "enrollUrlHint": "Leave empty to use this server's own address ({url}). Plain http is fine on a private network.",
         "save": "Save",
         "cancel": "Cancel",
         "permissions": "The token needs, on its pool: VM.Audit, VM.PowerMgmt, VM.Clone, VM.Allocate, VM.Config.*; on storage: Datastore.AllocateSpace; on the bridge: SDN.Use."
@@ -115,7 +117,17 @@
     "step": {
       "backup": "backing up first",
       "request": "asking the provider",
-      "wait": "waiting for the provider"
+      "wait": "waiting for the provider",
+      "clone": "copying the template",
+      "configure": "setting it up",
+      "firmware": "handing over its registration code",
+      "start": "starting it",
+      "restart": "restarting it",
+      "enroll": "waiting for its agent",
+      "clear": "finishing",
+      "stop": "powering it off",
+      "remove": "deleting it at the provider",
+      "release": "removing the host"
     },
     "progress": "{operation} · {name} asked · {seconds}s",
     "progressStep": "{operation} ({step}) · {name} asked · {seconds}s",
@@ -148,10 +160,47 @@
       "VM_PROVIDER_AUTH_FAILED": "The provider rejected the credentials",
       "VM_NOT_FOUND": "The provider has no such machine",
       "VM_LOCKED": "The machine is busy with another task at the provider",
-      "generic": "The power change failed ({code})"
+      "VM_ENROLL_TIMEOUT": "The machine did not register within 15 minutes — its template must enroll on first boot",
+      "VM_ID_RANGE_FULL": "No machine id in the provider's range is free of machines and backups",
+      "VM_TEMPLATE_REQUIRED": "Choose a template, or set a default one on the provider",
+      "VM_DELETE_NAME_MISMATCH": "The name typed does not match the machine's",
+      "VM_NOT_CREATED_BY_PDMUX": "Only a machine pdmux created can be deleted; unlink this one instead",
+      "VM_ID_TAKEN": "Another machine took that id at the provider",
+      "VM_DELETE_FAILED": "The machine could not be powered off for deletion",
+      "VM_TASK_FAILED": "The provider's task failed",
+      "VM_ALREADY_LINKED": "This host already has a machine",
+      "VM_PROVIDER_IN_USE": "Machines are still linked to this provider",
+      "VM_PROVIDER_NAME_TAKEN": "A provider with this name already exists",
+      "VM_PROVIDER_CA_INVALID": "The CA certificate is not a readable PEM certificate",
+      "generic": "The machine change failed ({code})"
     },
     "badge": "VM",
-    "accepted": "{operation} {name}"
+    "accepted": "{operation} {name}",
+    "create": {
+      "tabInstall": "Install on a machine",
+      "tabVm": "Create a VM",
+      "hint": "pdmux makes a new machine from a template at your provider. It registers itself on first boot — nothing to paste.",
+      "provider": "Provider",
+      "template": "Template",
+      "templateDefault": "{name} (provider default)",
+      "cores": "Cores",
+      "memory": "Memory (MiB)",
+      "submit": "Create",
+      "accepted": "Creating {name} — it appears as soon as it registers",
+      "noTemplate": "This provider has no template, and none is set as its default."
+    },
+    "remove": {
+      "action": "Delete machine",
+      "title": "Delete {name}?",
+      "body": "The machine and its disks are deleted at {provider}, then this host and its sessions are removed. Its backups are kept.",
+      "typeName": "Type {name} to confirm",
+      "accepted": "Deleting {name}"
+    },
+    "reenroll": {
+      "action": "Retry registration",
+      "hint": "Hands the machine a new registration code and restarts it",
+      "accepted": "Restarting {name} with a new registration code"
+    }
   },
   "pdmux": {
     "card": {

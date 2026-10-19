@@ -1,5 +1,5 @@
 import { api } from "#lib/api.js";
-import type { HostVmView, VmAction, VmCatalog, VmProviderInput, VmProviderView } from "./types";
+import type { CreateVmInput, CreatedVm, HostVmView, VmAction, VmCatalog, VmProviderInput, VmProviderView } from "./types";
 
 /** The VM provider routes (`apps/api/src/vm/vm.contract.ts`). */
 export const vmApi = {
@@ -14,4 +14,7 @@ export const vmApi = {
     api.put<HostVmView>(`/hosts/${hostId}/vm`, input),
   unlink: (hostId: string): Promise<{ hostId: string; name: string }> => api.del<{ hostId: string; name: string }>(`/hosts/${hostId}/vm`),
   power: (hostId: string, action: VmAction): Promise<HostVmView> => api.post<HostVmView>(`/hosts/${hostId}/vm/power`, { action }),
+  create: (input: CreateVmInput): Promise<CreatedVm> => api.post<CreatedVm>("/vm/machines", input),
+  remove: (hostId: string, confirmName: string): Promise<HostVmView> => api.post<HostVmView>(`/hosts/${hostId}/vm/delete`, { confirmName }),
+  reenroll: (hostId: string): Promise<HostVmView> => api.post<HostVmView>(`/hosts/${hostId}/vm/enroll`, {}),
 };

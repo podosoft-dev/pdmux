@@ -24,7 +24,7 @@ export interface HostVmView {
   } | null;
   error: { code: string; at: string } | null;
   /** What the machine's STATE allows now; who may do it is `canManage`'s business. */
-  available: Record<VmAction | "delete", boolean>;
+  available: Record<VmAction | "delete" | "enroll", boolean>;
 }
 
 export interface VmProviderView {
@@ -47,6 +47,7 @@ export interface VmProviderView {
   };
   sleepRequiresTag: string | null;
   backupBeforeSleep: string | null;
+  enrollUrl: string | null;
   lastTestedAt: string | null;
   lastErrorCode: string | null;
   machineCount: number;
@@ -71,6 +72,7 @@ export interface VmProviderInput {
   fullClone: boolean;
   sleepRequiresTag: string | null;
   backupBeforeSleep: string | null;
+  enrollUrl: string | null;
 }
 
 export interface VmCatalog {
@@ -79,4 +81,22 @@ export interface VmCatalog {
   storages: { node: string; id: string; type: string; content: string[] }[];
   bridges: { node: string; name: string }[];
   pools: string[];
+}
+
+/** `POST /vm/machines`: a machine from a template and the host it becomes. Sizes default to the provider's. */
+export interface CreateVmInput {
+  providerId: string;
+  label: string;
+  templateNode: string | null;
+  templateVmid: number | null;
+  cores: number | null;
+  memoryMb: number | null;
+  /** One per dialog: a retried submit makes one machine. */
+  idempotencyKey: string;
+}
+
+export interface CreatedVm {
+  hostId: string;
+  label: string;
+  vm: HostVmView;
 }

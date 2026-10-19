@@ -28,6 +28,8 @@
 
   const i18n = getI18n();
   const power = useVmPower();
+  /** Where a browser reaches this server: what an empty enrollment address falls back to, near enough. */
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
   let providers = $state<VmProviderView[] | null>(null);
   let testing = $state<string | null>(null);
   let removing = $state<VmProviderView | null>(null);
@@ -54,6 +56,7 @@
   let fullClone = $state(false);
   let sleepTag = $state("");
   let backupStorage = $state("");
+  let enrollUrl = $state("");
 
   onMount(() => void load());
 
@@ -75,7 +78,7 @@
     name = ""; baseUrl = ""; tokenId = ""; tokenSecret = ""; caCertificate = "";
     defaultNode = ""; templateNode = ""; templateVmid = ""; storage = ""; pool = "";
     vmidMin = "500"; vmidMax = "519"; cores = "2"; memoryMb = "4096"; fullClone = false;
-    sleepTag = ""; backupStorage = "";
+    sleepTag = ""; backupStorage = ""; enrollUrl = "";
     formOpen = true;
   }
 
@@ -99,6 +102,7 @@
     fullClone = provider.defaults.fullClone;
     sleepTag = provider.sleepRequiresTag ?? "";
     backupStorage = provider.backupBeforeSleep ?? "";
+    enrollUrl = provider.enrollUrl ?? "";
     formOpen = true;
   }
 
@@ -123,6 +127,7 @@
       fullClone,
       sleepRequiresTag: blank(sleepTag),
       backupBeforeSleep: blank(backupStorage),
+      enrollUrl: blank(enrollUrl),
     };
   }
 
@@ -188,7 +193,8 @@
   const canSave = $derived(
     name.trim() !== "" && /^https:\/\//.test(baseUrl.trim()) && tokenId.includes("!")
       && (editing !== null || tokenSecret.trim() !== "")
-      && Number.isInteger(Number(vmidMin)) && Number.isInteger(Number(vmidMax)) && Number(vmidMin) <= Number(vmidMax),
+      && Number.isInteger(Number(vmidMin)) && Number.isInteger(Number(vmidMax)) && Number(vmidMin) <= Number(vmidMax)
+      && (enrollUrl.trim() === "" || /^https?:\/\/\S+$/.test(enrollUrl.trim())),
   );
 </script>
 
@@ -308,6 +314,11 @@
             <Input id="vm-p-backup" bind:value={backupStorage} placeholder="backups" />
             <p class="text-muted-foreground text-xs">{i18n.t.vm.settings.form.backupHint}</p>
           </div>
+        </div>
+        <div class="grid gap-1.5 sm:col-span-3">
+          <Label for="vm-p-enroll-url">{i18n.t.vm.settings.form.enrollUrl}</Label>
+          <Input id="vm-p-enroll-url" bind:value={enrollUrl} placeholder={origin} data-testid="vm-p-enroll-url" />
+          <p class="text-muted-foreground text-xs break-all">{fmt(i18n.t.vm.settings.form.enrollUrlHint, { url: origin })}</p>
         </div>
       </div>
     </div>
