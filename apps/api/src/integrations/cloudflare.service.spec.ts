@@ -119,6 +119,7 @@ async function connectedService(ctx: ReturnType<typeof build>): Promise<{ host: 
   });
   const host = await ctx.hosts.create(ORG, { label: "Build 01" });
   await ctx.hosts.applyHello(host.id, {
+    terminal: { nativeSessions: false, screenProtocol: 0 },
     protocolVersion: 1,
     agentVersion: "0.11.5",
     hostname: "build-01",

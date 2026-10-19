@@ -32,6 +32,7 @@ import (
 	"github.com/podosoft-dev/pdmux/agent/internal/log"
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
 	"github.com/podosoft-dev/pdmux/agent/internal/sample"
+	"github.com/podosoft-dev/pdmux/agent/internal/session"
 )
 
 // Relay tuning. FlushInterval and MaxPendingBytes are defaults the server can
@@ -70,6 +71,7 @@ const (
 // Options configure a Manager. Every dependency is injectable so a spec can
 // drive the relay without a real shell.
 type Options struct {
+	Native *session.Client
 	// Send delivers one frame to the server. The Manager serialises its calls.
 	Send   func(frame protocol.TerminalServerFrame)
 	Logger *log.Logger
@@ -84,9 +86,11 @@ type Options struct {
 
 // Manager keeps every terminal this agent has open.
 type Manager struct {
-	send   func(frame protocol.TerminalServerFrame)
-	logger *log.Logger
-	spawn  func(spec Spec) (Process, error)
+	nativeClient *session.Client
+	native       map[string]*session.Attachment
+	send         func(frame protocol.TerminalServerFrame)
+	logger       *log.Logger
+	spawn        func(spec Spec) (Process, error)
 	// which answers "is this binary on the host?" — injected so a spec can state
 	// the absent case without depending on what is installed where it runs.
 	which func(string) (string, bool)
@@ -116,7 +120,8 @@ type Manager struct {
 
 	mu              sync.Mutex
 	terminals       map[string]*terminal
-	opening         map[string]struct{}
+	opening         map[string]uint64
+	openSerial      uint64
 	maxPendingBytes int
 }
 
@@ -145,6 +150,8 @@ type terminal struct {
 // NewManager builds a Manager.
 func NewManager(options Options) *Manager {
 	m := &Manager{
+		nativeClient:    options.Native,
+		native:          make(map[string]*session.Attachment),
 		send:            options.Send,
 		logger:          options.Logger,
 		spawn:           options.Spawn,
@@ -152,7 +159,7 @@ func NewManager(options Options) *Manager {
 		flushInterval:   options.FlushInterval,
 		maxTerminals:    options.MaxTerminals,
 		terminals:       make(map[string]*terminal),
-		opening:         make(map[string]struct{}),
+		opening:         make(map[string]uint64),
 		maxPendingBytes: options.MaxPendingBytes,
 		lockWaits:       sample.New(0),
 	}
@@ -185,7 +192,7 @@ func (m *Manager) DrainLockWaitStats() sample.Summary { return m.lockWaits.Drain
 func (m *Manager) Count() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return len(m.terminals)
+	return len(m.terminals) + len(m.native)
 }
 
 // Counts is how many open panes are of each kind.
@@ -202,6 +209,7 @@ func (m *Manager) Count() int {
 func (m *Manager) Counts() (shell, session int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	session = len(m.native)
 	for _, t := range m.terminals {
 		if t.kind == protocol.TerminalShell {
 			shell++
@@ -242,6 +250,10 @@ func (m *Manager) Handle(frame protocol.TerminalClientFrame) {
 	case *protocol.TerminalOpen:
 		m.open(f.TermID, f.Target)
 	case *protocol.TerminalInput:
+		if attachment := m.nativeFor(f.TermID); attachment != nil {
+			_ = attachment.Send(session.Request{Action: "input", Data: f.Data})
+			return
+		}
 		if t := m.lookup(f.TermID); t != nil {
 			if err := t.pty.Write(f.Data); err != nil {
 				// A write to a pty whose child just died is the ordinary shape of a
@@ -250,6 +262,10 @@ func (m *Manager) Handle(frame protocol.TerminalClientFrame) {
 			}
 		}
 	case *protocol.TerminalResize:
+		if attachment := m.nativeFor(f.TermID); attachment != nil {
+			_ = attachment.Send(session.Request{Action: "resize", Cols: f.Cols, Rows: f.Rows})
+			return
+		}
 		if t := m.lookup(f.TermID); t != nil {
 			if err := t.pty.Resize(f.Cols, f.Rows); err != nil {
 				m.logger.Debug("Terminal resize failed", log.F("termId", f.TermID), log.F("error", err.Error()))
@@ -257,6 +273,16 @@ func (m *Manager) Handle(frame protocol.TerminalClientFrame) {
 		}
 	case *protocol.TerminalClose:
 		m.Close(f.TermID)
+	case *protocol.TerminalViewport:
+		if attachment := m.nativeFor(f.TermID); attachment != nil {
+			if f.History != 0 {
+				_ = attachment.Send(session.Request{Action: "history", Y: f.History})
+			} else {
+				_ = attachment.Send(session.Request{Action: "viewport", X: f.X, Y: f.Y, Follow: f.Follow})
+			}
+		}
+	case *protocol.TerminalSessionControl:
+		go m.nativeControl(f)
 	}
 }
 
@@ -267,27 +293,35 @@ func (m *Manager) lookup(termID string) *terminal {
 }
 
 func (m *Manager) open(termID string, target protocol.TerminalTarget) {
+	if target.Backend != nil && *target.Backend == "native" {
+		m.openNative(termID, target)
+		return
+	}
 	m.mu.Lock()
 	_, live := m.terminals[termID]
 	_, starting := m.opening[termID]
-	if live || starting {
+	if live || starting || m.native[termID] != nil {
 		m.mu.Unlock()
 		// A duplicate open is a reconnect that raced the old socket's teardown.
 		m.logger.Debug("Ignoring duplicate terminal open", log.F("termId", termID))
 		return
 	}
-	if len(m.terminals) >= m.maxTerminals {
+	if len(m.terminals)+len(m.native)+len(m.opening) >= m.maxTerminals {
 		limit := m.maxTerminals
 		m.mu.Unlock()
 		m.fail(termID, fmt.Sprintf("terminal limit reached (%d)", limit))
 		return
 	}
-	m.opening[termID] = struct{}{}
+	m.openSerial++
+	ticket := m.openSerial
+	m.opening[termID] = ticket
 	m.mu.Unlock()
 
 	defer func() {
 		m.mu.Lock()
-		delete(m.opening, termID)
+		if m.opening[termID] == ticket {
+			delete(m.opening, termID)
+		}
 		m.mu.Unlock()
 	}()
 
@@ -315,6 +349,11 @@ func (m *Manager) open(termID string, target protocol.TerminalTarget) {
 
 	t := &terminal{pty: process, kind: target.Kind}
 	m.mu.Lock()
+	if m.opening[termID] != ticket {
+		m.mu.Unlock()
+		process.Kill()
+		return
+	}
 	m.terminals[termID] = t
 	m.mu.Unlock()
 
@@ -329,6 +368,13 @@ func (m *Manager) open(termID string, target protocol.TerminalTarget) {
 // see the same ending.
 func (m *Manager) Close(termID string) {
 	m.mu.Lock()
+	delete(m.opening, termID)
+	if attachment := m.native[termID]; attachment != nil {
+		delete(m.native, termID)
+		m.mu.Unlock()
+		attachment.Close()
+		return
+	}
 	t, ok := m.terminals[termID]
 	if !ok {
 		m.mu.Unlock()
@@ -344,6 +390,11 @@ func (m *Manager) Close(termID string) {
 // is exactly why `session` is the default kind.
 func (m *Manager) CloseAll() {
 	m.mu.Lock()
+	clear(m.opening)
+	for termID, attachment := range m.native {
+		attachment.Close()
+		delete(m.native, termID)
+	}
 	doomed := make([]*terminal, 0, len(m.terminals))
 	for termID, t := range m.terminals {
 		doomed = append(doomed, t)

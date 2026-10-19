@@ -202,6 +202,11 @@
               "maxLength": 32,
               "type": "string"
             },
+            "terminalScreenProtocol": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            },
             "tokenExpiresAt": {
               "maxLength": 40,
               "type": "string"
@@ -667,6 +672,10 @@
           "exclusiveMinimum": 0,
           "type": "integer"
         },
+        "terminal": {
+          "$ref": "#/$defs/agentTerminalAbility",
+          "default": {}
+        },
         "update": {
           "$ref": "#/$defs/agentUpdateAbility",
           "default": {}
@@ -712,6 +721,21 @@
         "id",
         "port"
       ],
+      "type": "object"
+    },
+    "agentTerminalAbility": {
+      "additionalProperties": true,
+      "properties": {
+        "nativeSessions": {
+          "default": false,
+          "type": "boolean"
+        },
+        "screenProtocol": {
+          "default": 0,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
       "type": "object"
     },
     "agentUpdate": {
@@ -2268,9 +2292,20 @@
           "minimum": 0,
           "type": "integer"
         },
+        "backend": {
+          "enum": [
+            "native",
+            "tmux"
+          ],
+          "type": "string"
+        },
         "name": {
           "maxLength": 128,
           "minLength": 1,
+          "type": "string"
+        },
+        "sessionId": {
+          "format": "uuid",
           "type": "string"
         },
         "windows": {
@@ -2609,6 +2644,79 @@
         {
           "additionalProperties": true,
           "properties": {
+            "follow": {
+              "default": false,
+              "type": "boolean"
+            },
+            "history": {
+              "default": 0,
+              "maximum": 5000,
+              "minimum": -5000,
+              "type": "integer"
+            },
+            "termId": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "viewport",
+              "type": "string"
+            },
+            "x": {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "y": {
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "termId",
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "enum": [
+                "history",
+                "terminate"
+              ],
+              "type": "string"
+            },
+            "sessionId": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "termId": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "session-control",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId",
+            "action",
+            "sessionId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
             "target": {
               "$ref": "#/$defs/terminalTarget"
             },
@@ -2709,6 +2817,13 @@
         {
           "additionalProperties": true,
           "properties": {
+            "backend": {
+              "enum": [
+                "native",
+                "tmux"
+              ],
+              "type": "string"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -2719,6 +2834,10 @@
                 }
               ],
               "default": null
+            },
+            "sessionId": {
+              "format": "uuid",
+              "type": "string"
             },
             "termId": {
               "type": "string"
@@ -2731,6 +2850,106 @@
           "required": [
             "type",
             "termId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "canvasCols": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000,
+              "type": "integer"
+            },
+            "canvasRows": {
+              "exclusiveMinimum": 0,
+              "maximum": 500,
+              "type": "integer"
+            },
+            "cols": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000,
+              "type": "integer"
+            },
+            "data": {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            "follow": {
+              "type": "boolean"
+            },
+            "rows": {
+              "exclusiveMinimum": 0,
+              "maximum": 500,
+              "type": "integer"
+            },
+            "sequence": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "termId": {
+              "type": "string"
+            },
+            "type": {
+              "const": "screen",
+              "type": "string"
+            },
+            "x": {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "y": {
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "termId",
+            "data",
+            "sequence",
+            "cols",
+            "rows",
+            "canvasCols",
+            "canvasRows",
+            "x",
+            "y",
+            "follow"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "properties": {
+            "error": {
+              "default": "",
+              "maxLength": 512,
+              "type": "string"
+            },
+            "lines": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "screenOnly": {
+              "default": false,
+              "type": "boolean"
+            },
+            "termId": {
+              "type": "string"
+            },
+            "type": {
+              "const": "session-result",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "termId",
+            "lines"
           ],
           "type": "object"
         },
@@ -2815,11 +3034,26 @@
     "terminalTarget": {
       "additionalProperties": true,
       "properties": {
+        "backend": {
+          "enum": [
+            "native",
+            "tmux"
+          ],
+          "type": "string"
+        },
         "cols": {
           "default": 80,
           "exclusiveMinimum": 0,
           "maximum": 1000,
           "type": "integer"
+        },
+        "intent": {
+          "enum": [
+            "create",
+            "attach",
+            "ensure"
+          ],
+          "type": "string"
         },
         "kind": {
           "default": "session",
@@ -2837,6 +3071,10 @@
         },
         "session": {
           "pattern": "^[A-Za-z0-9_-]{1,32}$",
+          "type": "string"
+        },
+        "sessionId": {
+          "format": "uuid",
           "type": "string"
         }
       },

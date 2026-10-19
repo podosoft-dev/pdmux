@@ -443,6 +443,26 @@ func TestConfigurationAdoption(t *testing.T) {
 		}
 		waitUntil(t, "the relay to report dropped bytes", func() bool { return droppedBytes(h) > 0 })
 	})
+
+	t.Run("[TC-PDAGENT-042] native terminal frames require an explicit server negotiation", func(t *testing.T) {
+		h := start(t, nil)
+		h.welcome(nil)
+		backend, intent, name := "native", "create", "same"
+		h.session.send(&protocol.TerminalDownstream{Frame: &protocol.TerminalOpen{Type: protocol.TermOpen, TermID: "native", Target: protocol.TerminalTarget{Kind: protocol.TerminalSession, Backend: &backend, Intent: &intent, Session: &name, Cols: 80, Rows: 24}}})
+		waitUntil(t, "unsupported native response", func() bool {
+			for _, frame := range h.session.sent() {
+				if upstream, ok := frame.(*protocol.TerminalUpstream); ok {
+					if failure, ok := upstream.Frame.(*protocol.TerminalError); ok && failure.TermID == "native" && failure.Message == "NATIVE_SESSIONS_UNSUPPORTED" {
+						return true
+					}
+				}
+			}
+			return false
+		})
+		if h.agent.terminals.Count() != 0 {
+			t.Fatal("unnegotiated native target reached a PTY")
+		}
+	})
 }
 
 // droppedBytes is what every output frame so far admitted to discarding.

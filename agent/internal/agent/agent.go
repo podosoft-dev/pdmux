@@ -39,6 +39,7 @@ import (
 	"github.com/podosoft-dev/pdmux/agent/internal/net"
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
 	"github.com/podosoft-dev/pdmux/agent/internal/sample"
+	nativeSession "github.com/podosoft-dev/pdmux/agent/internal/session"
 	"github.com/podosoft-dev/pdmux/agent/internal/state"
 	"github.com/podosoft-dev/pdmux/agent/internal/term"
 	"github.com/podosoft-dev/pdmux/agent/internal/usage"
@@ -122,6 +123,7 @@ const (
 // default; the seams exist so a spec can describe a whole host without owning
 // one.
 type Options struct {
+	NativeSessions *nativeSession.Client
 	// URL is the wss:// endpoint, already normalised by internal/config.
 	URL string
 	// Token authenticates the upgrade. Register it as a logger secret before
@@ -161,11 +163,12 @@ type Options struct {
 
 // Agent owns the one connection and everything that reports over it.
 type Agent struct {
-	client    *net.Client
-	terminals *term.Manager
-	ledger    *git.DetailLedger
-	store     git.Store
-	links     *state.LinkStore
+	nativeProtocol atomic.Int32
+	client         *net.Client
+	terminals      *term.Manager
+	ledger         *git.DetailLedger
+	store          git.Store
+	links          *state.LinkStore
 	// serverURL is what this agent dials, recorded in the breadcrumb so a stray
 	// agent can be traced back to the dashboard it belongs to without opening its
 	// 0600 config file.
@@ -283,8 +286,41 @@ func New(options Options) *Agent {
 		deps.Log = logger
 	}
 	a.deps = deps
+	if options.NativeSessions != nil {
+		legacy := deps.Sessions
+		a.deps.Sessions = func(ctx context.Context) collect.SessionReading {
+			var reading collect.SessionReading
+			if legacy != nil {
+				reading = legacy(ctx)
+			} else {
+				reading = collect.ReadSessions(ctx, 4000)
+			}
+			if a.nativeProtocol.Load() < 1 {
+				return reading
+			}
+			reading.Present = true
+			reply, err := options.NativeSessions.Request(ctx, nativeSession.Request{Action: "list"})
+			if err == nil {
+				for _, info := range reply.Sessions {
+					entry := protocol.NewMuxSession()
+					entry.Name = info.Name
+					entry.Attached = info.Attached
+					entry.Windows = 1
+					backend, id := "native", info.ID
+					entry.Backend = &backend
+					entry.SessionID = &id
+					reading.Sessions = append(reading.Sessions, entry)
+				}
+			}
+			if len(reading.Sessions) > 256 {
+				reading.Sessions = reading.Sessions[len(reading.Sessions)-256:]
+			}
+			return reading
+		}
+	}
 
 	a.terminals = term.NewManager(term.Options{
+		Native: options.NativeSessions,
 		Logger: logger,
 		Send: func(frame protocol.TerminalServerFrame) {
 			a.client.Send(&protocol.TerminalUpstream{Frame: frame})
@@ -292,10 +328,14 @@ func New(options Options) *Agent {
 		MaxPendingBytes: config.TerminalBufferBytes,
 		Spawn:           options.SpawnPTY,
 	})
+	hello := BuildHello(options.Hostname, version, options.URL, ability())
+	if options.NativeSessions != nil {
+		hello.Terminal = protocol.AgentTerminalAbility{NativeSessions: true, ScreenProtocol: 1}
+	}
 	a.client = net.New(net.Options{
 		URL:          options.URL,
 		Token:        options.Token,
-		Hello:        BuildHello(options.Hostname, version, options.URL, ability()),
+		Hello:        hello,
 		Logger:       logger,
 		OnDownstream: a.onDownstream,
 		OnDisconnect: func() {
@@ -450,6 +490,7 @@ func BuildHello(hostname, version, serverURL string, ability protocol.AgentUpdat
 func (a *Agent) onDownstream(frame protocol.DownstreamFrame) {
 	switch f := frame.(type) {
 	case *protocol.WelcomeFrame:
+		a.nativeProtocol.Store(int32(f.TerminalScreenProtocol))
 		a.welcome(f)
 	case *protocol.ConfigFrame:
 		a.logger.Info("Adopted updated configuration")
@@ -476,6 +517,23 @@ func (a *Agent) onDownstream(frame protocol.DownstreamFrame) {
 	case *protocol.TerminalDownstream:
 		// Straight through to the manager, which owns every pane and serialises
 		// what goes back up this socket.
+		if a.nativeProtocol.Load() != 1 {
+			id := ""
+			switch terminal := f.Frame.(type) {
+			case *protocol.TerminalOpen:
+				if terminal.Target.Backend != nil && *terminal.Target.Backend == "native" {
+					id = terminal.TermID
+				}
+			case *protocol.TerminalSessionControl:
+				id = terminal.TermID
+			case *protocol.TerminalViewport:
+				id = terminal.TermID
+			}
+			if id != "" {
+				a.client.Send(&protocol.TerminalUpstream{Frame: &protocol.TerminalError{Type: protocol.TermError, TermID: id, Message: "NATIVE_SESSIONS_UNSUPPORTED"}})
+				return
+			}
+		}
 		a.terminals.Handle(f.Frame)
 	case *protocol.CommitDetailFrame:
 		repoPath, shas := f.RepoPath, slices.Clone(f.Shas)

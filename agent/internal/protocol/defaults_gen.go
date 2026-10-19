@@ -179,6 +179,7 @@ func (x *AgentHello) applyDefaults() {
 	x.Address = ""
 	x.Capabilities = []AgentCapability{}
 	x.Connectors.applyDefaults()
+	x.Terminal.applyDefaults()
 	x.Update.applyDefaults()
 }
 
@@ -221,6 +222,35 @@ func (x *AgentServiceConfig) UnmarshalJSON(data []byte) error {
 	// A local type with the same fields and none of the methods — without it this
 	// call would recurse into itself.
 	type plain AgentServiceConfig
+	return json.Unmarshal(data, (*plain)(x))
+}
+
+// NewAgentTerminalAbility returns a new AgentTerminalAbility, seeded with every default the contract declares.
+// Build values this way rather than as a struct literal: a literal leaves
+// slices nil (they marshal to null, which the server rejects) and non-zero
+// defaults unset.
+func NewAgentTerminalAbility() AgentTerminalAbility {
+	var value AgentTerminalAbility
+	value.applyDefaults()
+	return value
+}
+
+// applyDefaults writes the contract's defaults over a zero AgentTerminalAbility.
+func (x *AgentTerminalAbility) applyDefaults() {
+	x.NativeSessions = false
+	x.ScreenProtocol = 0
+}
+
+// UnmarshalJSON seeds the defaults and then lets the incoming object write over
+// them, which is what reproduces zod's "undefined -> default" at any depth: the
+// standard decoder calls this same method for every nested object and every
+// slice element, so AgentTerminalAbility inside a list is defaulted exactly like one at the root.
+func (x *AgentTerminalAbility) UnmarshalJSON(data []byte) error {
+	*x = AgentTerminalAbility{}
+	x.applyDefaults()
+	// A local type with the same fields and none of the methods — without it this
+	// call would recurse into itself.
+	type plain AgentTerminalAbility
 	return json.Unmarshal(data, (*plain)(x))
 }
 

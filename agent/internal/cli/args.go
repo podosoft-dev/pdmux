@@ -168,6 +168,7 @@ Usage:
   pdmux-agent doctor    [--server <url>] [--token <key>]
   pdmux-agent verify    [--server <url>] [--token <key>] [--config <path>]
   pdmux-agent instances [--json]
+  pdmux-agent session new|attach|list|history|terminate [name] [--config <path>]
 
 Commands:
   run       Connect to the server and keep reporting (foreground; use a service
@@ -183,6 +184,9 @@ Commands:
             point at a development server without disconnecting the one already
             serving somebody's dashboard.
   doctor    Check configuration, tooling, PTY and server connectivity.
+  session   Manage native persistent terminals without tmux. Interactive new and
+            attach keep the program running after disconnect; Ctrl+] d detaches.
+            Use --config to select an agent instance or --root for a local engine.
   verify    Dial the server and exit 0 only if it answered with a welcome frame.
   instances List every agent installed on this machine — its config, its service
             unit and whether a server has ever accepted it — and flag what does

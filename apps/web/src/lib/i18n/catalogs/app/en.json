@@ -97,7 +97,16 @@
       "scrollbackHint": "Scrolling this session — wheel to move, Esc to leave",
       "scrollbackFailed": "Could not scroll this session: {reason}",
       "scrollbackNoMux": "the agent could not find tmux here — update the agent",
-      "scrollbackUnavailable": "the host did not answer"
+      "scrollbackUnavailable": "the host did not answer",
+      "panLeft": "Move viewport left",
+      "panRight": "Move viewport right",
+      "panUp": "Move viewport up",
+      "panDown": "Move viewport down",
+      "followCursor": "Follow cursor",
+      "terminate": "Terminate session",
+      "terminateTitle": "Terminate this session?",
+      "terminateWarning": "This ends the session and every program running in it. Closing a panel only disconnects its viewer.",
+      "terminateFailed": "Could not terminate the session. Check the host connection and try again."
     },
     "picker": {
       "addTitle": "Add a terminal",

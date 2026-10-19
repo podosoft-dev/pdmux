@@ -64,7 +64,7 @@ function runtimeLayout(userData: string): RuntimeLayout {
     filesDirectory: join(dataDirectory, "files"),
     databasePath: join(dataDirectory, "pdmux.sqlite"),
     secretPath: join(dataDirectory, "auth.secret"),
-    agentReleaseDirectory: join(root, app.isPackaged ? "web/client/agent" : "apps/web/build-desktop/client/agent"),
+    agentReleaseDirectory: !app.isPackaged && process.env.PDMUX_DESKTOP_AGENT_RELEASE_DIR ? resolve(process.env.PDMUX_DESKTOP_AGENT_RELEASE_DIR) : join(root, app.isPackaged ? "web/client/agent" : "apps/web/build-desktop/client/agent"),
   };
 }
 

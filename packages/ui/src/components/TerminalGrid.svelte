@@ -73,6 +73,8 @@
 		paneActions?: Snippet<[TerminalPaneActionContext]>;
 		onSwap?: (from: number, to: number) => void;
 		onExit?: (slotId: string, code: number | null) => void;
+		onSessionResolved?: (slotId: string, sessionId: string) => void;
+		onTerminateSession?: (slot: TerminalSlot) => void;
 		/** Passed straight to every pane — see `TerminalPane` for why the app owns these. */
 		onScrollback?: (slot: TerminalSlot, action: "enter" | "exit") => void;
 		/** Draw the gesture readout over every pane. See `TerminalPane`; off by default. */
@@ -106,6 +108,8 @@
 		paneActions,
 		onSwap,
 		onExit,
+		onSessionResolved,
+		onTerminateSession,
 		onScrollback,
 		onReadHistory,
 		diagnostics = false,
@@ -264,6 +268,8 @@
 			{onClose}
 			{onDetach}
 			{onExit}
+			{onSessionResolved}
+			{onTerminateSession}
 			{onScrollback}
 			{onReadHistory}
 			{diagnostics}

@@ -753,7 +753,25 @@ describe('[TC-PDCORE-024] a slot knows its label and whether it can be reached',
 	});
 });
 
-describe('[TC-PDCORE-025] attach and new collapse into one wire target', () => {
+describe('[TC-PDCORE-025] terminal targets preserve the selected session engine', () => {
+	it('keeps native UUIDs and creation intent through a saved layout round trip', () => {
+		const sessionId = '11111111-2222-4333-8444-555555555555';
+		const slot = { id: 'native', hostId: 'h1', kind: 'attach' as const, session: 'main', backend: 'native' as const, sessionId };
+		const saved = normalizeLayout(JSON.parse(JSON.stringify({ ...defaultLayout(), slots: [slot] })), HOSTS);
+		expect(saved.slots[0]).toEqual(slot);
+		expect(toProtocolTarget(slot)).toEqual({ kind: 'session', session: 'main', backend: 'native', sessionId, intent: 'attach' });
+		expect(toProtocolTarget({ ...slot, sessionId: undefined, kind: 'new' })).toEqual({ kind: 'session', session: 'main', backend: 'native', intent: 'create' });
+		expect(toProtocolTarget({ ...slot, sessionId: undefined, kind: 'new', intent: 'ensure' })).toEqual({ kind: 'session', session: 'main', backend: 'native', intent: 'ensure' });
+	});
+
+	it('keeps same-name native and legacy sessions as separate targets', () => {
+		const sessionId = '11111111-2222-4333-8444-555555555555';
+		const slots = buildDefaultSlots([{ id: 'h1', name: 'host', online: true, nativeSessions: true, sessions: [{ name: 'same' }, { name: 'same', backend: 'native', sessionId }] }], { pad: 0 });
+		expect(slots).toHaveLength(2);
+		expect(toProtocolTarget(slots[0]!)).toEqual({ kind: 'session', session: 'same' });
+		expect(toProtocolTarget(slots[1]!)).toEqual({ kind: 'session', session: 'same', backend: 'native', sessionId, intent: 'attach' });
+	});
+
 	it('maps the UI intent onto the protocol kinds', () => {
 		// Creating and joining are the same request; only the picker's wording differs.
 		expect(toProtocolTarget({ id: 's1', hostId: 'h1', kind: 'attach', session: 'main' })).toEqual({

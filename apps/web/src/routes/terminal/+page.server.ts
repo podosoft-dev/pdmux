@@ -18,6 +18,9 @@ export const load: PageServerLoad = async ({ locals, url, fetch }) => {
   const kindParam = url.searchParams.get("kind");
   const kind = kindParam === "shell" || kindParam === "new" ? kindParam : "attach";
   const session = url.searchParams.get("session");
+  const backend = url.searchParams.get("backend") === "native" ? "native" as const : undefined;
+  const candidate = url.searchParams.get("sessionId");
+  const sessionId = candidate && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate) ? candidate : undefined;
 
   let hostLabel = hostId;
   try {
@@ -27,5 +30,5 @@ export const load: PageServerLoad = async ({ locals, url, fetch }) => {
     // A missing label costs the window's title, not the terminal.
   }
 
-  return { hostId, kind, session, hostLabel };
+  return { hostId, kind, session, hostLabel, backend, sessionId };
 };

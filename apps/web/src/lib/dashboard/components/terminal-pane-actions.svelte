@@ -9,6 +9,12 @@
   import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import XIcon from "@lucide/svelte/icons/x";
+  import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
+  import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
+  import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
+  import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
+  import FocusIcon from "@lucide/svelte/icons/focus";
+  import SquareIcon from "@lucide/svelte/icons/square";
   import { Button } from "#lib/components/ui/button/index.js";
   import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
   import * as Tooltip from "#lib/components/ui/tooltip/index.js";
@@ -132,6 +138,24 @@
         {/snippet}
       </DropdownMenu.Trigger>
       <DropdownMenu.Content align="end" class="w-52" data-testid="pane-actions-menu">
+        {#if actions.viewport}
+          <DropdownMenu.Item onSelect={() => actions.followCursor?.()} data-pdmux-follow>
+            <FocusIcon class="mr-2 size-4" />{i18n.t.pdmux.pane.followCursor}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item onSelect={() => actions.pan?.(-10, 0)} data-pdmux-pan-left>
+            <ArrowLeftIcon class="mr-2 size-4" />{i18n.t.pdmux.pane.panLeft}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item onSelect={() => actions.pan?.(10, 0)} data-pdmux-pan-right>
+            <ArrowRightIcon class="mr-2 size-4" />{i18n.t.pdmux.pane.panRight}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item onSelect={() => actions.pan?.(0, -5)} data-pdmux-pan-up>
+            <ArrowUpIcon class="mr-2 size-4" />{i18n.t.pdmux.pane.panUp}
+          </DropdownMenu.Item>
+          <DropdownMenu.Item onSelect={() => actions.pan?.(0, 5)} data-pdmux-pan-down>
+            <ArrowDownIcon class="mr-2 size-4" />{i18n.t.pdmux.pane.panDown}
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator />
+        {/if}
         {#if compact && actions.canScrollback}
           <DropdownMenu.Item onSelect={actions.toggleScrollback} data-pdmux-scrollback-menu>
             <ChevronsUpDownIcon class="mr-2 size-4" />
@@ -143,6 +167,11 @@
           {i18n.t.pdmux.pane.detach}
         </DropdownMenu.Item>
         <DropdownMenu.Separator />
+        {#if actions.terminate}
+          <DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={actions.terminate} data-pdmux-terminate>
+            <SquareIcon class="mr-2 size-4" />{i18n.t.pdmux.pane.terminate}
+          </DropdownMenu.Item>
+        {/if}
         <DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={actions.close} data-pdmux-close>
           <XIcon class="mr-2 size-4" />
           {i18n.t.pdmux.pane.close}

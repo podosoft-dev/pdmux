@@ -5,6 +5,7 @@ import (
 
 	"github.com/podosoft-dev/pdmux/agent/internal/agent"
 	"github.com/podosoft-dev/pdmux/agent/internal/cli"
+	"github.com/podosoft-dev/pdmux/agent/internal/session"
 	"github.com/podosoft-dev/pdmux/agent/internal/update"
 )
 
@@ -46,12 +47,13 @@ func runDaemon(ctx context.Context, cfg cli.DaemonConfig) error {
 	}
 
 	daemon := agent.New(agent.Options{
-		URL:      cfg.URL,
-		Token:    cfg.Token,
-		Hostname: cfg.Hostname,
-		Version:  cfg.Version,
-		Logger:   cfg.Logger,
-		Update:   updater,
+		NativeSessions: session.LocalClient(cfg.ConfigPath, ""),
+		URL:            cfg.URL,
+		Token:          cfg.Token,
+		Hostname:       cfg.Hostname,
+		Version:        cfg.Version,
+		Logger:         cfg.Logger,
+		Update:         updater,
 		// The honest probe replaces the "no host can restart itself" default. It is
 		// what decides whether the dashboard offers the button at all, and a wrong
 		// `true` is the one answer that leaves a host stopped with no way back in —

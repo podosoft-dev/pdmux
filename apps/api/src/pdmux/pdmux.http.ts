@@ -773,6 +773,13 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
       const session = await sessionFor(services, request);
       return services.terminalMux.copyMode(session, params.hostId, dto(MuxCopyModeDto, body));
     })
+    .post("/terminal/:hostId/sessions/terminate", async ({ request, params, body }) => {
+      const session = await sessionFor(services, request);
+      const input = dto(MuxHistoryDto, body);
+      return audit(services, request, session, "terminal.terminate",
+        () => services.terminalMux.terminate(session, params.hostId, input),
+        () => ({ type: "host", id: params.hostId, metadata: { backend: input.backend, sessionId: input.sessionId } }));
+    })
     .post("/terminal/:hostId/history", async ({ request, params, body }) => {
       const session = await sessionFor(services, request);
       return services.terminalMux.history(session, params.hostId, dto(MuxHistoryDto, body));

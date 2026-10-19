@@ -217,6 +217,20 @@ input(termId, data) / resize(termId, cols, rows) / close(termId)
 - The server is both relay and **authorisation point**: it checks that the session's user may
   see that host, and records opening a terminal in the audit log.
 
+Native sessions negotiate `hello.terminal.{nativeSessions,screenProtocol}` and
+`welcome.terminalScreenProtocol` (legacy default: disabled/0). A native target carries
+`backend: "native"`, an initial `intent: "create" | "attach" | "ensure"`, and after
+`ready` its stable `sessionId` UUID. `ensure` is reserved for idempotent local bootstrap.
+An absent backend preserves the tmux adapter. Names alone never switch engines.
+
+Native viewers receive `screen` frames containing rendered ANSI rows, sequence,
+viewport dimensions, canonical dimensions, offsets and cursor-follow state. They send
+`viewport` frames to pan, follow or move through history. Host-scoped `session-control`
+requests retrieve history or explicitly terminate a UUID and receive `session-result`.
+These additive variants are sent only to peers that negotiated screen protocol 1.
+Reattachment uses the UUID and attach intent; a lost session is an error, not creation.
+See [Native sessions](NATIVE-SESSIONS.md) for lifecycle, limits and the local CLI.
+
 ---
 
 ## C6. Service probes

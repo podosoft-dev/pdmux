@@ -123,7 +123,10 @@ describe("release workflow", () => {
     expect(packageJob).toContain("needs: agent");
     expect(packageJob).toContain("inputs.agent_artifact || 'agent-binaries'");
     expect(packageJob).not.toContain("actions/setup-go");
-    expect(desktopWorkflow.match(/name: Test native Windows pseudoconsole/g)).toHaveLength(1);
+    const nativeJob = desktopWorkflow.slice(desktopWorkflow.indexOf("  native-terminal:"), desktopWorkflow.indexOf("  package:"));
+    expect(nativeJob).toContain("runner: [ubuntu-24.04, macos-26, windows-2025]");
+    expect(nativeJob).toContain("./internal/session ./cmd/pdmux-agent");
+    expect(nativeJob).toContain("TestWindowsConPTY|TestNative");
     const preserveSource = 'cp -R apps/web/static/agent "$RUNNER_TEMP/agent-source"';
     expect(packageJob).toContain(preserveSource);
     expect(packageJob.indexOf(preserveSource)).toBeLessThan(packageJob.indexOf("tar -xf .agent-binaries/agent-binaries.tar"));

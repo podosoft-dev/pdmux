@@ -141,6 +141,36 @@
 				"type": "reboot",
 				"ts": 1784000000
 			}
+		},
+		{
+			"id": "terminal-native-invalid-id",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "session-control",
+					"termId": "control",
+					"action": "terminate",
+					"sessionId": "same"
+				}
+			}
+		},
+		{
+			"id": "terminal-native-negative-viewport",
+			"direction": "downstream",
+			"expect": "reject",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "viewport",
+					"termId": "native",
+					"x": -1,
+					"y": 0
+				}
+			}
 		}
 	]
 }

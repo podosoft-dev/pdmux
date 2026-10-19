@@ -107,16 +107,20 @@ var unionBranches = map[string]map[string]string{
 		"fsDelete":     "FsDeleteFrame",
 	},
 	"terminalServerFrame": {
-		"ready":  "TerminalReady",
-		"output": "TerminalOutput",
-		"exit":   "TerminalExit",
-		"error":  "TerminalError",
+		"screen":         "TerminalScreen",
+		"session-result": "TerminalSessionResult",
+		"ready":          "TerminalReady",
+		"output":         "TerminalOutput",
+		"exit":           "TerminalExit",
+		"error":          "TerminalError",
 	},
 	"terminalClientFrame": {
-		"open":   "TerminalOpen",
-		"input":  "TerminalInput",
-		"resize": "TerminalResize",
-		"close":  "TerminalClose",
+		"viewport":        "TerminalViewport",
+		"session-control": "TerminalSessionControl",
+		"open":            "TerminalOpen",
+		"input":           "TerminalInput",
+		"resize":          "TerminalResize",
+		"close":           "TerminalClose",
 	},
 }
 

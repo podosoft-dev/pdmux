@@ -88,6 +88,89 @@
 					"arch": "amd64"
 				}
 			}
+		},
+		{
+			"id": "terminal-native-create",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "open",
+					"termId": "native",
+					"target": {
+						"backend": "native",
+						"intent": "create",
+						"session": "same"
+					}
+				}
+			}
+		},
+		{
+			"id": "terminal-native-attach-id",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "open",
+					"termId": "native",
+					"target": {
+						"backend": "native",
+						"intent": "attach",
+						"session": "same",
+						"sessionId": "11111111-2222-4333-8444-555555555555"
+					}
+				}
+			}
+		},
+		{
+			"id": "terminal-native-viewport",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "viewport",
+					"termId": "native",
+					"x": 30,
+					"y": 10
+				}
+			}
+		},
+		{
+			"id": "terminal-native-history-scroll",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "viewport",
+					"termId": "native",
+					"x": 0,
+					"y": 0,
+					"history": 20
+				}
+			}
+		},
+		{
+			"id": "terminal-native-control",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "Native terminal identity, viewport and control frames must agree between TypeScript and Go without changing legacy tmux defaults.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "session-control",
+					"termId": "control",
+					"action": "terminate",
+					"sessionId": "11111111-2222-4333-8444-555555555555"
+				}
+			}
 		}
 	]
 }

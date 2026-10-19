@@ -39,6 +39,9 @@ export interface TerminalSlot {
 	kind: SlotKind;
 	/** Session name for `attach`/`new`; null for `shell`. */
 	session: string | null;
+	backend?: 'native' | 'tmux';
+	sessionId?: string;
+	intent?: 'create' | 'attach' | 'ensure';
 }
 
 export type GridCell = TerminalSlot | null;
@@ -128,6 +131,8 @@ export interface TerminalLayout {
 
 /** A multiplexer session on a host, as the picker needs it. */
 export interface GridSession {
+	backend?: 'native' | 'tmux';
+	sessionId?: string;
 	name: string;
 	attached?: number;
 	windows?: number;
@@ -139,6 +144,7 @@ export interface GridHost {
 	name: string;
 	/** Reachable right now. A slot on an offline host is kept — it works again later. */
 	online: boolean;
+	nativeSessions?: boolean;
 	sessions?: readonly GridSession[];
 }
 
@@ -224,9 +230,9 @@ export function isSlotReachable(slot: TerminalSlot, hosts: readonly GridHost[]):
  * `attach` and `new` collapse into one protocol kind by design: creating and
  * joining are the same request (`new -A -s`), and only the picker's wording differs.
  */
-export function toProtocolTarget(slot: TerminalSlot): { kind: 'session' | 'shell'; session?: string } {
+export function toProtocolTarget(slot: TerminalSlot): { kind: 'session' | 'shell'; session?: string; backend?: 'native' | 'tmux'; sessionId?: string; intent?: 'create' | 'attach' | 'ensure' } {
 	if (slot.kind === 'shell') return { kind: 'shell' };
-	return { kind: 'session', session: slot.session ?? 'main' };
+	return { kind: 'session', session: slot.session ?? 'main', ...(slot.backend ? { backend: slot.backend } : {}), ...(slot.sessionId ? { sessionId: slot.sessionId, intent: 'attach' as const } : slot.backend === 'native' ? { intent: slot.intent ?? (slot.kind === 'new' ? 'create' as const : 'attach' as const) } : {}) };
 }
 
 const sessionNames = (hosts: readonly GridHost[], hostId: string): string[] =>
@@ -281,9 +287,10 @@ export function starterCells(hosts: readonly GridHost[], opts: StarterCellOption
 	// Read-only lookups only: `hosts` is the array the fleet feed owns and re-renders
 	// from, so an in-place sort here would reorder the sidebar as a side effect.
 	const host = hosts.find((h) => h.online);
-	const joinable = host ? (host.sessions ?? []).some((s) => s.name === prefer) : false;
+	const joined = host?.sessions?.find(s => s.name === prefer);
+	const joinable = Boolean(joined);
 	const first: GridCell =
-		host && joinable ? { id: nextSlotId([]), hostId: host.id, kind: 'attach', session: prefer } : null;
+		host && joinable ? { id: nextSlotId([]), hostId: host.id, kind: 'attach', session: prefer, ...(joined?.backend ? { backend: joined.backend } : {}), ...(joined?.sessionId ? { sessionId: joined.sessionId } : {}) } : null;
 	return Array.from({ length: count }, (_, index) => (index === 0 ? first : null));
 }
 
@@ -297,15 +304,14 @@ export function buildDefaultSlots(hosts: readonly GridHost[], opts: DefaultSlotO
 	for (const host of [...hosts].sort((a, b) => a.name.localeCompare(b.name))) {
 		if (!host.online) continue;
 		const live = (host.sessions ?? [])
-			.map((s) => s.name)
-			.filter((n) => !(skip && n.startsWith(skip)))
-			.sort((a, b) => (a === 'main' ? -1 : b === 'main' ? 1 : a.localeCompare(b)));
-		for (const session of live) out.push({ id: mint(), hostId: host.id, kind: 'attach', session });
+			.filter((s) => !(skip && s.name.startsWith(skip)))
+			.sort((a, b) => (a.name === 'main' ? -1 : b.name === 'main' ? 1 : a.name.localeCompare(b.name)));
+		for (const session of live) out.push({ id: mint(), hostId: host.id, kind: 'attach', session: session.name, ...(session.backend ? { backend: session.backend } : {}), ...(session.sessionId ? { sessionId: session.sessionId } : {}) });
 		const taken: string[] = [];
 		for (let i = 0; i < pad; i++) {
 			const session = nextSessionName(hosts, host.id, taken);
 			taken.push(session);
-			out.push({ id: mint(), hostId: host.id, kind: 'new', session });
+			out.push({ id: mint(), hostId: host.id, kind: 'new', session, ...(host.nativeSessions ? { backend: 'native' } : {}) });
 		}
 	}
 	return out;
@@ -494,7 +500,7 @@ export function focusSlot(layout: TerminalLayout, slotId: string | null): Termin
 export function assignSlot(
 	layout: TerminalLayout,
 	index: number,
-	target: { hostId: string; kind: SlotKind; session?: string | null },
+	target: { hostId: string; kind: SlotKind; session?: string | null; backend?: 'native' | 'tmux'; sessionId?: string; intent?: 'create' | 'attach' | 'ensure' },
 ): TerminalLayout {
 	if (!Number.isInteger(index) || index < 0 || !target || typeof target.hostId !== 'string') return layout;
 	const list = [...cells(layout)];
@@ -504,6 +510,9 @@ export function assignSlot(
 		hostId: target.hostId,
 		kind: target.kind === 'shell' || target.kind === 'new' ? target.kind : 'attach',
 		session: target.kind === 'shell' ? null : String(target.session ?? 'main'),
+		...(target.backend ? { backend: target.backend } : {}),
+		...(target.sessionId ? { sessionId: target.sessionId } : {}),
+		...(target.intent ? { intent: target.intent } : {}),
 	};
 	return { ...layout, slots: list };
 }
@@ -561,7 +570,7 @@ export function swapSlots(layout: TerminalLayout, i: number, j: number): Termina
 export function pickerApply(
 	layout: TerminalLayout,
 	index: number | null,
-	target: { hostId: string; kind: SlotKind; session?: string | null },
+	target: { hostId: string; kind: SlotKind; session?: string | null; backend?: 'native' | 'tmux'; sessionId?: string; intent?: 'create' | 'attach' | 'ensure' },
 ): TerminalLayout {
 	return assignSlot(layout, Number.isInteger(index) ? (index as number) : firstEmptyIndex(layout), target);
 }
@@ -804,6 +813,9 @@ export function normalizeLayout(
 			hostId: slot.hostId,
 			kind,
 			session: kind === 'shell' ? null : String(slot.session ?? 'main'),
+			...(slot.backend === 'native' || slot.backend === 'tmux' ? { backend: slot.backend } : {}),
+			...(typeof slot.sessionId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(slot.sessionId) ? { sessionId: slot.sessionId } : {}),
+			...(slot.intent === 'ensure' || slot.intent === 'create' || slot.intent === 'attach' ? { intent: slot.intent } : {}),
 		};
 	});
 	// Re-issue only after every stored id is known, so a replacement cannot collide

@@ -63,8 +63,13 @@ jobs:
       source_ref: ${{ inputs.source_ref || (inputs.signed && github.ref_name) || github.ref }}
     secrets: inherit
 
-  windows-terminal:
-    runs-on: windows-2025
+  native-terminal:
+    name: Native terminal (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-26, windows-2025]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
@@ -75,9 +80,9 @@ jobs:
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
-      - name: Test native Windows pseudoconsole
+      - name: Test native pseudoterminals and persistent sessions
         working-directory: agent
-        run: go test ./internal/term -run TestWindowsConPTY -count=1 -timeout=90s
+        run: go test ./internal/term ./internal/session ./cmd/pdmux-agent -run 'TestWindowsConPTY|TestNative|TestLocalIPC|TestEngineIPCIsolation|TestExistingTmuxCoexistence' -count=1 -timeout=120s
 
   package:
     name: ${{ matrix.name }}

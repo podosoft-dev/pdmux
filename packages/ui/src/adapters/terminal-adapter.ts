@@ -8,6 +8,9 @@
 
 /** What a pane asks for when it mounts. */
 export interface TerminalOpenTarget {
+	backend?: 'native' | 'tmux';
+	sessionId?: string;
+	intent?: 'create' | 'attach' | 'ensure';
 	/** Layout slot id — a caller may use it to key its own connections. */
 	slotId: string;
 	hostId: string;
@@ -19,7 +22,13 @@ export interface TerminalOpenTarget {
 }
 
 /** A live terminal. Every listener returns its own unsubscribe. */
+export interface TerminalViewport { x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean }
+
 export interface TerminalConnection {
+	scrollHistory?(delta: number): void;
+	viewport?(x: number, y: number, follow?: boolean): void;
+	onViewport?(listener: (viewport: TerminalViewport) => void): () => void;
+	onSession?(listener: (sessionId: string) => void): () => void;
 	send(data: string): void;
 	resize(cols: number, rows: number): void;
 	onData(listener: (data: string) => void): () => void;

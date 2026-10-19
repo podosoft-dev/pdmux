@@ -211,7 +211,7 @@ export class LocalAgent {
     if (!Array.isArray(slots) || slots.every(slot => !slot)) {
       await this.request(`/prefs/layouts/${encodeURIComponent(existing?.name ?? "default")}`, "PUT", {
         isDefault: true,
-        payload: { ...defaultLayout(), ...existing?.payload, slots: [{ id: "slot-1", hostId: config.hostId, kind: "shell", session: null }, ...(Array.isArray(slots) ? slots.slice(1) : [])], focusId: "slot-1" },
+        payload: { ...defaultLayout(), ...existing?.payload, slots: [{ id: "slot-1", hostId: config.hostId, kind: "new", session: "main", backend: "native", intent: "ensure" }, ...(Array.isArray(slots) ? slots.slice(1) : [])], focusId: "slot-1" },
       });
     }
     config.layoutPrepared = true; await this.save(config);

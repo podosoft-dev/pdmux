@@ -127,6 +127,7 @@ export class PdmuxGateway {
       const config = await this.services.agentConfig.build(hostId, organizationId);
       this.send(socket, {
         type: "welcome",
+		terminalScreenProtocol: 1,
         hostId,
         config,
         serverVersion: SERVER_VERSION,

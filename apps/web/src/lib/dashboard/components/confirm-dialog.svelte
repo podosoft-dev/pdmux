@@ -40,7 +40,7 @@
     testId?: string;
     /** What is about to go, when it is more than the title can name. */
     details?: Snippet;
-    onConfirm: () => void | Promise<void>;
+    onConfirm: () => void | boolean | Promise<void | boolean>;
   } = $props();
 
   const i18n = getI18n();
@@ -57,8 +57,7 @@
     if (!armed || busy) return;
     busy = true;
     try {
-      await onConfirm();
-      open = false;
+      if (await onConfirm() !== false) open = false;
     } finally {
       busy = false;
     }

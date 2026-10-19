@@ -14,6 +14,10 @@ import type { GridSession, TerminalSlot } from '@pdmux/core';
  * render those operations with its own design system without reaching into the pane.
  */
 export interface TerminalPaneActionContext {
+	viewport?: { x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean } | null;
+	pan?: (x: number, y: number) => void;
+	followCursor?: () => void;
+	terminate?: () => void;
 	slot: TerminalSlot;
 	index: number;
 	zoomed: boolean;
@@ -79,6 +83,7 @@ export interface HostDetail {
 
 /** A host as the terminal target picker needs it. */
 export interface PickerHost {
+	nativeSessions?: boolean;
 	id: string;
 	name: string;
 	online: boolean;
@@ -99,6 +104,8 @@ export interface PickerHost {
  * distinction is the user's intent, which the layout keeps so the label can say it.
  */
 export interface PickerTarget {
+	backend?: 'native' | 'tmux';
+	sessionId?: string;
 	hostId: string;
 	kind: 'attach' | 'new' | 'shell';
 	session?: string | null;

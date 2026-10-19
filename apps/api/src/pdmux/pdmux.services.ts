@@ -229,7 +229,7 @@ export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): Pdm
   );
   const detailRequests = new AgentDetailRequestService(git, agentRegistry);
   const terminalRelay = new TerminalRelayService(agentRegistry);
-  const terminalMux = new TerminalMuxController(agentExec);
+  const terminalMux = new TerminalMuxController(agentExec, agentRegistry, hosts);
 
   const authority = new McpAuthorityService(dataSource);
   const hostMcpKeys = new HostMcpKeysService(dataSource.getRepository(HostMcpKey), hosts);
@@ -271,6 +271,7 @@ export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): Pdm
   superviseApplicationDatabase(services, database);
   services.onStart(() => {
     hosts.setConnectedProbe((hostId) => agentRegistry.isConnected(hostId));
+	hosts.setTerminalProbe((hostId) => agentRegistry.terminalAbility(hostId));
     cloudflare.connect();
     agentEnrollments.connect();
     disconnect.connect();

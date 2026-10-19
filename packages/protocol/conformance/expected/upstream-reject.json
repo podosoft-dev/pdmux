@@ -11,6 +11,7 @@
 		"heartbeat-cpu-out-of-range": "heartbeat.resource.cpuPct: Number must be less than or equal to 100",
 		"heartbeat-cpu-fractional": "heartbeat.resource.cpuPct: Expected integer, received float",
 		"diagnostic-message-too-long": "heartbeat.diagnostics.0.message: String must contain at most 512 character(s)",
-		"repos-limit-zero": "repos.0.limit: Number must be greater than 0"
+		"repos-limit-zero": "repos.0.limit: Number must be greater than 0",
+		"terminal-native-invalid-screen": "frame.cols: Number must be greater than 0"
 	}
 }

@@ -298,6 +298,7 @@ export const gitApi = {
  * See `apps/api/src/terminal/terminal-mux.controller.ts` for why that matters.
  */
 export const terminalApi = {
+  terminate: (hostId: string, session: string, sessionId: string): Promise<{ ok: true }> => api.post<{ ok: true }>(`/terminal/${hostId}/sessions/terminate`, { session, sessionId, backend: "native" }),
   copyMode: (hostId: string, session: string, action: "enter" | "exit"): Promise<{ ok: true }> =>
     api.post<{ ok: true }>(`/terminal/${hostId}/copy-mode`, { session, action }),
   /**
@@ -308,8 +309,8 @@ export const terminalApi = {
    * difference between "your history is short" and "there is no history to fetch", and only
    * the host can tell them apart (`#{alternate_on}`).
    */
-  history: (hostId: string, session: string): Promise<{ lines: string[]; reachedOldest: boolean; screenOnly: boolean }> =>
-    api.post<{ lines: string[]; reachedOldest: boolean; screenOnly: boolean }>(`/terminal/${hostId}/history`, { session }),
+  history: (hostId: string, session: string, backend?: "native" | "tmux", sessionId?: string): Promise<{ lines: string[]; reachedOldest: boolean; screenOnly: boolean }> =>
+    api.post<{ lines: string[]; reachedOldest: boolean; screenOnly: boolean }>(`/terminal/${hostId}/history`, { session, backend, sessionId }),
 };
 
 /**

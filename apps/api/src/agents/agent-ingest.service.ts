@@ -56,6 +56,7 @@ export class AgentIngestService {
     const frame = parsed.data;
     switch (frame.type) {
       case "hello":
+		this.registry.setTerminalAbility(hostId, frame.hello.terminal);
         await this.hosts.applyHello(hostId, frame.hello);
         this.events.publish({ type: "host.hello", hostId });
         return { ok: true, type: "hello" };

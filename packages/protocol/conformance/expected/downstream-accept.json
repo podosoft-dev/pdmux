@@ -78,6 +78,7 @@
 			},
 			"hostId": "9f2c1e34-5b6a-4c7d-8e9f-0a1b2c3d4e5f",
 			"serverVersion": "",
+			"terminalScreenProtocol": 0,
 			"type": "welcome"
 		},
 		"terminal-open-empty-target": {
@@ -118,6 +119,68 @@
 				"sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
 				"version": "0.2.0"
 			}
+		},
+		"terminal-native-create": {
+			"frame": {
+				"target": {
+					"backend": "native",
+					"cols": 80,
+					"intent": "create",
+					"kind": "session",
+					"rows": 24,
+					"session": "same"
+				},
+				"termId": "native",
+				"type": "open"
+			},
+			"type": "terminal"
+		},
+		"terminal-native-attach-id": {
+			"frame": {
+				"target": {
+					"backend": "native",
+					"cols": 80,
+					"intent": "attach",
+					"kind": "session",
+					"rows": 24,
+					"session": "same",
+					"sessionId": "11111111-2222-4333-8444-555555555555"
+				},
+				"termId": "native",
+				"type": "open"
+			},
+			"type": "terminal"
+		},
+		"terminal-native-viewport": {
+			"frame": {
+				"follow": false,
+				"history": 0,
+				"termId": "native",
+				"type": "viewport",
+				"x": 30,
+				"y": 10
+			},
+			"type": "terminal"
+		},
+		"terminal-native-history-scroll": {
+			"frame": {
+				"follow": false,
+				"history": 20,
+				"termId": "native",
+				"type": "viewport",
+				"x": 0,
+				"y": 0
+			},
+			"type": "terminal"
+		},
+		"terminal-native-control": {
+			"frame": {
+				"action": "terminate",
+				"sessionId": "11111111-2222-4333-8444-555555555555",
+				"termId": "control",
+				"type": "session-control"
+			},
+			"type": "terminal"
 		}
 	},
 	"rejected": {}

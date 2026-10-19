@@ -1,5 +1,5 @@
 import { ProductLogger } from "../logging/product-logger";
-import { AGENT_CLOSE_REPLACED, type AgentDownstream, type TerminalServerFrame } from "@pdmux/protocol";
+import { AGENT_CLOSE_REPLACED, type AgentDownstream, type TerminalServerFrame, type AgentTerminalAbility } from "@pdmux/protocol";
 
 /**
  * Minimal socket surface the registry needs. Depending on this instead of `ws`
@@ -48,6 +48,10 @@ interface AgentConnection {
 export class AgentRegistryService {
   private readonly logger = new ProductLogger(AgentRegistryService.name);
   private readonly connections = new Map<string, AgentConnection>();
+	private readonly terminalAbilities = new Map<string, AgentTerminalAbility>();
+	setTerminalAbility(hostId: string, ability: AgentTerminalAbility): void { this.terminalAbilities.set(hostId, ability); this.emitConnect(hostId); }
+	hasHello(hostId: string): boolean { return this.terminalAbilities.has(hostId); }
+	terminalAbility(hostId: string): AgentTerminalAbility { return this.isConnected(hostId) ? this.terminalAbilities.get(hostId) ?? { nativeSessions: false, screenProtocol: 0 } : { nativeSessions: false, screenProtocol: 0 }; }
   private readonly terminalHandlers = new Set<TerminalFrameHandler>();
   private readonly disconnectHandlers = new Set<HostDisconnectHandler>();
   private readonly connectHandlers = new Set<HostConnectHandler>();
@@ -63,6 +67,7 @@ export class AgentRegistryService {
    * exactly the caller whose socket most needs dropping.
    */
   register(hostId: string, socket: AgentSocket, tokenId: string): void {
+	this.terminalAbilities.delete(hostId);
     const existing = this.connections.get(hostId);
     if (existing && existing.socket !== socket) {
       this.logger.log(`Replace agent connection host=${hostId}`);

@@ -11,18 +11,25 @@
   import "@xterm/xterm/css/xterm.css";
   import { onDestroy, untrack } from "svelte";
   import { browser } from "$app/env";
+  import { replaceState } from "$app/navigation";
+  import type { TerminalPaneActionContext } from "@pdmux/ui";
+  import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
+  import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
   import { TerminalGrid } from "@pdmux/ui";
-  import { type SlotKind, type TerminalLayout, defaultLayout, focusSlot } from "@pdmux/core";
+  import { type SlotKind, type TerminalLayout, type TerminalSlot, defaultLayout, focusSlot } from "@pdmux/core";
   import { getI18n } from "#lib/i18n/index.js";
   import { TerminalRelay, defaultRelayUrl, type RelayStatus } from "#lib/dashboard/terminal-relay.js";
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
+  import { readTerminalHistory } from "#lib/dashboard/terminal-history.js";
 
   let {
     data,
-  }: { data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string } } = $props();
+  }: { data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string; backend?: "native"; sessionId?: string } } = $props();
 
   const i18n = getI18n();
   const t = $derived(uiTranslate(i18n.t));
+  let terminating = $state<TerminalSlot | null>(null);
+  let terminateOpen = $state(false);
   let relayStatus = $state<RelayStatus>("idle");
 
   const relay = new TerminalRelay({
@@ -48,7 +55,7 @@
       dockOpen: false,
       focusId: "detached",
       slots: data.hostId
-        ? [{ id: "detached", hostId: data.hostId, kind: data.kind, session: data.session }]
+        ? [{ id: "detached", hostId: data.hostId, kind: data.kind, session: data.session, ...(data.backend ? { backend: data.backend } : {}), ...(data.sessionId ? { sessionId: data.sessionId } : {}) }]
         : [],
     })),
   );
@@ -56,6 +63,9 @@
 
   onDestroy(() => relay.dispose());
 </script>
+
+{#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} />{/snippet}
+<SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
 
 <svelte:head><title>{data.hostLabel} · {i18n.t.dash.terminal.detached}</title></svelte:head>
 
@@ -70,6 +80,19 @@
       {layout}
       {hosts}
       adapter={relay}
+      {paneActions}
+      onReadHistory={readTerminalHistory}
+      onSessionResolved={(slotId: string, sessionId: string) => {
+        const slot = layout.slots.find(item => item?.id === slotId);
+        if (slot?.sessionId === sessionId) return;
+        layout = { ...layout, slots: layout.slots.map(item => item?.id === slotId ? { ...item, backend: "native", sessionId, kind: "attach", intent: "attach" } : item) };
+        const url = new URL(window.location.href);
+        url.searchParams.set("backend", "native");
+        url.searchParams.set("kind", "attach");
+        url.searchParams.set("sessionId", sessionId);
+        replaceState(url, {});
+      }}
+      onTerminateSession={(slot: TerminalSlot) => { terminating = slot; terminateOpen = true; }}
       {t}
       onFocus={(slotId: string) => (layout = focusSlot(layout, slotId))}
       onZoom={(slotId: string) => (layout = focusSlot(layout, slotId))}
