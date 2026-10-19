@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.5
+
 - Update the PodoKit foundation to 1.6.5. The audit log names a deleted user by id and email on
   `user.delete`, when an administrator removes the account, and on `account.delete`, when a user
   deletes their own; a deletion that needs email confirmation is recorded by the confirming request.
