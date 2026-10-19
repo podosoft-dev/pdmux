@@ -19,9 +19,11 @@ export interface DesktopMessages {
   updateCurrent: string;
   updateDisabled: string;
   updateError: string;
+  updateBackupFailed: string;
+  updateRestartRequired: string;
+  updateRestart: string;
   updateLater: string;
   updateClose: string;
-  cancel: string;
   runtimeFailed: string;
 }
 
@@ -46,9 +48,11 @@ const ENGLISH: DesktopMessages = {
   updateCurrent: "PDMux is up to date. No updates are available.",
   updateDisabled: "Update checks are available in the installed release of PDMux.",
   updateError: "The update could not be completed. Check your connection and try again.",
+  updateBackupFailed: "The update was not installed because the workspace backup failed. PDMux keeps running.",
+  updateRestartRequired: "The installation could not finish. Restart PDMux to continue using it.",
+  updateRestart: "Restart PDMux",
   updateLater: "Later",
   updateClose: "Close",
-  cancel: "Cancel",
   runtimeFailed: "The local PDMux runtime stopped unexpectedly.",
 };
 
@@ -73,9 +77,11 @@ const KOREAN: DesktopMessages = {
   updateCurrent: "최신 버전의 PDMux입니다. 사용 가능한 업데이트가 없습니다.",
   updateDisabled: "업데이트 확인은 정식 설치된 PDMux에서 사용할 수 있습니다.",
   updateError: "업데이트를 완료하지 못했습니다. 연결 상태를 확인하고 다시 시도하세요.",
+  updateBackupFailed: "작업공간 백업에 실패하여 업데이트를 설치하지 않았습니다. PDMux는 계속 실행됩니다.",
+  updateRestartRequired: "설치를 마치지 못했습니다. 계속 사용하려면 PDMux를 다시 시작해야 합니다.",
+  updateRestart: "PDMux 다시 시작",
   updateLater: "나중에",
   updateClose: "닫기",
-  cancel: "취소",
   runtimeFailed: "로컬 PDMux 런타임이 예기치 않게 종료되었습니다.",
 };
 

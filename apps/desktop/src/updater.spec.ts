@@ -1,12 +1,13 @@
 import { describe, expect, it, mock } from "bun:test";
 import { UpdateCoordinator, type UpdateView } from "./updater.js";
 
-function fixture(available = true): { coordinator: UpdateCoordinator; view: UpdateView; calls: string[]; client: { checkForUpdates: ReturnType<typeof mock>; downloadUpdate: ReturnType<typeof mock>; quitAndInstall: ReturnType<typeof mock> } } {
+interface InstallOptions { confirm: boolean; failures: Set<"backup" | "stop" | "install"> }
+function fixture(available = true, install: InstallOptions = { confirm: false, failures: new Set() }): { coordinator: UpdateCoordinator; view: UpdateView; calls: string[]; client: { checkForUpdates: ReturnType<typeof mock>; downloadUpdate: ReturnType<typeof mock>; quitAndInstall: ReturnType<typeof mock> } } {
   const calls: string[] = [];
   const client = {
     checkForUpdates: mock(async () => { calls.push("check"); return { isUpdateAvailable: available, updateInfo: { version: "1.2.3" } }; }),
     downloadUpdate: mock(async () => { calls.push("download"); }),
-    quitAndInstall: mock(() => { calls.push("install"); }),
+    quitAndInstall: mock(() => { calls.push("install"); if (install.failures.has("install")) throw new Error("Install failed"); }),
   };
   const view: UpdateView = {
     show: (stage, progress) => { calls.push(`${stage}${progress ? `:${progress.percent}` : ""}`); },
@@ -15,8 +16,12 @@ function fixture(available = true): { coordinator: UpdateCoordinator; view: Upda
     current: mock(async () => { calls.push("current"); }),
     disabled: mock(async () => { calls.push("disabled"); }),
     failed: mock(async () => { calls.push("failed"); }),
+    backupFailed: mock(async () => { calls.push("backup-failed"); }),
+    installFailed: mock(async () => { calls.push("install-failed"); }),
   };
-  const coordinator = new UpdateCoordinator(true, client, { create: async () => { calls.push("backup"); return "/backup"; } }, async () => { calls.push("restart"); return false; }, async () => { calls.push("stop"); }, view);
+  const backup = { create: async (): Promise<string> => { calls.push("backup"); if (install.failures.has("backup")) throw new Error("Backup failed"); return "/backup"; } };
+  const prepare = async (): Promise<void> => { calls.push("stop"); if (install.failures.has("stop")) throw new Error("Cleanup failed"); };
+  const coordinator = new UpdateCoordinator(true, client, backup, async () => { calls.push("restart"); return install.confirm; }, prepare, view);
   return { coordinator, client, view, calls };
 }
 
@@ -70,10 +75,43 @@ describe("[TC-PDDESKTOP-008] desktop updater", () => {
     await expect(state.coordinator.check(true)).rejects.toThrow("offline");
     expect(state.calls).toEqual(["checking", "close", "failed"]); expect(state.calls).not.toContain("restart");
   });
+  it("reports a failed background download with the connection message only", async () => {
+    const state = fixture(); state.client.downloadUpdate = mock(async () => { throw new Error("download failed"); });
+    await expect(state.coordinator.check()).rejects.toThrow("download failed");
+    expect(state.calls.filter(call => call.endsWith("failed"))).toEqual(["failed"]);
+  });
   it("reports a failed download without offering restart or stopping the workspace", async () => {
     const state = fixture(); state.client.downloadUpdate = mock(async () => { throw new Error("download failed"); });
     await expect(state.coordinator.check(true)).rejects.toThrow("download failed");
     expect(state.calls).toContain("failed"); expect(state.calls).not.toContain("restart"); expect(state.calls).not.toContain("stop");
+    expect(state.calls).not.toContain("backup-failed"); expect(state.calls).not.toContain("install-failed");
+  });
+  it("reports a failed backup as such and keeps the runtime running", async () => {
+    const state = fixture(true, { confirm: true, failures: new Set(["backup"]) });
+    await expect(state.coordinator.check(true)).rejects.toThrow("Backup failed");
+    expect(state.calls.slice(-5)).toEqual(["installing", "backup", "close", "backup-failed", "close"]);
+    expect(state.calls).not.toContain("stop"); expect(state.calls).not.toContain("install");
+    expect(state.calls).not.toContain("failed"); expect(state.calls).not.toContain("install-failed");
+  });
+  it("offers a restart instead of the connection message when stopping the runtime fails", async () => {
+    const state = fixture(true, { confirm: true, failures: new Set(["stop"]) });
+    await expect(state.coordinator.check(true)).rejects.toThrow("Cleanup failed");
+    expect(state.calls.slice(-5)).toEqual(["backup", "close", "stop", "install-failed", "close"]);
+    expect(state.calls).not.toContain("install"); expect(state.calls).not.toContain("failed");
+  });
+  it("offers a restart when the installer hand-off throws after the runtime stopped", async () => {
+    const state = fixture(true, { confirm: true, failures: new Set(["install"]) });
+    await expect(state.coordinator.check(true)).rejects.toThrow("Install failed");
+    expect(state.calls.slice(-4)).toEqual(["stop", "install", "install-failed", "close"]);
+    expect(state.calls.filter(call => call.endsWith("failed"))).toEqual(["install-failed"]);
+  });
+  it("reports install failures of a postponed download the same way", async () => {
+    const install: InstallOptions = { confirm: false, failures: new Set(["stop"]) };
+    const state = fixture(true, install); await state.coordinator.check(true);
+    install.confirm = true;
+    await expect(state.coordinator.check(true)).rejects.toThrow("Cleanup failed");
+    expect(state.client.downloadUpdate).toHaveBeenCalledTimes(1);
+    expect(state.calls.slice(-2)).toEqual(["install-failed", "close"]); expect(state.calls).not.toContain("failed");
   });
   it("does nothing in an unpackaged development run", async () => {
     const checkForUpdates = mock(async () => undefined);

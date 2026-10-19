@@ -226,9 +226,12 @@ Concurrent checks share one operation, and failures close the progress window an
 The updater must finish its backup, allow windows to close and stop file transfers, the embedded
 agent and local services before calling `quitAndInstall()`. Squirrel.Mac closes windows before
 Electron emits `before-quit`; a close-to-tray handler must not cancel those closes. A failed
-backup leaves the running workspace intact and prevents installation. Preparation failures are
-shown in a dialog. If an older app hides when installing an update, quit from its tray menu and
-reopen it after the staged update is applied, or replace it with the official DMG.
+backup leaves the running workspace intact, prevents installation and says so; PDMux keeps
+running. If stopping the runtime or the installer handoff fails, the local services are already
+stopped, so an error dialog offers **Restart PDMux** (the default) or **Quit** instead of the
+connection notice used for check and download failures. If an older app hides when installing
+an update, quit from its tray menu and reopen it after the staged update is applied, or replace
+it with the official DMG.
 
 With the desktop shell, API and web builds available, `bun tools/smoke-macos-update-lifecycle.mjs`
 checks the real macOS progress windows and runtime against a disposable profile. It verifies

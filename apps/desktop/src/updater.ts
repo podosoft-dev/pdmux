@@ -12,6 +12,10 @@ export interface UpdateView {
   current(): Promise<void>;
   disabled(): Promise<void>;
   failed(): Promise<void>;
+  /** The backup failed before anything stopped, so PDMux keeps running. */
+  backupFailed(): Promise<void>;
+  /** The runtime has already stopped, so PDMux must restart or quit. */
+  installFailed(): Promise<void>;
 }
 
 export interface UpdateBackup {
@@ -23,6 +27,7 @@ export class UpdateCoordinator {
   private stage: "checking" | "downloading" | "installing" | "prompt" = "checking";
   private manual = false;
   private downloaded = false;
+  private reported = false;
   private latest: UpdateProgress = { percent: 0, transferred: 0, total: 0 };
   constructor(
     private readonly packaged: boolean,
@@ -47,6 +52,7 @@ export class UpdateCoordinator {
   private async performCheck(): Promise<boolean> {
     if (!this.packaged) { if (this.manual) await this.view?.disabled(); return false; }
     let interactive = false;
+    this.reported = false;
     try {
       if (this.downloaded) return this.manual ? await this.installDownloadedUpdate() : false;
       this.stage = "checking";
@@ -68,7 +74,7 @@ export class UpdateCoordinator {
       return true;
     } catch (error) {
       this.view?.close();
-      if (interactive || this.manual) await this.view?.failed();
+      if (!this.reported && (interactive || this.manual)) await this.view?.failed();
       throw error;
     }
   }
@@ -87,10 +93,21 @@ export class UpdateCoordinator {
     this.view?.show("installing");
     try {
       await this.backup.create("update");
+    } catch (error) {
       this.view?.close();
+      this.reported = true;
+      await this.view?.backupFailed();
+      throw error;
+    }
+    this.view?.close();
+    try {
       await this.prepareInstall();
       this.client.quitAndInstall();
       return true;
-    } finally { this.view?.close(); }
+    } catch (error) {
+      this.reported = true;
+      await this.view?.installFailed();
+      throw error;
+    }
   }
 }

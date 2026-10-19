@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, type MessageBoxOptions } from "electron";
 import type { DesktopMessages } from "./i18n.js";
 import type { UpdateProgress, UpdateView } from "./updater.js";
 
@@ -51,4 +51,14 @@ export class UpdateWindow implements UpdateView {
   current(): Promise<void> { return this.notice(this.messages.updateCurrent); }
   disabled(): Promise<void> { return this.notice(this.messages.updateDisabled); }
   failed(): Promise<void> { return this.notice(this.messages.updateError, "error"); }
+  backupFailed(): Promise<void> { return this.notice(this.messages.updateBackupFailed, "error"); }
+  async installFailed(): Promise<void> {
+    const options: MessageBoxOptions = { type: "error", title: "PDMux", message: this.messages.updateFailed, detail: this.messages.updateRestartRequired, buttons: [this.messages.updateRestart, this.messages.quit], defaultId: 0, cancelId: 1, noLink: true };
+    // The runtime and its IPC handlers are already gone, so only a new process can recover.
+    const parent = this.parent.isDestroyed() ? undefined : this.parent;
+    parent?.show();
+    const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+    if (result.response === 0) app.relaunch();
+    app.quit();
+  }
 }
