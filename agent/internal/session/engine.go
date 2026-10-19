@@ -6,9 +6,11 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 )
@@ -34,9 +36,36 @@ type running struct {
 	sequence   int
 	closed     bool
 	queryDone  chan struct{}
-	input      chan string
+	input      chan queuedInput
 	inputDone  chan struct{}
 	lastTrim   time.Time
+}
+
+type queuedInput struct {
+	data                string
+	wheel, mouse, focus bool
+}
+
+func (s *running) mouseTracking() bool {
+	for _, number := range []int{9, 1000, 1002, 1003} {
+		if s.modes[ansi.DECMode(number)] {
+			return true
+		}
+	}
+	return false
+}
+
+// Recheck at the PTY writer too: reports queued for a TUI must not reach the
+// shell after the TUI has restored the normal screen and input modes.
+func (s *running) acceptsInput(input queuedInput) bool {
+	mouse := s.mouseTracking()
+	if input.wheel && !s.vt.IsAltScreen() && !mouse {
+		return false
+	}
+	if input.mouse && !mouse {
+		return false
+	}
+	return !input.focus || s.modes[ansi.DECMode(1004)]
 }
 
 type View struct {
@@ -46,6 +75,8 @@ type View struct {
 	follow           bool
 	history          int
 	last             []string
+	historyRows      []string
+	pasting          bool
 	lastModes        string
 	frames           chan Reply
 	done             chan struct{}
@@ -133,11 +164,36 @@ func (e *Engine) Open(request Request) (*View, Info, error) {
 		if err != nil {
 			return nil, Info{}, fmt.Errorf("SESSION_START_FAILED: %w", err)
 		}
-		s = &running{info: Info{ID: randomID(), Name: request.Name, PID: p.Pid()}, process: p, vt: vt.NewEmulator(cols, rows), cols: cols, rows: rows, views: make(map[*View]struct{}), modes: make(map[ansi.Mode]bool), dirty: true, queryDone: make(chan struct{}), input: make(chan string, 64), inputDone: make(chan struct{})}
+		s = &running{info: Info{ID: randomID(), Name: request.Name, PID: p.Pid()}, process: p, vt: vt.NewEmulator(cols, rows), cols: cols, rows: rows, views: make(map[*View]struct{}), modes: make(map[ansi.Mode]bool), dirty: true, queryDone: make(chan struct{}), input: make(chan queuedInput, 64), inputDone: make(chan struct{})}
 		s.vt.SetScrollbackSize(HistoryLines)
 		s.vt.SetCallbacks(vt.Callbacks{
-			EnableMode:  func(mode ansi.Mode) { s.modes[mode] = true },
-			DisableMode: func(mode ansi.Mode) { s.modes[mode] = false },
+			EnableMode: func(mode ansi.Mode) {
+				switch mode {
+				case ansi.DECMode(9), ansi.DECMode(1000), ansi.DECMode(1002), ansi.DECMode(1003):
+					for _, number := range []int{9, 1000, 1002, 1003} {
+						s.modes[ansi.DECMode(number)] = false
+					}
+				}
+				s.modes[mode] = true
+			},
+			AltScreen: func(bool) {
+				for v := range s.views {
+					if v.follow {
+						v.x, v.y = 0, 0
+						v.last = nil
+					}
+				}
+			},
+			DisableMode: func(mode ansi.Mode) {
+				switch mode {
+				case ansi.DECMode(9), ansi.DECMode(1000), ansi.DECMode(1002), ansi.DECMode(1003):
+					for _, number := range []int{9, 1000, 1002, 1003} {
+						s.modes[ansi.DECMode(number)] = false
+					}
+				default:
+					s.modes[mode] = false
+				}
+			},
 		})
 		e.sessions[s.info.ID] = s
 		// One bounded writer prevents an application that stopped reading input
@@ -148,7 +204,12 @@ func (e *Engine) Open(request Request) (*View, Info, error) {
 				case <-s.inputDone:
 					return
 				case data := <-s.input:
-					_ = p.Write(data)
+					e.mu.Lock()
+					allowed := s.acceptsInput(data)
+					e.mu.Unlock()
+					if allowed {
+						_ = p.Write(data.data)
+					}
 				}
 			}
 		}()
@@ -160,7 +221,7 @@ func (e *Engine) Open(request Request) (*View, Info, error) {
 				n, err := s.vt.Read(buffer)
 				if n > 0 {
 					select {
-					case s.input <- string(buffer[:n]):
+					case s.input <- queuedInput{data: string(buffer[:n])}:
 					default: /* An unresponsive application cannot grow the reply queue. */
 					}
 				}
@@ -227,7 +288,28 @@ func (e *Engine) pump(s *running) {
 				return
 			}
 			e.mu.Lock()
+			previous := s.vt.Scrollback().Lines()
+			var tail *uv.Cell
+			if len(previous) > 0 && len(previous[len(previous)-1]) > 0 {
+				tail = &previous[len(previous)-1][0]
+			}
 			_, _ = s.vt.Write(data)
+			// Keep a reader anchored even when the bounded ring evicts old lines.
+			added := s.vt.ScrollbackLen()
+			if tail != nil {
+				current := s.vt.Scrollback().Lines()
+				for i := len(current) - 1; i >= 0; i-- {
+					if len(current[i]) > 0 && &current[i][0] == tail {
+						added = len(current) - i - 1
+						break
+					}
+				}
+			}
+			for v := range s.views {
+				if v.history > 0 {
+					v.history = min(s.vt.ScrollbackLen(), v.history+added)
+				}
+			}
 			if !s.dirty {
 				for v := range s.views {
 					e.render(s, v, false)
@@ -298,16 +380,38 @@ func (v *View) Apply(r Request) error {
 	}
 	switch r.Action {
 	case "input":
-		v.follow = true
-		v.history = 0
-		data := translateMouse(r.Data, v.x, v.y)
+		literal := v.pasting || strings.Contains(r.Data, "\x1b[200~")
+		input := queuedInput{wheel: r.Source == "wheel", mouse: !literal && mouseOnly(r.Data), focus: !literal && (r.Data == "\x1b[I" || r.Data == "\x1b[O")}
+		if v.history > 0 && (input.wheel || input.mouse || input.focus) {
+			return nil
+		}
+		if !v.session.acceptsInput(input) {
+			return nil
+		}
+		if r.Source != "wheel" && !mouseOnly(r.Data) && r.Data != "\x1b[I" && r.Data != "\x1b[O" {
+			wasHistory := v.history > 0
+			v.follow = true
+			v.history = 0
+			v.historyRows = nil
+			if wasHistory {
+				v.last = nil
+				e.render(v.session, v, true)
+			}
+		}
+		data := r.Data
+		if !v.pasting && mouseOnly(data) {
+			data = translateMouse(data, v.x, v.y)
+		}
+		if start, end := strings.LastIndex(r.Data, "\x1b[200~"), strings.LastIndex(r.Data, "\x1b[201~"); start >= 0 || end >= 0 {
+			v.pasting = start > end
+		}
 		if len(data) > 256<<10 {
 			return fmt.Errorf("SESSION_INPUT_LIMIT")
 		}
 		for len(data) > 0 {
 			end := min(4096, len(data))
 			select {
-			case v.session.input <- data[:end]:
+			case v.session.input <- queuedInput{data: data[:end], wheel: input.wheel, mouse: input.mouse, focus: input.focus}:
 				data = data[end:]
 			default:
 				return fmt.Errorf("SESSION_INPUT_BUSY")
@@ -316,9 +420,11 @@ func (v *View) Apply(r Request) error {
 		return nil
 	case "resize":
 		v.cols, v.rows = dimensions(r.Cols, r.Rows)
+		v.historyRows = nil
 		v.last = nil
 		e.resize(v.session)
 	case "viewport":
+		v.historyRows = nil
 		v.follow = r.Follow
 		v.x = r.X
 		v.y = r.Y
@@ -327,6 +433,7 @@ func (v *View) Apply(r Request) error {
 			v.history = 0
 		}
 	case "history":
+		v.historyRows = nil
 		v.history = max(0, min(v.session.vt.ScrollbackLen(), v.history+r.Y))
 		v.last = nil
 		v.follow = v.history == 0

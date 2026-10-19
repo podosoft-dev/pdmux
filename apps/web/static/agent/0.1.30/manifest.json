@@ -6,36 +6,36 @@
       "os": "linux",
       "arch": "amd64",
       "path": "/agent/0.1.30/pdmux-agent-linux-amd64",
-      "sha256": "92d29a45e58138b4b7edd9e228103562a41b8af5ec5983048326be3ce1c0ade0",
-      "bytes": 9261218
+      "sha256": "e6d7aa6a7ab3e349b6c339126ef83551daef46bae469b43c3463824e44e6452f",
+      "bytes": 9273506
     },
     {
       "os": "linux",
       "arch": "arm64",
       "path": "/agent/0.1.30/pdmux-agent-linux-arm64",
-      "sha256": "fe9c51e607e8d8e22738c3e39ad4fb49110a01e52331ffdf6152dbaaf1dba4aa",
+      "sha256": "81dac731068a02098ab7ecb58569c032b6672676f14d77e90f75af249bfa8259",
       "bytes": 8585378
     },
     {
       "os": "darwin",
       "arch": "amd64",
       "path": "/agent/0.1.30/pdmux-agent-darwin-amd64",
-      "sha256": "afa16ebc908932206669c58e00ad95cd93093a049b6fbf87b7ac60370dfed9da",
-      "bytes": 9445712
+      "sha256": "b4f6a813c8d2157a50218e11f9d6a3c25f228ac073716ade5d8c90a9b6cd8daf",
+      "bytes": 9458176
     },
     {
       "os": "darwin",
       "arch": "arm64",
       "path": "/agent/0.1.30/pdmux-agent-darwin-arm64",
-      "sha256": "f7a34bf28adf26c3fc64c2e21a209769c293e7ad0a22385be37c0c6cef215a07",
-      "bytes": 8800850
+      "sha256": "876e56a2a324acf353cae3b9ae093d12245c6a36f99168ce87d4bcf3c8d4d5e4",
+      "bytes": 8801058
     },
     {
       "os": "windows",
       "arch": "amd64",
       "path": "/agent/0.1.30/pdmux-agent-windows-amd64",
-      "sha256": "64e4ddbd8c7b9d428d721c17f397598c20883c4b93f091ff9d0f683124dcfa9f",
-      "bytes": 9679872
+      "sha256": "f32a09be516ef610de63ef0134e53d5cae56a6ed341f97cc11d50fed81008ca7",
+      "bytes": 9691648
     }
   ]
 }

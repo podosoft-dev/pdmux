@@ -251,7 +251,11 @@ func (m *Manager) Handle(frame protocol.TerminalClientFrame) {
 		m.open(f.TermID, f.Target)
 	case *protocol.TerminalInput:
 		if attachment := m.nativeFor(f.TermID); attachment != nil {
-			_ = attachment.Send(session.Request{Action: "input", Data: f.Data})
+			source := ""
+			if f.Source != nil {
+				source = *f.Source
+			}
+			_ = attachment.Send(session.Request{Action: "input", Data: f.Data, Source: source})
 			return
 		}
 		if t := m.lookup(f.TermID); t != nil {

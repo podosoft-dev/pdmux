@@ -39,6 +39,8 @@ type Info struct {
 // Screen is a rendered viewport, never raw program escape sequences. Queries
 // terminate at the engine, so N viewers cannot send N terminal replies.
 type Screen struct {
+	Alternate  bool   `json:"alternate"`
+	History    int    `json:"history"`
 	Data       string `json:"data"`
 	Sequence   int    `json:"sequence"`
 	Cols       int    `json:"cols"`
@@ -51,6 +53,7 @@ type Screen struct {
 }
 
 type Request struct {
+	Source    string `json:"source,omitempty"`
 	Protocol  int    `json:"protocol"`
 	Auth      string `json:"auth,omitempty"`
 	Action    string `json:"action"`

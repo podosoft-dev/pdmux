@@ -80,6 +80,37 @@ func startShell(t *testing.T, cols, rows int) Process {
 }
 
 func TestPty(t *testing.T) {
+	t.Run("[TC-PDTERM-022] resizes cannot race a closing terminal descriptor", func(t *testing.T) {
+		for attempt := 0; attempt < 8; attempt++ {
+			p := startShell(t, 80, 24)
+			record(p)
+			stop := make(chan struct{})
+			var workers sync.WaitGroup
+			for range 2 {
+				workers.Go(func() {
+					for {
+						select {
+						case <-stop:
+							return
+						default:
+							_ = p.Resize(100, 30)
+						}
+					}
+				})
+			}
+			_ = p.Write("exit 0\r")
+			select {
+			case <-p.Exit():
+			case <-time.After(ptyTimeout):
+				t.Error("shell did not exit during resize")
+			}
+			close(stop)
+			workers.Wait()
+			if err := p.Resize(80, 24); err == nil {
+				t.Fatal("resize accepted a closed terminal")
+			}
+		}
+	})
 	t.Run("[TC-PDTERM-021] echoes a command through a real pty", func(t *testing.T) {
 		p := startShell(t, 80, 24)
 		out := record(p)

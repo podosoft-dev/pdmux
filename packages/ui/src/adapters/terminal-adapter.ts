@@ -22,14 +22,14 @@ export interface TerminalOpenTarget {
 }
 
 /** A live terminal. Every listener returns its own unsubscribe. */
-export interface TerminalViewport { x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean }
+export interface TerminalViewport { x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean; alternate?: boolean; history?: number }
 
 export interface TerminalConnection {
 	scrollHistory?(delta: number): void;
 	viewport?(x: number, y: number, follow?: boolean): void;
 	onViewport?(listener: (viewport: TerminalViewport) => void): () => void;
 	onSession?(listener: (sessionId: string) => void): () => void;
-	send(data: string): void;
+	send(data: string, source?: 'wheel'): void;
 	resize(cols: number, rows: number): void;
 	onData(listener: (data: string) => void): () => void;
 	onExit(listener: (code: number | null) => void): () => void;

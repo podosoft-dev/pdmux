@@ -171,6 +171,21 @@
 					"sessionId": "11111111-2222-4333-8444-555555555555"
 				}
 			}
+		},
+		{
+			"id": "terminal-wheel-input-source",
+			"direction": "downstream",
+			"expect": "accept",
+			"why": "Wheel-generated arrows retain their provenance so late TUI input cannot type into a restored shell.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "input",
+					"termId": "native",
+					"data": "\u001b[B",
+					"source": "wheel"
+				}
+			}
 		}
 	]
 }

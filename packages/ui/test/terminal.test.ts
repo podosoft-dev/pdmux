@@ -9,7 +9,7 @@ import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { type GridHost, type TerminalLayout, buildDefaultSlots, defaultLayout, normalizeLayout } from '@pdmux/core';
-import { EchoTerminalAdapter } from '../src/adapters/terminal-adapter.js';
+import { EchoTerminalAdapter, type TerminalOpenTarget } from '../src/adapters/terminal-adapter.js';
 import type { GestureInfo, TerminalSurface } from '../src/adapters/terminal-surface.js';
 import EmptyCell from '../src/components/EmptyCell.svelte';
 import TerminalGrid from '../src/components/TerminalGrid.svelte';
@@ -105,6 +105,32 @@ const layoutWith = (over: Partial<TerminalLayout> = {}): TerminalLayout => ({
 	...defaultLayout(),
 	slots: buildDefaultSlots(HOSTS, { pad: 2 }),
 	...over,
+});
+
+it('[TC-PDTERM-130] reads a newly resolved native session by UUID without reopening it', async () => {
+	const surface = fakeSurface();
+	surface.setScrollback(false);
+	const echo = new EchoTerminalAdapter();
+	const open = vi.fn((target: TerminalOpenTarget) => ({
+		...echo.open(target),
+		onSession: (listener: (id: string) => void): (() => void) => {
+			queueMicrotask(() => listener('resolved-native-uuid'));
+			return () => undefined;
+		},
+	}));
+	const history = vi.fn(async () => ({ lines: ['REMOTE_NATIVE_HISTORY'], scrollback: true }));
+	const { container } = render(TerminalPane, { props: {
+		slot: { id: 'new-native', hostId: 'h1', kind: 'new', session: 'work', backend: 'native' },
+		index: 0, hostName: 'alpha', adapter: { open }, createSurface: surface.factory,
+		onReadHistory: history,
+	} });
+	await vi.waitFor(() => expect(surface.written.length).toBeGreaterThan(0));
+	(container.querySelector('[data-pdmux-history]') as HTMLButtonElement).click();
+	await vi.waitFor(() => expect(history).toHaveBeenCalledWith(expect.objectContaining({
+		kind: 'attach', backend: 'native', sessionId: 'resolved-native-uuid',
+	})));
+	await vi.waitFor(() => expect(container.textContent).toContain('REMOTE_NATIVE_HISTORY'));
+	expect(open).toHaveBeenCalledTimes(1);
 });
 
 describe('[TC-PDUI-010] the grid renders exactly one window of cells', () => {

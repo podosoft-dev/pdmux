@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -66,20 +67,29 @@ func renderRow(terminal *vt.Emulator, x, y, width int) string {
 
 // Input-related modes only. Application escape sequences, queries and OSC side
 // effects never reach a viewer through this renderer.
-func inputModes(s *running) string {
+func inputModes(s *running, v *View) string {
 	keys := []int{1, 9, 66, 1000, 1002, 1003, 1004, 1006, 1015, 2004}
 	var b strings.Builder
+	// xterm has one mouse tracker. Resetting an inactive tracker after enabling
+	// the active one disables reporting too, so resets must precede all enables.
 	for _, number := range keys {
-		if s.modes[ansi.DECMode(number)] {
+		b.WriteString(ansi.ResetMode(ansi.DECMode(number)))
+	}
+	for _, number := range keys {
+		if s.modes[ansi.DECMode(number)] && (v.history == 0 || number == 2004) {
 			b.WriteString(ansi.SetMode(ansi.DECMode(number)))
-		} else {
-			b.WriteString(ansi.ResetMode(ansi.DECMode(number)))
 		}
 	}
 	return b.String()
 }
 
 func (e *Engine) render(s *running, v *View, full bool) {
+	// Output does not invalidate a reader's frozen snapshot. Do not replace an
+	// unread full snapshot with a cursor-only diff or clear a selection because
+	// the normal screen is busy behind it.
+	if v.history > 0 && v.historyRows != nil && !full {
+		return
+	}
 	if len(v.frames) > 0 {
 		select {
 		case <-v.frames:
@@ -123,12 +133,21 @@ func (e *Engine) render(s *running, v *View, full bool) {
 			rows[y] = renderRow(s.vt, v.x, line, v.cols)
 		}
 	}
+	// A reading/selection viewport is frozen until its owner scrolls, resizes,
+	// follows or types. New output must not move the text under a selection.
+	if v.history > 0 {
+		if v.historyRows == nil {
+			v.historyRows = rows
+		} else {
+			rows = v.historyRows
+		}
+	}
 	var b strings.Builder
 	if full || len(v.last) != len(rows) {
 		b.WriteString("\x1b[?1049h\x1b[?7l\x1b[0m\x1b[2J")
 		full = true
 	}
-	modes := inputModes(s)
+	modes := inputModes(s, v)
 	if full || modes != v.lastModes {
 		b.WriteString(modes)
 	}
@@ -156,7 +175,7 @@ func (e *Engine) render(s *running, v *View, full bool) {
 	s.sequence++
 	v.last = rows
 	v.lastModes = modes
-	v.offer(Reply{Type: "screen", Screen: &Screen{Data: b.String(), Sequence: s.sequence, Cols: v.cols, Rows: v.rows, CanvasCols: s.cols, CanvasRows: s.rows, X: v.x, Y: v.y, Follow: v.follow}})
+	v.offer(Reply{Type: "screen", Screen: &Screen{Data: b.String(), Sequence: s.sequence, Cols: v.cols, Rows: v.rows, CanvasCols: s.cols, CanvasRows: s.rows, X: v.x, Y: v.y, Follow: v.follow, Alternate: s.vt.IsAltScreen(), History: v.history}})
 }
 
 func trimHistory(terminal *vt.Emulator) {
@@ -183,21 +202,35 @@ func trimHistory(terminal *vt.Emulator) {
 	}
 }
 
+var sgrMouse = regexp.MustCompile(`\x1b\[<([0-9]+);([0-9]+);([0-9]+)[Mm]`)
+
+func mouseOnly(data string) bool {
+	if data == "" {
+		return false
+	}
+	return sgrMouse.ReplaceAllString(data, "") == "" || strings.HasPrefix(data, "\x1b[M") && len([]rune(data[3:])) == 3
+}
+
 // Translate SGR and legacy UTF-8 mouse coordinates from the viewport to the PTY.
 // SGR is the mode advertised to new applications by xterm-compatible clients.
 func translateMouse(data string, x, y int) string {
 	if x == 0 && y == 0 {
 		return data
 	}
-	if strings.HasPrefix(data, "\x1b[<") && (strings.HasSuffix(data, "M") || strings.HasSuffix(data, "m")) {
-		parts := strings.Split(data[3:len(data)-1], ";")
-		if len(parts) == 3 {
+	// Paste bytes are text, even when they happen to look like mouse reports.
+	if strings.Contains(data, "\x1b[200~") {
+		return data
+	}
+	if sgrMouse.MatchString(data) {
+		return sgrMouse.ReplaceAllStringFunc(data, func(report string) string {
+			parts := strings.Split(report[3:len(report)-1], ";")
 			col, ce := strconv.Atoi(parts[1])
 			row, re := strconv.Atoi(parts[2])
-			if ce == nil && re == nil {
-				return fmt.Sprintf("\x1b[<%s;%d;%d%s", parts[0], col+x, row+y, data[len(data)-1:])
+			if ce != nil || re != nil {
+				return report
 			}
-		}
+			return fmt.Sprintf("\x1b[<%s;%d;%d%s", parts[0], col+x, row+y, report[len(report)-1:])
+		})
 	}
 	if strings.HasPrefix(data, "\x1b[M") {
 		coordinates := []rune(data[3:])

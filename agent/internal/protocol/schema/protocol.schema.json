@@ -2743,6 +2743,10 @@
             "data": {
               "type": "string"
             },
+            "source": {
+              "const": "wheel",
+              "type": "string"
+            },
             "termId": {
               "maxLength": 64,
               "minLength": 1,
@@ -2856,6 +2860,9 @@
         {
           "additionalProperties": true,
           "properties": {
+            "alternate": {
+              "type": "boolean"
+            },
             "canvasCols": {
               "exclusiveMinimum": 0,
               "maximum": 1000,
@@ -2877,6 +2884,11 @@
             },
             "follow": {
               "type": "boolean"
+            },
+            "history": {
+              "maximum": 5000,
+              "minimum": 0,
+              "type": "integer"
             },
             "rows": {
               "exclusiveMinimum": 0,

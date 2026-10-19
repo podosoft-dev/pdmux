@@ -205,6 +205,30 @@
 			}
 		},
 		{
+			"id": "terminal-native-screen-scroll-state",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "Application buffer and history ownership survive normalization without requiring metadata from older agents.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "screen",
+					"termId": "native",
+					"data": "\u001b[Hhello",
+					"sequence": 1,
+					"cols": 40,
+					"rows": 12,
+					"canvasCols": 120,
+					"canvasRows": 40,
+					"x": 30,
+					"y": 10,
+					"follow": false,
+					"alternate": true,
+					"history": 12
+				}
+			}
+		},
+		{
 			"id": "terminal-native-history-result",
 			"direction": "upstream",
 			"expect": "accept",

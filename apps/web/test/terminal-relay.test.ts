@@ -111,9 +111,14 @@ describe("[TC-PDTERM-101] opening a pane", () => {
     first.deliver({ type: "ready", termId: "t1", backend: "native", sessionId });
     expect(resolved).toEqual([sessionId]);
     const received: string[] = [];
+    const viewports: Array<{ alternate?: boolean; history?: number }> = [];
+    connection.onViewport?.(value => viewports.push(value));
     connection.onData(data => received.push(data));
-    first.deliver({ type: "screen", termId: "t1", data: "paint", sequence: 1, cols: 40, rows: 12, canvasCols: 120, canvasRows: 40, x: 20, y: 0, follow: false });
+    first.deliver({ type: "screen", termId: "t1", data: "paint", sequence: 1, cols: 40, rows: 12, canvasCols: 120, canvasRows: 40, x: 20, y: 0, follow: false, alternate: true, history: 7 });
+    expect(viewports.at(-1)).toMatchObject({ alternate: true, history: 7 });
     expect(received).toEqual(["paint"]);
+    connection.send("\x1b[B", "wheel");
+    expect(first.frames().at(-1)).toEqual({ type: "input", termId: "t1", data: "\x1b[B", source: "wheel" });
     connection.viewport?.(30, 5, false);
     expect(first.frames().at(-1)).toEqual({ type: "viewport", termId: "t1", x: 30, y: 5, follow: false });
     first.drop(); run();

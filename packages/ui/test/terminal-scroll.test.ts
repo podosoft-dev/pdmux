@@ -127,6 +127,7 @@ async function surfaceWithFakeTerminal(rowHeight = 20, rows = 24) {
 			public element = element;
 			public buffer = state.buffer;
 			public modes = state.modes;
+			public unicode = { activeVersion: '6' };
 			public loadAddon(): void {}
 			public open(host: HTMLElement): void {
 				host.append(element);
@@ -1061,4 +1062,63 @@ describe('[TC-PDUI-216] Shift takes the wheel back from the program, and only Sh
 		expect(asked).toEqual([]);
 		surface.dispose();
 	});
+});
+
+describe('[TC-PDTERM-130] native screen history routes the ordinary wheel', () => {
+  afterEach(() => {
+    vi.useRealTimers(); vi.doUnmock('@xterm/xterm'); vi.doUnmock('@xterm/addon-fit');
+    document.body.innerHTML = '';
+  });
+  it('scrolls remote shell history by lines without typing cursor keys', async () => {
+    const { surface, term } = await surfaceWithFakeTerminal();
+    surface.setRemoteScrollback?.({ alternate: false, history: 0 });
+    const asked: number[] = [];
+    surface.onScrollbackRequest((_direction, lines) => { asked.push(lines ?? 0); return true; });
+    expect(term.wheelHandler?.(new WheelEvent('wheel', { deltaY: -3, deltaMode: 1 }))).toBe(false);
+    expect(asked).toEqual([-3]);
+    expect(term.sent).toEqual([]);
+    surface.dispose();
+  });
+  it('cancels old native TUI scroll momentum when the shell returns', async () => {
+    fakeFrames();
+    const { host, surface, term } = await surfaceWithFakeTerminal();
+    term.modes.mouseTrackingMode = 'vt200';
+    surface.setRemoteScrollback?.({ alternate: true, history: 0 });
+    const wheeled = recordWheel(term, surface);
+    drag(host, { x: 50, y: 100 }, [{ x: 50, y: 400 }]);
+    const sentBeforeExit = wheeled.length;
+    expect(sentBeforeExit).toBeGreaterThan(0);
+    surface.setRemoteScrollback?.({ alternate: false, history: 0 });
+    term.modes.mouseTrackingMode = 'none';
+    vi.advanceTimersByTime(1000);
+    expect(wheeled).toHaveLength(sentBeforeExit);
+    surface.dispose();
+  });
+  it('uses the same line-based remote history route for a finger', async () => {
+    fakeFrames();
+    const { host, surface, term } = await surfaceWithFakeTerminal();
+    surface.setRemoteScrollback?.({ alternate: false, history: 0 });
+    const asked: number[] = [];
+    surface.onScrollbackRequest((_direction, lines) => { asked.push(lines ?? 0); return true; });
+    term.element.addEventListener('wheel', event => { term.wheelHandler?.(event as WheelEvent); });
+    drag(host, { x: 50, y: 100 }, [{ x: 50, y: 220 }]);
+    vi.advanceTimersByTime(200);
+    expect(asked).toEqual([-3, -3]);
+    expect(term.sent).toEqual([]);
+    surface.dispose();
+  });
+  it('leaves a fullscreen mouse owner in charge and preserves its no-mouse fallback', async () => {
+    const { surface, term } = await surfaceWithFakeTerminal();
+    const asked: number[] = [];
+    surface.onScrollbackRequest((_direction, lines) => { asked.push(lines ?? 0); return true; });
+    surface.setRemoteScrollback?.({ alternate: true, history: 0 });
+    term.modes.mouseTrackingMode = 'vt200';
+    expect(term.wheelHandler?.(new WheelEvent('wheel', { deltaY: -3, deltaMode: 1 }))).toBe(true);
+    term.modes.mouseTrackingMode = 'none';
+    expect(term.wheelHandler?.(new WheelEvent('wheel', { deltaY: -3, deltaMode: 1 }))).toBe(true);
+    expect(asked).toEqual([]);
+    expect(term.wheelHandler?.(new WheelEvent('wheel', { deltaY: -3, deltaMode: 1, shiftKey: true }))).toBe(false);
+    expect(asked).toEqual([-3]);
+    surface.dispose();
+  });
 });

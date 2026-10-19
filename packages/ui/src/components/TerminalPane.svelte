@@ -215,13 +215,20 @@
 	let surfaceHost = $state<HTMLDivElement | null>(null);
 	let surface: TerminalSurface | null = null;
 	let connection: TerminalConnection | null = null;
-	let nativeViewport = $state<{ x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean } | null>(null);
+	let resolvedSessionId = $state<string | null>(null);
+	// A mounted grid entry can still carry the original `new` target. Controls
+	// must use the UUID returned by this connection without reopening its PTY.
+	const resolvedSlot = $derived<TerminalSlot>(resolvedSessionId && slot.backend === 'native'
+		? { ...slot, kind: 'attach', intent: 'attach', sessionId: resolvedSessionId }
+		: slot);
+	let nativeViewport = $state<{ x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean; alternate?: boolean; history?: number } | null>(null);
 
 	$effect(() => {
 		const host = surfaceHost;
 		// Read the target synchronously so a retarget re-runs this effect.
 		const target = { slotId: slot.id, hostId: slot.hostId, ...toProtocolTarget(slot) };
 		if (!host) return;
+		resolvedSessionId = null;
 		let disposed = false;
 		const cleanups: Array<() => void> = [];
 
@@ -239,6 +246,7 @@
 				return;
 			}
 			surface = created;
+			if (target.backend === 'native') created.setRemoteScrollback?.({ alternate: false, history: 0 });
 			const geometry = created.fit();
 			const opened = await adapter.open({ ...target, cols: geometry.cols, rows: geometry.rows });
 			if (disposed) {
@@ -246,8 +254,11 @@
 				return;
 			}
 			connection = opened;
-			if (opened.onSession) cleanups.push(opened.onSession(id => onSessionResolved?.(slot.id, id)));
-			if (opened.onViewport) cleanups.push(opened.onViewport(value => { nativeViewport = value; }));
+			if (opened.onSession) cleanups.push(opened.onSession(id => {
+				resolvedSessionId = id;
+				onSessionResolved?.(slot.id, id);
+			}));
+			if (opened.onViewport) cleanups.push(opened.onViewport(value => { nativeViewport = value; created.setRemoteScrollback?.({ alternate: value.alternate ?? false, history: value.history ?? 0 }); }));
 			// Ask once now and then after every write: a pane that attaches to a multiplexer is
 			// already in the alternate buffer before its first byte arrives.
 			refreshScrollable();
@@ -261,7 +272,7 @@
 			cleanups.push(opened.onExit((code) => onExit?.(slot.id, code)));
 			// Shift+wheel on a buffer with no local history. The surface decides that it
 			// has nothing to scroll; what to do about it is this pane's business.
-			cleanups.push(created.onScrollbackRequest(direction => { if (slot.backend === 'native') { opened.scrollHistory?.(-direction * Math.max(1, geometry.rows-1)); return true; } return askScrollback(); }));
+			cleanups.push(created.onScrollbackRequest((direction, lines) => { if (slot.backend === 'native') { opened.scrollHistory?.(-(lines ?? direction * Math.max(1, nativeViewport?.rows ?? geometry.rows))); return true; } return askScrollback(); }));
 			// Subscribed only when asked for: a watcher that ran always would be a listener per
 			// pane doing nothing but allocating.
 			if (diagnostics) {
@@ -275,7 +286,7 @@
 			// The Ctrl latch is spent HERE, on the surface -> connection bridge, because a
 			// soft keyboard's characters do not arrive as `keydown` on iOS — they only reach
 			// this callback. A latch that waited for a key event would never fire on a phone.
-			cleanups.push(created.onData((data) => opened.send(spendCtrl(data))));
+			cleanups.push(created.onData((data, source) => opened.send(spendCtrl(data), source)));
 			if (typeof ResizeObserver !== 'undefined') {
 				const observer = new ResizeObserver(() => {
 					const next = created.fit();
@@ -499,7 +510,7 @@
 		if (!onReadHistory || local.scrollback) return;
 		historyPending = true;
 		try {
-			const remote = await onReadHistory(slot);
+			const remote = await onReadHistory(resolvedSlot);
 			// `history` going null means the user closed the sheet while we were away.
 			if (history === null) return;
 			if (remote === null) historyFailed = true;
@@ -645,8 +656,8 @@
 		viewport: nativeViewport,
 		pan: (dx, dy) => { if (nativeViewport) connection?.viewport?.(Math.max(0, nativeViewport.x+dx), Math.max(0, nativeViewport.y+dy)); },
 		followCursor: () => connection?.viewport?.(0, 0, true),
-		...(slot.backend === 'native' && slot.sessionId && onTerminateSession ? { terminate: () => onTerminateSession?.(slot) } : {}),
-		slot,
+		...(resolvedSlot.backend === 'native' && resolvedSlot.sessionId && onTerminateSession ? { terminate: () => onTerminateSession?.(resolvedSlot) } : {}),
+		slot: resolvedSlot,
 		index,
 		zoomed,
 		scrollMode: slot.backend === 'native' ? nativeViewport?.follow === false : scrollMode,
@@ -655,7 +666,7 @@
 		toggleScrollback: toggleScrollMode,
 		showOutput: () => void openHistory(),
 		toggleZoom: () => onZoom?.(slot.id),
-		detach: () => onDetach?.(slot),
+		detach: () => onDetach?.(resolvedSlot),
 		close: () => onClose?.(index),
 	});
 </script>
