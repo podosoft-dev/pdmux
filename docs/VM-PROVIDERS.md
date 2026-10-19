@@ -16,9 +16,24 @@ control and its MCP tools answer `VM_PROVIDERS_UNAVAILABLE`.
 
 ## 1. Connecting a provider
 
-**Settings → VM providers → Add provider** (fleet administrators). A connection is saved only
-after pdmux reached the provider with it, so a mistyped token is refused on the form rather
-than failing at the first power change.
+**Settings → VM providers → Add provider** (fleet administrators). Pick the platform — Proxmox
+VE today; AWS EC2 and Azure are listed as coming later — and give its **address and
+credentials**. That is all a new connection needs: everything else starts at the platform's
+defaults (`GET /vm/provider-kinds`), shown on one line and folded until you open it. A
+connection is saved only after pdmux reached the provider with it, so a mistyped token is
+refused on the form rather than failing at the first power change.
+
+Proxmox VE defaults:
+
+| setting | default |
+|---|---|
+| name | the address's host (`pve.example.com`, `192.168.0.10`; `-2` … if taken) |
+| new machine size | 4 vCPU, 16 GB memory, 64 GB disk (the template's boot disk is grown before first boot when smaller; disks only grow) |
+| template | the one tagged `pdmux-template` — none, or several, is asked rather than guessed |
+| pool | `pdmux` when the cluster has it, otherwise none |
+| node / storage | the template's |
+| ids for new machines | 500–599 |
+| clone | linked |
 
 | field | meaning |
 |---|---|
