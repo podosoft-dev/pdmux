@@ -1,7 +1,7 @@
 import { redirect } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
 import { requireBackendAvailable } from "#lib/server/guards.js";
-import type { HostView } from "#lib/dashboard/types.js";
+import type { FleetScopeView, HostView } from "#lib/dashboard/types.js";
 
 /**
  * A pane in its own window.
@@ -24,15 +24,22 @@ export const load: PageServerLoad = async ({ locals, url, fetch }) => {
 
   let hostLabel = hostId;
   let host: HostView | null = null;
+  // Fail closed, as the shell does: a window that could not ask draws no administrator's changes.
+  let canManage = false;
+  const [hostAnswer, scopeAnswer] = await Promise.allSettled([fetch(`/api/hosts/${hostId}`), fetch("/api/fleet/scope")]);
   try {
-    const response = await fetch(`/api/hosts/${hostId}`);
-    if (response.ok) {
-      host = (await response.json()) as HostView;
+    if (hostAnswer.status === "fulfilled" && hostAnswer.value.ok) {
+      host = (await hostAnswer.value.json()) as HostView;
       hostLabel = host.label;
     }
   } catch {
     // A missing label costs the window's title, not the terminal.
   }
+  try {
+    if (scopeAnswer.status === "fulfilled" && scopeAnswer.value.ok) canManage = ((await scopeAnswer.value.json()) as FleetScopeView).canManage === true;
+  } catch {
+    // Without an answer the window offers what any member may do.
+  }
 
-  return { hostId, kind, session, hostLabel, host, backend, sessionId };
+  return { hostId, kind, session, hostLabel, host, backend, sessionId, canManage };
 };

@@ -26,11 +26,15 @@
   import { gridHosts } from "#lib/dashboard/map.js";
   import { readTerminalHistory } from "#lib/dashboard/terminal-history.js";
   import type { HostView } from "#lib/dashboard/types.js";
+  import { Toaster } from "#lib/components/ui/sonner/index.js";
+  import { VmPowerController, provideVmPower } from "#lib/vm/power-controller.svelte.js";
+  import VmPowerConfirm from "#lib/vm/vm-power-confirm.svelte";
+  import VmPaneVeil from "#lib/vm/vm-pane-veil.svelte";
 
   let {
     data,
   }: {
-    data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string; host: HostView | null; backend?: "native"; sessionId?: string };
+    data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string; host: HostView | null; backend?: "native"; sessionId?: string; canManage?: boolean };
   } = $props();
 
   const i18n = getI18n();
@@ -77,6 +81,9 @@
    * answer, which is what it showed before.
    */
   let host = $state<HostView | null>(untrack(() => data.host));
+  /** When the host was last read — the clock a change in flight counts its seconds from, as the dashboard's feed is. */
+  let now = $state(Date.now());
+  const canManage = $derived(data.canManage === true);
   const hosts = $derived(
     host ? gridHosts([host]) : [{ id: untrack(() => data.hostId), name: untrack(() => data.hostLabel), online: true }],
   );
@@ -88,11 +95,22 @@
     if (!data.hostId) return;
     try {
       host = await hostsApi.get(data.hostId);
+      now = Date.now();
     } catch {
       // A failed read keeps the last answer on screen, as the dashboard's feed does.
     }
   }
   const events = new FleetEvents(readHost, readHost);
+
+  /**
+   * The same power controls as the dashboard's panes. The window shows one pane, so the
+   * confirmation counts it as the one terminal of this screen that a change would cut.
+   */
+  const vmPower = provideVmPower(new VmPowerController({
+    refresh: readHost,
+    messages: () => i18n.t,
+    canManage: () => canManage,
+  }));
   let poll: ReturnType<typeof setInterval> | null = null;
   onMount(() => {
     events.start();
@@ -107,8 +125,11 @@
   });
 </script>
 
-{#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone />{/snippet}
+{#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone host={host ?? undefined} {canManage} {now} />{/snippet}
+{#snippet paneVeil(_actions: TerminalPaneActionContext)}<VmPaneVeil host={host ?? undefined} {canManage} {now} />{/snippet}
 <SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
+<VmPowerConfirm power={vmPower} panesOn={(hostId: string) => (hostId === data.hostId ? 1 : 0)} />
+<Toaster />
 
 <svelte:head><title>{data.hostLabel} · {i18n.t.dash.terminal.detached}</title></svelte:head>
 
@@ -125,6 +146,7 @@
       {hosts}
       adapter={relay}
       {paneActions}
+      {paneVeil}
       onReadHistory={readTerminalHistory}
       onSessionResolved={(slotId: string, sessionId: string) => {
         const slot = layout.slots.find(item => item?.id === slotId);

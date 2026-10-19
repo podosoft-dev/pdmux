@@ -127,6 +127,48 @@ test.describe.serial("pdmux VM power from terminals", () => {
     await expect.poll(() => fleet.requests).toEqual(["start"]);
   });
 
+  test("[TC-PDVM-041] a detached terminal window powers its machine like a dashboard pane", async ({ page }) => {
+    const fleet: Fleet = { hostId, vm: machine("running", RUNNING), online: true, requests: [] };
+    await serveMachine(page.context(), fleet);
+    // The window reads its one host by id rather than the list the dashboard reads.
+    await page.route(`**/api/hosts/${hostId}`, async (route) => {
+      const response = await route.fetch();
+      const host = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({ response, json: { ...host, online: fleet.online, connected: fleet.online, vm: fleet.vm } });
+    });
+    await ready(page, `/terminal?host=${hostId}&kind=shell`);
+    const pane = page.locator("[data-pdmux-pane]");
+
+    // The same menu as a dashboard pane, administrator's forced changes included.
+    const power = pane.locator("[data-pdmux-vm-power]");
+    await expect(power).toHaveAttribute("data-pdmux-vm-state", "running", { timeout: 15_000 });
+    await power.click();
+    const menu = page.getByTestId("vm-power-menu");
+    await expect(menu.locator("[data-pdmux-vm-action]")).toHaveText([/Sleep/, /Restart/, /Shut down/, /Force off/, /Force restart/]);
+    await expectOnScreen(menu, "power menu");
+
+    // A change that cuts the terminal asks first, counting this window's one pane.
+    await menu.locator("[data-pdmux-vm-action=hibernate]").click();
+    const confirm = page.getByTestId("vm-power-confirm");
+    await expect(confirm).toContainText("1");
+    await page.getByTestId("vm-power-confirm-confirm").click();
+    await expect.poll(() => fleet.requests).toEqual(["hibernate"]);
+    await expect(page.locator("[data-testid=vm-veil][data-pdmux-vm-phase=busy]")).toContainText("Alice", { timeout: 15_000 });
+
+    // Asleep: the pane says so and wakes it without asking.
+    fleet.vm = machine("hibernated", ASLEEP);
+    fleet.online = false;
+    const veil = page.locator("[data-testid=vm-veil][data-pdmux-vm-phase=asleep]");
+    await expect(veil).toBeVisible({ timeout: 15_000 });
+    await expectOnScreen(page.getByTestId("vm-veil-action"), "wake button");
+    await page.getByTestId("vm-veil-action").click();
+    await expect.poll(() => fleet.requests).toEqual(["hibernate", "start"]);
+
+    fleet.vm = machine("running", RUNNING);
+    fleet.online = true;
+    await expect(page.getByTestId("vm-veil")).toHaveCount(0, { timeout: 15_000 });
+  });
+
   test("[TC-PDVM-027] the host page shows the machine with its power changes, links one and unlinks it", async ({ page }) => {
     const fleet: Fleet = { hostId, vm: machine("running", RUNNING), online: true, requests: [] };
     await serveMachine(page.context(), fleet);
