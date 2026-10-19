@@ -253,6 +253,16 @@ larger terminal and surround its content with tmux's fill characters. The comman
 the exact session; global defaults and unrelated windows are left alone. Existing sessions
 receive the policy when opened through an updated agent, without restarting their programs.
 
+The policy lasts only while pdmux viewers are attached. Before the first viewer of a session
+attaches, the agent records the window's own `window-size` (or that it had none) in the window
+option `@pdmux-window-size`; a window the attach creates is recorded as inheriting. When the
+agent's last viewer of that session exits, it restores every marked window and removes the
+marker, so the user's own clients are resized again instead of cropped. The record lives in
+tmux, so an agent that stops while attached leaves it in place and the next agent restores the
+original value rather than `largest`. Recording and restoring use the same tmux binary and
+environment as the client; when they fail (no session yet, or tmux before 2.9) the terminal
+opens anyway.
+
 There is still one application PTY and one row/column size per pane. Smaller clients display
 a viewport of that screen, following the cursor; zooming a dashboard pane provides more room.
 Two clients cannot independently reflow the same running full-screen program. Replacing tmux
@@ -260,10 +270,11 @@ with a native session service would still require an explicit shared-size policy
 [tmux FAQ](https://github.com/tmux/tmux/wiki/FAQ#why-do-i-see-dots-around-a-session-when-i-attach-to-it)
 and the [PTY size interface](https://man7.org/linux/man-pages/man2/TIOCSWINSZ.2const.html).
 
-`agent/internal/term/tmux_size_test.go` exercises two actual tmux clients, PTY resize,
-detach/reattach, process preservation and isolation from other window settings. It uses a
-private socket and skips when tmux is unavailable. Run the terminal package with the toolchain
-pinned in `agent/go.mod`.
+`agent/internal/term/tmux_size_test.go` drives the terminal manager with two actual tmux
+clients: PTY resize, detach/reattach, process preservation, isolation from other window
+settings, and restoring both an inherited and a user-set `window-size` after the last viewer
+leaves. It uses a private socket and skips when tmux is unavailable. Run the terminal package
+with the toolchain pinned in `agent/go.mod`.
 
 For the real browser/Electron comparison on a native Mac, first build the API, web, desktop
 API/web profiles and desktop shell, then build an agent from the current source:

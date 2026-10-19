@@ -29,6 +29,8 @@ type Resolved struct {
 	// Label names the target for humans: `shell` or `session:<name>`. It is what
 	// the log prints, so it must never grow to hold a path or a token.
 	Label string
+	// Session is the multiplexer session name; empty for a shell.
+	Session string
 }
 
 // MissingMultiplexerMessage is what a browser is told when a `session` terminal
@@ -107,12 +109,20 @@ func ResolveTarget(target protocol.TerminalTarget, getenv func(string) string) (
 	// A shared window follows its largest client. Otherwise a compact dashboard
 	// can shrink a full-size viewer and fill its unused area with tmux's dots.
 	// Target only this session's current window, never the user's global defaults.
+	// The Manager records the window's own value before attaching and restores it
+	// after the last pdmux viewer leaves (window_size.go). A window this attach
+	// creates had none, so -o marks it as inheriting without replacing a value the
+	// Manager saved, and -q keeps that silent. On tmux before 2.9 the policy line
+	// fails and tmux skips the marker with it.
+	window := "=" + name + ":"
 	return Resolved{
 		// Same resolution the session collector uses: PATH first, then where a
 		// person's own install would be. A service manager's PATH has neither.
 		File: sys.ResolveBinary(muxBinary, ""),
-		Args: []string{"new", "-A", "-s", name, ";",
-			"set-window-option", "-t", "=" + name + ":", "window-size", "largest"},
-		Label: "session:" + name,
+		Args: []string{"new", "-A", "-s", name,
+			";", "set-window-option", "-t", window, "window-size", "largest",
+			";", "set-option", "-w", "-o", "-q", "-t", window, windowSizeMarker, inheritedWindowSize},
+		Label:   "session:" + name,
+		Session: name,
 	}, nil
 }

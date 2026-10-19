@@ -78,7 +78,12 @@ type Options struct {
 	// Spawn starts a PTY; nil uses the real one.
 	Spawn func(spec Spec) (Process, error)
 	// Which looks a binary up on the host; nil uses the real one.
-	Which           func(string) (string, bool)
+	Which func(string) (string, bool)
+	// Tmux runs the commands that save and restore a session window's size
+	// policy. nil uses the host's tmux, but only with the real Spawn: a fake PTY
+	// attaches no client, and its spec must not reach a tmux server on the
+	// machine running it.
+	Tmux            func(args ...string) (string, error)
 	FlushInterval   time.Duration
 	MaxPendingBytes int
 	MaxTerminals    int
@@ -94,6 +99,14 @@ type Manager struct {
 	// which answers "is this binary on the host?" — injected so a spec can state
 	// the absent case without depending on what is installed where it runs.
 	which func(string) (string, bool)
+	// tmux saves and restores window-size around pdmux viewers; nil disables it.
+	tmux tmuxRunner
+
+	// windowMu orders the per-session viewer count with the save and restore it
+	// triggers, so a viewer that opens during the last one's restore saves again
+	// after it.
+	windowMu sync.Mutex
+	viewers  map[string]int
 
 	flushInterval time.Duration
 	maxTerminals  int
@@ -141,6 +154,8 @@ type terminal struct {
 	// sentence for "you will lose an in-progress build" and "nothing will
 	// happen".
 	kind protocol.TerminalKind
+	// session is the multiplexer session this pane views; empty for a shell.
+	session string
 
 	buffer  [][]byte
 	pending int
@@ -156,6 +171,8 @@ func NewManager(options Options) *Manager {
 		logger:          options.Logger,
 		spawn:           options.Spawn,
 		which:           options.Which,
+		tmux:            options.Tmux,
+		viewers:         make(map[string]int),
 		flushInterval:   options.FlushInterval,
 		maxTerminals:    options.MaxTerminals,
 		terminals:       make(map[string]*terminal),
@@ -165,6 +182,9 @@ func NewManager(options Options) *Manager {
 	}
 	if m.spawn == nil {
 		m.spawn = Spawn
+		if m.tmux == nil {
+			m.tmux = hostTmux
+		}
 	}
 	if m.logger == nil {
 		m.logger = log.Silent()
@@ -340,6 +360,9 @@ func (m *Manager) open(termID string, target protocol.TerminalTarget) {
 		m.fail(termID, MissingMultiplexerMessage)
 		return
 	}
+	if resolved.Session != "" {
+		m.retainWindow(resolved.Session)
+	}
 	process, err := m.spawn(Spec{
 		File: resolved.File,
 		Args: resolved.Args,
@@ -347,11 +370,14 @@ func (m *Manager) open(termID string, target protocol.TerminalTarget) {
 		Rows: target.Rows,
 	})
 	if err != nil {
+		if resolved.Session != "" {
+			m.releaseWindow(resolved.Session)
+		}
 		m.fail(termID, fmt.Sprintf("failed to open terminal: %v", err))
 		return
 	}
 
-	t := &terminal{pty: process, kind: target.Kind}
+	t := &terminal{pty: process, kind: target.Kind, session: resolved.Session}
 	m.mu.Lock()
 	if m.opening[termID] != ticket {
 		m.mu.Unlock()
@@ -477,9 +503,43 @@ func (m *Manager) pump(termID string, t *terminal) {
 			m.flush(termID, t)
 			m.forget(termID, t)
 			m.emit(&protocol.TerminalExit{Type: protocol.TermExit, TermID: termID, Code: code})
+			// Close, CloseAll and a client that ended on its own all arrive here,
+			// once the tmux client is gone.
+			if t.session != "" {
+				m.releaseWindow(t.session)
+			}
 			return
 		}
 	}
+}
+
+// retainWindow counts a viewer of session. The first one records the window's
+// own size policy before its client sets `largest`.
+func (m *Manager) retainWindow(session string) {
+	if m.tmux == nil {
+		return
+	}
+	m.windowMu.Lock()
+	defer m.windowMu.Unlock()
+	m.viewers[session]++
+	if m.viewers[session] == 1 {
+		saveWindowSize(m.tmux, session)
+	}
+}
+
+// releaseWindow uncounts a viewer of session. The last one restores what
+// retainWindow recorded.
+func (m *Manager) releaseWindow(session string) {
+	if m.tmux == nil {
+		return
+	}
+	m.windowMu.Lock()
+	defer m.windowMu.Unlock()
+	if m.viewers[session]--; m.viewers[session] > 0 {
+		return
+	}
+	delete(m.viewers, session)
+	restoreWindowSize(m.tmux, session)
 }
 
 // forget drops the pane from the registry, but only if it is still the one this

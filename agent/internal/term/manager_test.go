@@ -3,6 +3,7 @@ package term
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -427,6 +428,78 @@ func TestManagerLifecycle(t *testing.T) {
 		}
 		if len(h.sent()) != 1 {
 			t.Fatalf("a duplicate open produced %d frames, want only the first ready", len(h.sent()))
+		}
+	})
+}
+
+func TestManagerWindowSizePolicy(t *testing.T) {
+	listMain := "list-windows -t =main "
+	listOther := "list-windows -t =other "
+	answer := func(line string) (string, error) {
+		switch {
+		case strings.HasPrefix(line, "show-options"):
+			return "latest\n", nil
+		case strings.HasPrefix(line, "list-windows"):
+			return "@1 inherit\n", nil
+		}
+		return "", nil
+	}
+
+	t.Run("[TC-PDTERM-023] restores a session's window after its last pdmux viewer exits", func(t *testing.T) {
+		tmux := &fakeTmux{answer: answer}
+		var spawned []*fakePty
+		manager := NewManager(Options{
+			Which: muxInstalled,
+			Tmux:  tmux.run,
+			Spawn: func(Spec) (Process, error) {
+				p := newFakePty()
+				spawned = append(spawned, p)
+				return p, nil
+			},
+		})
+		open := func(termID string, target protocol.TerminalTarget) *fakePty {
+			manager.Handle(&protocol.TerminalOpen{Type: protocol.TermOpen, TermID: termID, Target: target})
+			return spawned[len(spawned)-1]
+		}
+		main, other := "main", "other"
+		open("a", sessionTarget(&main))
+		b := open("b", sessionTarget(&main))
+		open("c", shellTarget())
+		open("d", sessionTarget(&other))
+
+		if tmux.count(showMain) != 1 || tmux.count("show-options") != 2 {
+			t.Fatalf("want one save per session before its first viewer, got %q", tmux.recorded())
+		}
+		// Main's restore needs both viewers released, so a restore after the first
+		// would show up as a second call.
+		manager.Close("a")
+		b.die(nil)
+		waitFor(t, ptyTimeout, "main's restore", func() bool { return tmux.count(listMain) == 1 })
+		if tmux.count(listOther) != 0 {
+			t.Fatalf("restored a session that still has a viewer: %q", tmux.recorded())
+		}
+		if !slices.Contains(tmux.recorded(), "set-option -w -u -t @1 window-size ; set-option -w -u -t @1 @pdmux-window-size") {
+			t.Fatalf("the marked window was not restored: %q", tmux.recorded())
+		}
+		manager.CloseAll()
+		waitFor(t, ptyTimeout, "other's restore", func() bool { return tmux.count(listOther) == 1 })
+		waitFor(t, ptyTimeout, "every pane to exit", func() bool { return manager.Count() == 0 })
+		if tmux.count("list-windows") != 2 {
+			t.Fatalf("want one restore per session, got %q", tmux.recorded())
+		}
+	})
+
+	t.Run("[TC-PDTERM-023] a failed open gives its viewer back", func(t *testing.T) {
+		tmux := &fakeTmux{answer: answer}
+		manager := NewManager(Options{
+			Which: muxInstalled,
+			Tmux:  tmux.run,
+			Spawn: func(Spec) (Process, error) { return nil, errors.New("no pty available") },
+		})
+		main := "main"
+		manager.Handle(&protocol.TerminalOpen{Type: protocol.TermOpen, TermID: "bad", Target: sessionTarget(&main)})
+		if tmux.count(showMain) != 1 || tmux.count(listMain) != 1 {
+			t.Fatalf("want the save undone at once, got %q", tmux.recorded())
 		}
 	})
 }

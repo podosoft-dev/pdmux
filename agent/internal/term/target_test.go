@@ -13,6 +13,11 @@ func env(pairs map[string]string) func(string) string {
 	return func(key string) string { return pairs[key] }
 }
 
+// attachMain attaches to `main`, applies the shared-size policy to its current
+// window, and marks a window it created as inheriting (see window_size.go).
+const attachMain = "new -A -s main ; set-window-option -t =main: window-size largest ; " +
+	"set-option -w -o -q -t =main: @pdmux-window-size inherit"
+
 func TestResolveTarget(t *testing.T) {
 	t.Run("[TC-PDTERM-023] attaches to (or creates) a named multiplexer session", func(t *testing.T) {
 		name := "main"
@@ -24,11 +29,11 @@ func TestResolveTarget(t *testing.T) {
 		// the collector uses, so on a host where the multiplexer was installed into a
 		// per-user prefix this is an absolute path — which is the whole point. What
 		// must not change is which binary, and the arguments.
-		if filepath.Base(resolved.File) != "tmux" || strings.Join(resolved.Args, " ") != "new -A -s main ; set-window-option -t =main: window-size largest" {
+		if filepath.Base(resolved.File) != "tmux" || strings.Join(resolved.Args, " ") != attachMain {
 			t.Fatalf("resolved %q %v", resolved.File, resolved.Args)
 		}
-		if resolved.Label != "session:main" {
-			t.Fatalf("label = %q", resolved.Label)
+		if resolved.Label != "session:main" || resolved.Session != "main" {
+			t.Fatalf("label = %q, session = %q", resolved.Label, resolved.Session)
 		}
 	})
 
@@ -37,7 +42,7 @@ func TestResolveTarget(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolve: %v", err)
 		}
-		if strings.Join(resolved.Args, " ") != "new -A -s main ; set-window-option -t =main: window-size largest" {
+		if strings.Join(resolved.Args, " ") != attachMain {
 			t.Fatalf("args = %v", resolved.Args)
 		}
 	})
@@ -47,7 +52,7 @@ func TestResolveTarget(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolve: %v", err)
 		}
-		if resolved.File != "/bin/zsh" || strings.Join(resolved.Args, " ") != "-l" || resolved.Label != "shell" {
+		if resolved.File != "/bin/zsh" || strings.Join(resolved.Args, " ") != "-l" || resolved.Label != "shell" || resolved.Session != "" {
 			t.Fatalf("resolved %+v", resolved)
 		}
 		// A $SHELL that is not an absolute path would be looked up on PATH, so it
