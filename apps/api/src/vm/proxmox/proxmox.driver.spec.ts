@@ -182,4 +182,14 @@ describe("ProxmoxDriver", () => {
     expect(await large.driver.resizeDisk({ node: "n1", vmid: 501 }, 64)).toBeNull();
     expect(large.calls).toEqual(["GET /nodes/n1/qemu/501/config"]);
   });
+
+  it("[TC-PDVM-042] deletes the machine and its disks without touching the jobs that name its id", async () => {
+    const { driver, calls, bodies } = provider({ "DELETE /nodes/n1/qemu/501": UPID });
+    expect(await driver.remove({ node: "n1", vmid: 501 })).toEqual({ id: UPID, node: "n1" });
+    expect(calls).toEqual(["DELETE /nodes/n1/qemu/501"]);
+    const sent = Object.fromEntries(bodies.at(-1) ?? []);
+    expect(sent["destroy-unreferenced-disks"]).toBe("1");
+    // Purge would also take the id out of backup jobs' exclusion lists, replication and HA.
+    expect(sent).not.toHaveProperty("purge");
+  });
 });

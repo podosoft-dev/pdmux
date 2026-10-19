@@ -263,8 +263,17 @@ export class ProxmoxDriver implements VmProviderDriver {
     return typeof result === "string" && result.startsWith("UPID:") ? taskOf(result) : null;
   }
 
+  /**
+   * The machine and its disks — nothing else.
+   *
+   * ⚠ NOT `purge`. Proxmox's purge also edits every backup and replication job and HA resource
+   * that names the id, exclusion lists included: deleting a machine took its id out of the
+   * nightly job's `exclude`, so the next machine on that id would have been backed up, and a
+   * backup of a hibernated machine fails (2026-10-20). Those jobs are the operator's. A machine
+   * that HA or replication still names is refused by Proxmox, and the host keeps that error.
+   */
   async remove(ref: VmRef): Promise<ProviderTask | null> {
-    const result = await this.client.delete(this.vmPath(ref), { purge: 1, "destroy-unreferenced-disks": 1 });
+    const result = await this.client.delete(this.vmPath(ref), { "destroy-unreferenced-disks": 1 });
     return result === null ? null : taskOf(result);
   }
 

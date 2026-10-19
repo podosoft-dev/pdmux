@@ -113,8 +113,8 @@ describe("ProxmoxClient", () => {
 
   it("[TC-PDVM-004] treats deleting a machine that is already gone as done", async () => {
     const gone = fake(() => Response.json({ data: null, message: "Configuration file 'nodes/n1/qemu-server/500.conf' does not exist" }, { status: 500 }));
-    expect(await new ProxmoxClient(credentials, gone.fetch).delete("/nodes/n1/qemu/500", { purge: 1 })).toBeNull();
-    expect(gone.requests[0]?.url.search).toBe("?purge=1");
+    expect(await new ProxmoxClient(credentials, gone.fetch).delete("/nodes/n1/qemu/500", { "destroy-unreferenced-disks": 1 })).toBeNull();
+    expect(gone.requests[0]?.url.search).toBe("?destroy-unreferenced-disks=1");
     const notFound = fake(() => new Response("", { status: 404 }));
     expect(await new ProxmoxClient(credentials, notFound.fetch).delete("/nodes/n1/qemu/500")).toBeNull();
   });
