@@ -73,6 +73,8 @@ type ptyProcess struct {
 	exit   chan *int
 
 	killOnce sync.Once
+	// creack/pty reads File.Fd directly; serialize that ioctl with master close.
+	resizeMu sync.Mutex
 	// exited is read by the delayed SIGKILL, from a timer goroutine.
 	exited atomic.Bool
 }
@@ -95,6 +97,11 @@ func (p *ptyProcess) Write(data string) error {
 // SIGWINCH to the foreground process group — the signal tmux, vim and less
 // redraw on. This is the operation the script(1) fallback could not perform.
 func (p *ptyProcess) Resize(cols, rows int) error {
+	p.resizeMu.Lock()
+	defer p.resizeMu.Unlock()
+	if p.exited.Load() {
+		return os.ErrClosed
+	}
 	c, r := clampWindow(cols, rows)
 	return pty.Setsize(p.ptmx, &pty.Winsize{Rows: r, Cols: c})
 }
@@ -149,7 +156,9 @@ func (p *ptyProcess) wait(readerDone <-chan struct{}) {
 		// It did not; close the master so the blocked Read returns. A pane must not
 		// stay open because one process left a file descriptor behind.
 	}
+	p.resizeMu.Lock()
 	_ = p.ptmx.Close()
+	p.resizeMu.Unlock()
 	<-readerDone
 
 	p.exit <- exitCode(err)

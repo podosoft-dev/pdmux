@@ -181,6 +181,15 @@
 				"type": "session-control"
 			},
 			"type": "terminal"
+		},
+		"terminal-wheel-input-source": {
+			"frame": {
+				"data": "\u001b[B",
+				"source": "wheel",
+				"termId": "native",
+				"type": "input"
+			},
+			"type": "terminal"
 		}
 	},
 	"rejected": {}

@@ -535,6 +535,8 @@ type TerminalReady struct {
 }
 
 type TerminalScreen struct {
+	Alternate  *bool              `json:"alternate,omitempty"`
+	History    *int               `json:"history,omitempty"`
 	Type       TerminalServerType `json:"type"`
 	TermID     string             `json:"termId"`
 	Data       string             `json:"data"`
@@ -644,6 +646,7 @@ type TerminalOpen struct {
 
 // TerminalInput is keystrokes.
 type TerminalInput struct {
+	Source *string            `json:"source,omitempty"`
 	Type   TerminalClientType `json:"type"`
 	TermID string             `json:"termId"`
 	Data   string             `json:"data"`

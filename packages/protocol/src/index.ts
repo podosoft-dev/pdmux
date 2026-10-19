@@ -694,7 +694,7 @@ export const terminalClientFrameSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('viewport'), termId: z.string().min(1).max(64), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean().default(false), history: z.number().int().min(-5000).max(5000).default(0) }),
 	z.object({ type: z.literal('session-control'), termId: z.string().min(1).max(64), action: z.enum(['history', 'terminate']), sessionId: z.string().uuid() }),
 	z.object({ type: z.literal('open'), termId: z.string().min(1).max(64), target: terminalTargetSchema }),
-	z.object({ type: z.literal('input'), termId: z.string().min(1).max(64), data: z.string() }),
+	z.object({ type: z.literal('input'), termId: z.string().min(1).max(64), data: z.string(), source: z.literal('wheel').optional() }),
 	z.object({
 		type: z.literal('resize'),
 		termId: z.string().min(1).max(64),
@@ -708,7 +708,7 @@ export type TerminalClientFrame = z.infer<typeof terminalClientFrameSchema>;
 /** Agent -> server -> browser. */
 export const terminalServerFrameSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('ready'), termId: z.string(), pid: z.number().int().nullable().default(null), backend: z.enum(['native', 'tmux']).optional(), sessionId: z.string().uuid().optional() }),
-	z.object({ type: z.literal('screen'), termId: z.string(), data: z.string().max(65536), sequence: z.number().int().nonnegative(), cols: z.number().int().positive().max(1000), rows: z.number().int().positive().max(500), canvasCols: z.number().int().positive().max(1000), canvasRows: z.number().int().positive().max(500), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean() }),
+	z.object({ type: z.literal('screen'), termId: z.string(), data: z.string().max(65536), sequence: z.number().int().nonnegative(), cols: z.number().int().positive().max(1000), rows: z.number().int().positive().max(500), canvasCols: z.number().int().positive().max(1000), canvasRows: z.number().int().positive().max(500), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean(), alternate: z.boolean().optional(), history: z.number().int().nonnegative().max(5000).optional() }),
 	z.object({ type: z.literal('session-result'), termId: z.string(), lines: z.array(z.string()), screenOnly: z.boolean().default(false), error: z.string().max(512).default('') }),
 	z.object({
 		type: z.literal('output'), termId: z.string(), data: z.string(),

@@ -10,7 +10,7 @@ export const TERMINAL_WS_PATH = '/terminal/ws';
 
 export type TerminalServerFrame =
 	| { type: 'ready'; termId: string; pid: number | null; backend?: 'native' | 'tmux'; sessionId?: string }
-	| { type: 'screen'; termId: string; data: string; sequence: number; cols: number; rows: number; canvasCols: number; canvasRows: number; x: number; y: number; follow: boolean }
+	| { type: 'screen'; termId: string; data: string; sequence: number; cols: number; rows: number; canvasCols: number; canvasRows: number; x: number; y: number; follow: boolean; alternate?: boolean; history?: number }
 	| { type: 'session-result'; termId: string; lines: string[]; screenOnly: boolean; error: string }
 	| { type: 'output'; termId: string; data: string; dropped: number }
 	| { type: 'exit'; termId: string; code: number | null }
@@ -45,11 +45,13 @@ export function parseTerminalServerFrame(value: unknown): TerminalServerFramePar
 			return { ok: true, data: { type: 'ready', termId: frame.termId, pid, ...(frame.backend ? { backend: frame.backend } : {}), ...(typeof frame.sessionId === 'string' ? { sessionId: frame.sessionId } : {}) } };
 		}
 		case 'screen': {
+            if (frame.alternate !== undefined && typeof frame.alternate !== 'boolean') return { ok: false, error: 'screen.alternate: invalid boolean' };
+            if (frame.history !== undefined && (typeof frame.history !== 'number' || !Number.isInteger(frame.history) || frame.history < 0 || frame.history > 5000)) return { ok: false, error: 'screen.history: invalid integer' };
 			if (typeof frame.data !== 'string' || frame.data.length > 65536 || typeof frame.follow !== 'boolean') return { ok: false, error: 'screen: invalid payload' };
 			for (const [key, low, high] of [['sequence', 0, Number.MAX_SAFE_INTEGER], ['cols', 1, 1000], ['rows', 1, 500], ['canvasCols', 1, 1000], ['canvasRows', 1, 500], ['x', 0, 1000], ['y', 0, 500]] as const) {
 				const value = frame[key]; if (typeof value !== 'number' || !Number.isInteger(value) || value < low || value > high) return { ok: false, error: `screen.${key}: invalid integer` };
 			}
-			return { ok: true, data: { type: 'screen', termId: frame.termId, data: frame.data, follow: frame.follow, sequence: frame.sequence as number, cols: frame.cols as number, rows: frame.rows as number, canvasCols: frame.canvasCols as number, canvasRows: frame.canvasRows as number, x: frame.x as number, y: frame.y as number } };
+			return { ok: true, data: { type: 'screen', termId: frame.termId, data: frame.data, follow: frame.follow, sequence: frame.sequence as number, cols: frame.cols as number, rows: frame.rows as number, canvasCols: frame.canvasCols as number, canvasRows: frame.canvasRows as number, x: frame.x as number, y: frame.y as number, ...(typeof frame.alternate === 'boolean' ? { alternate: frame.alternate } : {}), ...(typeof frame.history === 'number' ? { history: frame.history } : {}) } };
 		}
 		case 'session-result': {
 			if (!Array.isArray(frame.lines) || !frame.lines.every(line => typeof line === 'string') || (frame.screenOnly !== undefined && typeof frame.screenOnly !== 'boolean') || (frame.error !== undefined && (typeof frame.error !== 'string' || frame.error.length > 512))) return { ok: false, error: 'session-result: invalid payload' };

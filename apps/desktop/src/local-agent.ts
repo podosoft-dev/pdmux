@@ -12,6 +12,17 @@ import { desktopMessages } from "./i18n.js";
 import { logError } from "./log.js";
 
 const execFileAsync = promisify(execFile);
+// A desktop terminal is independent of the terminal/automation that launched it.
+// Keep user authentication/configuration, but never attach a CLI to its parent's task.
+const inheritedTerminalState = [
+  "TMUX", "PDMUX_TOKEN", "PDMUX_SERVER", "PDMUX_CONFIG",
+  "PDMUX_STATE_DIR", "PDMUX_HOSTNAME", "PDMUX_LOG_LEVEL", "NO_COLOR",
+  "FORCE_COLOR", "CLICOLOR", "CLICOLOR_FORCE", "TERM",
+  "COLORTERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "CODEX_CI",
+  "CODEX_SESSION_ID", "CODEX_THREAD_ID", "CODEX_TOOL_CALL_ID", "CODEX_PERMISSION_PROFILE",
+  "CODEX_MANAGED_BY_NPM", "CODEX_MANAGED_PACKAGE_ROOT", "CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS", "CODEX_VERSION",
+  "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT",
+];
 const legacyLabels = [desktopMessages("en").localHost, desktopMessages("ko").localHost];
 const LABEL_LIMIT = 64;
 const DEFAULT_LABEL_VERSION = 2;
@@ -188,10 +199,10 @@ export class LocalAgent {
 
   private launch(executable: string): void {
     const environment = { ...this.dependencies.environment };
-    for (const name of ["TMUX", "PDMUX_TOKEN", "PDMUX_SERVER", "PDMUX_CONFIG", "PDMUX_STATE_DIR", "PDMUX_HOSTNAME", "PDMUX_LOG_LEVEL"]) delete environment[name];
+    for (const name of inheritedTerminalState) delete environment[name];
     const child = this.dependencies.spawn(executable, ["run", "--config", this.configPath, "--log-level", "warn"], {
       cwd: this.directory, stdio: ["pipe", "ignore", "ignore"], windowsHide: true,
-      env: { ...environment, SHELL: environment.SHELL || userInfo().shell || "", PDMUX_STATE_DIR: join(this.directory, "state"), PDMUX_DESKTOP_AGENT: "1", PDMUX_RESTART: "none" },
+      env: { ...environment, TERM: "xterm-256color", COLORTERM: "truecolor", TERM_PROGRAM: "PDMux", SHELL: environment.SHELL || userInfo().shell || "", PDMUX_STATE_DIR: join(this.directory, "state"), PDMUX_DESKTOP_AGENT: "1", PDMUX_RESTART: "none" },
     });
     this.child = child;
     child.once("error", () => { this.current = { ...this.current, phase: "failed", code: "DESKTOP_LOCAL_AGENT_FAILED" }; });

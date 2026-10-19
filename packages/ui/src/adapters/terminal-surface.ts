@@ -64,7 +64,7 @@ export interface TerminalSurface {
 	/** Called when the pane resizes; returns the geometry to report upstream. */
 	fit(): { cols: number; rows: number };
 	focus(): void;
-	onData(listener: (data: string) => void): () => void;
+	onData(listener: (data: string, source?: 'wheel') => void): () => void;
 	dispose(): void;
 	/**
 	 * Scroll by whole screens. Negative is back through the history.
@@ -95,7 +95,8 @@ export interface TerminalSurface {
 	 * nothing at all, which is the difference between scrolling a multiplexer's history and
 	 * typing ↑ at the program inside it — see `createXtermSurface`.
 	 */
-	onScrollbackRequest(listener: (direction: -1 | 1) => boolean | void): () => void;
+	setRemoteScrollback?(state: { alternate: boolean; history: number }): void;
+	onScrollbackRequest(listener: (direction: -1 | 1, lines?: number) => boolean | void): () => void;
 	/** Watch what each gesture decided. For the on-screen diagnostic line; off by default. */
 	onGesture(listener: (info: GestureInfo) => void): () => void;
 	/** The buffer as text, newest last. */
@@ -363,10 +364,19 @@ export function selectionCopier(term: SelectionSource, copy: (text: string) => v
 	};
 }
 
+function wheelLineDelta(event: WheelEvent, height: number, rows: number): number {
+	if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY;
+	if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) return event.deltaY * Math.max(1, rows - 1);
+	return height > 0 ? event.deltaY / height : 0;
+}
+
 export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLElement) => {
-	const [{ Terminal }, { FitAddon }] = await Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit')]);
+	const [{ Terminal }, { FitAddon }, { Unicode11Addon }] = await Promise.all([
+		import('@xterm/xterm'), import('@xterm/addon-fit'), import('@xterm/addon-unicode11'),
+	]);
 	const { terminalKeyAction, TERMINAL_NEWLINE } = await import('@pdmux/core');
 	const term = new Terminal({
+		allowProposedApi: true,
 		convertEol: false,
 		cursorBlink: true,
 		fontSize: TERMINAL_FONT_SIZE,
@@ -458,6 +468,7 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	// terminal) and Shift+Enter (which the wire cannot distinguish from Enter). See
 	// @pdmux/core/terminal-keys for why, including what is deliberately NOT claimed.
 	term.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+		if (event.type === 'keydown' && !['Shift', 'Alt', 'Control', 'Meta'].includes(event.key)) stopFling();
 		const action = terminalKeyAction(event);
 		if (action === 'copy') {
 			const selection = term.getSelection();
@@ -498,10 +509,12 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	 */
 	let composing = false;
 	let lastEmit = 0;
-	const emitters = new Set<(data: string) => void>();
+	let wheelInput = false;
+	let previousMouseMode = 'none';
+	const emitters = new Set<(data: string, source?: 'wheel') => void>();
 	const emit = (data: string): void => {
 		lastEmit = Date.now();
-		for (const listener of emitters) listener(data);
+		for (const listener of emitters) listener(data, wheelInput ? 'wheel' : undefined);
 	};
 
 	host.addEventListener(
@@ -744,13 +757,15 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	 * Declared here rather than beside the wheel handler because `consume` — which both the drag
 	 * and the fling go through — is the one place that decides a gesture's route.
 	 */
-	const scrollbackWanted = new Set<(direction: -1 | 1) => boolean | void>();
+	let remoteScrollback: { alternate: boolean; history: number } | undefined;
+	let remoteWheelCarry = 0;
+	const scrollbackWanted = new Set<(direction: -1 | 1, lines?: number) => boolean | void>();
 	const gestureWatchers = new Set<(info: GestureInfo) => void>();
 
 	/** Ask the consumer to reach the history. `true` = it took the gesture; send nothing. */
-	const requestScrollback = (direction: -1 | 1): boolean => {
+	const requestScrollback = (direction: -1 | 1, lines?: number): boolean => {
 		let handled = false;
-		for (const listener of scrollbackWanted) if (listener(direction) === true) handled = true;
+		for (const listener of scrollbackWanted) if (listener(direction, lines) === true) handled = true;
 		return handled;
 	};
 
@@ -905,7 +920,7 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		 * answers `false`, because from there cursor keys are what scrolls, and they belong to
 		 * copy-mode rather than to the program.
 		 */
-		if (buffer === 'alternate' && mouse === 'none' && requestScrollback(direction)) {
+		if (!remoteScrollback && buffer === 'alternate' && mouse === 'none' && requestScrollback(direction)) {
 			report({ buffer, mouse, route: 'scrollback', notches: 0, queued: pendingNotches, fling });
 			return count;
 		}
@@ -1157,7 +1172,29 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	 * Returning `false` is what keeps the report off the wire.
 	 */
 	term.attachCustomWheelEventHandler((event: WheelEvent): boolean => {
-		if (!event.shiftKey || event.deltaY === 0) return true;
+		if (event.deltaY === 0 || event.ctrlKey) return true;
+		// xterm emits wheel mouse reports and fallback arrows synchronously.
+		// Keep their provenance so an engine can reject a late report after exit.
+		wheelInput = true;
+		queueMicrotask(() => { wheelInput = false; });
+		if (remoteScrollback) {
+			// The transport paints an alternate buffer even for a plain shell.
+			// Only the application's modes decide whether the wheel belongs to it.
+			const remoteHistory = event.shiftKey || remoteScrollback.history > 0 ||
+				(!remoteScrollback.alternate && term.modes.mouseTrackingMode === 'none');
+			if (!remoteHistory) return true;
+			const height = rowHeight();
+			const lines = wheelLineDelta(event, height, term.rows);
+			if (remoteWheelCarry * lines < 0) remoteWheelCarry = 0;
+			remoteWheelCarry += lines;
+			const whole = Math.trunc(remoteWheelCarry);
+			if (whole !== 0) {
+				remoteWheelCarry -= whole;
+				requestScrollback(whole < 0 ? -1 : 1, whole);
+			}
+			return false;
+		}
+		if (!event.shiftKey) return true;
 		const direction: -1 | 1 = event.deltaY < 0 ? -1 : 1;
 
 		if (term.buffer.active.type !== 'alternate') {
@@ -1194,7 +1231,23 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		write: (data) => {
 			// Output is the only acknowledgement a terminal gives: the pacer above waits for it.
 			noteRedraw();
-			term.write(data);
+			term.write(data, () => {
+				const next = term.modes.mouseTrackingMode;
+				if (previousMouseMode !== 'none' && next === 'none') { stopFling(); carry = 0; }
+				previousMouseMode = next;
+			});
+		},
+		setRemoteScrollback: (state) => {
+			if (!remoteScrollback) {
+				// The native VT counts modern emoji as two cells. xterm's default
+				// Unicode 6 table otherwise paints following cells over half a glyph.
+				term.loadAddon(new Unicode11Addon());
+				term.unicode.activeVersion = '11';
+			}
+			if (remoteScrollback && remoteScrollback.alternate !== state.alternate) {
+				stopFling(); carry = 0; remoteWheelCarry = 0;
+			}
+			remoteScrollback = state;
 		},
 		onScrollbackRequest: (listener) => {
 			scrollbackWanted.add(listener);

@@ -371,6 +371,24 @@
 			},
 			"type": "terminal"
 		},
+		"terminal-native-screen-scroll-state": {
+			"frame": {
+				"alternate": true,
+				"canvasCols": 120,
+				"canvasRows": 40,
+				"cols": 40,
+				"data": "\u001b[Hhello",
+				"follow": false,
+				"history": 12,
+				"rows": 12,
+				"sequence": 1,
+				"termId": "native",
+				"type": "screen",
+				"x": 30,
+				"y": 10
+			},
+			"type": "terminal"
+		},
 		"terminal-native-history-result": {
 			"frame": {
 				"error": "",

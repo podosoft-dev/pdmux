@@ -61,6 +61,48 @@ remains the application's responsibility. The engine allows at most 16 programs 
 64 simultaneous viewers. Input and snapshot queues have explicit limits. Image
 protocols and arbitrary OSC side effects are not forwarded.
 
+## Scrolling, colors and selection
+
+The browser's rendering buffer is separate from the application's buffer. A wheel
+at a normal shell scrolls the engine's history, without sending arrow keys to the
+shell. A fullscreen program that enables mouse tracking receives the wheel itself;
+its private transcript is not part of the engine's history. Shift+wheel reaches
+main-screen history. Touch gestures and the scroll buttons use the same wheel path.
+History stays still while new output arrives. Typing or choosing cursor following
+returns to live output.
+
+Drag to select shell text. Hold Shift (or Option on macOS) to select the visible
+screen of a mouse-capturing program, then use the usual copy shortcut. Selection
+copies on release. Multiline paste preserves the application's bracketed-paste
+mode. Application OSC clipboard side effects are not forwarded.
+
+Wheel input carries its origin separately from keyboard input. On return from a
+fullscreen program, momentum is cancelled and mouse/focus reports are accepted
+only while their corresponding input modes remain enabled. This prevents delayed
+scroll or focus reports from appearing as escape characters at the shell prompt;
+ordinary keyboard arrows and literal pasted text remain intact.
+
+On a phone, the output/history sheet provides selectable plain text and a copy
+button without requiring a desktop selection modifier. A fullscreen program's
+private transcript still belongs to that program. Device emulation verifies
+routing and layout; native selection handles, the clipboard permission prompt,
+the software keyboard and paste menus require checks on the physical browser.
+
+Desktop terminals advertise `TERM=xterm-256color`, `COLORTERM=truecolor` and
+`TERM_PROGRAM=PDMux`. Color-disable flags inherited from the process that launched
+the desktop are removed before starting its embedded agent. Choices set inside a
+shell still apply to that shell's programs. Indexed colors and truecolor attributes
+are retained in snapshots and history.
+
+Native views enable xterm's Unicode 11 width provider so common emoji occupy the
+same two columns as the engine, including when a program paints a different
+background immediately after them. Legacy tmux views keep their existing width
+provider.
+
+A running helper retains its own executable and environment across desktop updates.
+Engine changes apply when that helper is restarted after its programs have exited;
+updates never kill those programs to replace the helper.
+
 ## Interactive CLI over SSH
 
 Run these commands as the same OS user as the agent. The normal agent configuration

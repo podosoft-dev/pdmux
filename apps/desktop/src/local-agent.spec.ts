@@ -67,7 +67,7 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
     spawned.push({ executable, args, options });
     return spawn(process.execPath, ["-e", 'process.stdin.resume(); process.stdin.on("end", () => process.exit(0));'], options);
   }) as typeof spawn;
-  agent = new LocalAgent(stack, layout, "local-profile", { platform, legacyComputerName: async () => { computerNameReads += 1; return computerName; }, spawn: launch, log: (action, error, context) => { logs.push({ action, error, ...(context ? { context } : {}) }); }, environment:{ ...process.env, TMUX:"private-fixture", PDMUX_TOKEN:"inherited-token", PDMUX_SERVER:"https://invalid.test", PDMUX_RESTART:"service", INVOCATION_ID:"inherited-service" } });
+  agent = new LocalAgent(stack, layout, "local-profile", { platform, legacyComputerName: async () => { computerNameReads += 1; return computerName; }, spawn: launch, log: (action, error, context) => { logs.push({ action, error, ...(context ? { context } : {}) }); }, environment:{ ...process.env, TMUX:"private-fixture", PDMUX_TOKEN:"inherited-token", PDMUX_SERVER:"https://invalid.test", PDMUX_RESTART:"service", INVOCATION_ID:"inherited-service", NO_COLOR:"1", FORCE_COLOR:"0", TERM:"dumb", TERM_PROGRAM:"WarpTerminal", COLORTERM:"", CLICOLOR:"1", CODEX_CI:"1", CODEX_THREAD_ID:"parent-task", CLAUDECODE:"1", CODEX_HOME:"/fixture/codex-home" } });
   return { run: () => agent!.start(), retry: () => agent!.start(true), tokens, payload:() => payload, setPayload:value => { payload = value; }, calls, spawned, directory,
     label: () => label, setLabel: value => { label = value; }, setComputerName: value => { computerName = value; }, computerNameReads: () => computerNameReads, otherLabels,
     legacyConfig: async (fields = {}) => {
@@ -242,4 +242,19 @@ it("[TC-PDDESKTOP-018] stages Windows as an executable and uses the same lifetim
   expect(agent?.status().phase).toBe("ready");
   expect(state.spawned[0]?.executable.endsWith("pdmux-agent.exe")).toBe(true);
   expect(state.spawned[0]?.options.env?.PDMUX_DESKTOP_AGENT).toBe("1");
+});
+
+it("[TC-PDDESKTOP-017] gives desktop terminals their own color capabilities", async () => {
+  const state = await fixture(); await state.run();
+  const environment = state.spawned[0]?.options.env;
+  expect(environment?.NO_COLOR).toBeUndefined();
+  expect(environment?.FORCE_COLOR).toBeUndefined();
+  expect(environment?.CLICOLOR).toBeUndefined();
+  expect(environment?.CODEX_CI).toBeUndefined();
+  expect(environment?.CODEX_THREAD_ID).toBeUndefined();
+  expect(environment?.CLAUDECODE).toBeUndefined();
+  expect(environment?.CODEX_HOME).toBe("/fixture/codex-home");
+  expect(environment?.TERM).toBe("xterm-256color");
+  expect(environment?.COLORTERM).toBe("truecolor");
+  expect(environment?.TERM_PROGRAM).toBe("PDMux");
 });

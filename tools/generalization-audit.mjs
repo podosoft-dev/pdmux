@@ -251,6 +251,9 @@ const PATTERN_ALLOW = [
 	{ file: 'tests/ui/pdmux-hosts.ui.spec.ts', ids: ['korean'] },
 	{ file: 'tests/ui/pdmux-terminal.ui.spec.ts', ids: ['korean'] },
 	{ file: 'tests/ui/pdmux-mobile-terminal.mobile.spec.ts', ids: ['korean'] },
+	// These native input probes compare Korean clipboard and PTY bytes, not prose.
+	{ file: 'tools/smoke-native-input-ui.mjs', ids: ['korean'] },
+	{ file: 'tools/native-mobile-input.mjs', ids: ['korean'] },
 	// This file spells out the shapes it forbids, which is the only place they exist.
 	{ file: 'tools/generalization-audit.mjs', ids: PATTERNS.map((p) => p.id) },
 ];

@@ -115,7 +115,7 @@ func (m *Manager) emitScreen(id string, screen session.Screen) {
 		for end < len(data) && !utf8.RuneStart(data[end]) {
 			end--
 		}
-		m.emit(&protocol.TerminalScreen{Type: protocol.TermScreen, TermID: id, Data: data[:end], Sequence: screen.Sequence, Cols: screen.Cols, Rows: screen.Rows, CanvasCols: screen.CanvasCols, CanvasRows: screen.CanvasRows, X: screen.X, Y: screen.Y, Follow: screen.Follow})
+		m.emit(&protocol.TerminalScreen{Type: protocol.TermScreen, TermID: id, Data: data[:end], Sequence: screen.Sequence, Cols: screen.Cols, Rows: screen.Rows, CanvasCols: screen.CanvasCols, CanvasRows: screen.CanvasRows, X: screen.X, Y: screen.Y, Follow: screen.Follow, Alternate: &screen.Alternate, History: &screen.History})
 		data = data[end:]
 	}
 }
