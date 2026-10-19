@@ -24,7 +24,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
   const root = process.env.PDMUX_SYNC_FIXTURE;
   const repository = resolve(import.meta.dirname, "..");
   const agentVersion = parseAgentVersion(await readFile(join(repository, "agent/internal/cli/version.go"), "utf8"));
-  const agentBinary = join(repository, `apps/web/static/agent/${agentVersion}/pdmux-agent-darwin-${process.arch === "arm64" ? "arm64" : "amd64"}`);
+  const agentBinary = process.env.PDMUX_SYNC_AGENT_BINARY ?? join(repository, `apps/web/static/agent/${agentVersion}/pdmux-agent-darwin-${process.arch === "arm64" ? "arm64" : "amd64"}`);
   const layout = name => {
     const data = join(root, name);
     return { bunExecutable: process.execPath, apiEntry: join(repository, name === "local" ? "apps/api/dist-desktop/main.js" : "apps/api/dist/main.js"), migrateEntry: join(repository, name === "local" ? "apps/api/dist-desktop/desktop-migrate.js" : "apps/api/dist/desktop-migrate.js"), webEntry: join(repository, name === "local" ? "apps/web/build-desktop/index.js" : "apps/web/build/index.js"), dataDirectory: data, filesDirectory: join(data, "files"), databasePath: join(data, "pdmux.sqlite"), secretPath: join(data, "auth.secret"), agentReleaseDirectory: join(repository, "apps/web/build/client/agent") };
@@ -55,7 +55,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
   });
   await new Promise(accept => gateway.listen(0, "127.0.0.1", accept));
   tlsOrigin = `https://127.0.0.1:${gateway.address().port}`;
-  const server = new StackManager(layout("server"), { spawn: (command, args, options) => spawn(command, [...args], { ...options, env: { ...options.env, PDMUX_DESKTOP_RUNTIME: "0", CORS_ORIGIN: tlsOrigin, ADMIN_EMAILS: "desktop-smoke@example.test" } }) });
+  const server = new StackManager(layout("server"), { spawn: (command, args, options) => spawn(command, [...args], { ...options, env: { ...options.env, PDMUX_DESKTOP_RUNTIME: "0", CORS_ORIGIN: tlsOrigin, ADMIN_EMAILS: process.env.PDMUX_RESIZE_UI === "1" ? "" : "desktop-smoke@example.test" } }) });
   const local = new StackManager(layout("local"));
   let agent;
   let serverAgent;
@@ -74,7 +74,9 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
     assert.equal(signup.status, 200);
     const cloudCookie = signup.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
     assert.ok(cloudCookie);
-    const organization = await json(serverUrl, "/api/auth/organization/create", cloudCookie, "POST", { name: "Desktop test workspace", slug: `desktop-test-${crypto.randomUUID()}` });
+    const organization = process.env.PDMUX_RESIZE_UI === "1"
+      ? { id: `personal:${(await signup.json()).user.id}` }
+      : await json(serverUrl, "/api/auth/organization/create", cloudCookie, "POST", { name: "Desktop test workspace", slug: `desktop-test-${crypto.randomUUID()}` });
     const remoteHost = await json(serverUrl, "/hosts", cloudCookie, "POST", { label: "server-owned" });
     const localUrl = (await local.start()).apiUrl;
     const login = await local.localSession();
@@ -171,7 +173,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
         });
       });
     }
-    if (process.env.PDMUX_RECOVERY_UI === "1") {
+    if (process.env.PDMUX_RECOVERY_UI === "1" || process.env.PDMUX_RESIZE_UI === "1") {
       assert.equal(process.platform, "darwin", "The native recovery rehearsal uses macOS tmux sessions");
       const enrollment = await json(tlsOrigin, "/api/agent/enroll", "", "POST", { code: remoteHost.enrollment.code, hostname: "recovery-server" });
       const config = join(root, "server-agent.json");
@@ -181,6 +183,10 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
       const tmuxSocket = join(tmux, `tmux-${process.getuid()}`, "default");
       await mkdir(join(tmux, `tmux-${process.getuid()}`), { mode: 0o700 });
       execFileSync("tmux", ["-S", tmuxSocket, "-f", "/dev/null", "new-session", "-d", "-s", "recovery-fixture"], { env: agentEnv, stdio: "ignore" });
+      if (process.env.PDMUX_RESIZE_UI === "1") {
+        execFileSync("tmux", ["-S", tmuxSocket, "set-window-option", "-g", "window-size", "smallest"], { env: agentEnv, stdio: "ignore" });
+        execFileSync("tmux", ["-S", tmuxSocket, "set-option", "-g", "status", "off"], { env: agentEnv, stdio: "ignore" });
+      }
       const tmuxPid = execFileSync("tmux", ["-S", tmuxSocket, "display-message", "-p", "#{pid}"], { env: agentEnv, encoding: "utf8" }).trim();
       const startAgent = async () => {
         // The Go fixture uses the isolated loopback API; TLS is kept on the real
@@ -198,7 +204,8 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
       };
       await startAgent();
       await new Promise((accept, reject) => {
-        const child = spawn("node", [join(repository, "tools/smoke-terminal-recovery-ui.mjs")], { stdio: ["pipe", "inherit", "inherit", "ipc"], env: { ...process.env, PDMUX_BUN_EXECUTABLE: process.execPath }, timeout: 120_000 });
+        const probe = process.env.PDMUX_RESIZE_UI === "1" ? "smoke-terminal-size-ui.mjs" : "smoke-terminal-recovery-ui.mjs";
+        const child = spawn("node", [join(repository, "tools", probe)], { stdio: ["pipe", "inherit", "inherit", "ipc"], env: { ...process.env, PDMUX_BUN_EXECUTABLE: process.execPath }, timeout: 120_000 });
         let serial = Promise.resolve();
         child.on("message", message => {
           serial = serial.then(async () => {
@@ -218,7 +225,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
             if (child.connected) child.send({ id: message.id, ok: true, facts });
           }).catch(() => { if (child.connected) child.send({ id: message.id, ok: false }); });
         });
-        child.stdin.end(JSON.stringify({ url: tlsOrigin, cookie: cloudCookie, workspaceId: organization.id, profile: join(root, "recovery-native"), tmux: join(root, "native-tmux"), output: process.env.PDMUX_RECOVERY_OUTPUT ?? join(repository, "../output/playwright/terminal-recovery") }));
+        child.stdin.end(JSON.stringify({ url: tlsOrigin, cookie: cloudCookie, workspaceId: organization.id, profile: join(root, "recovery-native"), tmux: join(root, "native-tmux"), serverTmuxSocket: tmuxSocket, output: process.env.PDMUX_RECOVERY_OUTPUT ?? join(repository, "../output/playwright/terminal-recovery") }));
         child.once("error", reject); child.once("exit", code => code === 0 ? accept() : reject(new Error("Terminal recovery UI smoke failed")));
       });
     }
@@ -245,7 +252,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
     if (agent && agent.exitCode === null) { agent.kill("SIGTERM"); await new Promise(accept => agent.once("exit", accept)); }
     if (fileFixture) await rm(fileFixture, { recursive: true, force: true });
     await local.stop(); await server.stop();
-    if (process.env.PDMUX_RECOVERY_UI === "1") {
+    if (process.env.PDMUX_RECOVERY_UI === "1" || process.env.PDMUX_RESIZE_UI === "1") {
       for (const name of ["server-tmux", "native-tmux"]) {
         try { execFileSync("tmux", ["-S", join(root, name, `tmux-${process.getuid()}`, "default"), "kill-server"], { stdio: "ignore", env: { ...process.env, TMUX: "" } }); } catch { /* A private server that was never started needs no cleanup. */ }
       }

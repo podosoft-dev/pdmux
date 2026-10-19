@@ -24,7 +24,7 @@ func TestResolveTarget(t *testing.T) {
 		// the collector uses, so on a host where the multiplexer was installed into a
 		// per-user prefix this is an absolute path — which is the whole point. What
 		// must not change is which binary, and the arguments.
-		if filepath.Base(resolved.File) != "tmux" || strings.Join(resolved.Args, " ") != "new -A -s main" {
+		if filepath.Base(resolved.File) != "tmux" || strings.Join(resolved.Args, " ") != "new -A -s main ; set-window-option -t =main: window-size largest" {
 			t.Fatalf("resolved %q %v", resolved.File, resolved.Args)
 		}
 		if resolved.Label != "session:main" {
@@ -37,7 +37,7 @@ func TestResolveTarget(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolve: %v", err)
 		}
-		if strings.Join(resolved.Args, " ") != "new -A -s main" {
+		if strings.Join(resolved.Args, " ") != "new -A -s main ; set-window-option -t =main: window-size largest" {
 			t.Fatalf("args = %v", resolved.Args)
 		}
 	})

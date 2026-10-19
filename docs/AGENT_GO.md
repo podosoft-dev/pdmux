@@ -223,6 +223,41 @@ group** (an interactive shell ignores SIGTERM, so killing only the wrapper leave
 as a ghost), what dies for a `session` target is only the tmux **client**, and runaway
 output drops **the oldest bytes at the buffer cap and reports how many via `output.dropped`**.
 
+### Shared session geometry
+
+Session attachments select `window-size largest` on the attached session's current window.
+This requires tmux 2.9 or later. A compact dashboard viewer must not shrink another client's
+larger terminal and surround its content with tmux's fill characters. The command targets
+the exact session; global defaults and unrelated windows are left alone. Existing sessions
+receive the policy when opened through an updated agent, without restarting their programs.
+
+There is still one application PTY and one row/column size per pane. Smaller clients display
+a viewport of that screen, following the cursor; zooming a dashboard pane provides more room.
+Two clients cannot independently reflow the same running full-screen program. Replacing tmux
+with a native session service would still require an explicit shared-size policy. See the
+[tmux FAQ](https://github.com/tmux/tmux/wiki/FAQ#why-do-i-see-dots-around-a-session-when-i-attach-to-it)
+and the [PTY size interface](https://man7.org/linux/man-pages/man2/TIOCSWINSZ.2const.html).
+
+`agent/internal/term/tmux_size_test.go` exercises two actual tmux clients, PTY resize,
+detach/reattach, process preservation and isolation from other window settings. It uses a
+private socket and skips when tmux is unavailable. Run the terminal package with the toolchain
+pinned in `agent/go.mod`.
+
+For the real browser/Electron comparison on a native Mac, first build the API, web, desktop
+API/web profiles and desktop shell, then build an agent from the current source:
+
+```bash
+(cd agent && GOTOOLCHAIN=go1.26.5 go build -o /tmp/pdmux-size-agent ./cmd/pdmux-agent)
+PDMUX_RESIZE_UI=1 PDMUX_SYNC_AGENT_BINARY=/tmp/pdmux-size-agent \
+  PDMUX_RECOVERY_OUTPUT=/tmp/pdmux-size-evidence bun tools/smoke-desktop-sync.mjs
+```
+
+The probe creates disposable SQLite stacks, a personal workspace and private tmux servers.
+It connects a single browser terminal and an Electron four-pane dashboard to the same session,
+resizes the desktop, closes/reopens the browser, and records screenshots and geometry. The
+supplied binary is used only for the fixture agents; installed agents and application profiles
+are untouched. No protocol or package version change is needed to test the source locally.
+
 ---
 
 ## 6. The command surface

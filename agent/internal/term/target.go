@@ -104,11 +104,15 @@ func ResolveTarget(target protocol.TerminalTarget, getenv func(string) string) (
 	}
 	// `new -A` = attach if the session exists, create otherwise — one command for
 	// both intents, so the browser never has to ask which case it is in.
+	// A shared window follows its largest client. Otherwise a compact dashboard
+	// can shrink a full-size viewer and fill its unused area with tmux's dots.
+	// Target only this session's current window, never the user's global defaults.
 	return Resolved{
 		// Same resolution the session collector uses: PATH first, then where a
 		// person's own install would be. A service manager's PATH has neither.
-		File:  sys.ResolveBinary(muxBinary, ""),
-		Args:  []string{"new", "-A", "-s", name},
+		File: sys.ResolveBinary(muxBinary, ""),
+		Args: []string{"new", "-A", "-s", name, ";",
+			"set-window-option", "-t", "=" + name + ":", "window-size", "largest"},
 		Label: "session:" + name,
 	}, nil
 }
