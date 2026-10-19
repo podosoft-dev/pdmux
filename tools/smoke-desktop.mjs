@@ -163,3 +163,11 @@ try {
     await rm(configuration, { recursive: true, force: true });
   }
 }
+
+// Persistent native programs can keep Linux automation transports alive after
+// the verified Electron exit. All assertions and owned-profile cleanup above
+// have completed; end this disposable driver while preserving a shared profile.
+if (process.platform === "linux") {
+  await new Promise(resolve => process.stdout.write("", resolve));
+  process.exit(0);
+}
