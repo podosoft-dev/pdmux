@@ -54,7 +54,7 @@ test("[TC-PDVM-027] settings list the fleet's providers, add one, keep the secre
     return route.fulfill({ status: 404, json: {} });
   });
 
-  await ready(page, "/settings");
+  await ready(page, "/settings?tab=integrations");
   const card = page.getByTestId("vm-providers");
   await expect(card.getByTestId("vm-provider-row")).toHaveCount(1, { timeout: 15_000 });
   // In use by a machine: removing is not offered.
@@ -68,6 +68,7 @@ test("[TC-PDVM-027] settings list the fleet's providers, add one, keep the secre
   await card.getByTestId("vm-provider-edit").click();
   const form = page.getByTestId("vm-provider-form");
   await expect(form.getByTestId("vm-p-token-secret")).toHaveValue("");
+  await form.getByTestId("vm-p-optional-toggle").click();
   await expect(form.getByTestId("vm-p-ca")).toHaveValue("");
   await form.getByTestId("vm-p-advanced-toggle").click();
   await form.getByTestId("vm-p-sleep-tag").fill("pdmux");
@@ -81,6 +82,7 @@ test("[TC-PDVM-027] settings list the fleet's providers, add one, keep the secre
   // Adding: incomplete is refused before sending; a token id without "!" is not a token id.
   await card.getByTestId("vm-provider-add").click();
   await expect(form.getByTestId("vm-p-save")).toBeDisabled();
+  await form.getByTestId("vm-p-optional-toggle").click();
   await form.getByTestId("vm-p-name").fill("second");
   await form.getByTestId("vm-p-url").fill("https://pve2.example.test:8006");
   await form.getByTestId("vm-p-token-id").fill("pdmux@pve");
@@ -103,7 +105,7 @@ test("[TC-PDVM-027] on a phone the provider form fits the screen: no field runs 
   // A long CA fingerprint is one unbroken word; it must wrap rather than widen the form.
   const long = { ...provider("lab", 1), caFingerprint: Array.from({ length: 32 }, () => "3A").join(":") };
   await page.route("**/api/vm/providers", (route) => route.fulfill({ json: [long] }));
-  await ready(page, "/settings");
+  await ready(page, "/settings?tab=integrations");
   await page.getByTestId("vm-provider-edit").click();
   const form = page.getByTestId("vm-provider-form");
   await expect(form).toBeVisible();
@@ -124,7 +126,7 @@ test("[TC-PDVM-040] a new provider asks for its platform, address and credential
     sent.push(body);
     return route.fulfill({ status: 201, json: { ...provider("pve.example.test", 0), name: "pve.example.test" } });
   });
-  await ready(page, "/settings");
+  await ready(page, "/settings?tab=integrations");
   await page.getByTestId("vm-provider-add").click();
   const form = page.getByTestId("vm-provider-form");
 
@@ -137,11 +139,16 @@ test("[TC-PDVM-040] a new provider asks for its platform, address and credential
   await expect(form.getByTestId("vm-p-defaults-summary")).toHaveText("4 vCPU · 16 GB memory · 64 GB disk · ids 500–599");
   await expect(form.getByTestId("vm-p-cores")).toBeHidden();
   await expect(form.getByTestId("vm-p-sleep-tag")).toBeHidden();
+  // So is everything else that is optional: the name, the CA and the permission table.
+  await expect(form.getByTestId("vm-p-name")).toBeHidden();
+  await expect(form.getByTestId("vm-p-ca")).toBeHidden();
+  await expect(form.locator("[data-testid=vm-p-perm] dl")).toBeHidden();
 
   // Address and credentials are enough; the name follows the address.
   await expect(form.getByTestId("vm-p-save")).toBeDisabled();
   await form.getByTestId("vm-p-url").fill("https://pve.example.test:8006");
-  await expect(form.getByTestId("vm-p-name")).toHaveAttribute("placeholder", "pve.example.test");
+  // The folded options say what they hold without being opened.
+  await expect(form.getByTestId("vm-p-optional-summary")).toHaveText("Name: pve.example.test · CA: the system's trusted CAs");
   await form.getByTestId("vm-p-token-id").fill("pdmux@pve!vm-provider");
   await form.getByTestId("vm-p-token-secret").fill("not-a-real-secret");
   await expect(form.getByTestId("vm-p-save")).toBeEnabled();
@@ -151,6 +158,18 @@ test("[TC-PDVM-040] a new provider asks for its platform, address and credential
   await expect(form.getByTestId("vm-p-cores")).toHaveValue("4");
   await expect(form.getByTestId("vm-p-memory")).toHaveValue("16");
   await expect(form.getByTestId("vm-p-disk")).toHaveValue("64");
+
+  // The permissions a token needs, as a table rather than one sentence.
+  await form.getByTestId("vm-p-perm-toggle").click();
+  await expect(form.locator("[data-testid=vm-p-perm] dt")).toHaveText(["Pool for new machines", "Template", "VM disk and backup storage", "Network (the bridge's SDN zone)", "Machines you only link"]);
+
+  // What a setting means is one hover — or tap — away, on the setting itself.
+  await form.getByTestId("vm-p-full-clone-tip").hover();
+  await expect(page.locator("[data-slot=tooltip-content]")).toContainText("linked clone");
+  await form.getByTestId("vm-p-advanced-toggle").click();
+  for (const id of ["node", "storage", "pool", "sleep-tag", "backup", "enroll-url"]) {
+    await expect(form.getByTestId(`vm-p-${id}-tip`)).toHaveAttribute("aria-label", /.{30,}/);
+  }
 
   await form.getByTestId("vm-p-save").click();
   await expect(form).toBeHidden();

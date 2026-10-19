@@ -25,6 +25,7 @@
   import { Textarea } from "#lib/components/ui/textarea/index.js";
   import * as ToggleGroup from "#lib/components/ui/toggle-group/index.js";
   import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
+  import InfoTip from "#lib/components/info-tip.svelte";
   import { fmt, formatDateTime, getI18n } from "#lib/i18n/index.js";
   import { vmApi } from "./api";
   import { useVmPower } from "./power-controller.svelte";
@@ -34,6 +35,8 @@
 
   /** Platforms the form names so the choice is visible, but that have no driver yet. */
   const PLANNED = ["aws", "azure"] as const;
+  /** The rows of the token-permission table, in the order a person sets them up. */
+  const PERMISSIONS = ["pool", "template", "storage", "network", "linked"] as const;
 
   const i18n = getI18n();
   const power = useVmPower();
@@ -49,6 +52,8 @@
   let saving = $state(false);
   let defaultsOpen = $state(false);
   let advancedOpen = $state(false);
+  let optionalOpen = $state(false);
+  let permOpen = $state(false);
 
   // The form, as strings: inputs hold text, and the conversion happens once, on save.
   let platform = $state<"proxmox">("proxmox");
@@ -108,6 +113,8 @@
     sleepTag = ""; backupStorage = ""; enrollUrl = "";
     defaultsOpen = false;
     advancedOpen = false;
+    optionalOpen = false;
+    permOpen = false;
     formOpen = true;
   }
 
@@ -136,6 +143,8 @@
     enrollUrl = provider.enrollUrl ?? "";
     defaultsOpen = false;
     advancedOpen = false;
+    optionalOpen = false;
+    permOpen = false;
     formOpen = true;
   }
 
@@ -244,6 +253,18 @@
     }
   });
 
+  /** What the folded connection options hold, so they need not be opened to be checked. */
+  const optionalSummary = $derived(
+    fmt(i18n.t.vm.settings.form.optionalSummary, {
+      name: name.trim() || derivedName,
+      ca: caCertificate.trim()
+        ? i18n.t.vm.settings.form.caNew
+        : editing?.caFingerprint
+          ? fmt(i18n.t.vm.settings.form.caStored, { fingerprint: `${editing.caFingerprint.slice(0, 11)}…` })
+          : i18n.t.vm.settings.form.caSystem,
+    }),
+  );
+
   const whole = (value: string, min: number): boolean => /^\d+$/.test(value.trim()) && Number(value) >= min;
   const canSave = $derived(
     platform === "proxmox" && /^https:\/\/\S+$/.test(baseUrl.trim()) && tokenId.includes("!")
@@ -324,6 +345,8 @@
       <Dialog.Title>{editing ? fmt(i18n.t.vm.settings.form.titleEdit, { name: editing.name }) : i18n.t.vm.settings.form.titleNew}</Dialog.Title>
       <Dialog.Description>{i18n.t.vm.settings.form.required}</Dialog.Description>
     </Dialog.Header>
+    <!-- Only what a connection cannot do without is open: the platform, the address and the
+         token. Everything optional is folded, each fold saying in one line what it holds. -->
     <div class="-mx-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4">
       <div class="grid gap-1.5">
         <Label>{i18n.t.vm.settings.platform.label}</Label>
@@ -348,17 +371,12 @@
         </ToggleGroup.Root>
       </div>
 
+      <div class="grid gap-1.5">
+        <Label for="vm-p-url">{i18n.t.vm.settings.form.baseUrl}</Label>
+        <Input id="vm-p-url" bind:value={baseUrl} placeholder="https://pve.example.com:8006" data-testid="vm-p-url" />
+        <p class="text-muted-foreground text-xs">{i18n.t.vm.settings.form.baseUrlHint}</p>
+      </div>
       <div class="grid items-start gap-3 sm:grid-cols-2">
-        <div class="grid gap-1.5">
-          <Label for="vm-p-url">{i18n.t.vm.settings.form.baseUrl}</Label>
-          <Input id="vm-p-url" bind:value={baseUrl} placeholder="https://pve.example.com:8006" data-testid="vm-p-url" />
-          <p class="text-muted-foreground text-xs">{i18n.t.vm.settings.form.baseUrlHint}</p>
-        </div>
-        <div class="grid gap-1.5">
-          <Label for="vm-p-name">{i18n.t.vm.settings.form.name}</Label>
-          <Input id="vm-p-name" bind:value={name} placeholder={derivedName} data-testid="vm-p-name" />
-          <p class="text-muted-foreground text-xs">{fmt(i18n.t.vm.settings.form.nameHint, { name: derivedName })}</p>
-        </div>
         <div class="grid gap-1.5">
           <Label for="vm-p-token-id">{i18n.t.vm.settings.form.tokenId}</Label>
           <Input id="vm-p-token-id" bind:value={tokenId} placeholder="pdmux@pve!vm-provider" autocomplete="off" data-testid="vm-p-token-id" />
@@ -369,80 +387,99 @@
           <Input id="vm-p-token-secret" type="password" bind:value={tokenSecret} autocomplete="off" data-testid="vm-p-token-secret" />
           {#if editing}<p class="text-muted-foreground text-xs">{i18n.t.vm.settings.form.tokenSecretKeep}</p>{/if}
         </div>
-        <div class="grid gap-1.5 sm:col-span-2">
-          <Label for="vm-p-ca">{i18n.t.vm.settings.form.ca}</Label>
-          <Textarea id="vm-p-ca" rows={3} class="font-mono text-xs" bind:value={caCertificate} placeholder="-----BEGIN CERTIFICATE-----" data-testid="vm-p-ca" />
-          <p class="text-muted-foreground text-xs break-all">{editing?.caFingerprint ? `${i18n.t.vm.settings.form.fingerprint}: ${editing.caFingerprint}` : i18n.t.vm.settings.form.caHint}</p>
-        </div>
-        <p class="text-muted-foreground text-xs sm:col-span-2">{i18n.t.vm.settings.form.permissions}</p>
       </div>
 
-      <Collapsible.Root bind:open={defaultsOpen} class="rounded-lg border p-3" data-testid="vm-p-defaults">
-        <div class="flex items-start justify-between gap-2">
-          <div class="min-w-0">
-            <p class="text-sm font-medium">{i18n.t.vm.settings.form.defaultsTitle}</p>
-            <p class="text-muted-foreground text-xs" data-testid="vm-p-defaults-summary">
-              {summary({ cores: cores || "—", memory: memoryGb || "—", disk: diskGb || null, min: vmidMin || "—", max: vmidMax || "—" })}
-            </p>
-            <p class="text-muted-foreground text-xs">{i18n.t.vm.settings.form.templateAuto}</p>
+      <Collapsible.Root bind:open={permOpen} class="rounded-lg border p-3" data-testid="vm-p-perm">
+        {@render fold(i18n.t.vm.settings.perm.title, null, permOpen, "vm-p-perm", i18n.t.vm.settings.form.show)}
+        <Collapsible.Content class="pt-3">
+          <dl class="grid gap-x-4 gap-y-2 text-xs sm:grid-cols-[minmax(0,12rem)_1fr]">
+            {#each PERMISSIONS as row (row)}
+              <dt class="font-medium">{i18n.t.vm.settings.perm[row]}</dt>
+              <dd class="text-muted-foreground font-mono break-words">{i18n.t.vm.settings.perm[`${row}Privs`]}</dd>
+            {/each}
+          </dl>
+          <p class="text-muted-foreground mt-3 text-xs">{i18n.t.vm.settings.perm.note}</p>
+        </Collapsible.Content>
+      </Collapsible.Root>
+
+      <Collapsible.Root bind:open={optionalOpen} class="rounded-lg border p-3" data-testid="vm-p-optional">
+        {@render fold(i18n.t.vm.settings.form.optional, optionalSummary, optionalOpen, "vm-p-optional", i18n.t.vm.settings.form.change)}
+        <Collapsible.Content class="grid items-start gap-3 pt-3">
+          <div class="grid gap-1.5">
+            <Label for="vm-p-name">{i18n.t.vm.settings.form.name}</Label>
+            <Input id="vm-p-name" bind:value={name} placeholder={derivedName} data-testid="vm-p-name" />
+            <p class="text-muted-foreground text-xs">{fmt(i18n.t.vm.settings.form.nameHint, { name: derivedName })}</p>
           </div>
-          <Collapsible.Trigger>
-            {#snippet child({ props })}
-              <Button {...props} variant="ghost" size="sm" class="shrink-0 gap-1" data-testid="vm-p-defaults-toggle">
-                {i18n.t.vm.settings.form.change}
-                <ChevronDownIcon class="size-4 {defaultsOpen ? 'rotate-180' : ''}" />
-              </Button>
-            {/snippet}
-          </Collapsible.Trigger>
-        </div>
+          <div class="grid gap-1.5">
+            <Label for="vm-p-ca">{i18n.t.vm.settings.form.ca}</Label>
+            <Textarea id="vm-p-ca" rows={3} class="font-mono text-xs" bind:value={caCertificate} placeholder="-----BEGIN CERTIFICATE-----" data-testid="vm-p-ca" />
+            <p class="text-muted-foreground text-xs break-all">{editing?.caFingerprint ? `${i18n.t.vm.settings.form.fingerprint}: ${editing.caFingerprint}` : i18n.t.vm.settings.form.caHint}</p>
+          </div>
+        </Collapsible.Content>
+      </Collapsible.Root>
+
+      <Collapsible.Root bind:open={defaultsOpen} class="rounded-lg border p-3" data-testid="vm-p-defaults">
+        {@render fold(
+          i18n.t.vm.settings.form.defaultsTitle,
+          summary({ cores: cores || "—", memory: memoryGb || "—", disk: diskGb || null, min: vmidMin || "—", max: vmidMax || "—" }),
+          defaultsOpen,
+          "vm-p-defaults",
+          i18n.t.vm.settings.form.change,
+        )}
+        <p class="text-muted-foreground text-xs">{i18n.t.vm.settings.form.templateAuto}</p>
         <Collapsible.Content class="grid items-start gap-3 pt-3 sm:grid-cols-3">
           <div class="grid gap-1.5"><Label for="vm-p-cores">{i18n.t.vm.settings.form.cores}</Label><Input id="vm-p-cores" bind:value={cores} inputmode="numeric" data-testid="vm-p-cores" /></div>
           <div class="grid gap-1.5"><Label for="vm-p-memory">{i18n.t.vm.settings.form.memory}</Label><Input id="vm-p-memory" bind:value={memoryGb} inputmode="decimal" data-testid="vm-p-memory" /></div>
-          <div class="grid gap-1.5"><Label for="vm-p-disk">{i18n.t.vm.settings.form.disk}</Label><Input id="vm-p-disk" bind:value={diskGb} inputmode="numeric" data-testid="vm-p-disk" /></div>
+          <div class="grid gap-1.5">
+            {@render tipped("vm-p-disk", i18n.t.vm.settings.form.disk, i18n.t.vm.settings.form.diskTip)}
+            <Input id="vm-p-disk" bind:value={diskGb} inputmode="numeric" data-testid="vm-p-disk" />
+          </div>
           <div class="grid gap-1.5 sm:col-span-2">
-            <Label for="vm-p-template-node">{i18n.t.vm.settings.form.template}</Label>
+            {@render tipped("vm-p-template-node", i18n.t.vm.settings.form.template, i18n.t.vm.settings.form.templateTip)}
             <div class="flex gap-2">
               <Input id="vm-p-template-node" bind:value={templateNode} placeholder={i18n.t.vm.settings.form.node} />
               <Input bind:value={templateVmid} inputmode="numeric" placeholder="9001" aria-label={i18n.t.vm.settings.form.template} />
             </div>
           </div>
           <div class="grid gap-1.5">
-            <Label for="vm-p-vmid-min">{i18n.t.vm.settings.form.vmidRange}</Label>
+            {@render tipped("vm-p-vmid-min", i18n.t.vm.settings.form.vmidRange, i18n.t.vm.settings.form.vmidRangeTip)}
             <div class="flex gap-2"><Input id="vm-p-vmid-min" bind:value={vmidMin} inputmode="numeric" data-testid="vm-p-vmid-min" /><Input bind:value={vmidMax} inputmode="numeric" aria-label={i18n.t.vm.settings.form.vmidRange} data-testid="vm-p-vmid-max" /></div>
           </div>
-          <label class="flex items-center gap-2 text-sm sm:col-span-3"><Checkbox bind:checked={fullClone} />{i18n.t.vm.settings.form.fullClone}</label>
+          <div class="flex items-center gap-2 text-sm sm:col-span-3">
+            <label class="flex items-center gap-2"><Checkbox bind:checked={fullClone} data-testid="vm-p-full-clone" />{i18n.t.vm.settings.form.fullClone}</label>
+            <InfoTip text={i18n.t.vm.settings.form.fullCloneTip} testId="vm-p-full-clone-tip" />
+          </div>
         </Collapsible.Content>
       </Collapsible.Root>
 
-      <Collapsible.Root bind:open={advancedOpen} class="rounded-lg border p-3">
-        <Collapsible.Trigger>
-          {#snippet child({ props })}
-            <Button {...props} variant="ghost" size="sm" class="gap-1 px-0" data-testid="vm-p-advanced-toggle">
-              <ChevronDownIcon class="size-4 {advancedOpen ? 'rotate-180' : ''}" />
-              {i18n.t.vm.settings.form.advanced}
-            </Button>
-          {/snippet}
-        </Collapsible.Trigger>
+      <Collapsible.Root bind:open={advancedOpen} class="rounded-lg border p-3" data-testid="vm-p-advanced">
+        {@render fold(i18n.t.vm.settings.form.advanced, null, advancedOpen, "vm-p-advanced", i18n.t.vm.settings.form.change)}
         <Collapsible.Content class="grid items-start gap-3 pt-3 sm:grid-cols-3">
-          <div class="grid gap-1.5"><Label for="vm-p-node">{i18n.t.vm.settings.form.node}</Label><Input id="vm-p-node" bind:value={defaultNode} placeholder={i18n.t.vm.settings.form.nodeAuto} /></div>
-          <div class="grid gap-1.5"><Label for="vm-p-storage">{i18n.t.vm.settings.form.storage}</Label><Input id="vm-p-storage" bind:value={storage} placeholder={i18n.t.vm.settings.form.storageAuto} /></div>
-          <div class="grid gap-1.5"><Label for="vm-p-pool">{i18n.t.vm.settings.form.pool}</Label><Input id="vm-p-pool" bind:value={pool} placeholder={i18n.t.vm.settings.form.poolAuto} /></div>
+          <div class="grid gap-1.5">
+            {@render tipped("vm-p-node", i18n.t.vm.settings.form.node, i18n.t.vm.settings.form.nodeTip)}
+            <Input id="vm-p-node" bind:value={defaultNode} placeholder={i18n.t.vm.settings.form.nodeAuto} />
+          </div>
+          <div class="grid gap-1.5">
+            {@render tipped("vm-p-storage", i18n.t.vm.settings.form.storage, i18n.t.vm.settings.form.storageTip)}
+            <Input id="vm-p-storage" bind:value={storage} placeholder={i18n.t.vm.settings.form.storageAuto} />
+          </div>
+          <div class="grid gap-1.5">
+            {@render tipped("vm-p-pool", i18n.t.vm.settings.form.pool, i18n.t.vm.settings.form.poolTip)}
+            <Input id="vm-p-pool" bind:value={pool} placeholder={i18n.t.vm.settings.form.poolAuto} />
+          </div>
           <div class="grid gap-1.5 sm:col-span-3 sm:grid-cols-2 sm:gap-3">
             <div class="grid gap-1.5">
-              <Label for="vm-p-sleep-tag">{i18n.t.vm.settings.form.sleepTag}</Label>
+              {@render tipped("vm-p-sleep-tag", i18n.t.vm.settings.form.sleepTag, i18n.t.vm.settings.form.sleepTagTip)}
               <Input id="vm-p-sleep-tag" bind:value={sleepTag} placeholder="on-demand" data-testid="vm-p-sleep-tag" />
-              <p class="text-muted-foreground text-xs">{i18n.t.vm.settings.form.sleepTagHint}</p>
             </div>
             <div class="grid gap-1.5">
-              <Label for="vm-p-backup">{i18n.t.vm.settings.form.backup}</Label>
+              {@render tipped("vm-p-backup", i18n.t.vm.settings.form.backup, i18n.t.vm.settings.form.backupTip)}
               <Input id="vm-p-backup" bind:value={backupStorage} placeholder="backups" />
-              <p class="text-muted-foreground text-xs">{i18n.t.vm.settings.form.backupHint}</p>
             </div>
           </div>
           <div class="grid gap-1.5 sm:col-span-3">
-            <Label for="vm-p-enroll-url">{i18n.t.vm.settings.form.enrollUrl}</Label>
+            {@render tipped("vm-p-enroll-url", i18n.t.vm.settings.form.enrollUrl, i18n.t.vm.settings.form.enrollUrlTip)}
             <Input id="vm-p-enroll-url" bind:value={enrollUrl} placeholder={origin} data-testid="vm-p-enroll-url" />
-            <p class="text-muted-foreground text-xs break-all">{fmt(i18n.t.vm.settings.form.enrollUrlHint, { url: origin })}</p>
           </div>
         </Collapsible.Content>
       </Collapsible.Root>
@@ -453,6 +490,32 @@
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
+
+<!-- A folded section's first row: what it is, what it holds now, and the control that opens it. -->
+{#snippet fold(title: string, detail: string | null, isOpen: boolean, testId: string, action: string)}
+  <div class="flex items-start justify-between gap-2">
+    <div class="min-w-0">
+      <p class="text-sm font-medium">{title}</p>
+      {#if detail}<p class="text-muted-foreground text-xs break-all" data-testid={`${testId}-summary`}>{detail}</p>{/if}
+    </div>
+    <Collapsible.Trigger>
+      {#snippet child({ props })}
+        <Button {...props} variant="ghost" size="sm" class="shrink-0 gap-1" data-testid={`${testId}-toggle`}>
+          {action}
+          <ChevronDownIcon class="size-4 {isOpen ? 'rotate-180' : ''}" />
+        </Button>
+      {/snippet}
+    </Collapsible.Trigger>
+  </div>
+{/snippet}
+
+<!-- A label with its explanation one hover or tap away, instead of a paragraph under the field. -->
+{#snippet tipped(id: string, label: string, tip: string)}
+  <div class="flex items-center gap-1">
+    <Label for={id}>{label}</Label>
+    <InfoTip text={tip} testId={`${id}-tip`} />
+  </div>
+{/snippet}
 
 {#if removing}
   <ConfirmDialog
