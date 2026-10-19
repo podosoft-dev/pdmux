@@ -87,6 +87,22 @@ function notice(text: string): string {
   return `\r\n\u001b[2m[pdmux] ${text}\u001b[0m\r\n`;
 }
 
+/**
+ * The toolbar's one word for the transport: the worst state among hosts that are expected to answer.
+ *
+ * ⚠ A HOST THAT IS NOT THERE IS NOT A TRANSPORT FAULT. A machine put to sleep, or an agent known
+ * to be offline, keeps its socket retrying in the background — and with every host counted, one
+ * sleeping machine held the toolbar red ("reconnecting to the terminal relay") for as long as it
+ * slept. Its panes already say why they are dark; the banner is for hosts that should answer.
+ */
+export function bannerStatus(statuses: Readonly<Record<string, RelayStatus>>, reachable: ReadonlySet<string>): RelayStatus {
+  const counted = Object.entries(statuses).filter(([hostId]) => reachable.has(hostId)).map(([, status]) => status);
+  for (const status of ["reconnecting", "connecting", "open"] as const) {
+    if (counted.includes(status)) return status;
+  }
+  return counted.includes("closed") ? "closed" : "idle";
+}
+
 /** Same-origin URL for the relay; the session cookie is what authenticates it. */
 export function defaultRelayUrl(location: { protocol: string; host: string }): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";

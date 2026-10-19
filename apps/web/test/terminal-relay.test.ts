@@ -7,7 +7,7 @@
  * time when it happens — a socket that dropped while the pane kept looking alive.
  */
 import { describe, expect, it } from "vitest";
-import { TerminalRelay, defaultRelayUrl, type RelaySocket } from "$lib/dashboard/terminal-relay";
+import { TerminalRelay, bannerStatus, defaultRelayUrl, type RelaySocket } from "$lib/dashboard/terminal-relay";
 
 class FakeSocket implements RelaySocket {
   readyState = 0;
@@ -465,6 +465,17 @@ describe("[TC-PDVM-021] each host's panes show that host's connection", () => {
     relay.noteReachable(["h1"]);
 
     expect(sockets).toHaveLength(1);
+  });
+});
+
+describe("[TC-PDVM-021] the toolbar warns only about hosts that should answer", () => {
+  it("ignores a sleeping or offline host's retries and still reports a reachable host's", () => {
+    const statuses = { asleep: "reconnecting", healthy: "open" } as const;
+    // Before: the sleeping machine's retries held the whole toolbar on "reconnecting".
+    expect(bannerStatus(statuses, new Set(["healthy"]))).toBe("open");
+    expect(bannerStatus(statuses, new Set(["healthy", "asleep"]))).toBe("reconnecting");
+    expect(bannerStatus({ a: "connecting", b: "open" }, new Set(["a", "b"]))).toBe("connecting");
+    expect(bannerStatus({ asleep: "reconnecting" }, new Set())).toBe("idle");
   });
 });
 

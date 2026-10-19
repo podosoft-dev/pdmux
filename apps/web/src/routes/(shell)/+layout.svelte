@@ -51,6 +51,8 @@
   import type { HostUpdateMark } from "@pdmux/ui";
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
   import type { HostView } from "#lib/dashboard/types.js";
+  import { VmPowerController, provideVmPower } from "#lib/vm/power-controller.svelte.js";
+  import VmPowerConfirm from "#lib/vm/vm-power-confirm.svelte";
   import type { LayoutData } from "./$types";
   import DesktopSettingsFrame from "#lib/desktop/settings-frame.svelte";
   import { desktopSettingsTab } from "#lib/desktop/settings-navigation.js";
@@ -80,6 +82,13 @@
       },
     }),
   );
+
+  // One power controller for every pane and card in the shell, and one confirmation.
+  const vmPower = provideVmPower(new VmPowerController({
+    refresh: () => shell.feed.refresh(),
+    messages: () => i18n.t,
+    canManage: () => data.canManage,
+  }));
 
   const layout = $derived(shell.layout);
   /**
@@ -416,4 +425,5 @@
      it, so proving you are looking at the card you think you are is the whole point. -->
 <HostFormDialog bind:open={addOpen} />
 
+<VmPowerConfirm power={vmPower} panesOn={(hostId: string) => shell.layout.slots.filter((slot) => slot?.hostId === hostId).length} />
 <Toaster />

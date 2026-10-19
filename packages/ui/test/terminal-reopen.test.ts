@@ -153,3 +153,17 @@ describe('[TC-PDVM-022] a pane that ended with its host opens again when the hos
 		expect(adapter.opened).toHaveLength(2);
 	});
 });
+
+describe('[TC-PDVM-021] an unreachable pane does not also say its socket is reconnecting', () => {
+	it('shows the reconnecting note on a reachable pane and drops it once the host is gone', async () => {
+		const control: { setOnline?: (online: boolean) => void } = {};
+		const { container } = render(ReachabilityHarness, {
+			props: { layout: LAYOUT, adapter: new ScriptedAdapter(), createSurface: surface, control, transport: 'reconnecting' },
+		});
+		await vi.waitFor(() => expect(container.querySelector('[data-pdmux-transport]')).not.toBeNull());
+		control.setOnline?.(false);
+		await tick();
+		// The pane already says the host is not there; "reconnecting…" on top was only alarm.
+		expect(container.querySelector('[data-pdmux-transport]')).toBeNull();
+	});
+});

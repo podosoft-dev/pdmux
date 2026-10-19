@@ -71,6 +71,8 @@
 		paneClickAction?: ClickAction;
 		/** App-owned pane header controls, forwarded without changing package defaults. */
 		paneActions?: Snippet<[TerminalPaneActionContext]>;
+		/** App-owned content for an unreachable pane; see `TerminalPane`'s `veil`. */
+		paneVeil?: Snippet<[TerminalPaneActionContext]>;
 		onSwap?: (from: number, to: number) => void;
 		onExit?: (slotId: string, code: number | null) => void;
 		onSessionResolved?: (slotId: string, sessionId: string) => void;
@@ -111,6 +113,7 @@
 		onDetach,
 		paneClickAction,
 		paneActions,
+		paneVeil,
 		onSwap,
 		onExit,
 		onSessionResolved,
@@ -268,6 +271,7 @@
 			dropTarget={dropIndex === cellIndexOf(slot.id) && dropIndex !== dragFrom}
 			clickAction={paneClickAction ?? layout.clickAction}
 			actions={paneActions}
+			veil={paneVeil}
 			{onAssign}
 			{onZoom}
 			{onFocus}

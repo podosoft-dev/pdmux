@@ -91,6 +91,12 @@
 		clickAction?: ClickAction;
 		/** App-owned header controls. Absent keeps the package's compatible fallback actions. */
 		actions?: Snippet<[TerminalPaneActionContext]>;
+		/**
+		 * App-owned content for a pane whose host is unreachable — "this machine is asleep" with
+		 * a button to wake it. Absent keeps the plain message. The package knows nothing about
+		 * machines; it only gives the app the pane's box to say why it is dark.
+		 */
+		veil?: Snippet<[TerminalPaneActionContext]>;
 		t?: Translate;
 		onAssign?: (index: number, anchor: HTMLElement) => void;
 		onZoom?: (slotId: string) => void;
@@ -177,6 +183,7 @@
 		dropTarget = false,
 		clickAction = 'zoom',
 		actions,
+		veil,
 		t,
 		onAssign,
 		onZoom,
@@ -711,6 +718,7 @@
 <div
 	class="pdmux pdmux-pane"
 	class:pdmux-unreachable={!reachable}
+	class:pdmux-veiled={!reachable && Boolean(veil)}
 	class:pdmux-dragging={dragging}
 	class:pdmux-focused={active}
 	class:pdmux-drop={dropTarget}
@@ -894,7 +902,12 @@
 			></button>
 		{/if}
 		<div class="pdmux-pane-surface" bind:this={surfaceHost} data-pdmux-surface></div>
-		{#if transport !== 'open'}
+		{#if !reachable && veil}
+			<div class="pdmux-pane-veil" data-pdmux-veil>{@render veil(actionContext)}</div>
+		{/if}
+		<!-- Not on an unreachable pane: the host is gone and the pane already says so; a second line
+		     saying the socket is retrying adds nothing but alarm (a machine put to sleep on purpose). -->
+		{#if transport !== 'open' && reachable}
 			<!--
 				⚠ NOT AN ERROR, AND NOT THE UNREACHABLE OVERLAY. The host is fine; this browser's
 				socket is away, which lasts a moment and is worth exactly one line — a full-pane

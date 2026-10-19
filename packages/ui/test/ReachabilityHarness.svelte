@@ -15,12 +15,14 @@
 		createSurface,
 		onExit,
 		control,
+		transport = 'open',
 	}: {
 		layout: TerminalLayout;
 		adapter: TerminalAdapter;
 		createSurface: TerminalSurfaceFactory;
 		onExit?: (slotId: string, code: number | null) => void;
 		control: { setOnline?: (online: boolean) => void };
+		transport?: 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
 	} = $props();
 
 	let online = $state(true);
@@ -31,4 +33,4 @@
 	const hosts = $derived<GridHost[]>([{ id: 'h1', name: 'alpha', online, sessions: [] }]);
 </script>
 
-<TerminalGrid {layout} {hosts} {adapter} {createSurface} sweepMs={0} {onExit} />
+<TerminalGrid {layout} {hosts} {adapter} {createSurface} sweepMs={0} {onExit} {transport} />

@@ -61,7 +61,9 @@
   import TerminalToolbar from "#lib/dashboard/components/terminal-toolbar.svelte";
   import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
   import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
+  import VmPaneVeil from "#lib/vm/vm-pane-veil.svelte";
   import { gridHosts, pickerHosts } from "#lib/dashboard/map.js";
+  import { bannerStatus } from "#lib/dashboard/terminal-relay.js";
   import { dismissOnOutside } from "#lib/dashboard/popover-dismiss.svelte.ts";
   import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
@@ -76,6 +78,7 @@
 
   const layout = $derived(shell.layout);
   const grid = $derived(gridHosts(shell.feed.hosts));
+  const hostById = $derived(new Map(shell.feed.hosts.map((host) => [host.id, host])));
   // A host that was away and is reachable again is dialled at once, not after the backoff
   // its absence grew to (see `TerminalRelay.noteReachable`).
   $effect(() => {
@@ -381,7 +384,17 @@
 <svelte:head><title>{i18n.t.dash.title} · PDMux</title></svelte:head>
 
 {#snippet paneActions(actions: TerminalPaneActionContext)}
-  <TerminalPaneActions {actions} compact={stacked.current} />
+  <TerminalPaneActions
+    {actions}
+    compact={stacked.current}
+    host={hostById.get(actions.slot.hostId)}
+    canManage={data.canManage}
+    now={shell.feed.now}
+  />
+{/snippet}
+
+{#snippet paneVeil(actions: TerminalPaneActionContext)}
+  <VmPaneVeil host={hostById.get(actions.slot.hostId)} canManage={data.canManage} now={shell.feed.now} compact={stacked.current} />
 {/snippet}
 
 <div class="pdmux pdmux-panel" data-pdmux-region="terminal">
@@ -389,7 +402,7 @@
     {layout}
     {pages}
     {page}
-    relayStatus={shell.relayStatus}
+    relayStatus={bannerStatus(shell.hostTransports, new Set(grid.filter((host) => host.online).map((host) => host.id)))}
     feedError={shell.feed.error}
     onMode={(mode: GridMode) => shell.apply(cycleMode(layout, mode))}
     onPage={paged}
@@ -409,6 +422,7 @@
     {t}
     paneClickAction="focus"
     {paneActions}
+    {paneVeil}
     onAssign={openPicker}
     onClose={askClose}
     onRemove={(index: number) => shell.apply(removeSlot(layout, index))}

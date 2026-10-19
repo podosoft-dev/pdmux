@@ -1848,6 +1848,31 @@
 	background: var(--pdmux-card);
 }
 
+/* The app says why the pane is dark (a machine asleep, with a button to wake it), so the
+   plain message steps aside. ⚠ LIKE THE MESSAGE, THE BOX DOES NOT TAKE THE POINTER — the pane
+   body's own gestures stay where they were. Only the controls the app puts in it do. */
+.pdmux-unreachable.pdmux-veiled .pdmux-pane-body::after {
+	content: none;
+}
+
+.pdmux-pane-veil {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	display: grid;
+	place-items: center;
+	padding: 12px;
+	overflow: auto;
+	color: var(--pdmux-muted);
+	font-size: 0.75rem;
+	text-align: center;
+	background: var(--pdmux-card);
+}
+
+.pdmux-pane-veil :is(button, a, [role='button']) {
+	pointer-events: auto;
+}
+
 /* --- commit graph --------------------------------------------------------- */
 
 .pdmux-graph {

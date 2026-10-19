@@ -19,14 +19,23 @@
   import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
   import * as Tooltip from "#lib/components/ui/tooltip/index.js";
   import { getI18n } from "#lib/i18n/index.js";
+  import type { HostView } from "#lib/dashboard/types.js";
+  import VmPowerMenu from "#lib/vm/vm-power-menu.svelte";
 
   let {
     actions,
     compact = false,
+    host,
+    canManage = false,
+    now = Date.now(),
     standalone = false,
   }: {
     actions: TerminalPaneActionContext;
     compact?: boolean;
+    /** The pane's host — only consulted for its machine, when a provider manages one. */
+    host?: HostView;
+    canManage?: boolean;
+    now?: number;
     standalone?: boolean;
   } = $props();
 
@@ -36,6 +45,9 @@
 
 <Tooltip.Provider delayDuration={300}>
   <span class="pdmux-pane-acts" data-testid="pane-actions">
+    {#if host?.vm}
+      <VmPowerMenu host={{ ...host, vm: host.vm }} {canManage} {now} {buttonClass} />
+    {/if}
     {#if !standalone}
     <Tooltip.Root>
       <Tooltip.Trigger>
