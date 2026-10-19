@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir, homedir } from "node:os";
@@ -55,7 +56,35 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
   });
   await new Promise(accept => gateway.listen(0, "127.0.0.1", accept));
   tlsOrigin = `https://127.0.0.1:${gateway.address().port}`;
-  const server = new StackManager(layout("server"), { spawn: (command, args, options) => spawn(command, [...args], { ...options, env: { ...options.env, PDMUX_DESKTOP_RUNTIME: "0", CORS_ORIGIN: tlsOrigin, ADMIN_EMAILS: process.env.PDMUX_RESIZE_UI === "1" ? "" : "desktop-smoke@example.test" } }) });
+  // A production API refuses ADMIN_EMAILS placeholders on documentation domains such as
+  // example.test. This isolated stack sends no mail, and `.internal` is reserved for
+  // private networks, so the address cannot belong to anybody.
+  const smokeAccount = { name: "Desktop smoke", email: "desktop-smoke@pdmux-smoke.internal", password: "Isolated-Desktop-42!password" };
+  const personalWorkspace = process.env.PDMUX_RESIZE_UI === "1";
+  const serverLayout = layout("server");
+  // PodoKit refuses a sign-up for an ADMIN_EMAILS address that has not proven it, so the
+  // workspace administrator is created with admin:bootstrap between the server's
+  // migration and its start, as on a real install. The personal-workspace probe keeps
+  // ADMIN_EMAILS empty and signs up instead.
+  const bootstrapAfterMigration = (migration, env) => {
+    const chained = Object.assign(new EventEmitter(), { exitCode: null, stdin: null, kill: signal => current.kill(signal) });
+    let current = migration;
+    const finish = code => { chained.exitCode = code; chained.emit("exit", code); };
+    migration.once("exit", code => {
+      if (code !== 0) { finish(code); return; }
+      current = spawn(process.execPath, [join(repository, "apps/api/scripts/bootstrap-admin.mjs")], {
+        cwd: join(repository, "apps/api"), stdio: "inherit",
+        env: { ...env, ADMIN_BOOTSTRAP_EMAIL: smokeAccount.email, ADMIN_BOOTSTRAP_PASSWORD: smokeAccount.password, ADMIN_BOOTSTRAP_NAME: smokeAccount.name },
+      });
+      current.once("exit", finish);
+    });
+    return chained;
+  };
+  const server = new StackManager(serverLayout, { spawn: (command, args, options) => {
+    const env = { ...options.env, PDMUX_DESKTOP_RUNTIME: "0", CORS_ORIGIN: tlsOrigin, ADMIN_EMAILS: personalWorkspace ? "" : smokeAccount.email };
+    const child = spawn(command, [...args], { ...options, env });
+    return !personalWorkspace && args[0] === serverLayout.migrateEntry ? bootstrapAfterMigration(child, env) : child;
+  } });
   const local = new StackManager(layout("local"));
   let agent;
   let serverAgent;
@@ -70,12 +99,14 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
   }
   try {
     const started = await server.start(); serverUrl = started.apiUrl; serverWebUrl = started.webUrl;
-    const signup = await fetch(`${serverUrl}/api/auth/sign-up/email`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Desktop smoke", email: "desktop-smoke@example.test", password: "Isolated-Desktop-42!password" }) });
-    assert.equal(signup.status, 200);
-    const cloudCookie = signup.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
+    const signIn = personalWorkspace
+      ? await fetch(`${serverUrl}/api/auth/sign-up/email`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(smokeAccount) })
+      : await fetch(`${serverUrl}/api/auth/sign-in/email`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: smokeAccount.email, password: smokeAccount.password }) });
+    assert.equal(signIn.status, 200, "Sign in to the isolated server stack");
+    const cloudCookie = signIn.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
     assert.ok(cloudCookie);
-    const organization = process.env.PDMUX_RESIZE_UI === "1"
-      ? { id: `personal:${(await signup.json()).user.id}` }
+    const organization = personalWorkspace
+      ? { id: `personal:${(await signIn.json()).user.id}` }
       : await json(serverUrl, "/api/auth/organization/create", cloudCookie, "POST", { name: "Desktop test workspace", slug: `desktop-test-${crypto.randomUUID()}` });
     const remoteHost = await json(serverUrl, "/hosts", cloudCookie, "POST", { label: "server-owned" });
     const localUrl = (await local.start()).apiUrl;
