@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalAgent } from "./local-agent.js";
+import { desktopMessages } from "./i18n.js";
 import type { RuntimeLayout } from "./stack-manager.js";
 
 let root: string;
@@ -14,6 +15,7 @@ const hostId = "cc37aebc-f39a-4147-b31b-fb907fe8f78e";
 async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
   run: () => Promise<void>; payload: () => Record<string, unknown>; setPayload: (value: Record<string, unknown>) => void;
   calls: Array<{ path: string; body?: object }>; spawned: Array<{ executable: string; args: readonly string[]; options: SpawnOptions }>; directory: string;
+  label: () => string; setLabel: (value: string) => void; setComputerName: (value: string) => void; otherLabels: string[]; legacyConfig: () => Promise<void>;
 }> {
   root = await mkdtemp(join(tmpdir(), "pdmux-local-agent-"));
   const releases = join(root, "agents"); const directory = join(releases, "0.1.28"); await mkdir(directory, { recursive: true });
@@ -24,15 +26,20 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
   const layout: RuntimeLayout = { bunExecutable: process.execPath, apiEntry:"unused", migrateEntry:"unused", webEntry:"unused", dataDirectory: root, filesDirectory: join(root,"files"), databasePath:join(root,"db"),secretPath:join(root,"secret"),agentReleaseDirectory:releases };
   const calls: Array<{ path: string; body?: object }> = [];
   const spawned: Array<{ executable: string; args: readonly string[]; options: SpawnOptions }> = [];
-  let payload: Record<string, unknown> = { slots: [] }; let created = false;
+  let payload: Record<string, unknown> = { slots: [] }; let created = false; let label = ""; let computerName = "Design workstation";
+  const otherLabels: string[] = [];
   const stack = {
     start: async () => ({ apiUrl:"http://127.0.0.1:10001", webUrl:"http://127.0.0.1:10002" }),
     localRequest: async (path: string, init?: RequestInit): Promise<Response> => {
       const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       calls.push({ path, ...(body && typeof body === "object" ? { body } : {}) });
-      if (path === "/hosts" && init?.method === "POST") { created = true; return Response.json({ id: hostId }); }
+      if (path === "/hosts" && init?.method === "POST" && body && typeof body === "object" && "label" in body) { created = true; label = String(body.label); return Response.json({ id: hostId }); }
+      if (path === "/hosts") return Response.json([...otherLabels.map(label => ({ id: crypto.randomUUID(), label })), ...(created ? [{ id: hostId, label }] : [])]);
       if (path === `/hosts/${hostId}/tokens`) return Response.json({ token: "private-agent-token" });
-      if (path === `/hosts/${hostId}`) return Response.json({ id:hostId, connected:created });
+      if (path === `/hosts/${hostId}`) {
+        if (init?.method === "PATCH" && body && typeof body === "object" && "label" in body) label = String(body.label);
+        return Response.json({ id:hostId, label, connected:created });
+      }
       if (path === "/prefs") return Response.json({ layouts:[{ name:"default", isDefault:true, payload }] });
       if (path === "/prefs/layouts/default" && body && typeof body === "object" && "payload" in body) { payload = body.payload as Record<string, unknown>; return Response.json({}); }
       throw new Error(`Unexpected path ${path}`);
@@ -42,9 +49,53 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
     spawned.push({ executable, args, options });
     return spawn(process.execPath, ["-e", 'process.stdin.resume(); process.stdin.on("end", () => process.exit(0));'], options);
   }) as typeof spawn;
-  agent = new LocalAgent(stack, layout, "local-profile", "This computer", { platform, spawn: launch, environment:{ ...process.env, TMUX:"private-fixture", PDMUX_TOKEN:"inherited-token", PDMUX_SERVER:"https://invalid.test", PDMUX_RESTART:"service", INVOCATION_ID:"inherited-service" } });
-  return { run: () => agent!.start(), payload:() => payload, setPayload:value => { payload = value; }, calls, spawned, directory };
+  agent = new LocalAgent(stack, layout, "local-profile", "This computer", { platform, computerName: async () => computerName, spawn: launch, environment:{ ...process.env, TMUX:"private-fixture", PDMUX_TOKEN:"inherited-token", PDMUX_SERVER:"https://invalid.test", PDMUX_RESTART:"service", INVOCATION_ID:"inherited-service" } });
+  return { run: () => agent!.start(), payload:() => payload, setPayload:value => { payload = value; }, calls, spawned, directory,
+    label: () => label, setLabel: value => { label = value; }, setComputerName: value => { computerName = value; }, otherLabels,
+    legacyConfig: async () => {
+      const profiles = join(root,"local-agent"); const path = join(profiles,(await readdir(profiles))[0]!,"agent.json");
+      const config = JSON.parse(await readFile(path,"utf8")); delete config.computerNameApplied;
+      await writeFile(path,JSON.stringify(config));
+    },
+  };
 }
+
+for (const platform of ["darwin", "win32", "linux"] as const) {
+  it(`[TC-PDDESKTOP-017] names a new ${platform} host after the computer`, async () => {
+    const state = await fixture(platform); await state.run();
+    expect(agent?.status().phase).toBe("ready");
+    expect(state.label()).toBe("Design workstation");
+  });
+}
+for (const locale of ["en", "ko"]) {
+  it(`[TC-PDDESKTOP-017] migrates the ${locale} default name without replacing its host or terminal`, async () => {
+    const state = await fixture(); await state.run();
+    state.setLabel(desktopMessages(locale).localHost); await state.legacyConfig();
+    state.setPayload({ slots: [], mode:"split4" });
+    await state.run();
+    expect(agent?.status()).toEqual({ phase:"ready", hostId });
+    expect(state.label()).toBe("Design workstation");
+    expect(state.payload()).toEqual({ slots:[],mode:"split4" });
+    expect(state.calls.filter(call => call.path === "/hosts" && call.body)).toHaveLength(1);
+    expect(state.calls.filter(call => call.path.endsWith("/tokens"))).toHaveLength(1);
+  });
+}
+it("[TC-PDDESKTOP-017] preserves custom names and applies the legacy name migration only once", async () => {
+  const state = await fixture(); await state.run();
+  state.setLabel("My development machine"); await state.legacyConfig(); await state.run();
+  expect(agent?.status().phase).toBe("ready");
+  expect(state.label()).toBe("My development machine");
+  state.setLabel(desktopMessages("en").localHost); await state.run();
+  expect(agent?.status().phase).toBe("ready");
+  expect(state.label()).toBe(desktopMessages("en").localHost);
+});
+it("[TC-PDDESKTOP-017] fits long computer names within the host limit and avoids existing labels", async () => {
+  const state = await fixture(); const name = "W".repeat(80); state.setComputerName(` ${name} `);
+  state.otherLabels.push(name.slice(0,64), `${name.slice(0,60)} (2)`);
+  await state.run();
+  expect(agent?.status().phase).toBe("ready");
+  expect(state.label()).toBe(`${name.slice(0,60)} (3)`);
+});
 
 it("[TC-PDDESKTOP-017] prepares #1 once, reuses the host and preserves an intentionally cleared layout", async () => {
   const state = await fixture(); await state.run();
@@ -53,7 +104,7 @@ it("[TC-PDDESKTOP-017] prepares #1 once, reuses the host and preserves an intent
   state.setPayload({ slots: [], mode:"split4" });
   await state.run();
   expect(state.payload()).toEqual({ slots:[],mode:"split4" });
-  expect(state.calls.filter(call => call.path === "/hosts")).toHaveLength(1);
+  expect(state.calls.filter(call => call.path === "/hosts" && call.body)).toHaveLength(1);
   expect(state.calls.filter(call => call.path.endsWith("/tokens"))).toHaveLength(1);
   const child = state.spawned[0]!;
   expect(JSON.stringify(child.args)).not.toContain("private-agent-token");

@@ -109,6 +109,19 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
     const cloudHosts = await json(serverUrl, "/hosts", cloudCookie);
     const mirror = cloudHosts.find(host => host.label === "desktop-owned");
     assert.ok(mirror, "Publish desktop hosts to the web workspace");
+    await json(localUrl, `/hosts/${localHost.id}`, localCookie, "PATCH", { label: "Desktop workstation" });
+    assert.equal((await json(serverUrl, `/hosts/${mirror.id}`, cloudCookie)).label, "Desktop workstation", "[TC-PDDESKTOP-017] a local computer-name change reaches the existing web host");
+    await local.control("disconnect");
+    await json(localUrl, `/hosts/${localHost.id}`, localCookie, "PATCH", { label: "Renamed workstation" });
+    await local.control("connect", { url: tlsOrigin, cookie: cloudCookie });
+    // The relay opens after the first metadata sync; a read can still use the offline cache.
+    let renamed;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      renamed = await json(serverUrl, `/hosts/${mirror.id}`, cloudCookie);
+      if (renamed.label === "Renamed workstation") break;
+      await new Promise(resolve => setTimeout(resolve,100));
+    }
+    assert.equal(renamed.label, "Renamed workstation", "[TC-PDDESKTOP-017] a startup rename also synchronizes after reconnecting");
     const syncedPrefs = await json(serverUrl, "/prefs", cloudCookie);
     assert.equal(syncedPrefs.layouts.find(row => row.name === "default").payload.slots[0].hostId, mirror.id);
     const onDesktop = await json(localUrl, "/hosts", localCookie);

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Name the desktop's default local host after the system computer name, including when shared
+  with the web. Migrate legacy default names while preserving custom names and existing terminals.
 - Fix macOS update installation being cancelled by close-to-tray. Complete the backup, allow
   window closure and stop the local runtime before handing off installation; show preparation
   failures instead of leaving the install action silent.

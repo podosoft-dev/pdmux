@@ -1,17 +1,31 @@
 import { createHash } from "node:crypto";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { defaultLayout } from "@pdmux/core";
 import { compareVersionStrings } from "@pdmux/protocol";
 import { z } from "zod";
 import type { RuntimeLayout, StackManager } from "./stack-manager.js";
+import { desktopMessages } from "./i18n.js";
 
-const configuration = z.object({ hostId: z.string().uuid(), token: z.string().default(""), server: z.string(), hostname: z.string(), layoutPrepared: z.boolean().default(false) });
+const execFileAsync = promisify(execFile);
+const legacyLabels = [desktopMessages("en").localHost, desktopMessages("ko").localHost];
+const configuration = z.object({ hostId: z.string().uuid(), token: z.string().default(""), server: z.string(), hostname: z.string(), layoutPrepared: z.boolean().default(false), computerNameApplied: z.boolean().default(false) });
 type Configuration = z.infer<typeof configuration>;
 export interface LocalAgentStatus { phase: "starting" | "ready" | "failed" | "stopped"; hostId?: string; code?: string }
-export interface LocalAgentDependencies { spawn: typeof spawn; platform: NodeJS.Platform; arch: string; environment: NodeJS.ProcessEnv }
+export interface LocalAgentDependencies { spawn: typeof spawn; platform: NodeJS.Platform; arch: string; environment: NodeJS.ProcessEnv; computerName: () => Promise<string> }
+
+async function computerName(platform: NodeJS.Platform): Promise<string> {
+  if (platform === "darwin") {
+    try {
+      const { stdout } = await execFileAsync("/usr/sbin/scutil", ["--get", "ComputerName"], { timeout: 2_000 });
+      if (stdout.trim()) return stdout.trim();
+    } catch { /* A missing friendly name falls back to the system hostname. */ }
+  }
+  return hostname();
+}
 
 /** The embedded agent belongs to the desktop runtime, not a standalone host
  * installation. A lifetime pipe closes it if Electron exits, and this supervisor
@@ -27,8 +41,8 @@ export class LocalAgent {
   private readonly dependencies: LocalAgentDependencies;
   private serial: Promise<void> = Promise.resolve();
 
-  constructor(private readonly stack: Pick<StackManager, "start" | "localRequest">, private readonly layout: RuntimeLayout, profileId: string, private readonly label: string, dependencies: Partial<LocalAgentDependencies> = {}) {
-    this.dependencies = { spawn, platform: process.platform, arch: process.arch, environment: process.env, ...dependencies };
+  constructor(private readonly stack: Pick<StackManager, "start" | "localRequest">, private readonly layout: RuntimeLayout, profileId: string, private readonly fallbackLabel: string, dependencies: Partial<LocalAgentDependencies> = {}) {
+    this.dependencies = { spawn, platform: process.platform, arch: process.arch, environment: process.env, computerName: () => computerName(dependencies.platform ?? process.platform), ...dependencies };
     this.directory = join(layout.dataDirectory, "local-agent", createHash("sha256").update(profileId).digest("hex").slice(0, 24));
     this.configPath = join(this.directory, "agent.json");
   }
@@ -52,6 +66,18 @@ export class LocalAgent {
   private async save(config: Configuration): Promise<void> {
     await writeFile(this.configPath, JSON.stringify(config), { mode: 0o600 });
     await chmod(this.configPath, 0o600);
+  }
+
+  private async defaultLabel(exceptId?: string): Promise<string> {
+    const name = (await this.dependencies.computerName()).trim().slice(0, 64).trim() || this.fallbackLabel;
+    const hosts = await this.request<Array<{ id: string; label: string }>>("/hosts");
+    const labels = new Set(hosts.filter(host => host.id !== exceptId).map(host => host.label));
+    let label = name;
+    for (let index = 2; labels.has(label); index += 1) {
+      const suffix = ` (${index})`;
+      label = `${name.slice(0, 64 - suffix.length).trimEnd()}${suffix}`;
+    }
+    return label;
   }
 
   private async binary(): Promise<string> {
@@ -82,10 +108,15 @@ export class LocalAgent {
       const existing = await this.stack.localRequest(`/hosts/${config.hostId}`);
       if (existing.status === 404) config = undefined;
       else if (!existing.ok) throw new Error("Cannot read the local host");
+      else if (!config.computerNameApplied) {
+        const host = await existing.json() as { label: string };
+        if (legacyLabels.includes(host.label)) await this.request(`/hosts/${config.hostId}`, "PATCH", { label: await this.defaultLabel(config.hostId) });
+        config.computerNameApplied = true;
+      }
     }
     if (!config) {
-      const host = await this.request<{ id: string }>("/hosts", "POST", { label: this.label });
-      config = { hostId: host.id, token: "", server: webUrl, hostname: hostname(), layoutPrepared: false };
+      const host = await this.request<{ id: string }>("/hosts", "POST", { label: await this.defaultLabel() });
+      config = { hostId: host.id, token: "", server: webUrl, hostname: hostname(), layoutPrepared: false, computerNameApplied: true };
       await this.save(config);
     }
     config.server = webUrl;

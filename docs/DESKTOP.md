@@ -387,6 +387,13 @@ waits for a real agent connection before assigning a plain shell terminal to cel
 empty on subsequent launches. The server connection page shows agent readiness and
 provides a retry action, including replacement credentials when needed.
 
+The default host label uses the system computer name: the friendly Computer Name on macOS,
+or the hostname on Windows and Linux. If macOS cannot read its friendly name, it falls back to
+the hostname. Labels are limited to 64 characters and receive a numeric suffix when another
+host already uses that name. Existing localized default labels are migrated once on startup;
+custom labels, host identity, credentials and layouts are preserved. Server synchronization
+shares the resulting host label with the web workspace.
+
 The embedded agent is separate from the standalone host installer. Electron owns
 its startup, bounded restart attempts, and shutdown. A stdin lifetime pipe cancels
 the agent if Electron disappears. Existing launchd/systemd agents are untouched.
