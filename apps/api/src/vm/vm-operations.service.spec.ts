@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { AppException } from "../common/app-exception";
+import { VmOperationsService } from "./vm-operations.service";
 import { ORG, linkedMachine, vmHarness } from "./testing/vm-harness";
 
 const alice = { id: "user-alice", name: "Alice" };
@@ -24,7 +25,8 @@ describe("VmOperationsService", () => {
     expect(accepted.operation).toMatchObject({ action: "hibernate", requestedBy: { id: alice.id, name: "Alice" } });
     await harness.operations.settled();
 
-    expect(harness.driver.calls.filter((call) => !call.startsWith("poll"))).toEqual(["status 500", "hibernate 500", "status 500"]);
+    // Fresh state first, the change, the settle read, and the final read.
+    expect(harness.driver.calls.filter((call) => !call.startsWith("poll"))).toEqual(["status 500", "hibernate 500", "status 500", "status 500"]);
     const view = await harness.hosts.getView(ORG, hostId);
     expect(view.vm).toMatchObject({ state: "hibernated", operation: null, error: null });
     expect(view.vm?.available).toMatchObject({ start: true, hibernate: false });
@@ -238,5 +240,60 @@ describe("VmOperationsService", () => {
     expect(await harness.providers.claimLease(providerId, now, new Date(now.getTime() + 50_000))).toBe(true);
     expect(await harness.providers.claimLease(providerId, now, new Date(now.getTime() + 50_000))).toBe(false);
     expect(await harness.providers.claimLease(providerId, new Date(now.getTime() + 60_000), new Date(now.getTime() + 110_000))).toBe(true);
+  });
+
+  it("[TC-PDVM-012] abandons a reconcile pass that never finishes, so the next one runs", async () => {
+    const harness = vmHarness();
+    await linkedMachine(harness, "running");
+    // The first read of the provider list never settles — a query lost with its database.
+    let hangs = true;
+    const allRows = harness.providers.allRows.bind(harness.providers);
+    harness.providers.allRows = () => (hangs ? new Promise(() => undefined) : allRows());
+    const operations = new VmOperationsService(harness.machineRows.asRepository(), harness.providers, { publish: () => undefined } as never, {
+      now: () => harness.clock.now,
+      sleep: async () => undefined,
+      audit: async () => undefined,
+      passDeadlineMs: 20,
+    });
+
+    await operations.reconcileAll();
+    hangs = false;
+    harness.driver.calls.length = 0;
+    await operations.reconcileAll();
+
+    // Before the fix the second call joined the first, unsettled pass and never read anything.
+    expect(harness.driver.calls).toContain("list");
+  });
+
+  it("[TC-PDVM-012] replaces a driver that stopped touching its change, and finishes the change once", async () => {
+    const harness = vmHarness();
+    const { hostId, providerId } = await linkedMachine(harness, "running");
+    // The first driver's poll never answers.
+    const task = harness.driver.task.bind(harness.driver);
+    let hung = true;
+    harness.driver.task = (value) => (hung ? new Promise(() => undefined) : task(value));
+    await harness.operations.power(ORG, hostId, "reboot", alice);
+    await Bun.sleep(5);
+    const row = harness.machineRows.rows[0];
+    if (!row) throw new Error("no row");
+    // Nothing has touched it for a long time.
+    row.operationUpdatedAt = new Date(harness.clock.now - 10 * 60_000);
+    hung = false;
+
+    await harness.operations.reconcileProvider(await harness.providers.row(ORG, providerId));
+    for (let tick = 0; tick < 50 && harness.machineRows.rows[0]?.operation; tick++) await Bun.sleep(1);
+
+    expect((await harness.hosts.getView(ORG, hostId)).vm).toMatchObject({ operation: null, error: null, state: "running" });
+    expect(harness.audits.filter((entry) => entry.action === "vm.power.completed")).toHaveLength(1);
+  });
+
+  it("[TC-PDVM-012] waits for a rebooted machine to come back before calling the change done", async () => {
+    const harness = vmHarness();
+    const { hostId } = await linkedMachine(harness, "running");
+    harness.driver.rebootPolls = 3;
+    await harness.operations.power(ORG, hostId, "reboot", alice);
+    await harness.operations.settled();
+    // Without the wait the change ended on the transient `stopped` and every pane said "off".
+    expect((await harness.hosts.getView(ORG, hostId)).vm).toMatchObject({ state: "running", operation: null, error: null });
   });
 });

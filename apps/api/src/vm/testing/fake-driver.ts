@@ -32,6 +32,9 @@ export class FakeDriver implements VmProviderDriver {
   failAction = new Map<string, string>();
   /** Tasks finish at once unless this is false. */
   autoFinish = true;
+  /** Like Proxmox: a reboot's task ends with the machine stopped; it comes back after `rebootPolls` status reads. */
+  rebootPolls = 0;
+  private rebooting = new Map<number, number>();
   private sequence = 0;
 
   add(vmid: number, state: ObservedVm["state"], extra: Partial<ObservedVm> = {}): ObservedVm {
@@ -59,6 +62,13 @@ export class FakeDriver implements VmProviderDriver {
   async status(ref: VmRef): Promise<ObservedVm | null> {
     this.calls.push(`status ${ref.vmid}`);
     const vm = this.machines.get(ref.vmid);
+    const left = this.rebooting.get(ref.vmid);
+    if (vm && left !== undefined) {
+      if (left <= 0) {
+        vm.state = "running";
+        this.rebooting.delete(ref.vmid);
+      } else this.rebooting.set(ref.vmid, left - 1);
+    }
     return vm ? { ...vm, tags: [...vm.tags] } : null;
   }
 
@@ -69,6 +79,12 @@ export class FakeDriver implements VmProviderDriver {
     const next: Record<VmAction, ObservedVm["state"]> = {
       start: "running", hibernate: "hibernated", shutdown: "stopped", stop: "stopped", reboot: "running", reset: "running",
     };
+    if (action === "reboot" && this.rebootPolls > 0) {
+      return this.startTask(action, () => {
+        vm.state = "stopped";
+        this.rebooting.set(ref.vmid, this.rebootPolls);
+      });
+    }
     return this.startTask(action, () => (vm.state = next[action]));
   }
 

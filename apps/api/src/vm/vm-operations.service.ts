@@ -5,7 +5,7 @@ import { ProductLogger } from "../logging/product-logger";
 import type { HostEvents } from "../pdmux/host-events";
 import type { HostVm } from "./host-vm.entity";
 import { availableActions, hostVmView, type HostVmView } from "./host-vms.service";
-import type { ObservedVm, ProviderTask, TaskResult, VmAction, VmProviderDriver, VmRef } from "./vm-provider";
+import type { ObservedVm, ProviderTask, TaskResult, VmAction, VmProviderDriver, VmRef, VmState } from "./vm-provider";
 import type { VmProvider } from "./vm-provider.entity";
 import type { VmProvidersService } from "./vm-providers.service";
 
@@ -40,6 +40,45 @@ const BACKUP_FRESH_MS = 24 * 60 * 60_000;
 const RECONCILE_MS = 60_000;
 /** One replica owns a provider's reconcile for this long. */
 const LEASE_MS = 50_000;
+/**
+ * A reconcile pass that has not finished in this long is abandoned so the next one can run.
+ *
+ * ⚠ A DATABASE THAT GOES AWAY MID-QUERY CAN LEAVE THE QUERY UNSETTLED. Measured 2026-10-19: the
+ * database container stopped under a running pass, the pass never resolved, and since a new pass
+ * joins the running one, the loop stopped for good — a shutdown claimed just before was never
+ * finished. A pass gets a deadline; past it, the next tick starts afresh.
+ */
+const PASS_DEADLINE_MS = 3 * 60_000;
+/**
+ * The state each change promises, and how long to wait for it after the provider's task ends.
+ *
+ * ⚠ A PROXMOX REBOOT TASK ENDS BEFORE THE MACHINE IS BACK. It shuts the guest down with a reboot
+ * flag and its event daemon starts it again afterwards, so the task is "OK" while the machine is
+ * still stopped (measured on 9.2.21: OK in 1.3 s, state `stopped`). Finishing there would paint
+ * every pane "off" for the half minute until the next reconcile.
+ */
+const SETTLES_TO: Record<VmAction, VmState> = {
+  start: "running",
+  hibernate: "hibernated",
+  shutdown: "stopped",
+  stop: "stopped",
+  reboot: "running",
+  reset: "running",
+};
+const SETTLE_MS = 90_000;
+
+/** A driver that has not touched its change for this long is presumed stuck and replaced. */
+const HUNG_MS = 2 * STALE_MS;
+
+export function withDeadline<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} did not finish within ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
 
 export function refOf(row: Pick<HostVm, "location" | "externalId">): VmRef {
   return { node: row.location, vmid: Number(row.externalId) };
@@ -59,6 +98,8 @@ export interface VmOperationsOptions {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   audit?: (entry: AuditEntry) => Promise<void>;
+  /** Test seam for `PASS_DEADLINE_MS`. */
+  passDeadlineMs?: number;
 }
 
 /**
@@ -77,9 +118,13 @@ export interface VmOperationsOptions {
 export class VmOperationsService {
   private readonly logger = new ProductLogger(VmOperationsService.name);
   private readonly driving = new Map<string, Promise<void>>();
+  /** The latest driver of each change. A replaced (stuck) driver checks this and stops writing. */
+  private readonly generations = new Map<string, number>();
+  private generation = 0;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly audit: (entry: AuditEntry) => Promise<void>;
+  private readonly passDeadlineMs: number;
   private timer: ReturnType<typeof setInterval> | null = null;
   private reconciling: Promise<void> | null = null;
 
@@ -92,6 +137,7 @@ export class VmOperationsService {
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.audit = options.audit ?? recordAudit;
+    this.passDeadlineMs = options.passDeadlineMs ?? PASS_DEADLINE_MS;
   }
 
   start(): void {
@@ -170,7 +216,7 @@ export class VmOperationsService {
   /** Read every provider and write what it sees; resume changes another process left behind. */
   async reconcileAll(): Promise<void> {
     if (this.reconciling) return this.reconciling;
-    this.reconciling = (async () => {
+    const pass = (async () => {
       for (const provider of await this.providers.allRows()) {
         try {
           if (await this.claimLease(provider)) await this.reconcileProvider(provider);
@@ -178,9 +224,12 @@ export class VmOperationsService {
           this.logger.warn(`Reconcile provider failed provider=${provider.id}: ${String(error)}`);
         }
       }
-    })().finally(() => {
-      this.reconciling = null;
-    });
+    })();
+    this.reconciling = withDeadline(pass, this.passDeadlineMs, "VM reconcile")
+      .catch((error: unknown) => this.logger.warn(`Reconcile machines failed: ${String(error)}`))
+      .finally(() => {
+        this.reconciling = null;
+      });
     return this.reconciling;
   }
 
@@ -205,8 +254,9 @@ export class VmOperationsService {
         || (patch.tags !== undefined && patch.tags.join(",") !== row.tags.join(","));
       await this.machines.update({ id: row.id }, patch);
       if (changed) this.events.publish({ type: "host.vm", hostId: row.hostId });
-      const stale = row.operation && (!row.operationUpdatedAt || this.now() - row.operationUpdatedAt.getTime() > STALE_MS);
-      if (stale && !this.driving.has(row.id)) this.drive(row.id);
+      const idle = row.operation ? this.now() - (row.operationUpdatedAt?.getTime() ?? 0) : 0;
+      // Nobody is driving it (another process died), or this process's driver stopped touching it.
+      if (row.operation && idle > STALE_MS && (!this.driving.has(row.id) || idle > HUNG_MS)) this.drive(row.id, true);
     }
   }
 
@@ -214,15 +264,25 @@ export class VmOperationsService {
     return this.providers.claimLease(provider.id, new Date(this.now()), new Date(this.now() + LEASE_MS));
   }
 
-  private drive(id: string): void {
-    if (this.driving.has(id)) return;
-    const run = this.run(id)
+  private drive(id: string, replace = false): void {
+    if (this.driving.has(id) && !replace) return;
+    const generation = ++this.generation;
+    this.generations.set(id, generation);
+    const run = this.run(id, generation)
       .catch((error: unknown) => this.logger.warn(`Drive machine change failed machine=${id}: ${String(error)}`))
-      .finally(() => this.driving.delete(id));
+      .finally(() => {
+        if (this.generations.get(id) !== generation) return;
+        this.driving.delete(id);
+        this.generations.delete(id);
+      });
     this.driving.set(id, run);
   }
 
-  private async run(id: string): Promise<void> {
+  private current(id: string, generation: number): boolean {
+    return this.generations.get(id) === generation;
+  }
+
+  private async run(id: string, generation: number): Promise<void> {
     let row = await this.machines.findOne({ where: { id } });
     if (!row?.operation || !isPower(row.operation)) return;
     const action = row.operation;
@@ -235,9 +295,9 @@ export class VmOperationsService {
         const storage = provider.config.backupBeforeSleep;
         if (storage) {
           const outcome = row.operationTask
-            ? await this.wait(row, driver, taskFrom(row), DEADLINE_MS.backup)
-            : await this.backupIfStale(row, driver, ref, storage);
-          if (!outcome.ok) return this.finish(row, provider, driver, outcome.error);
+            ? await this.wait(row, driver, taskFrom(row), DEADLINE_MS.backup, generation)
+            : await this.backupIfStale(row, driver, ref, storage, generation);
+          if (!outcome.ok) return this.finish(row, provider, driver, outcome.error, generation);
         }
         await this.step(row, "request", null);
       }
@@ -247,20 +307,21 @@ export class VmOperationsService {
         task = await driver.power(ref, action);
         await this.step(row, "wait", task);
       }
-      const outcome = await this.wait(row, driver, task, DEADLINE_MS[action]);
-      return this.finish(row, provider, driver, outcome.ok ? null : outcome.error);
+      const outcome = await this.wait(row, driver, task, DEADLINE_MS[action], generation);
+      if (outcome.ok) await this.settle(row, driver, SETTLES_TO[action], generation);
+      return this.finish(row, provider, driver, outcome.ok ? null : outcome.error, generation);
     } catch (error) {
-      return this.finish(row, provider, driver, error instanceof AppException ? error.code : "VM_TASK_FAILED");
+      return this.finish(row, provider, driver, error instanceof AppException ? error.code : "VM_TASK_FAILED", generation);
     }
   }
 
   /** Back up first when the newest backup is older than a day — the hibernated machine will not be. */
-  private async backupIfStale(row: HostVm, driver: VmProviderDriver, ref: VmRef, storage: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  private async backupIfStale(row: HostVm, driver: VmProviderDriver, ref: VmRef, storage: string, generation: number): Promise<{ ok: true } | { ok: false; error: string }> {
     const last = await driver.lastBackupAt(ref.vmid, ref.node, storage);
     if (last !== null && this.now() - last < BACKUP_FRESH_MS) return { ok: true };
     const task = await driver.backup(ref, storage, "pdmux before sleep");
     await this.step(row, "backup", task);
-    const outcome = await this.wait(row, driver, task, DEADLINE_MS.backup);
+    const outcome = await this.wait(row, driver, task, DEADLINE_MS.backup, generation);
     return outcome.ok ? { ok: true } : { ok: false, error: "VM_BACKUP_FAILED" };
   }
 
@@ -275,10 +336,11 @@ export class VmOperationsService {
     this.events.publish({ type: "host.vm", hostId: row.hostId });
   }
 
-  private async wait(row: HostVm, driver: VmProviderDriver, task: ProviderTask, deadlineMs: number): Promise<{ ok: true } | { ok: false; error: string }> {
+  private async wait(row: HostVm, driver: VmProviderDriver, task: ProviderTask, deadlineMs: number, generation: number): Promise<{ ok: true } | { ok: false; error: string }> {
     // From this step's start, not the operation's: a long backup must not use up the power-off's time.
     const started = this.now();
     for (let polls = 0; ; polls++) {
+      if (!this.current(row.id, generation)) throw new SupersededError();
       const result: TaskResult = await driver.task(task);
       if (result.done) return result.ok ? { ok: true } : { ok: false, error: result.error };
       if (this.now() - started > deadlineMs) return { ok: false, error: "VM_TASK_TIMEOUT" };
@@ -288,7 +350,21 @@ export class VmOperationsService {
     }
   }
 
-  private async finish(row: HostVm, provider: VmProvider, driver: VmProviderDriver, errorCode: string | null): Promise<void> {
+  /** After a successful task, wait a while for the state the change promises. No error if it does not come. */
+  private async settle(row: HostVm, driver: VmProviderDriver, target: VmState, generation: number): Promise<void> {
+    const started = this.now();
+    for (;;) {
+      if (!this.current(row.id, generation)) throw new SupersededError();
+      const observed = await driver.status(refOf(row)).catch(() => null);
+      if (!observed || observed.state === target || this.now() - started > SETTLE_MS) return;
+      await this.machines.update({ id: row.id }, { operationUpdatedAt: new Date(this.now()) });
+      await this.sleep(2_000);
+    }
+  }
+
+  private async finish(row: HostVm, provider: VmProvider, driver: VmProviderDriver, errorCode: string | null, generation: number): Promise<void> {
+    // A replaced driver leaves the ending to its replacement.
+    if (!this.current(row.id, generation)) return;
     const now = new Date(this.now());
     // Before the write that clears them.
     const { operation: action, operationRequestedById: actorId, operationRequestedByName: actorName } = row;
@@ -315,6 +391,13 @@ export class VmOperationsService {
       targetLabel: row.name,
       metadata: { action, provider: provider.name, location: row.location, externalId: row.externalId, ...(errorCode ? { errorCode } : {}) },
     }).catch((error: unknown) => this.logger.warn(`Record machine change failed machine=${row.id}: ${String(error)}`));
+  }
+}
+
+/** Thrown inside a driver that a newer one replaced; it ends that driver quietly. */
+class SupersededError extends Error {
+  constructor() {
+    super("A newer driver took over this change");
   }
 }
 
