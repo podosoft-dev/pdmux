@@ -3,6 +3,13 @@
     "settings": {
       "title": "VM providers",
       "description": "Connect the platform your machines run on, so hosts can be created, woken, put to sleep and restarted from pdmux.",
+      "platform": {
+        "label": "Platform",
+        "proxmox": "Proxmox VE",
+        "aws": "AWS EC2",
+        "azure": "Azure",
+        "soon": "Coming later"
+      },
       "empty": "No VM provider is connected.",
       "add": "Add provider",
       "edit": "Edit",
@@ -16,6 +23,7 @@
       "tested": "{name} answered",
       "inUse": "Machines still linked to this provider: {count}",
       "machines": "Machines: {count}",
+      "newMachines": "New machines: {summary}",
       "neverTested": "Not tested yet",
       "lastOk": "Reached {when}",
       "lastError": "Failed {when}: {error}",
@@ -24,7 +32,7 @@
         "titleEdit": "Edit {name}",
         "kind": "Platform",
         "name": "Name",
-        "nameHint": "Letters, digits, . _ - (for example the cluster's name)",
+        "nameHint": "Optional — empty names it {name}",
         "baseUrl": "API address",
         "baseUrlHint": "https://host:8006 for Proxmox VE",
         "tokenId": "API token id",
@@ -41,7 +49,7 @@
         "pool": "Pool",
         "vmidRange": "Id range for new machines",
         "cores": "Cores",
-        "memory": "Memory (MiB)",
+        "memory": "Memory (GB)",
         "fullClone": "Full copy instead of a linked clone",
         "sleepTag": "Only hibernate machines tagged",
         "sleepTagHint": "Hibernated machines fail scheduled backups; mark the ones you took out of the schedule.",
@@ -51,7 +59,18 @@
         "enrollUrlHint": "Leave empty to use this server's own address ({url}). Plain http is fine on a private network.",
         "save": "Save",
         "cancel": "Cancel",
-        "permissions": "The token needs, on its pool: VM.Audit, VM.PowerMgmt, VM.Clone, VM.Allocate, VM.Config.*; on storage: Datastore.AllocateSpace; on the bridge: SDN.Use."
+        "permissions": "The token needs, on its pool: VM.Audit, VM.PowerMgmt, VM.Clone, VM.Allocate, VM.Config.*; on storage: Datastore.AllocateSpace; on the bridge: SDN.Use.",
+        "connection": "Connection",
+        "defaultsTitle": "Defaults for new machines",
+        "defaultsSummary": "{cores} vCPU · {memory} GB memory · {disk} GB disk · ids {min}–{max}",
+        "templateAuto": "Automatic — the template tagged pdmux-template",
+        "poolAuto": "Automatic — pdmux if the cluster has it",
+        "nodeAuto": "The template's node",
+        "storageAuto": "The template's storage",
+        "advanced": "Advanced",
+        "disk": "Disk (GB)",
+        "change": "Change",
+        "required": "Address and credentials are all a new connection needs; the rest starts at the platform's defaults."
       }
     },
     "section": {
@@ -184,10 +203,12 @@
       "template": "Template",
       "templateDefault": "{name} (provider default)",
       "cores": "Cores",
-      "memory": "Memory (MiB)",
+      "memory": "Memory (GB)",
       "submit": "Create",
       "accepted": "Creating {name} — it appears as soon as it registers",
-      "noTemplate": "This provider has no template, and none is set as its default."
+      "noTemplate": "This provider has no template, and none is set as its default.",
+      "disk": "Disk (GB)",
+      "templateTagged": "{name} (automatic)"
     },
     "remove": {
       "action": "Delete machine",

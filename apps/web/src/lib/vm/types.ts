@@ -43,6 +43,7 @@ export interface VmProviderView {
     vmidMax: number;
     cores: number;
     memoryMb: number;
+    diskGb: number | null;
     fullClone: boolean;
   };
   sleepRequiresTag: string | null;
@@ -55,6 +56,7 @@ export interface VmProviderView {
 
 export interface VmProviderInput {
   kind: "proxmox";
+  /** Empty: the server names it after the address's host. */
   name: string;
   baseUrl: string;
   tokenId: string;
@@ -69,6 +71,7 @@ export interface VmProviderInput {
   vmidMax: number;
   defaultCores: number;
   defaultMemoryMb: number;
+  defaultDiskGb: number | null;
   fullClone: boolean;
   sleepRequiresTag: string | null;
   backupBeforeSleep: string | null;
@@ -77,13 +80,22 @@ export interface VmProviderInput {
 
 export interface VmCatalog {
   nodes: { name: string; online: boolean }[];
-  templates: { ref: { node: string; vmid: number }; name: string }[];
+  templates: { ref: { node: string; vmid: number }; name: string; tags: string[] }[];
   storages: { node: string; id: string; type: string; content: string[] }[];
   bridges: { node: string; name: string }[];
   pools: string[];
 }
 
 /** `POST /vm/machines`: a machine from a template and the host it becomes. Sizes default to the provider's. */
+/** A platform a provider can be, and what a new connection to it starts from (`GET /vm/provider-kinds`). */
+export interface VmProviderKind {
+  kind: "proxmox";
+  defaults: { cores: number; memoryMb: number; diskGb: number; vmidMin: number; vmidMax: number; fullClone: boolean };
+}
+
+/** A template carrying this tag is used when a provider names none. */
+export const TEMPLATE_TAG = "pdmux-template";
+
 export interface CreateVmInput {
   providerId: string;
   label: string;
@@ -91,6 +103,7 @@ export interface CreateVmInput {
   templateVmid: number | null;
   cores: number | null;
   memoryMb: number | null;
+  diskGb: number | null;
   /** One per dialog: a retried submit makes one machine. */
   idempotencyKey: string;
 }

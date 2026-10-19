@@ -1,9 +1,10 @@
 import { api } from "#lib/api.js";
-import type { CreateVmInput, CreatedVm, HostVmView, VmAction, VmCatalog, VmProviderInput, VmProviderView } from "./types";
+import type { CreateVmInput, CreatedVm, HostVmView, VmAction, VmCatalog, VmProviderInput, VmProviderKind, VmProviderView } from "./types";
 
 /** The VM provider routes (`apps/api/src/vm/vm.contract.ts`). */
 export const vmApi = {
   providers: (): Promise<VmProviderView[]> => api.get<VmProviderView[]>("/vm/providers"),
+  kinds: (): Promise<VmProviderKind[]> => api.get<VmProviderKind[]>("/vm/provider-kinds"),
   createProvider: (input: VmProviderInput): Promise<VmProviderView> => api.post<VmProviderView>("/vm/providers", input),
   updateProvider: (id: string, input: Partial<VmProviderInput>): Promise<VmProviderView> =>
     api.patch<VmProviderView>(`/vm/providers/${id}`, input),

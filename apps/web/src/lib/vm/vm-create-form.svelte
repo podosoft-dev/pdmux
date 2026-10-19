@@ -21,7 +21,7 @@
   import { fmt, getI18n } from "#lib/i18n/index.js";
   import { vmApi } from "./api";
   import { useVmPower } from "./power-controller.svelte";
-  import type { CreatedVm, VmCatalog, VmProviderView } from "./types";
+  import { TEMPLATE_TAG, type CreatedVm, type VmCatalog, type VmProviderView } from "./types";
 
   let {
     providers,
@@ -44,15 +44,20 @@
   const DEFAULT = "default";
   let template = $state(DEFAULT);
   let cores = $state("");
-  let memoryMb = $state("");
+  let memoryGb = $state("");
+  let diskGb = $state("");
   let saving = $state(false);
 
   const provider = $derived(providers.find((entry) => entry.id === providerId) ?? null);
-  const fallback = $derived(provider?.defaults.template ?? null);
   const templates = $derived(catalog?.templates ?? []);
-  const fallbackName = $derived(
-    fallback ? (templates.find((entry) => entry.ref.node === fallback.node && entry.ref.vmid === fallback.vmid)?.name ?? `${fallback.node}/${fallback.vmid}`) : "",
-  );
+  /** The template the server takes when none is chosen: the provider's, or the one tagged pdmux-template. */
+  const tagged = $derived(templates.filter((entry) => entry.tags.includes(TEMPLATE_TAG)));
+  const fallback = $derived(provider?.defaults.template ?? (tagged.length === 1 ? tagged[0]?.ref ?? null : null));
+  const fallbackName = $derived.by(() => {
+    if (!fallback) return "";
+    const name = templates.find((entry) => entry.ref.node === fallback.node && entry.ref.vmid === fallback.vmid)?.name ?? `${fallback.node}/${fallback.vmid}`;
+    return provider?.defaults.template ? fmt(i18n.t.vm.create.templateDefault, { name }) : fmt(i18n.t.vm.create.templateTagged, { name });
+  });
 
   onMount(() => {
     if (providers[0]) void choose(providers[0].id);
@@ -64,7 +69,8 @@
     catalog = null;
     const chosen = providers.find((entry) => entry.id === id);
     cores = chosen ? String(chosen.defaults.cores) : "";
-    memoryMb = chosen ? String(chosen.defaults.memoryMb) : "";
+    memoryGb = chosen ? String(Math.round((chosen.defaults.memoryMb / 1024) * 10) / 10) : "";
+    diskGb = chosen?.defaults.diskGb ? String(chosen.defaults.diskGb) : "";
     try {
       catalog = await vmApi.catalog(id);
     } catch (error) {
@@ -78,7 +84,8 @@
 
   const canSave = $derived(
     label.trim() !== "" && provider !== null && (template !== DEFAULT || fallback !== null)
-      && /^\d+$/.test(cores) && /^\d+$/.test(memoryMb),
+      && /^\d+$/.test(cores) && Number(cores) >= 1 && Number(memoryGb) >= 0.5
+      && (diskGb.trim() === "" || (/^\d+$/.test(diskGb.trim()) && Number(diskGb) >= 8)),
   );
 
   async function submit(event: SubmitEvent): Promise<void> {
@@ -93,7 +100,8 @@
         templateNode: node ?? null,
         templateVmid: vmid ? Number(vmid) : null,
         cores: Number(cores),
-        memoryMb: Number(memoryMb),
+        memoryMb: Math.round(Number(memoryGb) * 1024),
+        diskGb: diskGb.trim() ? Number(diskGb) : null,
         idempotencyKey,
       });
       toast.success(fmt(i18n.t.vm.create.accepted, { name: created.vm.name }));
@@ -130,11 +138,11 @@
     {#if fallback || templates.length > 0}
       <Select.Root type="single" bind:value={template}>
         <Select.Trigger id="vm-create-template" data-testid="vm-create-template">
-          {template !== DEFAULT ? (templates.find((entry) => `${entry.ref.node}/${entry.ref.vmid}` === template)?.name ?? template) : fallback ? fmt(i18n.t.vm.create.templateDefault, { name: fallbackName }) : i18n.t.vm.create.template}
+          {template !== DEFAULT ? (templates.find((entry) => `${entry.ref.node}/${entry.ref.vmid}` === template)?.name ?? template) : fallback ? fallbackName : i18n.t.vm.create.template}
         </Select.Trigger>
         <Select.Content>
           {#if fallback}
-            <Select.Item value={DEFAULT}>{fmt(i18n.t.vm.create.templateDefault, { name: fallbackName })}</Select.Item>
+            <Select.Item value={DEFAULT}>{fallbackName}</Select.Item>
           {/if}
           {#each templates as entry (`${entry.ref.node}/${entry.ref.vmid}`)}
             <Select.Item value={`${entry.ref.node}/${entry.ref.vmid}`}>{entry.name} · {entry.ref.node}/{entry.ref.vmid}</Select.Item>
@@ -145,14 +153,18 @@
       <p class="text-destructive text-sm" data-testid="vm-create-no-template">{i18n.t.vm.create.noTemplate}</p>
     {/if}
   </div>
-  <div class="grid grid-cols-2 gap-3">
+  <div class="grid grid-cols-3 gap-3">
     <div class="flex flex-col gap-1.5">
       <Label for="vm-create-cores">{i18n.t.vm.create.cores}</Label>
       <Input id="vm-create-cores" inputmode="numeric" bind:value={cores} data-testid="vm-create-cores" />
     </div>
     <div class="flex flex-col gap-1.5">
       <Label for="vm-create-memory">{i18n.t.vm.create.memory}</Label>
-      <Input id="vm-create-memory" inputmode="numeric" bind:value={memoryMb} data-testid="vm-create-memory" />
+      <Input id="vm-create-memory" inputmode="decimal" bind:value={memoryGb} data-testid="vm-create-memory" />
+    </div>
+    <div class="flex flex-col gap-1.5">
+      <Label for="vm-create-disk">{i18n.t.vm.create.disk}</Label>
+      <Input id="vm-create-disk" inputmode="numeric" bind:value={diskGb} data-testid="vm-create-disk" />
     </div>
   </div>
   <Dialog.Footer>

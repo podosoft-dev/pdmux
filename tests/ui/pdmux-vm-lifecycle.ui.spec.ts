@@ -19,7 +19,7 @@ const PROVIDER = {
   baseUrl: "https://pve.example.test:8006",
   tokenId: "pdmux@pve!vm-provider",
   caFingerprint: null,
-  defaults: { node: "node-1", template: { node: "node-1", vmid: 9001 }, storage: null, pool: "pdmux", vmidMin: 500, vmidMax: 519, cores: 2, memoryMb: 4096, fullClone: false },
+  defaults: { node: "node-1", template: { node: "node-1", vmid: 9001 }, storage: null, pool: "pdmux", vmidMin: 500, vmidMax: 519, cores: 2, memoryMb: 4096, diskGb: 64, fullClone: false },
   sleepRequiresTag: "on-demand",
   backupBeforeSleep: null,
   enrollUrl: null,
@@ -42,7 +42,7 @@ test.describe.serial("pdmux VM create and delete", () => {
   test("[TC-PDVM-028] Add host offers a VM from the provider's template, and a resend carries the same key", async ({ page }) => {
     await page.route("**/api/vm/providers", (route) => route.fulfill({ json: [PROVIDER] }));
     await page.route("**/api/vm/providers/*/catalog", (route) => route.fulfill({
-      json: { nodes: [{ name: "node-1", online: true }], templates: [{ ref: { node: "node-1", vmid: 9001 }, name: "pdmux-base" }, { ref: { node: "node-1", vmid: 9002 }, name: "big-base" }], storages: [], bridges: [], pools: [] },
+      json: { nodes: [{ name: "node-1", online: true }], templates: [{ ref: { node: "node-1", vmid: 9001 }, name: "pdmux-base", tags: [] }, { ref: { node: "node-1", vmid: 9002 }, name: "big-base", tags: [] }], storages: [], bridges: [], pools: [] },
     }));
     const bodies: Record<string, unknown>[] = [];
     await page.route("**/api/vm/machines", async (route) => {
@@ -62,10 +62,11 @@ test.describe.serial("pdmux VM create and delete", () => {
     const form = dialog.getByTestId("vm-create");
     await expect(form.getByTestId("vm-create-template")).toHaveText("pdmux-base (provider default)");
     await expect(form.getByTestId("vm-create-cores")).toHaveValue("2");
-    await expect(form.getByTestId("vm-create-memory")).toHaveValue("4096");
+    await expect(form.getByTestId("vm-create-memory")).toHaveValue("4");
+    await expect(form.getByTestId("vm-create-disk")).toHaveValue("64");
     await expect(form.getByTestId("vm-create-submit")).toBeDisabled();
     await form.getByTestId("vm-create-label").fill("Build box");
-    await form.getByTestId("vm-create-memory").fill("8192");
+    await form.getByTestId("vm-create-memory").fill("8");
     await expectOnScreen(form.getByTestId("vm-create-submit"), "create button");
 
     await form.getByTestId("vm-create-submit").click();
@@ -74,7 +75,7 @@ test.describe.serial("pdmux VM create and delete", () => {
     await form.getByTestId("vm-create-submit").click();
     await expect(dialog).toBeHidden();
 
-    expect(bodies[0]).toMatchObject({ providerId: PROVIDER.id, label: "Build box", templateNode: null, templateVmid: null, cores: 2, memoryMb: 8192 });
+    expect(bodies[0]).toMatchObject({ providerId: PROVIDER.id, label: "Build box", templateNode: null, templateVmid: null, cores: 2, memoryMb: 8192, diskGb: 64 });
     expect(String(bodies[0]?.idempotencyKey)).toMatch(/^[0-9a-f-]{36}$/);
     expect(bodies[1]?.idempotencyKey).toBe(bodies[0]?.idempotencyKey);
   });
