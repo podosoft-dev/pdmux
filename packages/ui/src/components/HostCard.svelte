@@ -287,6 +287,37 @@
 		make the fold quietly harmful. It is conditional already, so an up-to-date fleet
 		still folds to bare headers.
 	-->
+	<!--
+		The machine's power, under the same rules as the update row below: a body row, only when
+		there is something to say, the word carrying the state, and it survives a fold — a card
+		folded to its header must still say the machine is asleep. Not a control: waking happens in
+		the pane, where the terminals that need it are.
+	-->
+	{#if host.power}
+		<div
+			class="pdmux-card-power"
+			data-pdmux-widget="power"
+			data-pdmux-power={host.power.kind}
+			role="img"
+			aria-label={host.power.label}
+			title={host.power.label}
+		>
+			{#if host.power.kind === 'busy'}
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6" /></svg>
+			{:else if host.power.kind === 'asleep'}
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
+			{:else if host.power.kind === 'error'}
+				<svg viewBox="0 0 24 24" aria-hidden="true"
+					><path d="M10.3 4.3 2.6 18a1.5 1.5 0 0 0 1.3 2.2h16.2a1.5 1.5 0 0 0 1.3-2.2L13.7 4.3a1.5 1.5 0 0 0-2.6 0Z" /><path
+						d="M12 9v4"
+					/><path d="M12 17h.01" /></svg
+				>
+			{:else}
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.77.04" /></svg>
+			{/if}
+			<span>{host.power.label}</span>
+		</div>
+	{/if}
 	{#if host.update}
 		{#if host.update.kind === 'busy'}
 			<!--

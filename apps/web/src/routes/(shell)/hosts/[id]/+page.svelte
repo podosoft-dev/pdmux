@@ -11,6 +11,7 @@
    * It renders in the shell's right-hand area, so navigation stays in the sidebar (and
    * the sidebar's nav), not a row of buttons that would repeat what the chrome says.
    */
+  import VmHostCard from "#lib/vm/vm-host-card.svelte";
   import { Badge } from "#lib/components/ui/badge/index.js";
   import { Button } from "#lib/components/ui/button/index.js";
   import { Checkbox } from "#lib/components/ui/checkbox/index.js";
@@ -749,6 +750,8 @@
     Measured on the fleet settings screen: scrollHeight 434 against clientHeight
     160, one field of four reachable.
   -->
+  <VmHostCard {host} canManage={data.canManage} now={shell.feed.now} onChanged={() => shell.feed.refresh()} />
+
   <Card.Root class="shrink-0" data-testid="host-services">
     <Card.Header>
       <Card.Title class="flex items-center gap-1">{i18n.t.dash.services.title}<InfoHint label={i18n.t.dash.services.title} text={i18n.t.dash.services.subtitle} /></Card.Title>

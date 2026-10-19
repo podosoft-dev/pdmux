@@ -64,6 +64,8 @@ export type {
 	HostResources,
 	HostState,
 	HostSummary,
+	HostPowerKind,
+	HostPowerMark,
 	HostUpdateKind,
 	HostUpdateMark,
 	TerminalPaneActionContext,

@@ -31,7 +31,7 @@ import {
   serviceOptions,
   uncommittedSummary,
 } from "@pdmux/core";
-import type { HostDetail, HostResources, HostState, HostSummary, HostUpdateMark, PickerHost, RepoHead } from "@pdmux/ui";
+import type { HostDetail, HostPowerMark, HostResources, HostState, HostSummary, HostUpdateMark, PickerHost, RepoHead } from "@pdmux/ui";
 import { vmReachable } from "#lib/vm/power.js";
 import type {
   GraphCommitRow,
@@ -67,8 +67,8 @@ export function hostState(host: Pick<HostView, "enabled" | "online">): HostState
  * rather than the wording one. Absent by default: a card with nothing to say draws
  * no row at all.
  */
-export function hostSummary(host: HostView, update: HostUpdateMark | null = null): HostSummary {
-  return { id: host.id, name: host.label, state: hostState(host), update };
+export function hostSummary(host: HostView, update: HostUpdateMark | null = null, power: HostPowerMark | null = null): HostSummary {
+  return { id: host.id, name: host.label, state: hostState(host), update, power };
 }
 
 /** Hosts as the terminal grid needs them (label -> name, sessions passed through). */

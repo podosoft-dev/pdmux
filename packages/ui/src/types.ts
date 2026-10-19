@@ -56,6 +56,22 @@ export interface HostSummary {
 	state?: HostState;
 	/** Absent means the card draws nothing — it is not a row that renders empty. */
 	update?: HostUpdateMark | null;
+	/** What the host's machine is doing, when a VM provider manages it and it is not simply running. */
+	power?: HostPowerMark | null;
+}
+
+/**
+ * The machine behind a host, as a card says it: asleep, off, changing, failed, gone.
+ *
+ * Like `HostUpdateMark`, a shape and a finished sentence — the package knows nothing about
+ * providers or power changes, and draws no control: the pane and the host page own those.
+ */
+export type HostPowerKind = 'asleep' | 'off' | 'busy' | 'error' | 'missing';
+
+export interface HostPowerMark {
+	kind: HostPowerKind;
+	/** The whole line, already translated. Never colour alone. */
+	label: string;
 }
 
 export interface HostResources {

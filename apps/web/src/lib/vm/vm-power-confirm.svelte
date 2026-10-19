@@ -23,13 +23,17 @@
 
   const i18n = getI18n();
   const pending = $derived(power.pending);
-  let open = $state(false);
-  $effect(() => {
-    open = pending !== null;
-  });
-  $effect(() => {
-    if (!open && power.pending) power.cancel();
-  });
+  /**
+   * The dialog is open exactly while a request is pending; closing it cancels the request.
+   * One getter/setter binding rather than an `open` state kept in step by two effects, which
+   * would leave the dialog's appearance to the order those effects run in.
+   */
+  function isOpen(): boolean {
+    return power.pending !== null;
+  }
+  function setOpen(value: boolean): void {
+    if (!value) power.cancel();
+  }
 
   const title = $derived(pending
     ? fmt(i18n.t.vm.confirm.title, { action: i18n.t.vm.action[pending.item.label], name: pending.host.vm?.name ?? pending.host.label })
@@ -49,7 +53,7 @@
 </script>
 
 <ConfirmDialog
-  bind:open
+  bind:open={isOpen, setOpen}
   {title}
   {warning}
   confirmLabel={pending ? i18n.t.vm.action[pending.item.label] : undefined}

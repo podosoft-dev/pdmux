@@ -53,6 +53,8 @@
   import type { HostView } from "#lib/dashboard/types.js";
   import { VmPowerController, provideVmPower } from "#lib/vm/power-controller.svelte.js";
   import VmPowerConfirm from "#lib/vm/vm-power-confirm.svelte";
+  import { cardPowerKind, elapsedSeconds } from "#lib/vm/power.js";
+  import type { HostPowerMark } from "@pdmux/ui";
   import type { LayoutData } from "./$types";
   import DesktopSettingsFrame from "#lib/desktop/settings-frame.svelte";
   import { desktopSettingsTab } from "#lib/desktop/settings-navigation.js";
@@ -133,9 +135,26 @@
     return { kind: verdict.kind, label: fmt(key, { version: verdict.version }) };
   }
 
+  /** The machine's line on its card, worded here for the same reason as `updateMark`. */
+  function powerMark(host: HostView): HostPowerMark | null {
+    const kind = cardPowerKind(host.vm);
+    const vm = host.vm;
+    if (!kind || !vm) return null;
+    if (kind === "busy" && vm.operation) {
+      const label = fmt(i18n.t.vm.progress, {
+        operation: i18n.t.vm.operation[vm.operation.action],
+        name: vm.operation.requestedBy.name ?? i18n.t.vm.someone,
+        seconds: elapsedSeconds(vm, shell.feed.now),
+      });
+      return { kind, label };
+    }
+    if (kind === "error" && vm.error) return { kind, label: vmPower.describe(null, vm.error.code) };
+    return { kind, label: `${i18n.t.vm.badge} · ${i18n.t.vm.state[vm.state]}` };
+  }
+
   const cards = $derived(
     shell.feed.hosts.map((host) => ({
-      host: hostSummary(host, updateMark(host)),
+      host: hostSummary(host, updateMark(host), powerMark(host)),
       agents: agentRowsFor(host, shell.providers, shell.feed.now),
       resources: hostResources(host, freshById.get(host.id)),
       history: shell.feed.history[host.id] ?? null,

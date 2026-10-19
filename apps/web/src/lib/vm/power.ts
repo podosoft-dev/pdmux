@@ -102,3 +102,17 @@ export function elapsedSeconds(vm: HostVmView, now: number): number {
 export function attachedClients(sessions: readonly { attached: number }[]): number {
   return sessions.reduce((total, session) => total + Math.max(0, session.attached), 0);
 }
+
+/** The card's kind of power line, or `null` for a running machine with nothing to say. */
+export function cardPowerKind(vm: HostVmView | undefined): "asleep" | "off" | "busy" | "error" | "missing" | null {
+  if (!vm) return null;
+  switch (vmPhase(vm)) {
+    case "busy": return "busy";
+    case "asleep": return "asleep";
+    case "off":
+    case "paused": return "off";
+    case "missing": return "missing";
+    case "error": return "error";
+    default: return null;
+  }
+}

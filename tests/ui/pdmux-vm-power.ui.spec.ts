@@ -125,4 +125,41 @@ test.describe.serial("pdmux VM power from terminals", () => {
     await pane.getByTestId("vm-veil-action").click();
     await expect.poll(() => fleet.requests).toEqual(["start"]);
   });
+
+  test("[TC-PDVM-027] the host page shows the machine with its power changes, links one and unlinks it", async ({ page }) => {
+    const fleet: Fleet = { hostId, vm: machine("running", RUNNING), online: true, requests: [] };
+    await serveMachine(page.context(), fleet);
+    const calls: string[] = [];
+    await page.route(`**/api/hosts/${hostId}/vm`, async (route) => {
+      calls.push(route.request().method());
+      if (route.request().method() === "DELETE") {
+        fleet.vm = undefined as unknown as typeof fleet.vm;
+        await route.fulfill({ json: { hostId, name: "e2e-vm-500" } });
+      } else {
+        fleet.vm = machine("stopped", { ...ASLEEP });
+        await route.fulfill({ json: fleet.vm });
+      }
+    });
+    await page.route("**/api/vm/providers", (route) => route.fulfill({ json: [{ id: "00000000-0000-4000-8000-0000000000p1", kind: "proxmox", name: "lab", baseUrl: "https://pve.example.test:8006", tokenId: "pdmux@pve!t", caFingerprint: null, defaults: {}, sleepRequiresTag: null, backupBeforeSleep: null, lastTestedAt: null, lastErrorCode: null, machineCount: 1 }] }));
+    await page.route("**/api/vm/providers/*/catalog", (route) => route.fulfill({ json: { nodes: [{ name: "node-1", online: true }], templates: [], storages: [], bridges: [], pools: [] } }));
+
+    await ready(page, `/hosts/${hostId}`);
+    const card = page.getByTestId("host-vm");
+    await expect(card.getByTestId("host-vm-state")).toHaveText("Running", { timeout: 15_000 });
+    await expect(card.getByTestId("host-vm-actions").locator("[data-pdmux-vm-action]")).toHaveCount(5);
+
+    // Unlink: asks first, then the card offers linking instead.
+    await card.getByTestId("host-vm-unlink").click();
+    await page.getByTestId("host-vm-unlink-confirm-confirm").click();
+    await expect.poll(() => calls).toEqual(["DELETE"]);
+    await page.reload();
+    await expect(page.getByTestId("host-vm-link")).toBeVisible({ timeout: 15_000 });
+
+    // Link: the single provider and its single online node are chosen for you; the id is typed.
+    await page.getByTestId("host-vm-vmid").fill("500");
+    await expect(page.getByTestId("host-vm-link-submit")).toBeEnabled();
+    await page.getByTestId("host-vm-link-submit").click();
+    await expect.poll(() => calls).toEqual(["DELETE", "PUT"]);
+    await expect(page.getByTestId("host-vm-state")).toHaveText("Off", { timeout: 15_000 });
+  });
 });

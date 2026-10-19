@@ -1,5 +1,26 @@
 {
   "vm": {
+    "section": {
+      "title": "가상 머신",
+      "description": "이 호스트 뒤의 VM — VM 프로바이더에 있는 그 VM 입니다.",
+      "provider": "프로바이더",
+      "location": "노드",
+      "vmid": "VM 번호",
+      "state": "상태",
+      "link": "VM 연결",
+      "linkHint": "이미 있는 VM 을 이 호스트에 연결하면 여기서 깨우고·재우고·다시 시작할 수 있습니다.",
+      "linkSubmit": "연결",
+      "linked": "{name} 을(를) 연결했습니다",
+      "noProviders": "연결된 VM 프로바이더가 없습니다. 관리자가 설정에서 연결합니다.",
+      "unlink": "연결 해제",
+      "unlinkTitle": "{name} 연결을 해제할까요?",
+      "unlinkBody": "VM 자체는 그대로입니다. 이 호스트가 전원을 관리하지 않게 될 뿐입니다.",
+      "unlinked": "{name} 연결을 해제했습니다",
+      "chooseProvider": "프로바이더 선택",
+      "chooseNode": "노드 선택",
+      "created": "pdmux 가 만듦",
+      "linkedOrigin": "연결됨"
+    },
     "menu": "전원",
     "menuFor": "전원 — {name}",
     "state": {

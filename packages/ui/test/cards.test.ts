@@ -289,6 +289,33 @@ describe('[TC-PDUI-202] a host card says when its agent has somewhere to go', ()
  * described something else — and the matrix's own claim that this file covers them was
  * not true of any tag in it.
  */
+describe('[TC-PDVM-027] a host card says what its machine is doing, and only when there is something to say', () => {
+	it('draws nothing for a host without a machine or with a running one', () => {
+		const { container } = render(HostCard, {
+			props: { host: { id: 'h1', name: 'alpha', state: 'online', power: null }, agents: AGENTS, services: SERVICES },
+		});
+		expect(container.querySelector('[data-pdmux-power]')).toBeNull();
+	});
+
+	it('says asleep as a word with its accessible name, draws no control, and survives a fold', () => {
+		const { container } = render(HostCard, {
+			props: {
+				host: { id: 'h1', name: 'alpha', state: 'offline', power: { kind: 'asleep', label: 'Asleep' } },
+				agents: AGENTS,
+				services: SERVICES,
+				collapsed: true,
+			},
+		});
+		const row = container.querySelector('[data-pdmux-power="asleep"]');
+		expect(row).not.toBeNull();
+		expect(row?.getAttribute('aria-label')).toBe('Asleep');
+		expect(row?.textContent).toContain('Asleep');
+		// Waking happens in the pane; the card only says it.
+		expect(row?.querySelector('button')).toBeNull();
+		expect(row?.tagName).not.toBe('BUTTON');
+	});
+});
+
 describe('[TC-PDUI-177] a card says reachability with a picture, not only a colour', () => {
 	it('keeps disabled distinct from unreachable', () => {
 		// `unknown` is a disabled host — nobody is asking it anything. Collapsing it into

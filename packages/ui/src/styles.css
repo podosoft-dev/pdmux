@@ -757,6 +757,42 @@
 		color 0.12s ease;
 }
 
+/* The machine's power row (`HostCard`): the busy update row's look, because it is the same
+   kind of thing — a sentence, not a control. Error reads in the "down" colour, like an urgent
+   update. */
+.pdmux-card-power {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	inline-size: 100%;
+	min-inline-size: 0;
+	padding: 5px 8px;
+	font-size: 12px;
+	color: var(--pdmux-muted);
+}
+
+.pdmux-card-power[data-pdmux-power='error'] {
+	color: var(--pdmux-down, var(--pdmux-fg));
+}
+
+.pdmux-card-power svg {
+	flex: none;
+	inline-size: 14px;
+	block-size: 14px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.pdmux-card-power span {
+	min-inline-size: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 /* The `busy` readout is not a control: no pointer, no hover, out of the tab order
    because it is not a button at all. */
 .pdmux-card-update[data-pdmux-update='busy'] {

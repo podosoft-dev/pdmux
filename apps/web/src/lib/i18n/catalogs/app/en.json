@@ -1,5 +1,26 @@
 {
   "vm": {
+    "section": {
+      "title": "Virtual machine",
+      "description": "The machine behind this host, at its VM provider.",
+      "provider": "Provider",
+      "location": "Node",
+      "vmid": "Machine id",
+      "state": "State",
+      "link": "Link a machine",
+      "linkHint": "Point this host at an existing machine so it can be woken, put to sleep and restarted from here.",
+      "linkSubmit": "Link",
+      "linked": "Linked {name}",
+      "noProviders": "No VM provider is connected yet. A fleet administrator connects one in Settings.",
+      "unlink": "Unlink",
+      "unlinkTitle": "Unlink {name}?",
+      "unlinkBody": "The machine itself is not touched; this host just stops managing its power.",
+      "unlinked": "Unlinked {name}",
+      "chooseProvider": "Choose a provider",
+      "chooseNode": "Choose a node",
+      "created": "Created by pdmux",
+      "linkedOrigin": "Linked"
+    },
     "menu": "Power",
     "menuFor": "Power — {name}",
     "state": {
