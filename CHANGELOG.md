@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Name the desktop's default local host after the platform and a short profile ID, such as
+  `Mac 1A2B`, instead of the computer name, which often contains a person's name and is shared
+  with the web workspace. A host still named by an earlier default, including the 0.17.5 computer
+  name, is renamed once; custom names are kept. Rename the host in the dashboard to choose a name.
+- Keep the desktop's local agent starting when renaming its host fails. The old name stays and the
+  rename is tried again at the next launch.
+- Reuse the desktop agent's token when its connection is retried while the token is still valid.
+  A token that has to be replaced is revoked, and stale desktop runtime tokens are cleaned up.
+- Explain desktop update installation failures. A failed pre-update backup says so and leaves
+  PDMux running; a failure after the local runtime stopped offers to restart PDMux instead of
+  suggesting a connection check.
+- Validate the bodies the desktop forwards to server settings with the server's own schemas, and
+  refuse invalid ones before any request.
+- Tell a terminal pane when its host has no connected agent. The pane says so once per outage and
+  again when it reconnects, and the offline host no longer makes other panes show a reconnecting
+  state.
+- Run the clean-runner verification of desktop installers on releases again; it was skipped since
+  0.17.1. Retry Apple notarization ticket checks through CloudKit connection losses on a longer
+  schedule, during signing and verification.
+
 ## 0.17.5
 
 - Update the PodoKit foundation to 1.6.5. The audit log names a deleted user by id and email on
