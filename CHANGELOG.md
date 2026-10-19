@@ -12,6 +12,10 @@
 - Fix macOS update installation being cancelled by close-to-tray. Complete the backup, allow
   window closure and stop the local runtime before handing off installation; show preparation
   failures instead of leaving the install action silent.
+- Keep a shared tmux session at the size of its largest viewer. Agent 0.1.29 sets
+  `window-size largest` on the attached session's current window, so a compact dashboard pane no
+  longer shrinks a full-size terminal and fills it with dots. Global tmux options and other windows
+  are left alone; tmux 2.9 or later applies the policy, and older tmux attaches as before.
 
 ## 0.17.4
 
