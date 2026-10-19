@@ -136,7 +136,14 @@ try {
     console.log(JSON.stringify({ stage: "desktop-window", url: window.url(), title: await window.title() }));
     await window.screenshot({ path: screenshot });
   }
-  await application.close();
+  // Return the inspector evaluation before quitting. Playwright's direct
+  // app.quit evaluation can wait indefinitely on Linux during async shutdown.
+  console.log(JSON.stringify({ stage: "desktop-quit-requested" }));
+  const closed = application.waitForEvent("close", { timeout: 15_000 });
+  await application.evaluate(({ app }) => { setTimeout(() => app.quit(), 50); });
+  try { await closed; }
+  catch (error) { application.process().kill("SIGKILL"); throw error; }
+  console.log(JSON.stringify({ stage: "desktop-quit-completed" }));
   if (!process.env.PDMUX_SMOKE_CONFIG_ROOT) {
     await stopFixtureNativeSessions(configuration);
     await rm(configuration, { recursive: true, force: true });
