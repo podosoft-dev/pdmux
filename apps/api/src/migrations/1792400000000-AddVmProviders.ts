@@ -61,6 +61,8 @@ export class AddVmProviders1792400000000 implements MigrationInterface {
     await queryRunner.query(`CREATE UNIQUE INDEX "IDX_host_vms_host" ON "host_vms" ("hostId")`);
     await queryRunner.query(`CREATE UNIQUE INDEX "IDX_host_vms_provider_external" ON "host_vms" ("providerId", "externalId")`);
     await queryRunner.query(`CREATE INDEX "IDX_host_vms_scope" ON "host_vms" ("organizationId")`);
+    // A retried create with the same key finds the first one, across replicas too.
+    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_host_vms_idempotency" ON "host_vms" ("organizationId", "idempotencyKey") WHERE "idempotencyKey" IS NOT NULL`);
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

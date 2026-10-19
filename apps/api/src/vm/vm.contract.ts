@@ -9,6 +9,9 @@ export const VM_HTTP_ROUTES = [
   "PUT /hosts/:hostId/vm",
   "DELETE /hosts/:hostId/vm",
   "POST /hosts/:hostId/vm/power",
+  "POST /vm/machines",
+  "POST /hosts/:hostId/vm/delete",
+  "POST /hosts/:hostId/vm/enroll",
 ] as const;
 
 /** Forced changes can lose unsaved work in the guest; they stay with fleet administrators. */
@@ -18,6 +21,13 @@ export const VM_POWER_BUDGET = {
   method: "POST",
   pathPrefix: "/hosts/:hostId/vm/power",
   profile: { name: "vm-power", limit: 20, ttlSeconds: 60 },
+} as const;
+
+/** Each create clones a disk at the provider; a burst of them is a mistake or a runaway script. */
+export const VM_CREATE_BUDGET = {
+  method: "POST",
+  pathPrefix: "/vm/machines",
+  profile: { name: "vm-create", limit: 5, ttlSeconds: 60 },
 } as const;
 
 export const VM_DOCUMENTED_HTTP_ROUTES = VM_HTTP_ROUTES.map((route) => route.replace(/:([A-Za-z][A-Za-z0-9_]*)/g, "{$1}"));

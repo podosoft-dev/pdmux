@@ -27,10 +27,16 @@ export interface HostVmView {
   } | null;
   error: { code: string; at: string } | null;
   /** What the machine's state allows now. Who may do it is the screen's business (`/fleet/scope`). */
-  available: Record<VmAction | "delete", boolean>;
+  available: VmAvailability;
 }
 
-const NOTHING: Record<VmAction | "delete", boolean> = {
+/** A power change, deleting a machine pdmux created, or handing a created machine a new enrollment code. */
+export type VmAvailability = Record<VmAction | "delete" | "enroll", boolean>;
+
+/** The errors after which a created machine may be given a fresh enrollment code and restarted. */
+export const ENROLL_RETRY_ERRORS: ReadonlySet<string> = new Set(["VM_ENROLL_TIMEOUT", "VM_ENROLL_FAILED"]);
+
+const NOTHING: VmAvailability = {
   start: false,
   hibernate: false,
   shutdown: false,
@@ -38,6 +44,7 @@ const NOTHING: Record<VmAction | "delete", boolean> = {
   reboot: false,
   reset: false,
   delete: false,
+  enroll: false,
 };
 
 /**
@@ -49,18 +56,21 @@ const NOTHING: Record<VmAction | "delete", boolean> = {
  * machine can still be shut down.
  */
 export function availableActions(
-  vm: Pick<HostVm, "observedState" | "operation" | "origin" | "tags">,
+  vm: Pick<HostVm, "observedState" | "operation" | "origin" | "tags" | "errorCode">,
   config: Pick<VmProviderConfig, "sleepRequiresTag">,
-): Record<VmAction | "delete", boolean> {
+): VmAvailability {
   if (vm.operation) return NOTHING;
   const sleepAllowed = config.sleepRequiresTag === null || vm.tags.includes(config.sleepRequiresTag);
   const created = vm.origin === "created";
+  // A hibernated machine resumes its old firmware, so a new code needs it running or off.
+  const enroll = created && vm.errorCode !== null && ENROLL_RETRY_ERRORS.has(vm.errorCode);
   switch (vm.observedState) {
     case "running":
-      return { ...NOTHING, hibernate: sleepAllowed, shutdown: true, reboot: true, stop: true, reset: true, delete: created };
+      return { ...NOTHING, hibernate: sleepAllowed, shutdown: true, reboot: true, stop: true, reset: true, delete: created, enroll };
     case "hibernated":
-    case "stopped":
       return { ...NOTHING, start: true, delete: created };
+    case "stopped":
+      return { ...NOTHING, start: true, delete: created, enroll };
     case "paused":
       return { ...NOTHING, stop: true, reset: true, delete: created };
     case "missing":

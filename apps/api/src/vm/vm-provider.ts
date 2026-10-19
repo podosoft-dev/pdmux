@@ -121,6 +121,12 @@ export interface VmProviderConfig {
   sleepRequiresTag: string | null;
   /** Back up before hibernating when the newest backup in this storage is older than a day. */
   backupBeforeSleep: string | null;
+  /**
+   * The pdmux address a machine created here enrolls with. Machines live on the provider's
+   * network, which may reach pdmux by another name than a browser does; `null` uses the
+   * server's own public address.
+   */
+  enrollUrl?: string | null;
 }
 
 export type VmDriverFactory = (kind: VmProviderKind, config: VmProviderConfig, secret: string) => VmProviderDriver;

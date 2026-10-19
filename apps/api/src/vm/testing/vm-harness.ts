@@ -11,6 +11,7 @@ import { FakeRepository } from "../../testing/fake-repository";
 import { HostVm } from "../host-vm.entity";
 import { HostVmsService } from "../host-vms.service";
 import type { AuditEntry } from "../../audit/audit-events";
+import { VmLifecycleService, type VmEnrollment } from "../vm-lifecycle.service";
 import { VmOperationsService } from "../vm-operations.service";
 import type { VmProviderKind } from "../vm-provider";
 import { VmProvider } from "../vm-provider.entity";
@@ -34,6 +35,39 @@ export interface VmHarness {
   audits: AuditEntry[];
   /** The fake clock the operations read; `sleep` advances it unless `paused` (then it really waits). */
   clock: { now: number; paused: boolean };
+  enrollment: FakeEnrollment;
+  lifecycle: VmLifecycleService;
+}
+
+/** The server address a created machine is told when its provider names none. */
+export const SERVER_URL = "https://pdmux.example.test";
+
+/**
+ * Enrollment codes as the enrollments service hands them out: one live code per host, 15
+ * minutes on the harness clock. A machine "enrolls" at once unless `autoEnroll` is off.
+ */
+export class FakeEnrollment implements VmEnrollment {
+  readonly minted: { hostId: string; code: string; actorId: string | null }[] = [];
+  readonly enrolled = new Set<string>();
+  autoEnroll = true;
+  private readonly mintedAt = new Map<string, number>();
+
+  constructor(private readonly clock: { now: number }) {}
+
+  async mint(_organizationId: string, hostId: string, actorId: string | null): Promise<{ code: string }> {
+    const code = `code-${this.minted.length + 1}-for-test`;
+    this.minted.push({ hostId, code, actorId });
+    this.mintedAt.set(hostId, this.clock.now);
+    this.enrolled.delete(hostId);
+    if (this.autoEnroll) this.enrolled.add(hostId);
+    return { code };
+  }
+
+  async state(_organizationId: string, hostId: string): Promise<"enrolled" | "waiting" | "expired"> {
+    if (this.enrolled.has(hostId)) return "enrolled";
+    const at = this.mintedAt.get(hostId);
+    return at !== undefined && this.clock.now - at > 15 * 60_000 ? "expired" : "waiting";
+  }
 }
 
 export function providerInput(overrides: Partial<VmProviderInput> = {}): VmProviderInput {
@@ -55,6 +89,7 @@ export function providerInput(overrides: Partial<VmProviderInput> = {}): VmProvi
     fullClone: false,
     sleepRequiresTag: null,
     backupBeforeSleep: null,
+    enrollUrl: null,
     ...overrides,
   };
 }
@@ -112,7 +147,10 @@ export function vmHarness(): VmHarness {
       audits.push(entry);
     },
   });
-  return { driver, hosts, hostRows, providerRows, machineRows, providers, machines, published, factorySecrets, operations, audits, clock };
+  const enrollment = new FakeEnrollment(clock);
+  const lifecycle = new VmLifecycleService(machineRows.asRepository(), providers, machines, operations, hosts, events, enrollment, () => SERVER_URL);
+  lifecycle.connect();
+  return { driver, hosts, hostRows, providerRows, machineRows, providers, machines, published, factorySecrets, operations, audits, clock, enrollment, lifecycle };
 }
 
 export async function addHost(harness: VmHarness, label: string, organizationId = ORG): Promise<Host> {

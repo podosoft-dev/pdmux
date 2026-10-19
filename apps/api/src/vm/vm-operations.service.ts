@@ -3,7 +3,7 @@ import { recordAudit, type AuditEntry } from "../audit/audit-events";
 import { AppException } from "../common/app-exception";
 import { ProductLogger } from "../logging/product-logger";
 import type { HostEvents } from "../pdmux/host-events";
-import type { HostVm } from "./host-vm.entity";
+import type { HostVm, HostVmOperation } from "./host-vm.entity";
 import { availableActions, hostVmView, type HostVmView } from "./host-vms.service";
 import type { ObservedVm, ProviderTask, TaskResult, VmAction, VmProviderDriver, VmRef, VmState } from "./vm-provider";
 import type { VmProvider } from "./vm-provider.entity";
@@ -94,6 +94,34 @@ function observedPatch(observed: ObservedVm, now: Date): Partial<HostVm> {
   };
 }
 
+/** One step outcome. */
+export type StepOutcome = { ok: true } | { ok: false; error: string };
+
+/**
+ * The steps a power change is built from, lent to the lifecycle changes (create, delete,
+ * re-enroll) so every change claims, reports, waits and ends the same way — and is resumed the
+ * same way by the reconcile when the process driving it dies.
+ */
+export interface VmStepKit {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+  /** Record the step in flight (and its provider task) and tell every screen. */
+  step(row: HostVm, step: string, task: ProviderTask | null): Promise<void>;
+  wait(row: HostVm, driver: VmProviderDriver, task: ProviderTask, deadlineMs: number, generation: number): Promise<StepOutcome>;
+  /** Mark the change alive for the reconcile; throws when a newer driver replaced this one. */
+  heartbeat(row: HostVm, generation: number): Promise<void>;
+  current(row: HostVm, generation: number): boolean;
+  /** End the change on the row: clear it, write what the provider says, audit it. */
+  finish(row: HostVm, provider: VmProvider, driver: VmProviderDriver, errorCode: string | null, generation: number): Promise<void>;
+  /** Audit an outcome whose row is gone (a deleted machine, an abandoned create). */
+  record(row: HostVm, provider: VmProvider, errorCode: string | null): Promise<void>;
+}
+
+/** Drives the changes that are not power changes. Set once by the lifecycle service. */
+export interface VmLifecycleRunner {
+  run(row: HostVm, generation: number, kit: VmStepKit): Promise<void>;
+}
+
 export interface VmOperationsOptions {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -127,6 +155,8 @@ export class VmOperationsService {
   private readonly passDeadlineMs: number;
   private timer: ReturnType<typeof setInterval> | null = null;
   private reconciling: Promise<void> | null = null;
+  private lifecycle: VmLifecycleRunner | null = null;
+  private readonly kit: VmStepKit;
 
   constructor(
     private readonly machines: Repository<HostVm>,
@@ -138,6 +168,58 @@ export class VmOperationsService {
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.audit = options.audit ?? recordAudit;
     this.passDeadlineMs = options.passDeadlineMs ?? PASS_DEADLINE_MS;
+    this.kit = {
+      now: () => this.now(),
+      sleep: (ms) => this.sleep(ms),
+      step: (row, step, task) => this.step(row, step, task),
+      wait: (row, driver, task, deadlineMs, generation) => this.wait(row, driver, task, deadlineMs, generation),
+      heartbeat: async (row, generation) => {
+        if (!this.current(row.id, generation)) throw new SupersededError();
+        await this.machines.update({ id: row.id }, { operationUpdatedAt: new Date(this.now()) });
+      },
+      current: (row, generation) => this.current(row.id, generation),
+      finish: (row, provider, driver, errorCode, generation) => this.finish(row, provider, driver, errorCode, generation),
+      record: (row, provider, errorCode) => this.record(row, provider, errorCode),
+    };
+  }
+
+  /** Called once by the lifecycle service at startup (it depends on this service, not the reverse). */
+  setLifecycle(runner: VmLifecycleRunner): void {
+    this.lifecycle = runner;
+  }
+
+  /** Start driving a change that was just claimed. */
+  kick(id: string): void {
+    this.drive(id);
+  }
+
+  /**
+   * Take the machine for one change: a write that only matches while nothing else holds it at
+   * the version the caller read. The loser is told who holds it.
+   */
+  async claim(row: HostVm, version: number, operation: HostVmOperation, step: string, actor: VmActor, patch: Partial<HostVm> = {}): Promise<void> {
+    const now = new Date(this.now());
+    const claimed = await this.machines.update(
+      { id: row.id, version, operation: IsNull() },
+      {
+        ...patch,
+        operation,
+        operationStep: step,
+        operationTask: null,
+        operationRequestedById: actor.id,
+        operationRequestedByName: actor.name,
+        operationStartedAt: now,
+        operationUpdatedAt: now,
+        errorCode: null,
+        errorAt: null,
+        version: version + 1,
+      },
+    );
+    if (claimed.affected === 0) {
+      const current = await this.machines.findOne({ where: { id: row.id } });
+      throw inProgress(current ?? row);
+    }
+    this.events.publish({ type: "host.vm", hostId: row.hostId });
   }
 
   start(): void {
@@ -187,27 +269,7 @@ export class VmOperationsService {
       });
     }
 
-    const claimed = await this.machines.update(
-      { id: row.id, version, operation: IsNull() },
-      {
-        ...observedPatch(observed, now),
-        operation: action,
-        operationStep: action === "hibernate" && provider.config.backupBeforeSleep ? "backup" : "request",
-        operationTask: null,
-        operationRequestedById: actor.id,
-        operationRequestedByName: actor.name,
-        operationStartedAt: now,
-        operationUpdatedAt: now,
-        errorCode: null,
-        errorAt: null,
-        version: version + 1,
-      },
-    );
-    if (claimed.affected === 0) {
-      const current = await this.machines.findOne({ where: { id: row.id } });
-      throw inProgress(current ?? row);
-    }
-    this.events.publish({ type: "host.vm", hostId });
+    await this.claim(row, version, action, action === "hibernate" && provider.config.backupBeforeSleep ? "backup" : "request", actor, observedPatch(observed, now));
     this.drive(row.id);
     const current = await this.machines.findOne({ where: { id: row.id } });
     return hostVmView(current ?? row, provider);
@@ -248,16 +310,26 @@ export class VmOperationsService {
     const now = new Date(this.now());
     for (const row of rows) {
       const seen = byId.get(row.externalId);
+      // A machine being created does not exist until its clone ends; it is not "missing" before then.
+      if (!seen && row.operation === "create") {
+        this.resumeIfStale(row);
+        continue;
+      }
       const patch: Partial<HostVm> = seen ? observedPatch(seen, now) : { observedState: "missing", observedAt: now };
       const changed = patch.observedState !== row.observedState
         || (patch.location !== undefined && patch.location !== row.location)
         || (patch.tags !== undefined && patch.tags.join(",") !== row.tags.join(","));
       await this.machines.update({ id: row.id }, patch);
       if (changed) this.events.publish({ type: "host.vm", hostId: row.hostId });
-      const idle = row.operation ? this.now() - (row.operationUpdatedAt?.getTime() ?? 0) : 0;
-      // Nobody is driving it (another process died), or this process's driver stopped touching it.
-      if (row.operation && idle > STALE_MS && (!this.driving.has(row.id) || idle > HUNG_MS)) this.drive(row.id, true);
+      this.resumeIfStale(row);
     }
+  }
+
+  /** Nobody is driving the change (another process died), or this process's driver stopped touching it. */
+  private resumeIfStale(row: HostVm): void {
+    if (!row.operation) return;
+    const idle = this.now() - (row.operationUpdatedAt?.getTime() ?? 0);
+    if (idle > STALE_MS && (!this.driving.has(row.id) || idle > HUNG_MS)) this.drive(row.id, true);
   }
 
   private claimLease(provider: VmProvider): Promise<boolean> {
@@ -283,9 +355,15 @@ export class VmOperationsService {
   }
 
   private async run(id: string, generation: number): Promise<void> {
-    let row = await this.machines.findOne({ where: { id } });
-    if (!row?.operation || !isPower(row.operation)) return;
-    const action = row.operation;
+    const row = await this.machines.findOne({ where: { id } });
+    if (!row?.operation) return;
+    if (!isPower(row.operation)) return this.lifecycle?.run(row, generation, this.kit);
+    return this.runPower(row, row.operation, generation);
+  }
+
+  private async runPower(start: HostVm, action: VmAction, generation: number): Promise<void> {
+    let row = start;
+    const id = row.id;
     const provider = await this.providers.row(row.organizationId, row.providerId);
     const driver = this.providers.driver(provider);
     const ref = refOf(row);
@@ -382,10 +460,17 @@ export class VmOperationsService {
       errorAt: errorCode ? now : null,
     });
     this.events.publish({ type: "host.vm", hostId: row.hostId });
+    await this.record({ ...row, operation: action, operationRequestedById: actorId, operationRequestedByName: actorName }, provider, errorCode);
+  }
+
+  /** `vm.power.*` for a power change, `vm.create.*` / `vm.delete.*` / `vm.enroll.*` for the others. */
+  private async record(row: HostVm, provider: VmProvider, errorCode: string | null): Promise<void> {
+    const action = row.operation;
+    const kind = action && isPower(action) ? "power" : action ?? "power";
     await this.audit({
-      action: errorCode ? "vm.power.failed" : "vm.power.completed",
-      actorId,
-      actorName,
+      action: `vm.${kind}.${errorCode ? "failed" : "completed"}`,
+      actorId: row.operationRequestedById,
+      actorName: row.operationRequestedByName,
       targetType: "host",
       targetId: row.hostId,
       targetLabel: row.name,
@@ -395,7 +480,7 @@ export class VmOperationsService {
 }
 
 /** Thrown inside a driver that a newer one replaced; it ends that driver quietly. */
-class SupersededError extends Error {
+export class SupersededError extends Error {
   constructor() {
     super("A newer driver took over this change");
   }
@@ -405,12 +490,12 @@ function isPower(operation: string): operation is VmAction {
   return ["start", "hibernate", "shutdown", "stop", "reboot", "reset"].includes(operation);
 }
 
-function taskFrom(row: HostVm): ProviderTask {
+export function taskFrom(row: HostVm): ProviderTask {
   const id = row.operationTask ?? "";
   return { id, node: id.split(":")[1] ?? row.location };
 }
 
-function inProgress(row: HostVm): AppException {
+export function inProgress(row: HostVm): AppException {
   return new AppException("VM_OPERATION_IN_PROGRESS", "Another change to this machine is running", 409, {
     action: row.operation,
     requestedBy: row.operationRequestedByName,

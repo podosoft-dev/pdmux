@@ -19,6 +19,7 @@ export interface VmProviderView {
   defaults: VmProviderConfig["defaults"];
   sleepRequiresTag: string | null;
   backupBeforeSleep: string | null;
+  enrollUrl: string | null;
   lastTestedAt: string | null;
   lastErrorCode: string | null;
   machineCount: number;
@@ -42,6 +43,7 @@ export interface VmProviderInput {
   fullClone: boolean;
   sleepRequiresTag: string | null;
   backupBeforeSleep: string | null;
+  enrollUrl: string | null;
 }
 
 export const defaultDriverFactory: VmDriverFactory = (kind, config, secret) => {
@@ -80,6 +82,7 @@ function configOf(input: VmProviderInput): VmProviderConfig {
     },
     sleepRequiresTag: input.sleepRequiresTag,
     backupBeforeSleep: input.backupBeforeSleep,
+    enrollUrl: input.enrollUrl,
   };
 }
 
@@ -103,6 +106,7 @@ function inputOf(row: VmProvider): VmProviderInput {
     fullClone: config.defaults.fullClone,
     sleepRequiresTag: config.sleepRequiresTag,
     backupBeforeSleep: config.backupBeforeSleep,
+    enrollUrl: config.enrollUrl ?? null,
   };
 }
 
@@ -235,6 +239,7 @@ export class VmProvidersService {
       defaults: row.config.defaults,
       sleepRequiresTag: row.config.sleepRequiresTag,
       backupBeforeSleep: row.config.backupBeforeSleep,
+      enrollUrl: row.config.enrollUrl ?? null,
       lastTestedAt: row.lastTestedAt ? row.lastTestedAt.toISOString() : null,
       lastErrorCode: row.lastErrorCode,
       machineCount: await this.machines.count({ where: { providerId: row.id } }),

@@ -17,6 +17,7 @@ export type HostVmOperation = VmAction | "create" | "delete" | "enroll";
 @Index("IDX_host_vms_host", ["hostId"], { unique: true })
 @Index("IDX_host_vms_provider_external", ["providerId", "externalId"], { unique: true })
 @Index("IDX_host_vms_scope", ["organizationId"])
+@Index("IDX_host_vms_idempotency", ["organizationId", "idempotencyKey"], { unique: true, where: '"idempotencyKey" IS NOT NULL' })
 export class HostVm {
   @PrimaryGeneratedColumn("uuid")
   id!: string;

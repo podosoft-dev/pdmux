@@ -1,14 +1,16 @@
 import { RATE_LIMIT_ROUTES } from "@podosoft/podokit-runtime";
 import { Elysia } from "elysia";
 import type { PodokitModule } from "../core/services";
+import { authBaseUrl } from "../auth/auth-environment";
 import { isDesktopRuntime } from "../desktop/local-auth";
 import { PDMUX } from "../pdmux/pdmux.services";
 import { HostVm } from "./host-vm.entity";
 import { HostVmsService } from "./host-vms.service";
 import { VmProvider } from "./vm-provider.entity";
+import { VmLifecycleService, type VmEnrollment } from "./vm-lifecycle.service";
 import { VmOperationsService } from "./vm-operations.service";
 import { VmProvidersService } from "./vm-providers.service";
-import { VM_POWER_BUDGET } from "./vm.contract";
+import { VM_CREATE_BUDGET, VM_POWER_BUDGET } from "./vm.contract";
 import { vmHttpPlugin } from "./vm.http";
 import { VM, VM_OPERATIONS } from "./vm.module-key";
 
@@ -30,13 +32,37 @@ export const vmModule: PodokitModule = {
     );
     const machines = new HostVmsService(pdmux.dataSource.getRepository(HostVm), providers, pdmux.hosts, pdmux.hostEvents);
     const operations = new VmOperationsService(pdmux.dataSource.getRepository(HostVm), providers, pdmux.hostEvents);
-    services.register(VM, { providers, machines, operations });
+    // A created machine enrolls like any host: with a code from the enrollments service. Its
+    // current code disappears once redeemed, which is how "enrolled" is told from "waiting".
+    const enrollment: VmEnrollment = {
+      mint: async (organizationId, hostId, actorId) => ({ code: (await pdmux.agentEnrollments.create(organizationId, hostId, actorId)).code }),
+      state: async (organizationId, hostId) => {
+        const current = await pdmux.agentEnrollments.current(organizationId, hostId);
+        if (!current) return "enrolled";
+        if (current.status === "live") return "waiting";
+        return current.status === "expired" ? "expired" : "enrolled";
+      },
+    };
+    const lifecycle = new VmLifecycleService(
+      pdmux.dataSource.getRepository(HostVm),
+      providers,
+      machines,
+      operations,
+      pdmux.hosts,
+      pdmux.hostEvents,
+      enrollment,
+      authBaseUrl,
+    );
+    services.register(VM, { providers, machines, operations, lifecycle });
     services.register(VM_OPERATIONS, operations, () => operations.stop());
     services.onStart(() => {
       machines.connect();
+      lifecycle.connect();
       operations.start();
     });
-    services.tryResolve(RATE_LIMIT_ROUTES)?.register(VM_POWER_BUDGET);
+    const budgets = services.tryResolve(RATE_LIMIT_ROUTES);
+    budgets?.register(VM_POWER_BUDGET);
+    budgets?.register(VM_CREATE_BUDGET);
   },
   plugin: (context) => (context.services.tryResolve(VM) ? vmHttpPlugin(context) : new Elysia({ name: "pdmux.vm.http" })),
 };

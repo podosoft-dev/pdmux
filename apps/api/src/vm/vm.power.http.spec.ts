@@ -5,7 +5,7 @@ import { RATE_LIMIT_ROUTES } from "@podosoft/podokit-runtime";
 import type { AppContext } from "../core/services";
 import { ServiceRegistry } from "../core/services";
 import { PDMUX, type PdmuxServices } from "../pdmux/pdmux.services";
-import { VM_HTTP_ROUTES, VM_POWER_BUDGET } from "./vm.contract";
+import { VM_CREATE_BUDGET, VM_HTTP_ROUTES, VM_POWER_BUDGET } from "./vm.contract";
 import { vmHttpPlugin } from "./vm.http";
 import { VM, type VmServices } from "./vm.module-key";
 
@@ -30,6 +30,14 @@ function app(session: Session): { handle: (method: string, path: string, body?: 
       unlink: async () => { calls.push("unlink"); return { hostId: "h1", name: "vm-500" }; },
     },
     providers: { list: async () => [], create: async () => { calls.push("create"); return { id: "p1", name: "lab", kind: "proxmox", baseUrl: "https://x" }; } },
+    lifecycle: {
+      create: async (scope: string, input: { label: string; template: unknown; idempotencyKey: string }, actor: { name: string }) => {
+        calls.push(`create-vm ${scope} ${input.label} ${JSON.stringify(input.template)} ${input.idempotencyKey} ${actor.name}`);
+        return { hostId: "h9", label: input.label, vm: view };
+      },
+      remove: async (scope: string, hostId: string, confirmName: string) => { calls.push(`delete-vm ${scope} ${hostId} ${confirmName}`); return view; },
+      reenroll: async (scope: string, hostId: string) => { calls.push(`enroll-vm ${scope} ${hostId}`); return view; },
+    },
   } as unknown as VmServices);
   // The app's error envelope, as the pdmux boundary spec mounts it.
   const plugin = new Elysia()
@@ -82,5 +90,47 @@ describe("VM power routes", () => {
     expect(route).toBe("POST /hosts/:hostId/vm/power");
     expect(VM_POWER_BUDGET.profile).toEqual({ name: "vm-power", limit: 20, ttlSeconds: 60 });
     expect(typeof RATE_LIMIT_ROUTES).toBe("symbol");
+  });
+});
+
+describe("VM create and delete routes", () => {
+  const create = { providerId: "p1", label: "build box", templateNode: "n1", templateVmid: 9001, idempotencyKey: "key-123456" };
+
+  it("[TC-PDVM-033] keeps creating, deleting and re-enrolling machines with fleet administrators", async () => {
+    const { handle, calls } = app(member);
+    expect((await handle("POST", "/vm/machines", create)).status).toBe(403);
+    expect((await handle("POST", "/hosts/h1/vm/delete", { confirmName: "vm-500" })).status).toBe(403);
+    expect((await handle("POST", "/hosts/h1/vm/enroll")).status).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  it("[TC-PDVM-028] accepts a create from an administrator, with who asked and the template chosen", async () => {
+    const { handle, calls } = app(admin);
+    const accepted = await handle("POST", "/vm/machines", create);
+    expect(accepted.status).toBe(202);
+    expect(await accepted.json()).toMatchObject({ hostId: "h9", label: "build box" });
+    expect((await handle("POST", "/vm/machines", { ...create, templateNode: null, templateVmid: null, idempotencyKey: "key-abcdefg" })).status).toBe(202);
+    expect(calls).toEqual(['create-vm org-a build box {"node":"n1","vmid":9001} key-123456 Admin', "create-vm org-a build box null key-abcdefg Admin"]);
+  });
+
+  it("[TC-PDVM-031] refuses a create without a usable idempotency key", async () => {
+    const { handle, calls } = app(admin);
+    expect((await handle("POST", "/vm/machines", { ...create, idempotencyKey: undefined })).status).toBe(400);
+    expect((await handle("POST", "/vm/machines", { ...create, idempotencyKey: "short" })).status).toBe(400);
+    expect((await handle("POST", "/vm/machines", { ...create, idempotencyKey: "has spaces in it" })).status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
+  it("[TC-PDVM-034] needs the machine's name to delete it, and passes it on to be compared", async () => {
+    const { handle, calls } = app(admin);
+    expect((await handle("POST", "/hosts/h1/vm/delete", {})).status).toBe(400);
+    expect((await handle("POST", "/hosts/h1/vm/delete", { confirmName: "vm-500" })).status).toBe(202);
+    expect((await handle("POST", "/hosts/h1/vm/enroll")).status).toBe(202);
+    expect(calls).toEqual(["delete-vm org-a h1 vm-500", "enroll-vm org-a h1"]);
+  });
+
+  it("[TC-PDVM-031] gives creates a budget of their own", () => {
+    expect(VM_HTTP_ROUTES).toContain(`${VM_CREATE_BUDGET.method} ${VM_CREATE_BUDGET.pathPrefix}`);
+    expect(VM_CREATE_BUDGET.profile).toEqual({ name: "vm-create", limit: 5, ttlSeconds: 60 });
   });
 });

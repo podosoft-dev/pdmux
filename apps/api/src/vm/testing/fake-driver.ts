@@ -24,6 +24,14 @@ export class FakeDriver implements VmProviderDriver {
   readonly hidden = new Set<number>();
   readonly backups = new Map<number, number>();
   readonly settings = new Map<number, VmSettings>();
+  /** Every `configure` in order, as sent. */
+  readonly configured: { vmid: number; settings: VmSettings }[] = [];
+  /** Storages `discover` reports. */
+  storages: VmCatalog["storages"] = [];
+  /** Backups by `storage/vmid`, for `lastBackupAt` with a storage. */
+  readonly storedBackups = new Set<string>();
+  /** When set, `clone()` throws this instead of starting a task. */
+  failClone: AppException | null = null;
   /** Tasks by id; `result` stays `undefined` while running. */
   readonly tasks = new Map<string, { result?: TaskResult; apply?: () => void }>();
   /** When set, `test()` throws this. */
@@ -51,7 +59,7 @@ export class FakeDriver implements VmProviderDriver {
 
   async discover(): Promise<VmCatalog> {
     this.calls.push("discover");
-    return { nodes: [{ name: "n1", online: true }], templates: [], storages: [], bridges: [], pools: [] };
+    return { nodes: [{ name: "n1", online: true }], templates: [], storages: this.storages, bridges: [], pools: [] };
   }
 
   async list(): Promise<ObservedVm[]> {
@@ -90,11 +98,13 @@ export class FakeDriver implements VmProviderDriver {
 
   async clone(spec: CloneSpec): Promise<ProviderTask> {
     this.calls.push(`clone ${spec.template.vmid}->${spec.vmid}`);
+    if (this.failClone) throw this.failClone;
     return this.startTask("clone", () => this.add(spec.vmid, "stopped", { name: spec.name }));
   }
 
   async configure(ref: VmRef, settings: VmSettings): Promise<void> {
     this.calls.push(`configure ${ref.vmid}`);
+    this.configured.push({ vmid: ref.vmid, settings });
     this.settings.set(ref.vmid, { ...(this.settings.get(ref.vmid) ?? {}), ...settings });
     const vm = this.machines.get(ref.vmid);
     if (vm && settings.tags) vm.tags = settings.tags;
@@ -111,8 +121,9 @@ export class FakeDriver implements VmProviderDriver {
     return this.startTask("backup", () => this.backups.set(ref.vmid, Date.now()));
   }
 
-  async lastBackupAt(vmid: number): Promise<number | null> {
+  async lastBackupAt(vmid: number, _node?: string, storage?: string): Promise<number | null> {
     this.calls.push(`lastBackup ${vmid}`);
+    if (storage && this.storedBackups.has(`${storage}/${vmid}`)) return Date.parse("2026-10-01T00:00:00Z");
     return this.backups.get(vmid) ?? null;
   }
 

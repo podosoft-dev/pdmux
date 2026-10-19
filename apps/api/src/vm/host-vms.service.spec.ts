@@ -80,12 +80,12 @@ describe("HostVmsService", () => {
   });
 
   it("[TC-PDVM-014] offers hibernate only to machines carrying the configured tag, and nothing while a change runs", () => {
-    const running = { observedState: "running" as const, operation: null, origin: "linked" as const, tags: ["on-demand"] };
+    const running = { observedState: "running" as const, operation: null, origin: "linked" as const, tags: ["on-demand"], errorCode: null };
     expect(availableActions(running, { sleepRequiresTag: "on-demand" }).hibernate).toBe(true);
     expect(availableActions({ ...running, tags: [] }, { sleepRequiresTag: "on-demand" })).toMatchObject({ hibernate: false, shutdown: true });
     expect(availableActions({ ...running, tags: [] }, { sleepRequiresTag: null }).hibernate).toBe(true);
     expect(availableActions({ ...running, operation: "reboot" }, { sleepRequiresTag: null })).toEqual({
-      start: false, hibernate: false, shutdown: false, stop: false, reboot: false, reset: false, delete: false,
+      start: false, hibernate: false, shutdown: false, stop: false, reboot: false, reset: false, delete: false, enroll: false,
     });
     expect(availableActions({ ...running, observedState: "hibernated" }, { sleepRequiresTag: null })).toMatchObject({ start: true, shutdown: false, delete: false });
     expect(availableActions({ ...running, observedState: "stopped", origin: "created" }, { sleepRequiresTag: null })).toMatchObject({ start: true, delete: true });

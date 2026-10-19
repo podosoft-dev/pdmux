@@ -4,8 +4,9 @@ import { assertCanManageFleet, assertCanOperateHostPower, resolveScopeId } from 
 import { dto } from "../common/dto";
 import { audit, sessionFor } from "../pdmux/pdmux.http";
 import { PDMUX } from "../pdmux/pdmux.services";
-import { LinkHostVmDto, PowerVmDto, UpdateVmProviderDto, VmProviderDto } from "./dto/vm.dto";
+import { CreateVmDto, DeleteVmDto, LinkHostVmDto, PowerVmDto, UpdateVmProviderDto, VmProviderDto } from "./dto/vm.dto";
 import { FORCED_VM_ACTIONS } from "./vm.contract";
+import type { VmActor } from "./vm-operations.service";
 import type { VmProviderInput } from "./vm-providers.service";
 import { VM } from "./vm.module-key";
 
@@ -30,6 +31,7 @@ function providerInput(input: VmProviderDto): VmProviderInput {
     fullClone: input.fullClone,
     sleepRequiresTag: input.sleepRequiresTag,
     backupBeforeSleep: input.backupBeforeSleep,
+    enrollUrl: input.enrollUrl ? input.enrollUrl.replace(/\/+$/, "") : null,
   };
 }
 
@@ -55,7 +57,14 @@ function providerPatch(input: UpdateVmProviderDto): Partial<VmProviderInput> {
   if (input.fullClone !== undefined) patch.fullClone = input.fullClone;
   if (input.sleepRequiresTag !== undefined) patch.sleepRequiresTag = input.sleepRequiresTag;
   if (input.backupBeforeSleep !== undefined) patch.backupBeforeSleep = input.backupBeforeSleep;
+  if (input.enrollUrl !== undefined) patch.enrollUrl = input.enrollUrl ? input.enrollUrl.replace(/\/+$/, "") : null;
   return patch;
+}
+
+/** Who asked, as every pane shows it while the change runs. */
+function actorOf(session: Awaited<ReturnType<typeof sessionFor>>): VmActor {
+  const user = session.user as { id: string; name?: unknown; email?: unknown };
+  return { id: user.id, name: [user.name, user.email].find((value): value is string => typeof value === "string" && value.length > 0) ?? user.id };
 }
 
 /**
@@ -128,12 +137,47 @@ export const vmHttpPlugin: AppPlugin = (context) => {
       const { action } = dto(PowerVmDto, body);
       if (FORCED_VM_ACTIONS.has(action)) assertCanManageFleet(session);
       else assertCanOperateHostPower(session);
-      const user = session.user as { id: string; name?: unknown; email?: unknown };
-      const actor = { id: user.id, name: [user.name, user.email].find((value): value is string => typeof value === "string" && value.length > 0) ?? user.id };
       const view = await audit(pdmux, request, session, "vm.power.request",
-        () => vm.operations.power(resolveScopeId(session), params.hostId, action, actor),
+        () => vm.operations.power(resolveScopeId(session), params.hostId, action, actorOf(session)),
         (result) => ({ type: "host", id: params.hostId, label: result.name, metadata: { action, provider: result.provider.name } }));
       // Accepted, not done: the change runs on, and every screen hears of each step.
+      set.status = 202;
+      return view;
+    })
+    .post("/vm/machines", async ({ request, body, set }) => {
+      const session = await sessionFor(pdmux, request);
+      assertCanManageFleet(session);
+      const input = dto(CreateVmDto, body);
+      const template = input.templateNode && input.templateVmid ? { node: input.templateNode, vmid: input.templateVmid } : null;
+      const created = await audit(pdmux, request, session, "vm.create.request",
+        () => vm.lifecycle.create(resolveScopeId(session), {
+          providerId: input.providerId,
+          label: input.label,
+          template,
+          cores: input.cores,
+          memoryMb: input.memoryMb,
+          idempotencyKey: input.idempotencyKey,
+        }, actorOf(session)),
+        (result) => ({ type: "host", id: result.hostId, label: result.label, metadata: { provider: result.vm.provider.name, location: result.vm.location, externalId: result.vm.externalId } }));
+      set.status = 202;
+      return created;
+    })
+    .post("/hosts/:hostId/vm/delete", async ({ request, params, body, set }) => {
+      const session = await sessionFor(pdmux, request);
+      assertCanManageFleet(session);
+      const { confirmName } = dto(DeleteVmDto, body);
+      const view = await audit(pdmux, request, session, "vm.delete.request",
+        () => vm.lifecycle.remove(resolveScopeId(session), params.hostId, confirmName, actorOf(session)),
+        (result) => ({ type: "host", id: params.hostId, label: result.name, metadata: { provider: result.provider.name, location: result.location, externalId: result.externalId } }));
+      set.status = 202;
+      return view;
+    })
+    .post("/hosts/:hostId/vm/enroll", async ({ request, params, set }) => {
+      const session = await sessionFor(pdmux, request);
+      assertCanManageFleet(session);
+      const view = await audit(pdmux, request, session, "vm.enroll.request",
+        () => vm.lifecycle.reenroll(resolveScopeId(session), params.hostId, actorOf(session)),
+        (result) => ({ type: "host", id: params.hostId, label: result.name, metadata: { provider: result.provider.name } }));
       set.status = 202;
       return view;
     });
