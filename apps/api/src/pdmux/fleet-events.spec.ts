@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { fleetEventResponse, type FleetEventDependencies } from "./fleet-events";
 import type { AuthSession } from "../auth/auth.service";
+import { Shutdown } from "../core/shutdown";
 
-function fixture(): {
+function fixture(shutdown = new Shutdown()): {
   dependencies: FleetEventDependencies;
   publish: (data: unknown) => void;
   interrupt: () => void;
@@ -22,6 +23,7 @@ function fixture(): {
     publish: (data: unknown): void => { for (const listener of listeners) listener(data); },
     interrupt: (): void => { for (const listener of interruptions) listener(); },
     dependencies: {
+      shutdown,
       auth: { guard: async (): Promise<void> => {}, requireSession: async (request: Request): Promise<AuthSession> => {
         requests.push(request);
         if (!valid) throw new Error("Session revoked");
@@ -123,6 +125,47 @@ describe("[TC-PDWEB-037] fleet stream after an event bus interruption", () => {
       state.interrupt();
       expect((await reader.read()).done).toBe(true);
       expect(state.interruptionListeners()).toBe(0);
+    } finally { await reader.cancel(); }
+  });
+});
+
+describe("[TC-PDAGENT-130] the fleet stream ends when the API stops", () => {
+  it("closes the stream and unsubscribes as soon as shutdown starts", async (): Promise<void> => {
+    const shutdown = new Shutdown();
+    const state = fixture(shutdown);
+    const response = await fleetEventResponse(new Request("http://localhost/fleet/events"), state.dependencies);
+    const reader = response.body!.getReader();
+    try {
+      await reader.read();
+      shutdown.begin();
+      // The browser's EventSource reconnects to the next instance.
+      expect((await reader.read()).done).toBe(true);
+      expect(state.subscribers()).toBe(0);
+      expect(state.interruptionListeners()).toBe(0);
+    } finally { await reader.cancel(); }
+  });
+
+  it("leaves no shutdown listener behind when the client goes first", async (): Promise<void> => {
+    let active = 0;
+    const shutdown = {
+      onShutdown: (): (() => void) => {
+        active += 1;
+        return (): void => { active -= 1; };
+      },
+    };
+    const state = fixture();
+    const abort = new AbortController();
+    const response = await fleetEventResponse(
+      new Request("http://localhost/fleet/events", { signal: abort.signal }),
+      { ...state.dependencies, shutdown },
+    );
+    const reader = response.body!.getReader();
+    try {
+      await reader.read();
+      expect(active).toBe(1);
+      abort.abort();
+      expect((await reader.read()).done).toBe(true);
+      expect(active).toBe(0);
     } finally { await reader.cancel(); }
   });
 });

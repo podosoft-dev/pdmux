@@ -232,7 +232,9 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
     .onError(({ request }) => { desktop?.release(request); })
     .get("/fleet/events", ({ request, server }) => {
       server?.timeout(request, 0);
-      return fleetEventResponse(request, { auth: services.auth, hosts: services.hosts, events: services.hostEvents });
+      return fleetEventResponse(request, {
+        auth: services.auth, hosts: services.hosts, events: services.hostEvents, shutdown: context.shutdown,
+      });
     })
     .get("/fleet/scope", async ({ request }) => {
       const session = await sessionFor(services, request);

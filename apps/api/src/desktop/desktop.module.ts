@@ -5,6 +5,7 @@ import { Elysia, t } from "elysia";
 import { DESKTOP_BRIDGE_PATH, DESKTOP_PROTOCOL_VERSION, MAX_FRAME_BYTES } from "@pdmux/desktop-protocol";
 import { AppException } from "../common/app-exception";
 import { ACCESS_POLICY, type PodokitModule, type ServiceKey } from "../core/services";
+import { GOING_AWAY } from "../core/shutdown";
 import { PDMUX } from "../pdmux/pdmux.services";
 import type { AuthSession } from "../auth/auth.service";
 import { DesktopRecord } from "./desktop-record.entity";
@@ -36,7 +37,7 @@ export const desktopModule: PodokitModule = {
     policy.register("GET", "/desktop/agents/:version/:file", "public");
     policy.register("*", DESKTOP_BRIDGE_PATH, "public");
   },
-  plugin: ({ services }) => {
+  plugin: ({ services, shutdown }) => {
     const router = services.resolve(DESKTOP);
     const pdmux = router.service.pdmux;
     const agents = new DesktopAgentCache();
@@ -129,7 +130,9 @@ export const desktopModule: PodokitModule = {
               else ws.raw.ping();
             }).catch(() => ws.close(1008, "session expired")).finally(() => { checking = false; });
           }, 5_000);
-          peers.set(ws.raw, { bridge, alive: true, close: () => { clearInterval(timer); unregister(); } });
+          // The desktop reopens its bridge on its sync interval, so a stopping API ends it at once.
+          const leave = shutdown.onShutdown(() => ws.close(GOING_AWAY, "Server shutting down"));
+          peers.set(ws.raw, { bridge, alive: true, close: () => { clearInterval(timer); unregister(); leave(); } });
         },
         message: (ws, message) => peers.get(ws.raw)?.bridge.receive(typeof message === "string" ? message : JSON.stringify(message)),
         pong: ws => { const peer = peers.get("raw" in ws ? ws.raw : ws); if (peer) peer.alive = true; },

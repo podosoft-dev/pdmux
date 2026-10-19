@@ -3,11 +3,14 @@ import type { Unsubscribe } from "@podosoft/podokit-runtime";
 import { resolveScopeId } from "../fleet/session-scope";
 import type { HostsService } from "../hosts/hosts.service";
 import type { HostEvents } from "./host-events";
+import type { Shutdown } from "../core/shutdown";
 
 export interface FleetEventDependencies {
   auth: Pick<AuthService, "requireSession" | "guard">;
   hosts: Pick<HostsService, "listIds">;
   events: Pick<HostEvents, "subscribe" | "onInterruption">;
+  /** The stream never finishes on its own, so it ends when the API starts shutting down. */
+  shutdown: Pick<Shutdown, "onShutdown">;
 }
 
 /**
@@ -26,6 +29,7 @@ export async function fleetEventResponse(request: Request, dependencies: FleetEv
   let lastHeartbeat = Date.now();
   let timer: ReturnType<typeof setInterval> | undefined;
   let closeStream = (): void => {};
+  let stopShutdown = (): void => {};
   const unsubscribe: Unsubscribe = await dependencies.events.subscribe((event: unknown): void => {
     if (typeof event !== "object" || event === null || !("type" in event) || !("hostId" in event)) return;
     if (typeof event.type !== "string" || !event.type.startsWith("host.") || typeof event.hostId !== "string") return;
@@ -37,6 +41,7 @@ export async function fleetEventResponse(request: Request, dependencies: FleetEv
     closed = true;
     clearInterval(timer);
     stopResync();
+    stopShutdown();
     void Promise.resolve(unsubscribe()).catch(() => undefined);
     pending.clear();
     request.signal.removeEventListener("abort", closeStream);
@@ -79,6 +84,7 @@ export async function fleetEventResponse(request: Request, dependencies: FleetEv
       send("ready");
       timer = setInterval(() => { void flush(); }, 250);
       request.signal.addEventListener("abort", closeStream, { once: true });
+      stopShutdown = dependencies.shutdown.onShutdown(closeStream);
       if (request.signal.aborted) closeStream();
     },
     cancel(): void { cleanup(); },
