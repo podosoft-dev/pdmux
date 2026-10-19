@@ -13,24 +13,20 @@ export async function verifyDesktopNavigation(page, directory, connected = false
   for (const route of routes) {
     await page.goto(origin + route);
     await page.locator('html[data-hydrated="true"]').waitFor();
-    const dashboard = page.locator('[data-testid="shell-toolbar"] [data-testid="open-dashboard"]');
-    assert.equal(await dashboard.count(), 1, "[TC-PDDESKTOP-019] every page has a persistent dashboard button");
+    const dashboard = page.locator('.pdmux-shell > [data-pdmux-region="page"] [data-testid="open-dashboard"]');
+    assert.equal(await dashboard.count(), 1, "[TC-PDDESKTOP-019] every page header has a dashboard button");
+    assert.equal(await page.locator('[data-testid="shell-toolbar"] [data-testid="open-dashboard"]').count(), 0, "[TC-PDDESKTOP-019] the sidebar has no dashboard button");
     assert.equal(await page.locator('[data-testid="shell-breadcrumb"]').count(), 0, "[TC-PDDESKTOP-019] no duplicate breadcrumb navigation");
-    const geometry = await page.locator('[data-testid="shell-toolbar"]').evaluate(toolbar => {
-      const bounds = toolbar.getBoundingClientRect();
-      const buttons = [...toolbar.querySelectorAll('a, button')].filter(element => element.getBoundingClientRect().width > 0).map(element => {
-        const rect = element.getBoundingClientRect();
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-      });
-      return { bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }, buttons, documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth };
-    });
-    assert.ok(geometry.bounds.height >= 28 && geometry.bounds.width >= 200);
-    assert.ok(geometry.documentWidth <= geometry.viewportWidth + 1, "[TC-PDDESKTOP-019] the shell has no horizontal overflow");
-    for (const button of geometry.buttons) {
-      assert.ok(button.width >= 20 && button.height >= 20);
-      assert.ok(button.x >= geometry.bounds.x - 1 && button.x + button.width <= geometry.bounds.x + geometry.bounds.width + 1, "[TC-PDDESKTOP-019] toolbar controls fit their sidebar");
-    }
-    measurements.push({ route, ...geometry });
+    const panel = page.locator('[data-testid="desktop-settings"]');
+    const geometry = await panel.evaluate(node => ({ bounds: node.getBoundingClientRect().toJSON(), documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth }));
+    const backBox = await dashboard.boundingBox();
+    const titleBox = await panel.getByRole("heading", { level: 1 }).boundingBox();
+    assert.ok(backBox && titleBox && backBox.x + backBox.width <= titleBox.x && backBox.y < titleBox.y + titleBox.height && titleBox.y < backBox.y + backBox.height, "[TC-PDDESKTOP-019] return stays left of the settings title");
+    const navigation = await panel.getByRole("tablist").first().boundingBox();
+    const content = await panel.getByRole("tabpanel").first().boundingBox();
+    assert.ok(navigation && content && navigation.x + navigation.width <= content.x && content.width > 300 && content.height > 150, "[TC-PDDESKTOP-019] left tabs never collapse the settings content");
+    assert.ok(geometry.documentWidth <= geometry.viewportWidth + 1, "[TC-PDDESKTOP-019] no horizontal overflow");
+    measurements.push({ route, backBox, titleBox, ...geometry });
     await page.screenshot({ path: join(directory, `${prefix}-${route.slice(1).replaceAll("/", "-")}.png`) });
     await dashboard.click();
     await page.waitForURL(url => url.pathname === "/");
@@ -39,29 +35,9 @@ export async function verifyDesktopNavigation(page, directory, connected = false
   await page.goto(origin + "/settings");
   await page.locator('html[data-hydrated="true"]').waitFor();
   await page.setViewportSize({ width: 900, height: 700 });
-  const splitter = page.locator('[data-testid="dashboard-shell"] > [data-pdmux-handle]').first();
-  let handle = await splitter.boundingBox();
-  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(180, handle.y + handle.height / 2, { steps: 8 });
-  await page.mouse.up();
-  const narrow = await page.locator('[data-testid="shell-toolbar"]').evaluate(toolbar => {
-    const bounds = toolbar.getBoundingClientRect();
-    const controls = [...toolbar.querySelectorAll('a,button')].map(element => element.getBoundingClientRect().toJSON()).filter(rect => rect.width > 0);
-    return { bounds: bounds.toJSON(), controls };
-  });
-  for (let i = 0; i < narrow.controls.length; i += 1) {
-    const control = narrow.controls[i];
-    assert.ok(control.left >= narrow.bounds.left - 1 && control.right <= narrow.bounds.right + 1, "[TC-PDDESKTOP-019] controls fit the narrowed sidebar");
-    for (const other of narrow.controls.slice(i + 1)) assert.ok(control.right <= other.left || other.right <= control.left || control.bottom <= other.top || other.bottom <= control.top, "[TC-PDDESKTOP-019] controls never overlap");
-  }
+  const tabs = page.locator('[data-testid="desktop-settings-tabs"]');
+  assert.ok((await tabs.boundingBox()).width > 700, "[TC-PDDESKTOP-019] settings remains usable at a smaller desktop size");
   await page.screenshot({ path: join(directory, `${prefix}-narrow-settings.png`) });
-  measurements.push({ route: "/settings", viewport: "900x700", ...narrow });
-  handle = await splitter.boundingBox();
-  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(300, handle.y + handle.height / 2, { steps: 8 });
-  await page.mouse.up();
   await page.setViewportSize({ width: 1440, height: 928 });
 
   assert.equal(await page.locator('[data-testid="cloudflare-integration"]').count(), 0, "[TC-PDDESKTOP-020] no server integration in local settings");

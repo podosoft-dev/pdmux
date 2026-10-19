@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { desktopTerminalSurface } from "#lib/desktop/terminal-preferences.svelte.js";
   /**
    * One terminal, one window.
    *
@@ -77,6 +78,7 @@
       <p class="text-destructive text-xs" data-testid="relay-status">{i18n.t.dash.terminal.reconnecting}</p>
     {/if}
     <TerminalGrid
+    createSurface={desktopTerminalSurface}
       {layout}
       {hosts}
       adapter={relay}

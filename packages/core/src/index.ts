@@ -27,3 +27,4 @@ export * from './file-icon.js';
 export * from './file-format.js';
 export * from './fs-sort.js';
 export * from './fs-columns.js';
+export * from './terminal-preferences.js';

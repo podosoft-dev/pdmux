@@ -32,3 +32,8 @@ export function desktopConnection(): DesktopConnectionBridge | undefined {
   if (typeof window === "undefined") return undefined;
   return (window as Window & { pdmuxDesktop?: { connection?: DesktopConnectionBridge } }).pdmuxDesktop?.connection;
 }
+
+export function desktopPreferences(): { read(): Promise<unknown>; save(value: unknown): Promise<unknown> } | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as Window & { pdmuxDesktop?: { preferences?: { read(): Promise<unknown>; save(value: unknown): Promise<unknown> } } }).pdmuxDesktop?.preferences;
+}

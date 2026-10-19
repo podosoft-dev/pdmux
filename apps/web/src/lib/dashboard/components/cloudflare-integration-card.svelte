@@ -15,6 +15,7 @@
     CloudflareIntegrationView,
   } from "#lib/dashboard/types.js";
   import ConfirmDialog from "./confirm-dialog.svelte";
+  import InfoHint from "./info-hint.svelte";
 
   let { canManage, target = "local" }: { canManage: boolean; target?: SettingsTarget } = $props();
   const i18n = getI18n();
@@ -110,8 +111,8 @@
     <Card.Title class="flex items-center gap-2">
       <CloudIcon class="size-4" aria-hidden="true" />
       {i18n.t.dash.cloudflare.title}
+      <InfoHint label={i18n.t.dash.cloudflare.title} text={i18n.t.dash.cloudflare.subtitle} />
     </Card.Title>
-    <Card.Description>{i18n.t.dash.cloudflare.subtitle}</Card.Description>
     {#if connection}
       <Card.Action><Badge variant="outline">{i18n.t.dash.cloudflare.connected}</Badge></Card.Action>
     {/if}

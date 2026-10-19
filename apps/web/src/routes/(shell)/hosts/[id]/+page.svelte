@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageHeading from "#lib/dashboard/components/page-heading.svelte";
+  import InfoHint from "#lib/dashboard/components/info-hint.svelte";
   /**
    * One host: the ports it exposes and the tokens its agent uses.
    *
@@ -685,7 +687,7 @@
 
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div class="min-w-0">
-      <h1 class="text-2xl font-semibold" data-testid="host-title">{host.label}</h1>
+      <PageHeading title={host.label} testId="host-title" />
       <!--
         ⚠ THE STATE OF THE HOST WAS NOT ON THE PAGE NAMED AFTER IT. Online,
         last seen and os/arch lived only on the sidebar card, so answering "is
@@ -718,8 +720,8 @@
         <AgentVersionCell {host} />
       </div>
     </div>
-    {#if data.canManage}
       <div class="flex flex-wrap items-center gap-2">
+        {#if data.canManage}
         <Button variant="outline" onclick={() => (installOpen = true)} data-testid="host-install">
           {i18n.t.dash.enroll.menu}
         </Button>
@@ -735,8 +737,8 @@
             {i18n.t.dash.agent.update}
           </Button>
         {/if}
+        {/if}
       </div>
-    {/if}
   </div>
 
   <!--
@@ -749,8 +751,7 @@
   -->
   <Card.Root class="shrink-0" data-testid="host-services">
     <Card.Header>
-      <Card.Title>{i18n.t.dash.services.title}</Card.Title>
-      <Card.Description>{i18n.t.dash.services.subtitle}</Card.Description>
+      <Card.Title class="flex items-center gap-1">{i18n.t.dash.services.title}<InfoHint label={i18n.t.dash.services.title} text={i18n.t.dash.services.subtitle} /></Card.Title>
       {#if data.canManage}
         <Card.Action>
           <Button onclick={openServiceCreate} data-testid="service-add">
@@ -865,8 +866,7 @@
 
   <Card.Root class="shrink-0" data-testid="host-tokens">
     <Card.Header>
-      <Card.Title>{i18n.t.dash.tokens.title}</Card.Title>
-      <Card.Description>{i18n.t.dash.tokens.subtitle}</Card.Description>
+      <Card.Title class="flex items-center gap-1">{i18n.t.dash.tokens.title}<InfoHint label={i18n.t.dash.tokens.title} text={i18n.t.dash.tokens.subtitle} /></Card.Title>
       {#if data.canManage}
         <Card.Action>
           <Button
@@ -973,7 +973,6 @@
             />
             {i18n.t.dash.mcp.title}
           </Card.Title>
-          <Card.Description>{i18n.t.dash.mcp.intro}</Card.Description>
           <Card.Action>
             <span class="text-muted-foreground text-sm" data-testid="host-connection-summary">
               {connectionSummary}

@@ -409,7 +409,7 @@
     },
     "hosts": {
       "title": "Hosts",
-      "subtitle": "Machines running a PDMux agent. Everything here is registered from this screen — no scripts.",
+      "subtitle": "Register hosts, install agents and manage their connections.",
       "add": "Add host",
       "edit": "Edit",
       "editTitle": "Edit host",
@@ -448,21 +448,21 @@
       "removalIn": "Removal in {days}d",
       "addShort": "Add",
       "moveTitle": "Move to another account",
-      "moveIntro": "A host belongs to the account it was registered under. If this machine ended up in the wrong one, hand it over instead of registering it again.",
+      "moveIntro": "Move this host to another workspace without reinstalling its agent.",
       "moveAction": "Move host",
       "moveEmail": "Email of the account to move it to",
       "moveWarning": "\"{label}\" will leave this account's list and appear in theirs.",
       "moveKeeps": "The agent keeps running and is not reinstalled. Its token, services, repositories and history move with the host. External access must be removed first.",
       "moveExternalAccess": "Remove this host's external access before moving it to another account.",
       "dangerTitle": "Host",
-      "dangerIntro": "Everything that changes this host itself. The last two cannot be undone by pressing them again.",
+      "dangerIntro": "Deleting a host also deletes its connection tokens and history. This cannot be undone.",
       "neverSeen": "never connected"
     },
     "hostsLink": "Hosts",
     "fleet": {
       "title": "Fleet settings",
-      "subtitle": "What every agent in this fleet collects, how long it is kept, and whether hosts that go silent are deleted.",
-      "scopeNote": "These belong to this fleet — the machines this account manages — and not to the whole installation. A change is pushed to every agent that is connected right now.",
+      "subtitle": "Collection and storage settings shared by these hosts.",
+      "scopeNote": "Changes apply to the hosts in the current workspace. Connected agents receive them immediately.",
       "save": "Save",
       "saving": "Saving…",
       "saved": "Fleet settings saved",
@@ -479,89 +479,89 @@
       "group": {
         "cadence": {
           "title": "Collection cadence",
-          "blurb": "How often each agent does the work. Every number here is time on somebody's machine and traffic on the wire: lower is fresher and more expensive."
+          "blurb": "How often hosts collect information. Shorter intervals use more resources."
         },
         "history": {
           "title": "Stored history",
-          "blurb": "What is written to the database and how long it stays. This is the group that costs disk."
+          "blurb": "How often samples are saved and how long they are kept."
         },
         "caps": {
           "title": "Caps",
-          "blurb": "Upper bounds on a single answer, so one enormous repository or a runaway working tree cannot fill a response."
+          "blurb": "Limits on collected commits, files and text."
         },
         "lists": {
           "title": "Lists",
-          "blurb": "Where the agents look, and which coding agents they report on."
+          "blurb": "Folders to scan and coding CLIs to report."
         },
         "sweep": {
           "title": "Host sweep",
-          "blurb": "Deleting hosts that have gone silent. It is off unless you turn it on, and it is the only setting on this page that destroys anything."
+          "blurb": "Automatically delete hosts that have not connected for a set period. Disabled by default."
         },
         "access": {
           "title": "Fleet-wide CLI tokens",
-          "blurb": "A token minted on the Coding CLI access screen reaches every host in this fleet, not one machine. Host-by-host keys are unaffected."
+          "blurb": "These tokens work across all hosts you can access. Keys created on a host page work only on that host."
         }
       },
       "field": {
         "heartbeatSec": {
           "label": "Heartbeat interval (seconds)",
-          "why": "How often every agent reports in. Nothing a card shows can be fresher than this, and every host pays it on the wire — the cheapest thing the fleet does, and the most frequent."
+          "why": "How often hosts send their status. Shorter intervals update cards more frequently."
         },
         "gitIntervalSec": {
           "label": "Git collection interval (seconds)",
-          "why": "How often an agent re-reads the checkouts it found. Walking repositories costs far more than a heartbeat, so this is measured in minutes."
+          "why": "How often hosts refresh Git information. Shorter intervals use more host resources."
         },
         "usageIntervalSec": {
           "label": "Coding-agent usage interval (seconds)",
-          "why": "How often an agent re-reads the usage windows of the providers below. Far costlier than a heartbeat: it reads each provider's own state, not a counter."
+          "why": "How often hosts check coding CLI usage."
         },
         "probeTimeoutMs": {
           "label": "Service probe timeout (ms)",
-          "why": "How long one service probe may hang before it is called down. A cap, not a target — without it a single unresponsive port would hold up the whole heartbeat behind it."
+          "why": "How long to wait for a service response before marking it unavailable."
         },
         "metricStepSec": {
           "label": "Metric sample interval (seconds)",
-          "why": "How far apart stored CPU, memory and disk samples are. Heartbeats arrive every few seconds, and storing each one would write about 17,000 rows per host per day to draw a graph whose pixels are 30 seconds apart."
+          "why": "How often CPU, memory and disk samples are saved. Longer intervals use less storage."
         },
         "metricRetentionDays": {
           "label": "Metric history kept (days)",
-          "why": "How long stored samples live before the prune job deletes them. This is the number that decides how much disk the fleet's history costs."
+          "why": "How long metric history is kept. Older records are deleted."
         },
         "gitLimit": {
           "label": "Commits per repository",
-          "why": "How many commits the graph window holds for one repository. Past it the graph says it is truncated rather than growing without limit."
+          "why": "Maximum number of commits shown per repository."
         },
         "gitDetailBudget": {
           "label": "New commit details per pass",
-          "why": "How many previously unseen commit bodies and patches an agent may collect in one pass. It is what stops a freshly registered repository from sending its entire history at once."
+          "why": "Maximum number of new commit details collected in one scan."
         },
         "statusFileCap": {
           "label": "Changed files per repository",
-          "why": "How many working-tree entries are reported for one repository. A tree with thousands of untracked files would otherwise become the largest thing on the wire."
+          "why": "Maximum number of changed files reported per repository."
         },
         "bodyMaxChars": {
           "label": "Commit message body (characters)",
-          "why": "How much of a commit message body is stored. Long enough for a real message, short enough that a pasted log is not kept forever."
+          "why": "Maximum length of a saved commit message."
         },
         "terminalBufferBytes": {
           "label": "Terminal buffer per pane (bytes)",
-          "why": "How much output an agent holds for one pane before the oldest bytes are dropped. The relay uses the same number toward the browser, so raising it costs memory in two places."
+          "why": "Maximum terminal output kept per pane. Larger buffers use more memory."
         },
         "gitRoots": {
           "label": "Git roots",
-          "why": "Directories each agent scans for checkouts. These are paths on the hosts, not on this server; empty means nothing is collected. A host with its own paths ignores this list."
+          "why": "Folders to scan on each host. Empty means no scan. A host-specific setting takes priority."
         },
         "usageProviders": {
           "label": "Coding-agent providers",
-          "why": "Which providers' usage windows the agents report — the rows on a card's coding-agent widget. A name nobody runs simply reports nothing."
+          "why": "Coding CLIs whose usage is collected."
         },
         "staleHostRetentionDays": {
           "label": "Delete a host after (days of silence)",
-          "why": "0 turns this off, and off is how it ships. Any other number lets the server DELETE a host that has not reported in for that long, taking its agent tokens, enrollment codes, services and collected history with it. That machine is then refused until somebody registers it again and re-runs the installer."
+          "why": "0 disables automatic deletion. Otherwise, hosts silent for this many days are deleted with their tokens and history. Register them again to reconnect."
         },
         "mcpUserTokens": {
           "label": "Allow fleet-wide tokens",
-          "hint": "Off by default. Turning it off does NOT revoke anything: existing tokens stop working immediately and start again if it is turned back on."
+          "hint": "Turning this off stops existing tokens from working without deleting them. Turning it on restores them."
         }
       },
       "sweep": {
@@ -578,7 +578,7 @@
     },
     "cloudflare": {
       "title": "Cloudflare Tunnel",
-      "subtitle": "Publish host HTTP services through a dedicated tunnel per host. Access protection is the default; public access always requires confirmation.",
+      "subtitle": "Make host web services reachable through Cloudflare. Access is restricted by default; public access requires confirmation.",
       "loading": "Reading the fleet connection…",
       "connected": "Connected",
       "connectedToast": "Cloudflare connected",
@@ -653,7 +653,7 @@
     "refresh": "Refresh",
     "services": {
       "title": "Services",
-      "subtitle": "Ports this host exposes. The agent probes them and the card links to them.",
+      "subtitle": "Links to services on this host. The agent checks whether they respond.",
       "add": "Add service",
       "addTitle": "Add service",
       "editTitle": "Edit service",
@@ -682,7 +682,7 @@
     },
     "gitRoots": {
       "title": "Git repositories",
-      "subtitle": "Directories the agent scans for checkouts. These are paths on that host, not on this server.",
+      "subtitle": "Folders on this host to scan for Git repositories.",
       "add": "Add path",
       "addTitle": "Add path",
       "editTitle": "Edit path",
@@ -705,7 +705,7 @@
       "deleteWarning": "Type {path} to delete it.",
       "emptyNoFleet": "No paths yet. This host's git graph is empty.",
       "emptyFleet": "Using the fleet default: {paths}",
-      "emptyFleetHint": "Add a path here and this host will use only what you list.",
+      "emptyFleetHint": "Adding host folders replaces the common folder list for this host.",
       "missingHint": "The agent could not find this path. Check that it exists on that host.",
       "gitMissing": "Git is not installed on this host, so no repositories are collected.",
       "limit": "A host takes at most {max} paths.",
@@ -741,6 +741,7 @@
     },
     "sidebarToggle": "Toggle host cards",
     "tabs": {
+      "files": "Files",
       "git": "Git",
       "hosts": "Servers",
       "label": "Views",
@@ -761,7 +762,7 @@
     "title": "Dashboard",
     "tokens": {
       "title": "Agent tokens",
-      "subtitle": "One token per host. The plaintext is shown once, right after it is minted.",
+      "subtitle": "Tokens connect this host agent. Copy a new token when it is issued; it is shown only once.",
       "mint": "Mint token",
       "name": "Name",
       "created": "Created",
@@ -802,20 +803,20 @@
     },
     "mcp": {
       "title": "Coding CLI access",
-      "intro": "Connect Codex or Claude Code on this machine to PDMux, without checking out the source.",
+      "intro": "Connect Codex or Claude Code to this host.",
       "endpoint": "MCP endpoint",
       "osTitle": "That machine's OS",
       "osLinux": "Linux",
       "osMacos": "macOS",
-      "osHint": "Put the key in your shell's environment. On this OS that is {file}; the default login shell differs, and writing the wrong file fails silently — the variable never appears and the CLI reports a 401 that looks like a bad key.",
+      "osHint": "Add the key to {file}, then reload your shell. Choose the OS of the machine running the CLI.",
       "copyEnv": "Copy setup",
       "clientTitle": "Your CLI",
       "clientCodex": "Codex",
       "clientClaude": "Claude Code",
-      "configHint": "Put the key in {envVar} in your own environment. Never commit it.",
+      "configHint": "Store the key in {envVar}. Do not put it in the copied configuration or Git.",
       "copyConfig": "Copy config",
       "handoffTitle": "Hand this to your coding CLI",
-      "handoffHint": "Safe to paste anywhere — it names the host and the endpoint, never the key.",
+      "handoffHint": "Paste this instruction into your CLI. It includes the host and address, without the key.",
       "handoffText": "Work on the PDMux host \"{label}\" through its hosted MCP at {endpoint}. Read the key from {envVar} only; never print or store its value. Call host_detail first. If no PDMux agent is connected, call host_install_command and run the command it returns ON that machine. Use run_command for anything else you need from the host.",
       "copyHandoff": "Copy handoff",
       "keyLabel": "Label",
@@ -844,7 +845,7 @@
       "keyPrefix": "Key",
       "keyStatus": "State",
       "keyActions": "",
-      "fleetHint": "This key reaches only {label}. For a token that reaches the whole fleet, see"
+      "fleetHint": "This key is only for {label}. For all hosts:"
     },
     "table": {
       "prevPage": "Previous",
@@ -852,17 +853,17 @@
     },
     "mcpTokens": {
       "title": "Coding CLI access",
-      "blurb": "A token lets Codex or Claude Code work with THIS FLEET — every host you can see, not one machine. For a single machine, use that host's own page.",
-      "endpointTitle": "MCP endpoint",
-      "envHint": "Put the token in {envVar} in your own environment. Never commit it.",
+      "blurb": "Connect Codex or Claude Code to all hosts you can access. For one host, use its own CLI key.",
+      "endpointTitle": "CLI connection",
+      "envHint": "Save the token in {envVar} where the CLI runs. Keep it out of configuration files and Git.",
       "copyConfig": "Copy config",
       "newTitle": "New token",
       "labelField": "Label",
       "expiryField": "Expires",
       "tierField": "Permission",
       "days": "{days} days",
-      "aboveCeiling": "Only a fleet administrator can create a token that changes this fleet. Yours is read-only.",
-      "canDo": "What \"{tier}\" can do",
+      "aboveCeiling": "You can issue tokens up to your account permission level.",
+      "canDo": "{tier} permissions",
       "create": "Create token",
       "listTitle": "Your tokens",
       "loading": "Loading…",
@@ -882,45 +883,43 @@
       "createdTitle": "Token created",
       "createdHint": "Copy it now. The full value is never shown again.",
       "createdEnvHint": "Set it as {envVar} in the environment your CLI runs in.",
-      "createdReach": "This token can act across this whole fleet. Treat it like a password.",
+      "createdReach": "This token can reach all hosts you can access. Keep it private.",
       "copyToken": "Copy token",
       "tier": {
         "read": {
           "name": "Read only",
           "can": [
-            "List hosts; read detail, metrics, sessions, services, git repos and CLI usage"
+            "View hosts, metrics, sessions, services, Git and CLI usage"
           ],
           "cannot": [
-            "Run any command",
-            "Change anything at all",
-            "Create or revoke ANY credential"
+            "Run commands or change hosts",
+            "Create or revoke credentials"
           ]
         },
         "operate": {
           "name": "Operate",
           "can": [
-            "Everything Read only can",
-            "Register a host and mint its install command",
-            "Rename, re-tag or disable a host",
-            "Run commands on a host"
+            "Everything in Read only",
+            "Add and edit hosts; get agent install commands",
+            "Run commands on hosts"
           ],
           "cannot": [
-            "Delete a host, a service or a repo",
-            "Roll an update across several hosts at once",
-            "Create or revoke ANY credential, including this kind of token"
+            "Delete hosts, services or repositories",
+            "Update several hosts at once",
+            "Create or revoke credentials"
           ]
         },
         "admin": {
           "name": "Admin",
           "can": [
-            "Everything Operate can",
-            "Delete a host — each deletion needs confirm, and without it the tool only describes what it would destroy",
-            "Roll one agent build out to several hosts at once"
+            "Everything in Operate",
+            "Delete hosts after confirmation",
+            "Update several hosts at once"
           ],
           "cannot": [
-            "Create or revoke ANY credential, including this kind of token",
-            "Change fleet settings — no tier has a tool for it; use the dashboard",
-            "Reach any host outside this fleet"
+            "Create or revoke credentials",
+            "Change common host settings",
+            "Access hosts outside your workspace"
           ]
         }
       },
@@ -1000,7 +999,9 @@
       "deleteFolderWarning": "{count} item(s) will be deleted on this host: {names}. A folder takes everything inside it. This cannot be undone.",
       "deleteConfirm": "Delete",
       "queued": " · {count} waiting"
-    }
+    },
+    "backToDashboard": "Back to dashboard",
+    "helpFor": "Help: {topic}"
   },
   "settings": {
     "mcpEnabled": "MCP (Model Context Protocol)",
@@ -1028,9 +1029,9 @@
   },
   "desktop": {
     "title": "Server connection",
-    "localDescription": "Your local workspace works without an account. Connect a server when you want to sync.",
+    "localDescription": "Use local terminals without signing in. Connect a server when you want to sync hosts and settings.",
     "server": "Optional server connection",
-    "sharing": "Connecting synchronizes hosts and personal settings. All current and future local hosts can be operated from this server while PDMux Desktop is running and signed in.",
+    "sharing": "Connecting syncs hosts and settings. The server can operate current and future local hosts while this desktop is running and signed in.",
     "connected": "Connected",
     "reconnecting": "Reconnecting",
     "localOnly": "Local mode",
@@ -1044,7 +1045,7 @@
     "failed": "The connection could not be completed. Check the server and sign in again. Your local workspace remains available.",
     "offlineCache": "After disconnecting, server hosts remain visible as an offline, read-only list. Local hosts continue to work.",
     "conflicts": "Synchronization conflicts",
-    "conflictDescription": "Changes without conflicts merge automatically. Choose which value to use for each conflicting item.",
+    "conflictDescription": "Choose which value to keep when local and server edits differ.",
     "noConflicts": "No conflicts.",
     "item": "Item",
     "review": "Compare changes",
@@ -1054,7 +1055,7 @@
     "useLocal": "Use local value",
     "useServer": "Use server value",
     "agents": "Offline agent packages",
-    "agentDescription": "Your platform is bundled. Download other platforms in advance to use them offline.",
+    "agentDescription": "Downloaded agents can be installed while offline.",
     "available": "Available offline",
     "download": "Download",
     "workspace": "Workspace",
@@ -1075,6 +1076,45 @@
       "localDescription": "These settings apply to hosts managed by this desktop. Server host settings stay on the server.",
       "serverDescription": "These settings apply to the signed-in server workspace. Saving here updates the server, including hosts used from the web.",
       "signInRequired": "Sign in through Server connection to configure server hosts."
+    },
+    "shareSummary": "Connecting lets this server operate your local hosts.",
+    "preferences": {
+      "title": "Settings",
+      "terminal": "Terminal",
+      "advanced": "Advanced",
+      "font": "Font",
+      "systemFont": "System monospace",
+      "customFont": "Custom font",
+      "fontHelp": "Use a font installed on this computer. If it is unavailable, PDMux uses the default monospace font.",
+      "fontSize": "Font size (px)",
+      "lineHeight": "Line height",
+      "theme": "Terminal theme",
+      "themes": {
+        "pdmux": "PDMux Dark",
+        "dracula": "Dracula",
+        "light": "Light"
+      },
+      "cursor": "Cursor style",
+      "cursors": {
+        "block": "Block",
+        "bar": "Bar",
+        "underline": "Underline",
+        "auto": "Program default"
+      },
+      "cursorBlink": "Blink cursor",
+      "preview": "Preview",
+      "scope": "Saved on this computer. Applies to new and open terminal views, including server terminals.",
+      "save": "Save",
+      "reset": "Restore defaults",
+      "saved": "Saved and applied to terminal views.",
+      "loadFailed": "Could not load terminal settings. Reopen settings to try again.",
+      "saveFailed": "Could not save. Check the font, size (8–32), and line height (1–2), then try again.",
+      "localData": "Local data",
+      "dataHelp": "Open the folder used by PDMux for local settings and data. This is usually only needed for troubleshooting.",
+      "general": "General",
+      "appTheme": "App theme",
+      "generalHelp": "Choose the app language and interface theme. Terminal colors are configured in Terminal.",
+      "previewSample": "PDMux · Abc · 0123456789"
     }
   }
 }

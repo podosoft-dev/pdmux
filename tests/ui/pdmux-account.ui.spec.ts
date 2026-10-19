@@ -42,7 +42,7 @@ test.describe("pdmux account", () => {
     expect(edges.overflow).toBe("auto");
     await expectViewportBound(page);
 
-    // The standalone chrome is gone: navigation is the sidebar and the breadcrumb.
+    // The standalone chrome is gone: the page header owns the return action.
     await expect(page.getByRole("button", { name: "Home" })).toHaveCount(0);
     await page.locator("[data-testid='open-dashboard']").click();
     await expect(page).toHaveURL((url) => url.pathname === "/");

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { desktopTerminalSurface } from "#lib/desktop/terminal-preferences.svelte.js";
   /**
    * The dashboard's own half of the shell: terminals and the commit graph.
    *
@@ -107,6 +108,8 @@
    * that had not opened the dock on a desktop (`dockOpen` defaults to false).
    */
   const commitsMounted = $derived(layout.dockOpen || stacked.current);
+  // Mobile tabs are navigation, independent of the saved desktop panel toggles.
+  const filesMounted = $derived(layout.filesOpen || stacked.current);
   /** Cursor override, so the pager can sit on an EMPTY cell (which has no slot to focus). */
   let cursor = $state<number | null>(null);
   const soloAt = $derived(cursor ?? soloIndex(layout));
@@ -392,6 +395,7 @@
     compact={stacked.current}
   />
   <TerminalGrid
+    createSurface={desktopTerminalSurface}
     layout={viewLayout}
     onScreen={!stacked.current || shell.view === "terminal"}
     keyBar={coarse.current}
@@ -429,7 +433,7 @@
 <!--
   ⚠ THIS ELEMENT IS THE DOCK REGION — it wears `data-pdmux-region="dock"` because the
   shell's LAST TRACK is placed by that name, and on a phone the same name is what the
-  `Git` tab shows. Handing it to the commit panel instead (where it used to live) left
+  Git and Files tabs share. Handing it to the commit panel instead (where it used to live) left
   the column unplaced: measured on a 390px viewport, the tab showed nothing at all.
 
   ⚠ ONE GRID TRACK, TWO PANELS. The shell grid has five columns and the last is the
@@ -441,11 +445,16 @@
 <div
   class="pdmux pdmux-dock-column"
   data-pdmux-region="dock"
-  data-pdmux-split={commitsMounted && layout.filesOpen ? "both" : "single"}
+  data-pdmux-split={!stacked.current && commitsMounted && filesMounted ? "both" : "single"}
   bind:this={dockColumn}
 >
   {#if commitsMounted}
-    <div class="pdmux-dock-slot" style:flex-basis={`${layout.filesOpen ? 100 - layout.filesShare : 100}%`}>
+    <div
+      class="pdmux-dock-slot"
+      data-pdmux-dock-panel="git"
+      style:flex-basis={`${!stacked.current && filesMounted ? 100 - layout.filesShare : 100}%`}
+      style:display={stacked.current && shell.view !== "git" ? "none" : undefined}
+    >
       <CommitDock
         dock={shell.dock}
         onScreen={!stacked.current || shell.view === "git"}
@@ -462,7 +471,7 @@
     </div>
   {/if}
 
-  {#if commitsMounted && layout.filesOpen}
+  {#if !stacked.current && commitsMounted && filesMounted}
     <SplitHandle
       axis="y"
       invert
@@ -472,8 +481,13 @@
     />
   {/if}
 
-  {#if layout.filesOpen}
-    <div class="pdmux-dock-slot" style:flex-basis={`${commitsMounted ? layout.filesShare : 100}%`}>
+  {#if filesMounted}
+    <div
+      class="pdmux-dock-slot"
+      data-pdmux-dock-panel="files"
+      style:flex-basis={`${!stacked.current && commitsMounted ? layout.filesShare : 100}%`}
+      style:display={stacked.current && shell.view !== "files" ? "none" : undefined}
+    >
       <FilesDockPanel
         files={shell.files}
         hosts={shell.feed.hosts}

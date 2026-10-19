@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoHint from "./info-hint.svelte";
   /**
    * Connect a coding CLI on this host to pdmux.
    *
@@ -221,7 +222,7 @@
 -->
 <section class="flex flex-col gap-4" data-testid="agent-access">
   <div class="flex flex-col gap-1.5">
-    <span class="text-xs font-medium">{i18n.t.dash.mcp.endpoint}</span>
+    <div class="flex items-center gap-1"><span class="text-xs font-medium">{i18n.t.dash.mcp.endpoint}</span><InfoHint label={i18n.t.dash.mcp.endpoint} text={i18n.t.dash.mcp.intro} /></div>
     <pre
       class="bg-muted overflow-x-auto rounded-md p-3 text-xs break-all whitespace-pre-wrap"
       data-testid="agent-endpoint">{endpoint}</pre>
@@ -231,6 +232,7 @@
   <div class="flex flex-col gap-1.5">
     <div class="flex items-center gap-2">
       <span class="text-xs font-medium">{i18n.t.dash.mcp.osTitle}</span>
+      <InfoHint label={i18n.t.dash.mcp.osTitle} text={fmt(i18n.t.dash.mcp.osHint, { file: shellFile })} />
       {#if host.os}
         <Badge variant="outline" data-testid="agent-os-reported">{host.os}/{host.arch ?? "?"}</Badge>
       {/if}
@@ -241,7 +243,6 @@
         <Tabs.Trigger value="macos" data-testid="agent-os-macos">{i18n.t.dash.mcp.osMacos}</Tabs.Trigger>
       </Tabs.List>
     </Tabs.Root>
-    <p class="text-muted-foreground text-xs">{fmt(i18n.t.dash.mcp.osHint, { file: shellFile })}</p>
     <pre
       class="bg-muted overflow-x-auto rounded-md p-3 text-xs break-all whitespace-pre-wrap"
       data-testid="agent-env-command">{envCommand}</pre>
@@ -254,7 +255,7 @@
 
   <!-- The client the snippets are written for. Defaults from what the host reports. -->
   <div class="flex flex-col gap-1.5">
-    <span class="text-xs font-medium">{i18n.t.dash.mcp.clientTitle}</span>
+    <div class="flex items-center gap-1"><span class="text-xs font-medium">{i18n.t.dash.mcp.clientTitle}</span><InfoHint label={i18n.t.dash.mcp.clientTitle} text={fmt(i18n.t.dash.mcp.configHint, { envVar: ENV_VAR })} /></div>
     <Tabs.Root bind:value={() => client, (value) => (chosen = value as ClientId)}>
       <Tabs.List data-testid="agent-client">
         <Tabs.Trigger value="codex" data-testid="agent-client-codex">{i18n.t.dash.mcp.clientCodex}</Tabs.Trigger>
@@ -264,7 +265,6 @@
     <pre
       class="bg-muted overflow-x-auto rounded-md p-3 text-xs break-all whitespace-pre-wrap"
       data-testid="agent-client-config">{config}</pre>
-    <p class="text-muted-foreground text-xs">{fmt(i18n.t.dash.mcp.configHint, { envVar: ENV_VAR })}</p>
     <div>
       <Button variant="outline" size="sm" onclick={() => copy(config, "config")} data-testid="agent-config-copy">
         {copied === "config" ? i18n.t.dash.tokens.copied : i18n.t.dash.mcp.copyConfig}
@@ -273,8 +273,7 @@
   </div>
 
   <div class="flex flex-col gap-1.5">
-    <span class="text-xs font-medium">{i18n.t.dash.mcp.handoffTitle}</span>
-    <p class="text-muted-foreground text-xs">{i18n.t.dash.mcp.handoffHint}</p>
+    <div class="flex items-center gap-1"><span class="text-xs font-medium">{i18n.t.dash.mcp.handoffTitle}</span><InfoHint label={i18n.t.dash.mcp.handoffTitle} text={i18n.t.dash.mcp.handoffHint} /></div>
     <pre
       class="bg-muted overflow-x-auto rounded-md p-3 text-xs whitespace-pre-wrap"
       data-testid="agent-handoff">{handoff}</pre>

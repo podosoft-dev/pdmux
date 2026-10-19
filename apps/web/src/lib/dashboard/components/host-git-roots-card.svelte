@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoHint from "./info-hint.svelte";
   /**
    * Where this host's agent looks for git checkouts.
    *
@@ -193,8 +194,7 @@
      flex parent and `Card` is `overflow-hidden`, so a tall card clips itself. -->
 <Card.Root class="shrink-0" data-testid="host-git-roots">
   <Card.Header>
-    <Card.Title>{i18n.t.dash.gitRoots.title}</Card.Title>
-    <Card.Description>{i18n.t.dash.gitRoots.subtitle}</Card.Description>
+    <Card.Title class="flex items-center gap-1">{i18n.t.dash.gitRoots.title}<InfoHint label={i18n.t.dash.gitRoots.title} text={i18n.t.dash.gitRoots.subtitle} /></Card.Title>
     {#if canManage}
       <Card.Action>
         <Button onclick={openCreate} data-testid="git-root-add">
@@ -222,7 +222,7 @@
         <p class="text-muted-foreground text-sm" data-testid="git-root-empty-fleet">
           {fmt(i18n.t.dash.gitRoots.emptyFleet, { paths: fleetGitRoots.join(", ") })}
         </p>
-        <p class="text-muted-foreground text-xs">{i18n.t.dash.gitRoots.emptyFleetHint}</p>
+        <InfoHint label={i18n.t.dash.gitRoots.title} text={i18n.t.dash.gitRoots.emptyFleetHint} />
       {:else}
         <p class="text-muted-foreground text-sm" data-testid="git-root-empty">
           {i18n.t.dash.gitRoots.emptyNoFleet}

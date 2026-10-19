@@ -27,12 +27,13 @@
   import LogOutIcon from "@lucide/svelte/icons/log-out";
   import ShieldIcon from "@lucide/svelte/icons/shield";
   import UserIcon from "@lucide/svelte/icons/user";
+  import ShellNavigationMenu from "./shell-navigation-menu.svelte";
   import { api } from "#lib/api.js";
   import { getI18n } from "#lib/i18n/index.js";
   import { APP_VERSION } from "#lib/version.js";
   import type { SessionUser } from "../../../app.d.ts";
 
-  let { user }: { user: SessionUser } = $props();
+  let { user, canManage }: { user: SessionUser; canManage: boolean } = $props();
 
   /**
    * The address, split so that NO SINGLE TEXT NODE looks like an email address.
@@ -120,6 +121,8 @@
         {/if}
       </span>
     </DropdownMenu.Label>
+    <DropdownMenu.Separator />
+    <ShellNavigationMenu {canManage} />
     <DropdownMenu.Separator />
     <DropdownMenu.Item onSelect={() => goto("/account")} data-testid="shell-user-account">
       <UserIcon class="mr-2 size-4" /> {i18n.t.nav.account}

@@ -30,7 +30,7 @@ import { hostsApi, prefsApi } from "./api";
 
 /** The regions a narrow screen switches between. `page` is whatever a non-dashboard
  *  route rendered, so `/hosts` and `/account` need no tab of their own. */
-export type ShellView = "hosts" | "terminal" | "git" | "page";
+export type ShellView = "hosts" | "terminal" | "git" | "files" | "page";
 import { FleetFeed } from "./fleet-feed.svelte";
 import { FilesDock } from "./files-dock.svelte";
 import { GitDock } from "./git-dock.svelte";

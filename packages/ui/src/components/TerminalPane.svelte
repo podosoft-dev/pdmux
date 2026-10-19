@@ -287,11 +287,13 @@
 			// soft keyboard's characters do not arrive as `keydown` on iOS — they only reach
 			// this callback. A latch that waited for a key event would never fire on a phone.
 			cleanups.push(created.onData((data, source) => opened.send(spendCtrl(data), source)));
+			const refit = (): void => {
+				const next = created.fit();
+				opened.resize(next.cols, next.rows);
+			};
+			if (created.onAppearanceChange) cleanups.push(created.onAppearanceChange(refit));
 			if (typeof ResizeObserver !== 'undefined') {
-				const observer = new ResizeObserver(() => {
-					const next = created.fit();
-					opened.resize(next.cols, next.rows);
-				});
+				const observer = new ResizeObserver(refit);
 				observer.observe(host);
 				cleanups.push(() => observer.disconnect());
 			}

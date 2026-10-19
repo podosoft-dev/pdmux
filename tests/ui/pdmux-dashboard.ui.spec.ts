@@ -561,8 +561,8 @@ test.describe.serial("pdmux dashboard", () => {
      * them by a pixel without anything being wrong, but a second row is always a
      * regression of the thing this changed.
      *
-     * The Dashboard button leads the row on every product page, so it is the control that
-     * starts at the column's padding; add and hosts follow it on the same row.
+     * Keep language, theme and profile. Product pages own their Dashboard return action;
+     * the card tile adds hosts and the profile menu carries secondary navigation.
      */
     await ready(page, "/");
     await openSidebar(page);
@@ -570,34 +570,33 @@ test.describe.serial("pdmux dashboard", () => {
     const probe = await page.evaluate(() => {
       const sidebar = document.querySelector("[data-pdmux-sidebar]") as HTMLElement;
       const header = sidebar.firstElementChild as HTMLElement;
-      const dashboard = document.querySelector("[data-testid='open-dashboard']") as HTMLElement | null;
-      const add = document.querySelector("[data-testid='host-add-sidebar']") as HTMLElement | null;
-      const hosts = document.querySelector("[data-testid='nav-hosts']") as HTMLElement | null;
+      const toolbar = document.querySelector("[data-testid='shell-toolbar']") as HTMLElement;
+      const controls = [...toolbar.querySelectorAll<HTMLElement>("button, a")];
+      const first = controls[0] ?? null;
       const box = (el: HTMLElement | null) => (el ? el.getBoundingClientRect() : null);
-      // Same baseline = same row. Two rows would differ by a control's height.
-      const rowOf = (a: HTMLElement | null, b: HTMLElement | null) =>
-        a && b ? Math.abs(box(a)!.y - box(b)!.y) < 2 : false;
       return {
         wordmark: Boolean(document.querySelector("[data-testid='dashboard-title']")),
         headerHeight: Math.round(box(header)!.height),
-        control: add ? Math.round(box(add)!.height) : 0,
-        sameRow: rowOf(dashboard, add) && rowOf(add, hosts),
-        dashboardLeads: dashboard && add ? box(dashboard)!.x < box(add)!.x : false,
-        // The controls start at the column's own padding, not indented behind something.
-        firstOffset: dashboard ? Math.round(box(dashboard)!.x - box(header)!.x) : -1,
+        labels: controls.map((control) => control.getAttribute("aria-label")),
+        control: first ? Math.round(box(first)!.height) : 0,
+        sameRow: controls.every((control) => Math.abs(box(control)!.y - box(first)!.y) < 2),
+        contained: controls.every((control) => box(control)!.left >= box(toolbar)!.left && box(control)!.right <= box(toolbar)!.right),
+        ordered: controls.every((control, index) => index === 0 || box(controls[index - 1])!.right <= box(control)!.left),
+        sidebarBack: toolbar.querySelectorAll("[data-testid='open-dashboard']").length,
       };
     });
 
     expect(probe.wordmark, "the wordmark is back, and it costs a row").toBe(false);
+    expect(probe.labels).toEqual(["Language", "Toggle theme", "Account menu"]);
+    expect(probe.sidebarBack).toBe(0);
     expect(probe.control).toBeGreaterThan(0);
     // One row: the header is a control tall, give or take its own padding.
     expect(probe.headerHeight, "the column spends more than one row above the first card").toBeLessThanOrEqual(
       probe.control + 8,
     );
-    expect(probe.sameRow, "dashboard, add and hosts are on different rows").toBe(true);
-    expect(probe.dashboardLeads, "the Dashboard button no longer leads the row").toBe(true);
-    expect(probe.firstOffset).toBeGreaterThanOrEqual(0);
-    expect(probe.firstOffset).toBeLessThanOrEqual(1);
+    expect(probe.sameRow, "the three controls are on different rows").toBe(true);
+    expect(probe.contained, "a toolbar control exceeds the sidebar").toBe(true);
+    expect(probe.ordered, "toolbar controls overlap or changed order").toBe(true);
   });
 
   test("[TC-PDUI-182] host management is reachable from the card it is about", async ({ page, request }) => {
@@ -1080,7 +1079,7 @@ test.describe.serial("pdmux shell fleet controls", () => {
     // with it.
     await shell.evaluate((el: Marked, mark: number) => (el.__pdmuxMark = mark), MARK);
 
-    await clickUntil(page, "[data-testid='host-add-sidebar']", page.locator("[data-testid='host-label']"));
+    await clickUntil(page, "[data-pdmux-add-host]", page.locator("[data-testid='host-label']"));
     await expect(page).toHaveURL((url) => url.pathname === "/");
     await expect(page.locator("[data-pdmux-grid]")).toBeVisible();
 

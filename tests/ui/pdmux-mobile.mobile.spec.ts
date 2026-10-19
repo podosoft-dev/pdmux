@@ -44,7 +44,7 @@ async function forceShellState(page: Page, sidebar: string, dock: string): Promi
   );
 }
 
-/** The boxes of the three switchable regions, in one pass. */
+/** The boxes of the four switchable regions, in one pass. */
 async function regionBoxes(page: Page): Promise<Record<string, { w: number; h: number }>> {
   return page.evaluate(() => {
     const read = (selector: string) => {
@@ -54,7 +54,8 @@ async function regionBoxes(page: Page): Promise<Record<string, { w: number; h: n
     return {
       hosts: read("[data-pdmux-sidebar]"),
       terminal: read("[data-pdmux-region='terminal']"),
-      git: read("[data-pdmux-region='dock']"),
+      git: read("[data-pdmux-dock-panel='git']"),
+      files: read("[data-pdmux-dock-panel='files']"),
     };
   });
 }
@@ -108,9 +109,9 @@ test.describe("pdmux on a phone", () => {
     const tabs = page.locator("[data-testid='shell-tabs']");
     await expect(tabs).toBeVisible();
     await expectOnScreen(tabs, "view tabs");
-    await expect(tabs.locator("svg")).toHaveCount(3);
+    await expect(tabs.locator("svg")).toHaveCount(4);
 
-    for (const view of ["hosts", "terminal", "git"] as const) {
+    for (const view of ["hosts", "terminal", "git", "files"] as const) {
       await page.locator(`[data-testid='shell-tab-${view}']`).click();
       await expect(page.locator("[data-testid='dashboard-shell']")).toHaveAttribute("data-view", view);
 
@@ -139,7 +140,11 @@ test.describe("pdmux on a phone", () => {
     await expect(shell).toHaveAttribute("data-view", "hosts");
     await page.locator("[data-testid='shell-tab-git']").click();
     await expect(shell).toHaveAttribute("data-view", "git");
+    await page.locator("[data-testid='shell-tab-files']").click();
+    await expect(shell).toHaveAttribute("data-view", "files");
 
+    await page.goBack();
+    await expect(shell).toHaveAttribute("data-view", "git");
     await page.goBack();
     await expect(shell).toHaveAttribute("data-view", "hosts");
     await page.goBack();
@@ -160,8 +165,24 @@ test.describe("pdmux on a phone", () => {
     await expect(page.locator("[data-testid='hosts-panel']")).toBeVisible();
     await expectOnScreen(page.locator("[data-testid='hosts-panel']"), "hosts panel on a phone");
 
-    // The bar is still the way back to the dashboard.
-    await page.locator("[data-testid='shell-tab-terminal']").click();
+    // A page owns its return action; the sidebar keeps only its global controls.
+    const back = page.locator("[data-testid='hosts-panel'] [data-testid='open-dashboard']");
+    await expectOnScreen(back, "page dashboard button on a phone");
+    const backBox = await back.boundingBox();
+    const titleBox = await page.locator("[data-testid='hosts-panel']").getByRole("heading", { level: 1 }).boundingBox();
+    expect(backBox && titleBox && backBox.x + backBox.width <= titleBox.x && backBox.y < titleBox.y + titleBox.height && titleBox.y < backBox.y + backBox.height, "the return button stays left of the title").toBeTruthy();
+    await expect(page.locator("[data-testid='shell-toolbar'] [data-testid='open-dashboard']")).toHaveCount(0);
+    const help = page.locator("[data-testid='hosts-panel'] [data-testid='info-hint']").first();
+    await help.tap();
+    const content = page.locator("[data-testid='info-hint-content']");
+    await expect(content).toBeVisible();
+    // A tooltip used to close as soon as the finger left the trigger.
+    await page.waitForTimeout(600);
+    await expect(content).toBeVisible();
+    await expectOnScreen(content, "persistent touch help");
+    await page.keyboard.press("Escape");
+    await expect(content).toBeHidden();
+    await back.click();
     await expect(page).toHaveURL(/\/$/);
     await expect(shell).toHaveAttribute("data-view", "terminal");
     await expectViewportBound(page);

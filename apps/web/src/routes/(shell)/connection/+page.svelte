@@ -14,6 +14,8 @@
   import { getI18n } from "#lib/i18n/index.js";
   import { desktopConnection } from "#lib/desktop.js";
   import LocalHostCard from "#lib/desktop/local-host-card.svelte";
+  import PageHeading from "#lib/dashboard/components/page-heading.svelte";
+  import InfoHint from "#lib/dashboard/components/info-hint.svelte";
   let { data }: { data: PageData } = $props();
   const i18n = getI18n();
   let server = $state(""); let code = $state(""); let busy = $state(false); let pending = $state(false); let failed = $state(false);
@@ -38,14 +40,14 @@
 </script>
 <svelte:head><title>{i18n.t.desktop.title} · PDMux</title></svelte:head>
 <div class="flex min-h-0 flex-col gap-5 overflow-y-auto p-6" data-pdmux-region="page" data-testid="desktop-connection">
-  <h1 class="text-2xl font-semibold">{i18n.t.desktop.title}</h1>
-  <p class="text-muted-foreground text-sm">{i18n.t.desktop.localDescription}</p>
+  <PageHeading title={i18n.t.desktop.title} help={i18n.t.desktop.localDescription} />
   <LocalHostCard />
   {#if data.status.local}
     <Card.Root class="shrink-0">
-      <Card.Header><Card.Title>{i18n.t.desktop.server}</Card.Title><Card.Description>{i18n.t.desktop.sharing}</Card.Description></Card.Header>
+      <Card.Header><Card.Title class="flex items-center gap-1">{i18n.t.desktop.server}<InfoHint label={i18n.t.desktop.server} text={`${i18n.t.desktop.sharing}\n${i18n.t.desktop.offlineCache}`} /></Card.Title></Card.Header>
       <Card.Content class="space-y-4">
         <p class="text-sm" role="status">{data.status.connected ? (data.status.bridgeConnected ? i18n.t.desktop.connected : i18n.t.desktop.reconnecting) : i18n.t.desktop.localOnly}</p>
+        <p class="text-muted-foreground text-sm">{i18n.t.desktop.shareSummary}</p>
         {#if data.status.serverUrl}<p class="text-muted-foreground break-all text-sm">{data.status.serverUrl} · {data.status.scopeId}</p>{/if}
         {#if data.status.connected && data.status.organizations?.length}
           <div class="grid max-w-xl gap-2"><Label for="desktop-workspace">{i18n.t.desktop.workspace}</Label>
@@ -67,11 +69,10 @@
           <Button variant="outline" disabled={busy || code.length < 32} onclick={() => run(authenticate)}>{i18n.t.desktop.complete}</Button>
         {/if}
         {#if failed || data.status.error}<p class="text-destructive text-sm" role="alert">{i18n.t.desktop.failed}</p>{/if}
-        <p class="text-muted-foreground text-sm">{i18n.t.desktop.offlineCache}</p>
       </Card.Content>
     </Card.Root>
     <Card.Root class="shrink-0">
-      <Card.Header><Card.Title>{i18n.t.desktop.conflicts}</Card.Title><Card.Description>{i18n.t.desktop.conflictDescription}</Card.Description></Card.Header>
+      <Card.Header><Card.Title class="flex items-center gap-1">{i18n.t.desktop.conflicts}<InfoHint label={i18n.t.desktop.conflicts} text={i18n.t.desktop.conflictDescription} /></Card.Title></Card.Header>
       <Card.Content>
         <DataTable {columns} rows={data.status.conflicts ?? []} empty={i18n.t.desktop.noConflicts}>
           {#snippet row(item)}<Table.Cell class="max-w-xs truncate">{item.key}</Table.Cell><Table.Cell><Button size="sm" variant="outline" onclick={() => { conflict = item; }}>{i18n.t.desktop.review}</Button></Table.Cell>{/snippet}
@@ -79,7 +80,7 @@
       </Card.Content>
     </Card.Root>
     {#if data.agents}
-      <Card.Root class="shrink-0"><Card.Header><Card.Title>{i18n.t.desktop.agents}</Card.Title><Card.Description>{i18n.t.desktop.agentDescription}</Card.Description></Card.Header><Card.Content>
+      <Card.Root class="shrink-0"><Card.Header><Card.Title class="flex items-center gap-1">{i18n.t.desktop.agents}<InfoHint label={i18n.t.desktop.agents} text={i18n.t.desktop.agentDescription} /></Card.Title></Card.Header><Card.Content>
         <DataTable columns={[{ key: "file", label: i18n.t.desktop.item }, { key: "available", label: i18n.t.desktop.download }]} rows={data.agents.artifacts}>
           {#snippet row(item)}<Table.Cell class="text-xs">{item.file}</Table.Cell><Table.Cell>{#if item.available}<span class="text-muted-foreground text-sm">{i18n.t.desktop.available}</span>{:else}<Button size="sm" variant="outline" disabled={busy} onclick={() => run(() => download(item.file))}>{i18n.t.desktop.download}</Button>{/if}</Table.Cell>{/snippet}
         </DataTable>

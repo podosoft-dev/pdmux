@@ -26,6 +26,7 @@ import { StackManager, type RuntimeLayout } from "./stack-manager.js";
 import { UpdateCoordinator } from "./updater.js";
 import { UpdateWindow } from "./update-window.js";
 import { DesktopFileTransfers } from "./file-transfers.js";
+import { TerminalPreferencesFile } from "./terminal-preferences.js";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
@@ -46,7 +47,7 @@ async function stopRuntime(): Promise<void> {
   const agent = localAgent; localAgent = undefined;
   stack = undefined;
   fileTransfers = undefined;
-  for (const name of ["pdmux:desktop:action", "pdmux:local-agent:status", "pdmux:local-agent:retry"]) ipcMain.removeHandler(name);
+  for (const name of ["pdmux:desktop:action", "pdmux:local-agent:status", "pdmux:local-agent:retry", "pdmux:preferences:read", "pdmux:preferences:save"]) ipcMain.removeHandler(name);
   await Promise.resolve(transfers?.close()).finally(() => agent?.stop()).finally(() => running?.stop());
 }
 
@@ -242,6 +243,9 @@ async function initialize(): Promise<void> {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || new URL(event.senderFrame.url).origin !== new URL(appUrl).origin) throw new Error("Desktop origin required");
   };
   if (stack) {
+    const preferences = new TerminalPreferencesFile(join(userData, "terminal-preferences.json"));
+    ipcMain.handle("pdmux:preferences:read", event => { requireSender(event); return preferences.read(); });
+    ipcMain.handle("pdmux:preferences:save", (event, value: unknown) => { requireSender(event); return preferences.save(value); });
     ipcMain.handle("pdmux:desktop:action", async (event, action: unknown) => {
       requireSender(event);
       if (action === "backup") { const path = await backup.create("manual"); await dialog.showMessageBox(window, { message: messages.backupComplete, detail: path }); }
@@ -263,16 +267,7 @@ async function initialize(): Promise<void> {
   tray.on("double-click", () => mainWindow?.show());
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: messages.show, click: () => mainWindow?.show() },
-    {
-      label: messages.backup,
-      enabled: config.mode === "local",
-      click: () => {
-        void backup.create("manual")
-          .then((path) => dialog.showMessageBox({ message: messages.backupComplete, detail: path }))
-          .catch((error: unknown) => dialog.showErrorBox(messages.backupFailed, error instanceof Error ? error.message : String(error)));
-      },
-    },
-    { label: messages.openData, click: () => { void shell.openPath(userData); } },
+    ...(config.mode === "local" ? [{ label: messages.settings, click: () => { mainWindow?.show(); void window.loadURL(new URL("/preferences?tab=general", appUrl).href); } }] : []),
     { label: messages.checkUpdates, click: () => { void updater.check(true).catch((error: unknown) => logError("Check desktop update", error)); } },
     { type: "separator" },
     { label: messages.quit, click: () => { quitting = true; app.quit(); } },

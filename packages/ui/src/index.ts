@@ -41,6 +41,7 @@ export { default as RepoTreeView } from './components/RepoTreeView.svelte';
 export { EchoTerminalAdapter } from './adapters/terminal-adapter.js';
 export type { TerminalAdapter, TerminalConnection, TerminalOpenTarget } from './adapters/terminal-adapter.js';
 export { createXtermSurface } from './adapters/terminal-surface.js';
+export { terminalPalette } from './adapters/terminal-surface.js';
 /**
  * Exported for every "copy this" button in the product, not just the terminal's.
  *

@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { expect, test, workerSession } from "../helpers/pdmux-test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
-import { openSidebar } from "../helpers/shell";
+import { openSidebar, openUserMenu } from "../helpers/shell";
 import { seedSoloPane } from "../helpers/pdmux-layout";
 import english from "../../apps/web/src/lib/i18n/catalogs/app/en.json";
 
@@ -618,6 +618,7 @@ test.describe("pdmux terminal", () => {
     // The dashboard page owns the grid, so leaving it really does tear the panes down —
     // that is the honest cost of the terminals living in a page rather than the shell.
     await openSidebar(page);
+    await openUserMenu(page);
     await page.locator("[data-testid='nav-hosts']").click();
     await expect(page.locator("[data-testid='hosts-panel']")).toBeVisible();
     await expect(page.locator("[data-pdmux-grid]")).toHaveCount(0);

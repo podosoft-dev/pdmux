@@ -68,13 +68,13 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
   await page.locator('[data-testid="shell-user"]').click();
   const menu = page.locator('[data-testid="shell-user-menu"]');
   await menu.waitFor();
-  for (const id of ["desktop-menu-settings","shell-server-connection","desktop-menu-backup","desktop-menu-data","desktop-menu-updates"]) assert.equal(await menu.locator(`[data-testid="${id}"]`).count(),1,"[TC-PDDESKTOP-016] desktop menu action");
-  for (const id of ["shell-user-admin","shell-user-account","shell-user-signout","shell-user-identity"]) assert.equal(await menu.locator(`[data-testid="${id}"]`).count(),0,"[TC-PDDESKTOP-016] omit server account actions");
+  for (const id of ["desktop-menu-settings","desktop-menu-updates"]) assert.equal(await menu.locator(`[data-testid="${id}"]`).count(),1,"[TC-PDDESKTOP-016] desktop menu action");
+  for (const id of ["shell-user-admin","shell-user-account","shell-user-signout","shell-user-identity","nav-hosts","nav-settings","nav-access","shell-server-connection","desktop-menu-backup","desktop-menu-data"]) assert.equal(await menu.locator(`[data-testid="${id}"]`).count(),0,"[TC-PDDESKTOP-016] omit server account actions");
   const geometry = await menu.evaluate(node => {
     const box = node.getBoundingClientRect();
     return { x:box.x,y:box.y,width:box.width,height:box.height,viewportWidth:innerWidth,viewportHeight:innerHeight,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight };
   });
-  assert.ok(geometry.width>=220 && geometry.height>180 && geometry.x>=0 && geometry.y>=0 && geometry.x+geometry.width<=geometry.viewportWidth+1 && geometry.y+geometry.height<=geometry.viewportHeight+1 && geometry.scrollHeight<=geometry.clientHeight+1,"[TC-PDDESKTOP-016] menu fits the window without clipping");
+  assert.ok(geometry.width>=220 && geometry.height>100 && geometry.x>=0 && geometry.y>=0 && geometry.x+geometry.width<=geometry.viewportWidth+1 && geometry.y+geometry.height<=geometry.viewportHeight+1 && geometry.scrollHeight<=geometry.clientHeight+1,"[TC-PDDESKTOP-016] menu fits the window without clipping");
   await page.screenshot({path:screenshot}); await writeFile(`${screenshot}.json`,JSON.stringify({ status,geometry },null,2));
   await page.keyboard.press("Escape");
 }

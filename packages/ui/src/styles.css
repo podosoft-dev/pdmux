@@ -243,6 +243,7 @@
 .pdmux-shell[data-view='hosts'] > [data-pdmux-sidebar],
 .pdmux-shell[data-view='terminal'] > [data-pdmux-region='terminal'],
 .pdmux-shell[data-view='git'] > [data-pdmux-region='dock'],
+.pdmux-shell[data-view='files'] > [data-pdmux-region='dock'],
 .pdmux-shell[data-view='page'] > [data-pdmux-region='page'],
 /* No `data-view` at all — first paint before hydration, or a consuming app that has not
    adopted the tab bar: show what the shell is for. */
