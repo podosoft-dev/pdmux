@@ -107,6 +107,9 @@ try {
   web = await context.newPage(); let large = watch(web);
   await web.goto(`${url}/terminal?host=${remote.id}&kind=new&session=${session}${native ? "&backend=native" : ""}`);
   await web.locator("[data-pdmux-surface] .xterm-rows").waitFor();
+  if (native) {
+    assert.equal(await web.locator("[data-pdmux-retarget], [data-pdmux-zoom], [data-pdmux-close], [data-pdmux-detach]").count(), 0, "Detached views omit actions whose dashboard callbacks are unavailable");
+  }
   await until(() => facts(), value => value.clients === 1 && large.cols > 0, "large browser attachment");
   await send(web, "PDMUX_SHARED_TEST=SCREEN_OK; printf 'SHARED_%s\\n' \"$PDMUX_SHARED_TEST\"");
   await until(() => shows(web, "SHARED_SCREEN_OK"), Boolean, "real shell output");

@@ -64,7 +64,7 @@
   onDestroy(() => relay.dispose());
 </script>
 
-{#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} />{/snippet}
+{#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone />{/snippet}
 <SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
 
 <svelte:head><title>{data.hostLabel} · {i18n.t.dash.terminal.detached}</title></svelte:head>
