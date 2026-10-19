@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { VmProviderConfig } from "../vm-provider";
-import { ProxmoxDriver, proxmoxState, smbiosWith, taskError } from "./proxmox.driver";
+import { ProxmoxDriver, bootDisk, diskSizeGb, proxmoxState, smbiosWith, taskError } from "./proxmox.driver";
 
 const UPID = "UPID:n1:0001A2B3:00C0FFEE:68F4A000:qmstart:500:pdmux@pve!vm-provider:";
 
@@ -95,7 +95,7 @@ describe("ProxmoxDriver", () => {
     const { driver } = provider({
       "GET /nodes": [{ node: "n1", status: "online" }, { node: "n2", status: "offline" }],
       "GET /cluster/resources": [
-        { type: "qemu", vmid: 9001, node: "n1", name: "ubuntu-template", template: 1, status: "stopped" },
+        { type: "qemu", vmid: 9001, node: "n1", name: "ubuntu-template", template: 1, status: "stopped", tags: "pdmux-template" },
         { type: "qemu", vmid: 500, node: "n1", name: "vm-500", template: 0, status: "running" },
       ],
       "GET /nodes/n1/storage": [{ storage: "local-lvm", type: "lvmthin", content: "images,rootdir" }],
@@ -104,7 +104,7 @@ describe("ProxmoxDriver", () => {
     });
     expect(await driver.discover()).toEqual({
       nodes: [{ name: "n1", online: true }, { name: "n2", online: false }],
-      templates: [{ ref: { node: "n1", vmid: 9001 }, name: "ubuntu-template" }],
+      templates: [{ ref: { node: "n1", vmid: 9001 }, name: "ubuntu-template", tags: ["pdmux-template"] }],
       // An offline node is not asked about its storage — it would only time out.
       storages: [{ node: "n1", id: "local-lvm", type: "lvmthin", content: ["images", "rootdir"] }],
       bridges: [{ node: "n1", name: "vmbr0" }],
@@ -161,5 +161,25 @@ describe("ProxmoxDriver", () => {
     expect(await driver.vmidFree(501)).toBe(true);
     expect(await driver.vmidFree(161)).toBe(false);
     expect(await driver.lastBackupAt(500, "n1", "backups")).toBe(1792396511000);
+  });
+
+  it("[TC-PDVM-039] grows the boot disk only when it is smaller, and finds which disk boots", async () => {
+    expect(bootDisk({ boot: "order=ide2;scsi0;net0", ide2: "local-lvm:vm-501-cloudinit,media=cdrom", scsi0: "local-lvm:vm-501-disk-0,size=24064M" })).toBe("scsi0");
+    expect(bootDisk({ bootdisk: "virtio0", virtio0: "local:501/vm-501-disk-0.qcow2,size=32G" })).toBe("virtio0");
+    expect(bootDisk({ ide2: "none,media=cdrom" })).toBeNull();
+    expect(diskSizeGb("local-lvm:vm-501-disk-0,discard=on,size=24064M")).toBe(23.5);
+    expect(diskSizeGb("x,size=1T")).toBe(1024);
+
+    const small = provider({
+      "GET /nodes/n1/qemu/501/config": { boot: "order=scsi0;net0", scsi0: "local-lvm:vm-501-disk-0,discard=on,size=24064M" },
+      "PUT /nodes/n1/qemu/501/resize": UPID,
+    });
+    expect(await small.driver.resizeDisk({ node: "n1", vmid: 501 }, 64)).toEqual({ id: UPID, node: "n1" });
+    expect(Object.fromEntries(small.bodies.at(-1) ?? [])).toEqual({ disk: "scsi0", size: "64G" });
+
+    // Disks only grow: a template already this large is left alone, with no request.
+    const large = provider({ "GET /nodes/n1/qemu/501/config": { scsi0: "local-lvm:vm-501-disk-0,size=128G" } });
+    expect(await large.driver.resizeDisk({ node: "n1", vmid: 501 }, 64)).toBeNull();
+    expect(large.calls).toEqual(["GET /nodes/n1/qemu/501/config"]);
   });
 });

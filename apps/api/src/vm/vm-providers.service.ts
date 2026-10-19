@@ -4,7 +4,16 @@ import { IsNull, LessThan, type Repository } from "typeorm";
 import { AppException } from "../common/app-exception";
 import { HostVm } from "./host-vm.entity";
 import { ProxmoxDriver } from "./proxmox/proxmox.driver";
-import type { VmCatalog, VmDriverFactory, VmProviderConfig, VmProviderDriver, VmProviderKind, VmRef } from "./vm-provider";
+import {
+  PROVIDER_DEFAULTS,
+  type VmCatalog,
+  type VmDriverFactory,
+  type VmProviderConfig,
+  type VmProviderDefaults,
+  type VmProviderDriver,
+  type VmProviderKind,
+  type VmRef,
+} from "./vm-provider";
 import { VmProvider } from "./vm-provider.entity";
 
 /** What a screen may know about a provider. The credential is never in it. */
@@ -27,6 +36,7 @@ export interface VmProviderView {
 
 export interface VmProviderInput {
   kind: VmProviderKind;
+  /** Empty: named after the address's host. */
   name: string;
   baseUrl: string;
   tokenId: string;
@@ -40,10 +50,33 @@ export interface VmProviderInput {
   vmidMax: number;
   defaultCores: number;
   defaultMemoryMb: number;
+  defaultDiskGb: number | null;
   fullClone: boolean;
   sleepRequiresTag: string | null;
   backupBeforeSleep: string | null;
   enrollUrl: string | null;
+}
+
+/** A platform pdmux can connect to, with what a new connection starts from. */
+export interface VmProviderKindView {
+  kind: VmProviderKind;
+  defaults: VmProviderDefaults;
+}
+
+export function providerKinds(): VmProviderKindView[] {
+  return (Object.keys(PROVIDER_DEFAULTS) as VmProviderKind[]).map((kind) => ({ kind, defaults: PROVIDER_DEFAULTS[kind] }));
+}
+
+/** A provider name from its address: the host, as a name allows (`pve.example.com`, `192.168.0.10`). */
+export function nameFromAddress(baseUrl: string): string {
+  let host = "";
+  try {
+    host = new URL(baseUrl).hostname;
+  } catch {
+    host = "";
+  }
+  const name = host.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[^A-Za-z0-9]+/, "").slice(0, 63);
+  return name || "provider";
 }
 
 export const defaultDriverFactory: VmDriverFactory = (kind, config, secret) => {
@@ -78,6 +111,7 @@ function configOf(input: VmProviderInput): VmProviderConfig {
       vmidMax: input.vmidMax,
       cores: input.defaultCores,
       memoryMb: input.defaultMemoryMb,
+      diskGb: input.defaultDiskGb,
       fullClone: input.fullClone,
     },
     sleepRequiresTag: input.sleepRequiresTag,
@@ -103,6 +137,7 @@ function inputOf(row: VmProvider): VmProviderInput {
     vmidMax: config.defaults.vmidMax,
     defaultCores: config.defaults.cores,
     defaultMemoryMb: config.defaults.memoryMb,
+    defaultDiskGb: config.defaults.diskGb ?? null,
     fullClone: config.defaults.fullClone,
     sleepRequiresTag: config.sleepRequiresTag,
     backupBeforeSleep: config.backupBeforeSleep,
@@ -133,7 +168,8 @@ export class VmProvidersService {
   }
 
   async create(organizationId: string, input: VmProviderInput): Promise<VmProviderView> {
-    if (await this.providers.findOne({ where: { organizationId, name: input.name } })) {
+    const name = input.name || (await this.freeName(organizationId, nameFromAddress(input.baseUrl)));
+    if (await this.providers.findOne({ where: { organizationId, name } })) {
       throw new AppException("VM_PROVIDER_NAME_TAKEN", "A provider with this name already exists", 409);
     }
     const config = configOf(input);
@@ -141,7 +177,7 @@ export class VmProvidersService {
     const row = await this.providers.save(this.providers.create({
       organizationId,
       kind: input.kind,
-      name: input.name,
+      name,
       config,
       secret: encryptSecret(input.tokenSecret),
       lastTestedAt: new Date(),
@@ -199,6 +235,14 @@ export class VmProvidersService {
     return this.driver(await this.row(organizationId, id)).discover();
   }
 
+  /** `base`, or `base-2`, `base-3` … — the first this scope does not use. */
+  private async freeName(organizationId: string, base: string): Promise<string> {
+    for (let suffix = 1; ; suffix++) {
+      const name = suffix === 1 ? base : `${base.slice(0, 60)}-${suffix}`;
+      if (!(await this.providers.findOne({ where: { organizationId, name } }))) return name;
+    }
+  }
+
   async row(organizationId: string, id: string): Promise<VmProvider> {
     const row = await this.providers.findOne({ where: { id, organizationId } });
     if (!row) throw new AppException("VM_PROVIDER_NOT_FOUND", "VM provider not found", 404);
@@ -236,7 +280,7 @@ export class VmProvidersService {
       baseUrl: row.config.baseUrl,
       tokenId: row.config.tokenId,
       caFingerprint: row.config.caCertificate ? certificateFingerprint(row.config.caCertificate) : null,
-      defaults: row.config.defaults,
+      defaults: { ...row.config.defaults, diskGb: row.config.defaults.diskGb ?? null },
       sleepRequiresTag: row.config.sleepRequiresTag,
       backupBeforeSleep: row.config.backupBeforeSleep,
       enrollUrl: row.config.enrollUrl ?? null,

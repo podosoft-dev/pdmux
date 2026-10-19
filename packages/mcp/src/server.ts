@@ -596,6 +596,7 @@ function registerFleetTools(
         templateVmid: z.number().int().min(100).optional().describe("Omit both template fields for the provider's default"),
         cores: z.number().int().min(1).max(128).optional(),
         memoryMb: z.number().int().min(512).max(1_048_576).optional(),
+        diskGb: z.number().int().min(8).max(65_536).optional().describe("Omit sizes for the provider's defaults"),
         idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),
       },
     },

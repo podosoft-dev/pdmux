@@ -14,8 +14,9 @@ type Session = { user: { id: string; name: string; role: string }; session: { ac
 const member: Session = { user: { id: "u-member", name: "Member", role: "user" }, session: { activeOrganizationId: "org-a" } };
 const admin: Session = { user: { id: "u-admin", name: "Admin", role: "admin" }, session: { activeOrganizationId: "org-a" } };
 
-function app(session: Session): { handle: (method: string, path: string, body?: unknown) => Promise<Response>; calls: string[] } {
+function app(session: Session): { handle: (method: string, path: string, body?: unknown) => Promise<Response>; calls: string[]; created: unknown[] } {
   const calls: string[] = [];
+  const created: unknown[] = [];
   const services = new ServiceRegistry();
   services.register(PDMUX, {
     auth: { requireSession: async () => session },
@@ -29,7 +30,14 @@ function app(session: Session): { handle: (method: string, path: string, body?: 
       link: async () => { calls.push("link"); return view; },
       unlink: async () => { calls.push("unlink"); return { hostId: "h1", name: "vm-500" }; },
     },
-    providers: { list: async () => [], create: async () => { calls.push("create"); return { id: "p1", name: "lab", kind: "proxmox", baseUrl: "https://x" }; } },
+    providers: {
+      list: async () => [],
+      create: async (_scope: string, input: unknown) => {
+        calls.push("create");
+        created.push(input);
+        return { id: "p1", name: "lab", kind: "proxmox", baseUrl: "https://x" };
+      },
+    },
     lifecycle: {
       create: async (scope: string, input: { label: string; template: unknown; idempotencyKey: string }, actor: { name: string }) => {
         calls.push(`create-vm ${scope} ${input.label} ${JSON.stringify(input.template)} ${input.idempotencyKey} ${actor.name}`);
@@ -51,6 +59,7 @@ function app(session: Session): { handle: (method: string, path: string, body?: 
     .use(vmHttpPlugin({ services } as AppContext));
   return {
     calls,
+    created,
     handle: (method, path, body) =>
       plugin.handle(new Request(`http://pdmux.test${path}`, {
         method,
@@ -132,5 +141,40 @@ describe("VM create and delete routes", () => {
   it("[TC-PDVM-031] gives creates a budget of their own", () => {
     expect(VM_HTTP_ROUTES).toContain(`${VM_CREATE_BUDGET.method} ${VM_CREATE_BUDGET.pathPrefix}`);
     expect(VM_CREATE_BUDGET.profile).toEqual({ name: "vm-create", limit: 5, ttlSeconds: 60 });
+  });
+});
+
+describe("VM provider defaults over HTTP", () => {
+  it("[TC-PDVM-038] fills what a new connection leaves out with the platform's defaults", async () => {
+    const { handle, created } = app(admin);
+    const response = await handle("POST", "/vm/providers", {
+      kind: "proxmox",
+      baseUrl: "https://pve.example.test:8006/",
+      tokenId: "pdmux@pve!vm-provider",
+      tokenSecret: "provider-secret-for-test",
+    });
+    expect(response.status).toBe(201);
+    expect(created[0]).toMatchObject({
+      name: "",
+      baseUrl: "https://pve.example.test:8006",
+      defaultCores: 4,
+      defaultMemoryMb: 16_384,
+      defaultDiskGb: 64,
+      vmidMin: 500,
+      vmidMax: 599,
+      fullClone: false,
+      defaultTemplate: null,
+      defaultPool: null,
+      enrollUrl: null,
+    });
+  });
+
+  it("[TC-PDVM-038] tells any member which platforms exist and their defaults", async () => {
+    const { handle } = app(member);
+    const response = await handle("GET", "/vm/provider-kinds");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([
+      { kind: "proxmox", defaults: { cores: 4, memoryMb: 16_384, diskGb: 64, vmidMin: 500, vmidMax: 599, fullClone: false } },
+    ]);
   });
 });

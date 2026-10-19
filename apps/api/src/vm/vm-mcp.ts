@@ -87,6 +87,7 @@ export class VmFleetTools implements FleetVmTools {
       template,
       cores: input.cores ?? null,
       memoryMb: input.memoryMb ?? null,
+      diskGb: input.diskGb ?? null,
       idempotencyKey: input.idempotencyKey,
     }, actor);
   }

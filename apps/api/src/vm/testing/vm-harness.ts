@@ -86,6 +86,7 @@ export function providerInput(overrides: Partial<VmProviderInput> = {}): VmProvi
     vmidMax: 519,
     defaultCores: 2,
     defaultMemoryMb: 2048,
+    defaultDiskGb: null,
     fullClone: false,
     sleepRequiresTag: null,
     backupBeforeSleep: null,

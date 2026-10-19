@@ -33,8 +33,9 @@ export class VmProviderDto {
   @IsIn(["proxmox"])
   kind!: "proxmox";
 
-  @IsString() @IsNotEmpty() @MaxLength(64) @Matches(NAME) @Transform(trim)
-  name!: string;
+  /** Blank: named after the address's host. */
+  @IsOptional() @ValidateIf((_o, value) => value !== null && value !== "") @IsString() @MaxLength(64) @Matches(NAME) @Transform(trim)
+  name?: string | null;
 
   @IsString() @Matches(HTTPS_URL) @MaxLength(255) @Transform(trim)
   baseUrl!: string;
@@ -63,20 +64,24 @@ export class VmProviderDto {
   @IsOptional() @ValidateIf((_o, value) => value !== null) @IsString() @Matches(NAME) @Transform(blankToNull)
   defaultPool: string | null = null;
 
-  @Type(() => Number) @IsInt() @Min(100) @Max(999_999_999)
-  vmidMin!: number;
+  // Every sizing field is optional: a missing one takes the platform's default (PROVIDER_DEFAULTS).
+  @IsOptional() @Type(() => Number) @IsInt() @Min(100) @Max(999_999_999)
+  vmidMin?: number;
 
-  @Type(() => Number) @IsInt() @Min(100) @Max(999_999_999)
-  vmidMax!: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(100) @Max(999_999_999)
+  vmidMax?: number;
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(128)
-  defaultCores = 2;
+  defaultCores?: number;
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(512) @Max(1_048_576)
-  defaultMemoryMb = 4096;
+  defaultMemoryMb?: number;
+
+  @IsOptional() @Type(() => Number) @IsInt() @Min(8) @Max(65_536)
+  defaultDiskGb?: number;
 
   @IsOptional() @IsBoolean()
-  fullClone = false;
+  fullClone?: boolean;
 
   @IsOptional() @ValidateIf((_o, value) => value !== null) @IsString() @Matches(NAME) @Transform(blankToNull)
   sleepRequiresTag: string | null = null;
@@ -132,6 +137,9 @@ export class UpdateVmProviderDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(512) @Max(1_048_576)
   defaultMemoryMb?: number;
 
+  @IsOptional() @ValidateIf((_o, value) => value !== null) @Type(() => Number) @IsInt() @Min(8) @Max(65_536)
+  defaultDiskGb?: number | null;
+
   @IsOptional() @IsBoolean()
   fullClone?: boolean;
 
@@ -181,6 +189,9 @@ export class CreateVmDto {
 
   @IsOptional() @ValidateIf((_o, value) => value !== null) @Type(() => Number) @IsInt() @Min(512) @Max(1_048_576)
   memoryMb: number | null = null;
+
+  @IsOptional() @ValidateIf((_o, value) => value !== null) @Type(() => Number) @IsInt() @Min(8) @Max(65_536)
+  diskGb: number | null = null;
 
   @IsString() @Matches(IDEMPOTENCY_KEY)
   idempotencyKey!: string;

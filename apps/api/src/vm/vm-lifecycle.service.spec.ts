@@ -205,6 +205,50 @@ describe("VmLifecycleService — create", () => {
   });
 });
 
+describe("VmLifecycleService — platform defaults", () => {
+  it("[TC-PDVM-039] with nothing named, takes the template tagged pdmux-template and the pdmux pool, and grows the disk", async () => {
+    const harness = vmHarness();
+    const providerId = await provider(harness, { defaultTemplate: null, defaultPool: null, defaultDiskGb: 64 });
+    harness.driver.templates = [
+      { ref: { node: "n1", vmid: 9001 }, name: "plain", tags: [] },
+      { ref: { node: "n1", vmid: 9002 }, name: "pdmux-base", tags: ["pdmux-template"] },
+    ];
+    harness.driver.pools = ["other", "pdmux"];
+    const created = await harness.lifecycle.create(ORG, { ...request(providerId), cores: null, memoryMb: null }, alice);
+    await harness.operations.settled();
+    expect(harness.driver.calls).toContain("clone 9002->500");
+    expect(harness.driver.clonedInto.get(500)).toBe("pdmux");
+    // The template's 24 GiB grows to the default before the first boot.
+    expect(harness.driver.calls.indexOf("resize 500 64")).toBeLessThan(harness.driver.calls.indexOf("start 500"));
+    expect(harness.driver.disks.get(500)).toBe(64);
+    expect((await harness.hosts.getView(ORG, created.hostId)).vm).toMatchObject({ state: "running", error: null });
+  });
+
+  it("[TC-PDVM-039] leaves a template disk that is already larger, and no pool when the cluster has none named pdmux", async () => {
+    const harness = vmHarness();
+    const providerId = await provider(harness, { defaultPool: null, defaultDiskGb: 64 });
+    harness.driver.cloneDiskGb = 128;
+    await harness.lifecycle.create(ORG, request(providerId), alice);
+    await harness.operations.settled();
+    expect(harness.driver.disks.get(500)).toBe(128);
+    expect(harness.driver.clonedInto.get(500)).toBeNull();
+  });
+
+  it("[TC-PDVM-039] asks for a template instead of guessing when none, or several, carry the tag — and makes no host", async () => {
+    const harness = vmHarness();
+    const providerId = await provider(harness, { defaultTemplate: null });
+    expect((await failure(harness.lifecycle.create(ORG, request(providerId), alice))).code).toBe("VM_TEMPLATE_REQUIRED");
+    harness.driver.templates = [
+      { ref: { node: "n1", vmid: 9002 }, name: "a", tags: ["pdmux-template"] },
+      { ref: { node: "n1", vmid: 9003 }, name: "b", tags: ["pdmux-template"] },
+    ];
+    const several = await failure(harness.lifecycle.create(ORG, request(providerId, "create-key-2"), alice));
+    expect(several.code).toBe("VM_TEMPLATE_REQUIRED");
+    expect(several.details).toEqual({ tagged: ["a", "b"] });
+    expect(await harness.hostRows.find()).toEqual([]);
+  });
+});
+
 describe("VmLifecycleService — delete", () => {
   async function createdMachine(harness: VmHarness): Promise<{ hostId: string }> {
     const providerId = await provider(harness);

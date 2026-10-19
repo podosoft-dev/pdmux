@@ -46,7 +46,7 @@ export class HostVm {
   origin!: HostVmOrigin;
 
   @Column({ type: "jsonb", default: () => "'{}'::jsonb" })
-  spec!: { cores?: number; memoryMb?: number; template?: string };
+  spec!: { cores?: number; memoryMb?: number; diskGb?: number | null; template?: string; pool?: string | null };
 
   @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
   tags!: string[];

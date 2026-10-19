@@ -1,6 +1,7 @@
 /** Every route the VM module serves. `vm.http.spec.ts` keeps this list and the plugin equal. */
 export const VM_HTTP_ROUTES = [
   "GET /vm/providers",
+  "GET /vm/provider-kinds",
   "POST /vm/providers",
   "PATCH /vm/providers/:providerId",
   "DELETE /vm/providers/:providerId",

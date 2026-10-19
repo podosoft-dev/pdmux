@@ -22,6 +22,32 @@ export type VmState = "running" | "hibernated" | "stopped" | "paused" | "unknown
 
 export type VmProviderKind = "proxmox";
 
+/** What a new machine gets unless someone says otherwise, per platform. */
+export interface VmProviderDefaults {
+  cores: number;
+  memoryMb: number;
+  /** The boot disk is grown to this when the template's is smaller. */
+  diskGb: number;
+  vmidMin: number;
+  vmidMax: number;
+  fullClone: boolean;
+}
+
+/**
+ * The platform defaults, so a person connecting a provider types its address and credentials
+ * and nothing else. Template, pool, node and storage default to "find it" rather than a value:
+ * a template tagged `pdmux-template`, a pool named `pdmux` if the cluster has one, the
+ * template's node and storage.
+ */
+export const PROVIDER_DEFAULTS: Record<VmProviderKind, VmProviderDefaults> = {
+  proxmox: { cores: 4, memoryMb: 16_384, diskGb: 64, vmidMin: 500, vmidMax: 599, fullClone: false },
+};
+
+/** A template carrying this tag is used when the provider names none. */
+export const TEMPLATE_TAG = "pdmux-template";
+/** A pool with this name is used when the provider names none. */
+export const DEFAULT_POOL = "pdmux";
+
 /** Where a machine lives at its provider. Opaque to everything but the driver. */
 export interface VmRef {
   node: string;
@@ -48,7 +74,7 @@ export type TaskResult = { done: false } | { done: true; ok: true } | { done: tr
 
 export interface VmCatalog {
   nodes: { name: string; online: boolean }[];
-  templates: { ref: VmRef; name: string }[];
+  templates: { ref: VmRef; name: string; tags: string[] }[];
   storages: { node: string; id: string; type: string; content: string[] }[];
   bridges: { node: string; name: string }[];
   pools: string[];
@@ -91,6 +117,8 @@ export interface VmProviderDriver {
   power(ref: VmRef, action: VmAction, options?: { timeoutSec?: number }): Promise<ProviderTask>;
   clone(spec: CloneSpec): Promise<ProviderTask>;
   configure(ref: VmRef, settings: VmSettings): Promise<void>;
+  /** Grow the boot disk to `sizeGb`. `null` when it is already that large (disks only grow). */
+  resizeDisk(ref: VmRef, sizeGb: number): Promise<ProviderTask | null>;
   remove(ref: VmRef): Promise<ProviderTask | null>;
   backup(ref: VmRef, storage: string, notes: string): Promise<ProviderTask>;
   /** Epoch ms of the newest backup of this id in `storage`, `null` for none. */
@@ -115,6 +143,8 @@ export interface VmProviderConfig {
     vmidMax: number;
     cores: number;
     memoryMb: number;
+    /** Absent on connections saved before disk sizing existed: then the template's size stays. */
+    diskGb?: number | null;
     fullClone: boolean;
   };
   /** Only machines carrying this tag may be hibernated; `null` allows every machine. */

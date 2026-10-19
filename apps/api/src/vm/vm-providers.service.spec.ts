@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { AppException } from "../common/app-exception";
 import { ORG, OTHER_ORG, addHost, providerInput, vmHarness } from "./testing/vm-harness";
+import { nameFromAddress, providerKinds } from "./vm-providers.service";
 
 async function failure(promise: Promise<unknown>): Promise<AppException> {
   try {
@@ -64,5 +65,20 @@ describe("VmProvidersService", () => {
     expect((await harness.providers.test(ORG, provider.id)).lastErrorCode).toBe("VM_PROVIDER_TLS_FAILED");
     harness.driver.failTest = null;
     expect((await harness.providers.test(ORG, provider.id)).lastErrorCode).toBeNull();
+  });
+
+  it("[TC-PDVM-038] names a connection after its address when no name is given, without colliding", async () => {
+    const harness = vmHarness();
+    const first = await harness.providers.create(ORG, providerInput({ name: "" }));
+    const second = await harness.providers.create(ORG, providerInput({ name: "" }));
+    expect([first.name, second.name]).toEqual(["pve.example.test", "pve.example.test-2"]);
+    expect(nameFromAddress("https://192.168.0.10:8006")).toBe("192.168.0.10");
+    expect(nameFromAddress("not a url")).toBe("provider");
+  });
+
+  it("[TC-PDVM-038] offers each platform with what a new machine gets by default", () => {
+    expect(providerKinds()).toEqual([
+      { kind: "proxmox", defaults: { cores: 4, memoryMb: 16_384, diskGb: 64, vmidMin: 500, vmidMax: 599, fullClone: false } },
+    ]);
   });
 });

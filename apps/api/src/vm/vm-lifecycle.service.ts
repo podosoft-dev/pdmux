@@ -16,7 +16,7 @@ import {
   type VmOperationsService,
   type VmStepKit,
 } from "./vm-operations.service";
-import type { VmProviderDriver, VmRef } from "./vm-provider";
+import { DEFAULT_POOL, TEMPLATE_TAG, type VmCatalog, type VmProviderDriver, type VmRef } from "./vm-provider";
 import type { VmProvider } from "./vm-provider.entity";
 import type { VmProvidersService } from "./vm-providers.service";
 
@@ -35,6 +35,8 @@ export interface CreateVmInput {
   template: VmRef | null;
   cores: number | null;
   memoryMb: number | null;
+  /** The boot disk is grown to this; `null` takes the provider's default. */
+  diskGb?: number | null;
   idempotencyKey: string;
 }
 
@@ -49,6 +51,7 @@ const CLONE_MS = 30 * 60_000;
 const START_MS = 5 * 60_000;
 const REMOVE_MS = 10 * 60_000;
 const ENROLL_POLL_MS = 3_000;
+const RESIZE_MS = 5 * 60_000;
 
 /** Every machine pdmux creates carries this tag, so the provider's own screens show who made it. */
 export const CREATED_TAG = "pdmux";
@@ -77,6 +80,23 @@ function uniqueViolation(error: unknown): string | null {
   const code = direct.code ?? direct.driverError?.code;
   if (code !== "23505") return null;
   return direct.constraint ?? direct.driverError?.constraint ?? "";
+}
+
+/**
+ * The template to use when neither the request nor the provider names one: the one carrying
+ * `pdmux-template`. Several, or none, is a question for a person rather than a guess.
+ */
+function taggedTemplate(catalog: VmCatalog): VmRef {
+  const tagged = catalog.templates.filter((entry) => entry.tags.includes(TEMPLATE_TAG));
+  if (tagged.length === 1 && tagged[0]) return tagged[0].ref;
+  throw new AppException(
+    "VM_TEMPLATE_REQUIRED",
+    tagged.length === 0
+      ? `Choose a template, or tag one ${TEMPLATE_TAG}`
+      : `Several templates are tagged ${TEMPLATE_TAG}; choose one`,
+    400,
+    { tagged: tagged.map((entry) => entry.name) },
+  );
 }
 
 function templateOf(row: HostVm): VmRef {
@@ -178,10 +198,12 @@ export class VmLifecycleService implements VmLifecycleRunner {
 
     const provider = await this.providers.row(organizationId, input.providerId);
     const { defaults } = provider.config;
-    const template = input.template ?? defaults.template;
-    if (!template) throw new AppException("VM_TEMPLATE_REQUIRED", "Choose a template, or set a default one on the provider", 400);
     const driver = this.providers.driver(provider);
-    const backupStores = (await driver.discover()).storages
+    const catalog = await driver.discover();
+    const template = input.template ?? defaults.template ?? taggedTemplate(catalog);
+    // A pool named `pdmux` is where a token set up as documented may create machines.
+    const pool = defaults.pool ?? (catalog.pools.includes(DEFAULT_POOL) ? DEFAULT_POOL : null);
+    const backupStores = catalog.storages
       .filter((store) => store.node === template.node && store.content.includes("backup"))
       .map((store) => store.id);
     const ours = new Set((await this.rows.find({ where: { providerId: provider.id } })).map((row) => row.externalId));
@@ -199,7 +221,13 @@ export class VmLifecycleService implements VmLifecycleRunner {
           externalId: String(vmid),
           name: machineName(input.label, vmid),
           origin: "created",
-          spec: { cores: input.cores ?? defaults.cores, memoryMb: input.memoryMb ?? defaults.memoryMb, template: `${template.node}/${template.vmid}` },
+          spec: {
+            cores: input.cores ?? defaults.cores,
+            memoryMb: input.memoryMb ?? defaults.memoryMb,
+            diskGb: input.diskGb ?? defaults.diskGb ?? null,
+            template: `${template.node}/${template.vmid}`,
+            pool,
+          },
           tags: [],
           observedState: "unknown",
           observedAt: null,
@@ -304,6 +332,14 @@ export class VmLifecycleService implements VmLifecycleRunner {
         tags: [CREATED_TAG, ...(sleepTag && sleepTag !== CREATED_TAG ? [sleepTag] : [])],
         description: `pdmux host ${row.hostId}`,
       });
+      if (row.spec.diskGb) {
+        // Grown before the first boot, so the guest's first-boot resize takes the whole disk.
+        const task = await driver.resizeDisk(ref, row.spec.diskGb);
+        if (task) {
+          const outcome = await kit.wait(row, driver, task, RESIZE_MS, generation);
+          if (!outcome.ok) return kit.finish(row, provider, driver, outcome.error, generation);
+        }
+      }
       await kit.step(row, "firmware", null);
     }
     return this.enrollFrom(row, provider, driver, ref, "start", generation, kit);
@@ -357,7 +393,7 @@ export class VmLifecycleService implements VmLifecycleRunner {
           template: templateOf(row),
           vmid: ref.vmid,
           name: row.name,
-          pool: provider.config.defaults.pool,
+          pool: row.spec.pool !== undefined ? row.spec.pool : provider.config.defaults.pool,
           full: provider.config.defaults.fullClone,
           storage: provider.config.defaults.storage,
         });

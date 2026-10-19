@@ -7,13 +7,16 @@ import { PDMUX } from "../pdmux/pdmux.services";
 import { CreateVmDto, DeleteVmDto, LinkHostVmDto, PowerVmDto, UpdateVmProviderDto, VmProviderDto } from "./dto/vm.dto";
 import { FORCED_VM_ACTIONS } from "./vm.contract";
 import type { VmActor } from "./vm-operations.service";
-import type { VmProviderInput } from "./vm-providers.service";
+import { PROVIDER_DEFAULTS } from "./vm-provider";
+import { providerKinds, type VmProviderInput } from "./vm-providers.service";
 import { VM } from "./vm.module-key";
 
+/** A new connection: what the form left out takes the platform's default. */
 function providerInput(input: VmProviderDto): VmProviderInput {
+  const defaults = PROVIDER_DEFAULTS[input.kind];
   return {
     kind: input.kind,
-    name: input.name,
+    name: input.name ?? "",
     baseUrl: input.baseUrl.replace(/\/+$/, ""),
     tokenId: input.tokenId,
     tokenSecret: input.tokenSecret,
@@ -24,11 +27,12 @@ function providerInput(input: VmProviderDto): VmProviderInput {
       : null,
     defaultStorage: input.defaultStorage,
     defaultPool: input.defaultPool,
-    vmidMin: input.vmidMin,
-    vmidMax: input.vmidMax,
-    defaultCores: input.defaultCores,
-    defaultMemoryMb: input.defaultMemoryMb,
-    fullClone: input.fullClone,
+    vmidMin: input.vmidMin ?? defaults.vmidMin,
+    vmidMax: input.vmidMax ?? defaults.vmidMax,
+    defaultCores: input.defaultCores ?? defaults.cores,
+    defaultMemoryMb: input.defaultMemoryMb ?? defaults.memoryMb,
+    defaultDiskGb: input.defaultDiskGb ?? defaults.diskGb,
+    fullClone: input.fullClone ?? defaults.fullClone,
     sleepRequiresTag: input.sleepRequiresTag,
     backupBeforeSleep: input.backupBeforeSleep,
     enrollUrl: input.enrollUrl ? input.enrollUrl.replace(/\/+$/, "") : null,
@@ -54,6 +58,7 @@ function providerPatch(input: UpdateVmProviderDto): Partial<VmProviderInput> {
   if (input.vmidMax !== undefined) patch.vmidMax = input.vmidMax;
   if (input.defaultCores !== undefined) patch.defaultCores = input.defaultCores;
   if (input.defaultMemoryMb !== undefined) patch.defaultMemoryMb = input.defaultMemoryMb;
+  if (input.defaultDiskGb !== undefined) patch.defaultDiskGb = input.defaultDiskGb;
   if (input.fullClone !== undefined) patch.fullClone = input.fullClone;
   if (input.sleepRequiresTag !== undefined) patch.sleepRequiresTag = input.sleepRequiresTag;
   if (input.backupBeforeSleep !== undefined) patch.backupBeforeSleep = input.backupBeforeSleep;
@@ -81,6 +86,11 @@ export const vmHttpPlugin: AppPlugin = (context) => {
     .get("/vm/providers", async ({ request }) => {
       const session = await sessionFor(pdmux, request);
       return vm.providers.list(resolveScopeId(session));
+    })
+    // The platforms a provider can be, and what a new one starts from — the form shows these.
+    .get("/vm/provider-kinds", async ({ request }) => {
+      await sessionFor(pdmux, request);
+      return providerKinds();
     })
     .post("/vm/providers", async ({ request, body, set }) => {
       const session = await sessionFor(pdmux, request);
@@ -156,6 +166,7 @@ export const vmHttpPlugin: AppPlugin = (context) => {
           template,
           cores: input.cores,
           memoryMb: input.memoryMb,
+          diskGb: input.diskGb,
           idempotencyKey: input.idempotencyKey,
         }, actorOf(session)),
         (result) => ({ type: "host", id: result.hostId, label: result.label, metadata: { provider: result.vm.provider.name, location: result.vm.location, externalId: result.vm.externalId } }));

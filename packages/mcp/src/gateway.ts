@@ -214,6 +214,7 @@ export interface VmCreateRequest {
   templateVmid?: number;
   cores?: number;
   memoryMb?: number;
+  diskGb?: number;
   /** The same key on a retry makes one machine; omitted, each call is a new machine. */
   idempotencyKey?: string;
 }

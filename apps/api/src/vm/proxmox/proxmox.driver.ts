@@ -113,6 +113,34 @@ export function smbiosWith(current: string, firmware: { serial: string; sku: str
   ].join(",");
 }
 
+const DISK_KEY = /^(scsi|virtio|sata|ide)\d+$/;
+
+/** A disk option that is a real disk: not a CD-ROM or the cloud-init drive. */
+function isDisk(value: string): boolean {
+  return value !== "" && !/media=cdrom/.test(value) && !/cloudinit/.test(value) && value !== "none";
+}
+
+/**
+ * The disk the machine boots from: the first disk in `boot: order=…`, or the legacy `bootdisk`,
+ * or the first disk there is.
+ */
+export function bootDisk(config: Row): string | null {
+  const order = /order=([^,]+)/.exec(text(config.boot))?.[1]?.split(";") ?? [];
+  const legacy = text(config.bootdisk);
+  const candidates = [...order, ...(legacy ? [legacy] : []), "scsi0", "virtio0", "sata0", "ide0"];
+  return candidates.find((key) => DISK_KEY.test(key) && isDisk(text(config[key]))) ?? null;
+}
+
+/** `size=24064M` → GiB. Proxmox writes K, M, G or T. */
+export function diskSizeGb(value: string): number | null {
+  const match = /(?:^|,)size=(\d+(?:\.\d+)?)([KMGT])?/.exec(value);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  const unit = match[2] ?? "G";
+  const factor = unit === "K" ? 1 / 1024 / 1024 : unit === "M" ? 1 / 1024 : unit === "T" ? 1024 : 1;
+  return amount * factor;
+}
+
 const POWER_PATHS: Record<VmAction, string> = {
   start: "start",
   hibernate: "suspend",
@@ -151,7 +179,7 @@ export class ProxmoxDriver implements VmProviderDriver {
       .filter((row) => row.template === 1)
       .flatMap((row) => {
         const vm = observed(row);
-        return vm ? [{ ref: vm.ref, name: vm.name }] : [];
+        return vm ? [{ ref: vm.ref, name: vm.name, tags: vm.tags }] : [];
       });
     const storages: VmCatalog["storages"] = [];
     const bridges: VmCatalog["bridges"] = [];
@@ -223,6 +251,16 @@ export class ProxmoxDriver implements VmProviderDriver {
       params.smbios1 = smbiosWith(text(config?.smbios1), settings.firmware);
     }
     await this.client.put(`${this.vmPath(ref)}/config`, params);
+  }
+
+  async resizeDisk(ref: VmRef, sizeGb: number): Promise<ProviderTask | null> {
+    const config = (await this.client.get<Row>(`${this.vmPath(ref)}/config`)) ?? {};
+    const disk = bootDisk(config);
+    const current = disk ? diskSizeGb(text(config[disk])) : null;
+    if (!disk || current === null || current >= sizeGb) return null;
+    // Proxmox answers a resize with a task on current versions and with nothing on older ones.
+    const result = await this.client.put(`${this.vmPath(ref)}/resize`, { disk, size: `${sizeGb}G` });
+    return typeof result === "string" && result.startsWith("UPID:") ? taskOf(result) : null;
   }
 
   async remove(ref: VmRef): Promise<ProviderTask | null> {

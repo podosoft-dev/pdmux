@@ -26,10 +26,17 @@ export class FakeDriver implements VmProviderDriver {
   readonly settings = new Map<number, VmSettings>();
   /** Every `configure` in order, as sent. */
   readonly configured: { vmid: number; settings: VmSettings }[] = [];
-  /** Storages `discover` reports. */
+  /** Storages, templates and pools `discover` reports. */
   storages: VmCatalog["storages"] = [];
+  templates: VmCatalog["templates"] = [];
+  pools: string[] = [];
+  /** Boot disk sizes, GiB, by machine; a clone starts at `cloneDiskGb`. */
+  readonly disks = new Map<number, number>();
+  cloneDiskGb = 24;
   /** Backups by `storage/vmid`, for `lastBackupAt` with a storage. */
   readonly storedBackups = new Set<string>();
+  /** The pool each clone was asked to land in. */
+  readonly clonedInto = new Map<number, string | null>();
   /** When set, `clone()` throws this instead of starting a task. */
   failClone: AppException | null = null;
   /** Tasks by id; `result` stays `undefined` while running. */
@@ -59,7 +66,7 @@ export class FakeDriver implements VmProviderDriver {
 
   async discover(): Promise<VmCatalog> {
     this.calls.push("discover");
-    return { nodes: [{ name: "n1", online: true }], templates: [], storages: this.storages, bridges: [], pools: [] };
+    return { nodes: [{ name: "n1", online: true }], templates: this.templates, storages: this.storages, bridges: [], pools: this.pools };
   }
 
   async list(): Promise<ObservedVm[]> {
@@ -99,7 +106,11 @@ export class FakeDriver implements VmProviderDriver {
   async clone(spec: CloneSpec): Promise<ProviderTask> {
     this.calls.push(`clone ${spec.template.vmid}->${spec.vmid}`);
     if (this.failClone) throw this.failClone;
-    return this.startTask("clone", () => this.add(spec.vmid, "stopped", { name: spec.name }));
+    this.clonedInto.set(spec.vmid, spec.pool);
+    return this.startTask("clone", () => {
+      this.add(spec.vmid, "stopped", { name: spec.name });
+      this.disks.set(spec.vmid, this.cloneDiskGb);
+    });
   }
 
   async configure(ref: VmRef, settings: VmSettings): Promise<void> {
@@ -108,6 +119,12 @@ export class FakeDriver implements VmProviderDriver {
     this.settings.set(ref.vmid, { ...(this.settings.get(ref.vmid) ?? {}), ...settings });
     const vm = this.machines.get(ref.vmid);
     if (vm && settings.tags) vm.tags = settings.tags;
+  }
+
+  async resizeDisk(ref: VmRef, sizeGb: number): Promise<ProviderTask | null> {
+    this.calls.push(`resize ${ref.vmid} ${sizeGb}`);
+    if ((this.disks.get(ref.vmid) ?? 0) >= sizeGb) return null;
+    return this.startTask("resize", () => this.disks.set(ref.vmid, sizeGb));
   }
 
   async remove(ref: VmRef): Promise<ProviderTask | null> {
