@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { _electron } from "playwright";
 import { fixtureNativeEngines, fixtureNativeSessions, stopFixtureNativeSessions } from "./native-session-fixture.mjs";
 
-// [TC-PDDESKTOP-023] Real Electron, preload, local persistence, settings navigation,
+// [TC-PDDESKTOP-025] Real Electron, preload, local persistence, settings navigation,
 // and terminal rendering. Only the disposable profile's sessions may be terminated.
 const directory = resolve(process.env.PDMUX_PREFERENCES_EVIDENCE ?? "output/playwright/toolbar/preferences");
 await mkdir(directory, { recursive: true });
@@ -54,7 +54,7 @@ try {
     const measure = async () => {
       const nav = await frame.getByRole("tablist").first().boundingBox();
       const body = await frame.getByRole("tabpanel").first().boundingBox();
-      assert.ok(nav && body && nav.x + nav.width <= body.x && body.width > 300 && body.height > 200, "[TC-PDDESKTOP-023] tabs are left of usable content");
+      assert.ok(nav && body && nav.x + nav.width <= body.x && body.width > 300 && body.height > 200, "[TC-PDDESKTOP-025] tabs are left of usable content");
       const overflow = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth }));
       assert.ok(overflow.width <= overflow.viewport + 1);
       assert.equal(await frame.getByRole("heading", { level: 1 }).count(), 1);
@@ -75,15 +75,15 @@ try {
     assert.deepEqual(await page.evaluate(() => window.pdmuxDesktop.preferences.read()), wanted);
     assert.deepEqual(JSON.parse(await readFile(join(profile, "terminal-preferences.json"), "utf8")), wanted);
     const rejected = await page.evaluate(async () => { try { await window.pdmuxDesktop.preferences.save({ fontFamily: "Menlo", fontSize: 100, lineHeight: 1, theme: "light", cursorStyle: "bar", cursorBlink: true }); return false; } catch { return true; } });
-    assert.ok(rejected, "[TC-PDDESKTOP-023] IPC rejects invalid settings");
+    assert.ok(rejected, "[TC-PDDESKTOP-025] IPC rejects invalid settings");
     assert.deepEqual(await page.evaluate(() => window.pdmuxDesktop.preferences.read()), wanted);
     await page.screenshot({ path: join(directory, "terminal-settings.png"), scale: "css" });
     const probeWindow = application.waitForEvent("window");
     await application.evaluate(async ({ BrowserWindow, app }) => { const probe = new BrowserWindow({ show: false, webPreferences: { preload: app.getAppPath() + "/dist/preload.cjs", sandbox: true, contextIsolation: true, additionalArguments: ["--pdmux-local-runtime=1"] } }); await probe.loadURL("data:text/html,<title>Untrusted settings probe</title>"); });
     const probe = await probeWindow;
     assert.ok(await probe.evaluate(() => typeof window.pdmuxDesktop?.preferences?.read === "function"), "The untrusted-window probe must have the real preload bridge");
-    assert.ok(await probe.evaluate(async () => { try { await window.pdmuxDesktop.preferences.read(); return false; } catch { return true; } }), "[TC-PDDESKTOP-023] untrusted window cannot read device preferences");
-    assert.ok(await probe.evaluate(async () => { try { await window.pdmuxDesktop.preferences.save({ fontFamily: "monospace", fontSize: 13, lineHeight: 1, theme: "pdmux", cursorStyle: "block", cursorBlink: true }); return false; } catch { return true; } }), "[TC-PDDESKTOP-023] untrusted window cannot change device preferences");
+    assert.ok(await probe.evaluate(async () => { try { await window.pdmuxDesktop.preferences.read(); return false; } catch { return true; } }), "[TC-PDDESKTOP-025] untrusted window cannot read device preferences");
+    assert.ok(await probe.evaluate(async () => { try { await window.pdmuxDesktop.preferences.save({ fontFamily: "monospace", fontSize: 13, lineHeight: 1, theme: "pdmux", cursorStyle: "block", cursorBlink: true }); return false; } catch { return true; } }), "[TC-PDDESKTOP-025] untrusted window cannot change device preferences");
     assert.deepEqual(await page.evaluate(() => window.pdmuxDesktop.preferences.read()), wanted);
     await probe.close();
     const routes = [];
@@ -111,8 +111,8 @@ try {
     const current = engines.flatMap(fixtureNativeSessions);
     for (const session of original) {
       const live = current.find(row => row.id === session.id);
-      assert.equal(live?.pid, session.pid, "[TC-PDDESKTOP-023] preferences preserves live sessions");
-      assert.ok(live.cols < session.cols && live.rows < session.rows, "[TC-PDDESKTOP-023] font metrics resize the same upstream session");
+      assert.equal(live?.pid, session.pid, "[TC-PDDESKTOP-025] preferences preserves live sessions");
+      assert.ok(live.cols < session.cols && live.rows < session.rows, "[TC-PDDESKTOP-025] font metrics resize the same upstream session");
     }
     await page.screenshot({ path: join(directory, "terminal-applied.png"), scale: "css" });
     await application.close();application = undefined;
