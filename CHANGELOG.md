@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Power, create and delete the virtual machines behind hosts, starting with Proxmox VE (server
+  only). An administrator connects a provider in Settings → VM providers with its address and an
+  API token; the rest starts at the platform's defaults. Every pane on a machine — in every
+  browser, and in a terminal opened in its own window — shows its state and the change in flight,
+  and offers sleep (the default stop), wake, restart and shut down. **Add host → Create a VM**
+  clones a template that enrolls itself on first boot. Deleting a machine asks for its name and
+  leaves the provider's backups and backup, replication and HA settings alone. MCP tokens get
+  `vm_status`, `vm_power`, `vm_create` and `vm_delete`. See `docs/VM-PROVIDERS.md`.
 - Keep the agent's own settings out of what it starts for users. Agent 0.1.31's terminal shells,
   the tmux server it starts and git hooks no longer inherit `PDMUX_TOKEN`, `PDMUX_CONFIG`,
   `PDMUX_STATE_DIR`, `PDMUX_RESTART`, `PDMUX_DESKTOP_AGENT` or the agent's other `PDMUX_*`

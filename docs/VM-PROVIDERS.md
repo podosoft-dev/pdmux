@@ -83,7 +83,8 @@ keeps everything and costs only memory on disk.
 - **One change at a time.** Claiming a change is a conditional write, so two people (or two
   panes) pressing at once start one task; the other is told who is already changing it.
 - **Every screen agrees.** The machine's state and its change in flight are on the host row;
-  every pane, card and page reads them. A machine going to sleep takes its panes off line at
+  every pane, card and page reads them — a terminal opened in its own window included, with the
+  same power menu and the same wake button. A machine going to sleep takes its panes off line at
   once — before any heartbeat is missed — and each pane says who asked and how long it has run.
 - **Changes made elsewhere are noticed.** pdmux reads each provider once a minute (one replica
   at a time), so a machine started from the provider's own console shows within a minute.
@@ -170,8 +171,11 @@ Only machines pdmux created. **Delete machine** on the host's page asks for the 
 again; the server compares it too, before the provider is asked anything. A sleeping machine
 is woken first (its saved memory locks it), a running one stopped, the machine deleted with
 its disks, then the host removed as if deleted from the host list — its agent credentials,
-settings and history go with it. Backups at the provider are kept. If the provider refuses,
-the host stays with the error and can be deleted again.
+settings and history go with it. Backups at the provider are kept, and so are the provider's
+backup, replication and HA settings: pdmux does not ask Proxmox to *purge* the id, which would
+also take it out of a backup job's exclusion list. A machine that HA or replication still names
+is refused by Proxmox. If the provider refuses, the host stays with the error and can be deleted
+again.
 
 ## 6. From an AI CLI (MCP)
 
