@@ -15,8 +15,11 @@ const execFileAsync = promisify(execFile);
 const legacyLabels = [desktopMessages("en").localHost, desktopMessages("ko").localHost];
 const LABEL_LIMIT = 64;
 const DEFAULT_LABEL_VERSION = 2;
-const configuration = z.object({ hostId: z.string().uuid(), token: z.string().default(""), server: z.string(), hostname: z.string(), layoutPrepared: z.boolean().default(false), defaultLabelVersion: z.number().int().default(1) });
+const TOKEN_NAME = "Desktop runtime";
+const configuration = z.object({ hostId: z.string().uuid(), token: z.string().default(""), tokenId: z.string().optional(), server: z.string(), hostname: z.string(), layoutPrepared: z.boolean().default(false), defaultLabelVersion: z.number().int().default(1) });
 type Configuration = z.infer<typeof configuration>;
+interface TokenRow { id: string; name: string; revokedAt: string | null; expiresAt: string | null }
+const live = (row: TokenRow): boolean => !row.revokedAt && (!row.expiresAt || Date.parse(row.expiresAt) > Date.now());
 export interface LocalAgentStatus { phase: "starting" | "ready" | "failed" | "stopped"; hostId?: string; code?: string }
 export interface LocalAgentDependencies { spawn: typeof spawn; platform: NodeJS.Platform; arch: string; environment: NodeJS.ProcessEnv; legacyComputerName: () => Promise<string>; log: typeof logError }
 
@@ -101,6 +104,21 @@ export class LocalAgent {
     return names.some(name => label === name || (index >= 2 && suffixed(name, index) === label));
   }
 
+  /** Mints the runtime's token and then revokes the one it replaces. A config saved
+   * before token IDs were stored cannot tell its token apart, so every other
+   * unrevoked desktop runtime token of the host is revoked instead. */
+  private async replaceToken(config: Configuration, known?: TokenRow[]): Promise<void> {
+    const previous = config.tokenId;
+    const issued = await this.request<TokenRow & { token: string }>(`/hosts/${config.hostId}/tokens`, "POST", { name: TOKEN_NAME });
+    config.token = issued.token; config.tokenId = issued.id;
+    await this.save(config);
+    try {
+      const rows = known ?? await this.request<TokenRow[]>(`/hosts/${config.hostId}/tokens`);
+      const stale = rows.filter(row => row.id !== issued.id && !row.revokedAt && (previous ? row.id === previous : row.name === TOKEN_NAME));
+      for (const row of stale) await this.request(`/hosts/${config.hostId}/tokens/${row.id}`, "DELETE");
+    } catch (error) { this.dependencies.log("Revoke the replaced desktop agent token", error, { hostId: config.hostId }); }
+  }
+
   private async binary(): Promise<string> {
     const versions = (await readdir(this.layout.agentReleaseDirectory)).filter(value => /^\d+\.\d+\.\d+$/.test(value)).sort((a, b) => compareVersionStrings(b, a) ?? 0);
     const directory = join(this.layout.agentReleaseDirectory, versions[0] ?? "missing");
@@ -138,17 +156,21 @@ export class LocalAgent {
         } catch (error) { this.dependencies.log("Rename the local desktop host", error, { hostId: config.hostId }); }
       }
     }
+    let rows: TokenRow[] | undefined;
     if (!config) {
       const host = await this.request<{ id: string }>("/hosts", "POST", { label: await this.defaultLabel() });
       config = { hostId: host.id, token: "", server: webUrl, hostname: hostname(), layoutPrepared: false, defaultLabelVersion: DEFAULT_LABEL_VERSION };
       await this.save(config);
+      rows = []; // A new host has no earlier token to revoke.
     }
     config.server = webUrl;
-    if (refreshToken) config.token = "";
-    if (!config.token) {
-      const issued = await this.request<{ token: string }>(`/hosts/${config.hostId}/tokens`, "POST", { name: "Desktop runtime" });
-      config.token = issued.token;
+    if (refreshToken && config.token) {
+      const tokenId = config.tokenId;
+      rows = await this.request<TokenRow[]>(`/hosts/${config.hostId}/tokens`);
+      const stored = rows.find(row => row.id === tokenId);
+      if (!stored || !live(stored)) config.token = "";
     }
+    if (!config.token) await this.replaceToken(config, rows);
     await this.save(config);
     this.current = { phase: "starting", hostId: config.hostId };
     this.launch(executable);

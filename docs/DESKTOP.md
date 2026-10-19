@@ -446,7 +446,10 @@ host in the selected local profile, and runs the agent as a supervised child. It
 waits for a real agent connection before assigning a plain shell terminal to cell
 #1. A populated layout is preserved; a layout deliberately cleared after setup stays
 empty on subsequent launches. The server connection page shows agent readiness and
-provides a retry action, including replacement credentials when needed.
+provides a retry action. A retry keeps the agent's token while it is still valid; only a
+revoked, expired or missing token is replaced, and the replaced token is then revoked. A
+profile saved before token IDs were recorded revokes its other desktop runtime tokens on its
+first replacement. A failed revocation is logged and does not stop the agent.
 
 The default host label is the platform name with a short ID derived from the local profile,
 such as `Mac 1A2B`, `Windows 1A2B` or `Linux 1A2B`. Server synchronization shares the label with

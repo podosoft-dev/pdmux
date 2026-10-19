@@ -14,11 +14,12 @@ afterEach(async () => { await agent?.stop(); agent = undefined; if (root) await 
 const hostId = "cc37aebc-f39a-4147-b31b-fb907fe8f78e";
 const profileTag = createHash("sha256").update("local-profile").digest("hex").slice(0, 4).toUpperCase();
 const defaultLabel = (platform: NodeJS.Platform = process.platform): string => `${platform === "darwin" ? "Mac" : platform === "win32" ? "Windows" : "Linux"} ${profileTag}`;
+interface TokenRow { id: string; name: string; token: string; revokedAt: string | null; expiresAt: string | null }
 async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
-  run: () => Promise<void>; payload: () => Record<string, unknown>; setPayload: (value: Record<string, unknown>) => void;
-  calls: Array<{ path: string; body?: object }>; spawned: Array<{ executable: string; args: readonly string[]; options: SpawnOptions }>; directory: string;
+  run: () => Promise<void>; retry: () => Promise<void>; tokens: TokenRow[]; payload: () => Record<string, unknown>; setPayload: (value: Record<string, unknown>) => void;
+  calls: Array<{ method: string; path: string; body?: object }>; spawned: Array<{ executable: string; args: readonly string[]; options: SpawnOptions }>; directory: string;
   label: () => string; setLabel: (value: string) => void; setComputerName: (value: string) => void; computerNameReads: () => number; otherLabels: string[]; legacyConfig: (fields?: Record<string, unknown>) => Promise<void>;
-  failures: Set<"list" | "rename">; logs: Array<{ action: string; error: unknown; context?: Record<string, unknown> }>; config: () => Promise<Record<string, unknown>>;
+  failures: Set<"list" | "rename" | "revoke">; logs: Array<{ action: string; error: unknown; context?: Record<string, unknown> }>; config: () => Promise<Record<string, unknown>>;
 }> {
   root = await mkdtemp(join(tmpdir(), "pdmux-local-agent-"));
   const releases = join(root, "agents"); const directory = join(releases, "0.1.28"); await mkdir(directory, { recursive: true });
@@ -27,21 +28,31 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
   await writeFile(join(directory, name), bytes);
   await writeFile(join(directory, "manifest.json"), JSON.stringify({ artifacts: [{ os: platform === "win32" ? "windows" : platform, arch: process.arch === "x64" ? "amd64" : process.arch, path: `/agent/0.1.28/${name}`, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") }] }));
   const layout: RuntimeLayout = { bunExecutable: process.execPath, apiEntry:"unused", migrateEntry:"unused", webEntry:"unused", dataDirectory: root, filesDirectory: join(root,"files"), databasePath:join(root,"db"),secretPath:join(root,"secret"),agentReleaseDirectory:releases };
-  const calls: Array<{ path: string; body?: object }> = [];
+  const calls: Array<{ method: string; path: string; body?: object }> = [];
   const spawned: Array<{ executable: string; args: readonly string[]; options: SpawnOptions }> = [];
   let payload: Record<string, unknown> = { slots: [] }; let created = false; let label = ""; let computerName = "Design workstation"; let computerNameReads = 0;
   const otherLabels: string[] = [];
-  const failures = new Set<"list" | "rename">();
+  const failures = new Set<"list" | "rename" | "revoke">();
+  const tokens: TokenRow[] = [];
+  const view = (row: TokenRow): Omit<TokenRow, "token"> => ({ id: row.id, name: row.name, revokedAt: row.revokedAt, expiresAt: row.expiresAt });
   const logs: Array<{ action: string; error: unknown; context?: Record<string, unknown> }> = [];
   const stack = {
     start: async () => ({ apiUrl:"http://127.0.0.1:10001", webUrl:"http://127.0.0.1:10002" }),
     localRequest: async (path: string, init?: RequestInit): Promise<Response> => {
       const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-      calls.push({ path, ...(body && typeof body === "object" ? { body } : {}) });
+      const method = init?.method ?? "GET";
+      calls.push({ method, path, ...(body && typeof body === "object" ? { body } : {}) });
       if (path === "/hosts" && init?.method === "POST" && body && typeof body === "object" && "label" in body) { created = true; label = String(body.label); return Response.json({ id: hostId }); }
       if (path === "/hosts" && failures.has("list")) return Response.json({ success: false }, { status: 500 });
       if (path === "/hosts") return Response.json([...otherLabels.map(label => ({ id: crypto.randomUUID(), label })), ...(created ? [{ id: hostId, label }] : [])]);
-      if (path === `/hosts/${hostId}/tokens`) return Response.json({ token: "private-agent-token" });
+      if (path === `/hosts/${hostId}/tokens` && method === "GET") return Response.json(tokens.map(view));
+      if (path === `/hosts/${hostId}/tokens` && method === "POST" && body && typeof body === "object" && "name" in body) {
+        const row = { id: crypto.randomUUID(), name: String(body.name), token: `private-agent-token-${tokens.length + 1}`, revokedAt: null, expiresAt: null };
+        tokens.push(row); return Response.json({ ...view(row), token: row.token }, { status: 201 });
+      }
+      const revoked = tokens.find(row => path === `/hosts/${hostId}/tokens/${row.id}` && method === "DELETE");
+      if (revoked && failures.has("revoke")) return Response.json({ success: false }, { status: 500 });
+      if (revoked) { revoked.revokedAt ??= new Date().toISOString(); return Response.json(view(revoked)); }
       if (path === `/hosts/${hostId}`) {
         if (init?.method === "PATCH" && failures.has("rename")) return Response.json({ success: false }, { status: 500 });
         if (init?.method === "PATCH" && body && typeof body === "object" && "label" in body) label = String(body.label);
@@ -57,7 +68,7 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
     return spawn(process.execPath, ["-e", 'process.stdin.resume(); process.stdin.on("end", () => process.exit(0));'], options);
   }) as typeof spawn;
   agent = new LocalAgent(stack, layout, "local-profile", { platform, legacyComputerName: async () => { computerNameReads += 1; return computerName; }, spawn: launch, log: (action, error, context) => { logs.push({ action, error, ...(context ? { context } : {}) }); }, environment:{ ...process.env, TMUX:"private-fixture", PDMUX_TOKEN:"inherited-token", PDMUX_SERVER:"https://invalid.test", PDMUX_RESTART:"service", INVOCATION_ID:"inherited-service" } });
-  return { run: () => agent!.start(), payload:() => payload, setPayload:value => { payload = value; }, calls, spawned, directory,
+  return { run: () => agent!.start(), retry: () => agent!.start(true), tokens, payload:() => payload, setPayload:value => { payload = value; }, calls, spawned, directory,
     label: () => label, setLabel: value => { label = value; }, setComputerName: value => { computerName = value; }, computerNameReads: () => computerNameReads, otherLabels,
     legacyConfig: async (fields = {}) => {
       const profiles = join(root,"local-agent"); const path = join(profiles,(await readdir(profiles))[0]!,"agent.json");
@@ -106,7 +117,7 @@ for (const label of ["Design workstation", "Design workstation (2)"]) {
     expect(agent?.status()).toEqual({ phase:"ready", hostId });
     expect(state.label()).toBe(defaultLabel());
     expect((await state.config()).defaultLabelVersion).toBe(2);
-    expect(state.calls.filter(call => call.path === `/hosts/${hostId}` && call.body)).toEqual([{ path:`/hosts/${hostId}`, body:{ label:defaultLabel() } }]);
+    expect(state.calls.filter(call => call.path === `/hosts/${hostId}` && call.body)).toEqual([{ method:"PATCH", path:`/hosts/${hostId}`, body:{ label:defaultLabel() } }]);
   });
 }
 it("[TC-PDDESKTOP-017] recognizes a long 0.17.5 computer name cut to the host limit with its suffix", async () => {
@@ -159,9 +170,63 @@ it("[TC-PDDESKTOP-017] prepares #1 once, reuses the host and preserves an intent
   expect(child.options.env?.TMUX).toBeUndefined();
   expect(child.options.env?.PDMUX_RESTART).toBe("none");
   const profiles = join(root,"local-agent"); const config = join(profiles,(await readdir(profiles))[0]!,"agent.json");
-  expect(JSON.parse(await readFile(config,"utf8")).token).toBe("private-agent-token");
+  expect(JSON.parse(await readFile(config,"utf8")).token).toBe("private-agent-token-1");
   if (process.platform !== "win32") expect((await stat(config)).mode & 0o777).toBe(0o600);
   expect(await readdir(join(profiles,(await readdir(profiles))[0]!))).not.toContain("agent.json.tmp");
+});
+const minted = (state: Awaited<ReturnType<typeof fixture>>): number => state.calls.filter(call => call.method === "POST" && call.path === `/hosts/${hostId}/tokens`).length;
+const revocations = (state: Awaited<ReturnType<typeof fixture>>): string[] => state.calls.filter(call => call.method === "DELETE").map(call => call.path.split("/").at(-1)!);
+it("[TC-PDDESKTOP-023] reuses a live agent token on repeated retries", async () => {
+  const state = await fixture(); await state.run();
+  for (let attempt = 0; attempt < 3; attempt += 1) await state.retry();
+  expect(agent?.status()).toEqual({ phase:"ready", hostId });
+  expect(minted(state)).toBe(1); expect(revocations(state)).toEqual([]);
+  expect(state.tokens.map(row => row.revokedAt)).toEqual([null]);
+  expect(await state.config()).toMatchObject({ token:"private-agent-token-1", tokenId:state.tokens[0]!.id });
+  expect(JSON.stringify(state.spawned.map(child => child.args))).not.toContain("private-agent-token");
+});
+it("[TC-PDDESKTOP-023] replaces a revoked agent token once", async () => {
+  const state = await fixture(); await state.run();
+  state.tokens[0]!.revokedAt = new Date().toISOString();
+  await state.retry(); await state.retry();
+  expect(agent?.status()).toEqual({ phase:"ready", hostId });
+  expect(minted(state)).toBe(2); expect(revocations(state)).toEqual([]);
+  expect(state.tokens.map(row => Boolean(row.revokedAt))).toEqual([true, false]);
+  expect(await state.config()).toMatchObject({ token:"private-agent-token-2", tokenId:state.tokens[1]!.id });
+});
+it("[TC-PDDESKTOP-023] replaces an expired agent token and revokes it", async () => {
+  const state = await fixture(); await state.run();
+  state.tokens[0]!.expiresAt = new Date(Date.now() - 1_000).toISOString();
+  await state.retry();
+  expect(agent?.status()).toEqual({ phase:"ready", hostId });
+  expect(minted(state)).toBe(2); expect(revocations(state)).toEqual([state.tokens[0]!.id]);
+  expect(state.tokens.map(row => Boolean(row.revokedAt))).toEqual([true, false]);
+});
+it("[TC-PDDESKTOP-023] revokes stale desktop tokens of a config without a token ID", async () => {
+  const state = await fixture(); await state.run();
+  const stale = [{ id: crypto.randomUUID(), name: "Desktop runtime", token: "stale-1", revokedAt: null, expiresAt: null }, { id: crypto.randomUUID(), name: "Desktop runtime", token: "stale-2", revokedAt: null, expiresAt: null }];
+  const other = { id: crypto.randomUUID(), name: "Build runner", token: "other", revokedAt: null, expiresAt: null };
+  const revoked = { id: crypto.randomUUID(), name: "Desktop runtime", token: "old", revokedAt: new Date(0).toISOString(), expiresAt: null };
+  state.tokens.push(...stale, other, revoked);
+  await state.legacyConfig({ defaultLabelVersion: 2, tokenId: undefined });
+  await state.retry();
+  expect(agent?.status()).toEqual({ phase:"ready", hostId });
+  const current = state.tokens.at(-1)!;
+  expect(minted(state)).toBe(2);
+  expect(revocations(state).sort()).toEqual([state.tokens[0]!.id, ...stale.map(row => row.id)].sort());
+  expect(other.revokedAt).toBeNull(); expect(current.revokedAt).toBeNull();
+  expect(await state.config()).toMatchObject({ token:current.token, tokenId:current.id });
+  await state.retry();
+  expect(minted(state)).toBe(2);
+});
+it("[TC-PDDESKTOP-023] starts with the new token when revoking the old one fails", async () => {
+  const state = await fixture(); await state.run();
+  state.tokens[0]!.expiresAt = new Date(Date.now() - 1_000).toISOString(); state.failures.add("revoke");
+  await state.retry();
+  expect(agent?.status()).toEqual({ phase:"ready", hostId });
+  expect(await state.config()).toMatchObject({ token:"private-agent-token-2", tokenId:state.tokens[1]!.id });
+  expect(state.logs.map(entry => entry.action)).toEqual(["Revoke the replaced desktop agent token"]);
+  expect(JSON.stringify(state.logs)).not.toContain("private-agent-token");
 });
 it("[TC-PDDESKTOP-017] preserves an existing layout on first preparation", async () => {
   const state = await fixture(); const existing = { slots:[{id:"existing",hostId,kind:"shell",session:null}],mode:"split2" };
