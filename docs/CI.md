@@ -164,3 +164,12 @@ report them as timings for this path. Record the first protected workflow's per-
 it runs, including agent reuse, Apple submission waits, app notarization and DMG finalization.
 Local signing measurements and any unrun native CI checks are recorded separately in the private
 workspace operations record.
+
+**Clean-runner verification on releases.** From 0.17.1 a release passes `agent_artifact`, so the
+`agent` job of `desktop.yml` is skipped and `package` runs through its own `!cancelled()` condition.
+GitHub's implicit `success()` checks every ancestor, not only `needs`, so `verify-macos` and
+`verify-platforms` were skipped on every release from 0.17.1 to 0.17.5. They now state
+`!cancelled() && needs.package.result == 'success'`. A replay of the job graph with echo steps in
+place of the real work (run 39229613862) skipped both under the old conditions and ran both under the
+new ones. The release's critical path grows again by the macOS Intel verification (2.7 minutes on
+v0.16.0, before notarization).

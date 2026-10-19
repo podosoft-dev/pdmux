@@ -1,3 +1,4 @@
+import { YAML } from "bun";
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -159,6 +160,27 @@ describe("release workflow", () => {
       "Committed agent manifest differs from this source",
     ]) {
       expect(ciWorkflow).toContain(fragment);
+    }
+  });
+
+  // GitHub's implicit `success()` on a job looks at every ancestor, not only the jobs in
+  // its own `needs`. A release passes `agent_artifact`, so desktop's `agent` job is
+  // skipped and `package` runs through its own `!cancelled()` condition; a verifier
+  // without an explicit condition was then skipped on every release.
+  test("[TC-PDDESKTOP-009] runs downstream jobs of a job that tolerates a skipped need", () => {
+    const tolerates = (condition: unknown): boolean => typeof condition === "string" && /!cancelled\(\)|always\(\)/.test(condition);
+    for (const [file, text] of [["release.yml", workflow], ["desktop.yml", desktopWorkflow]] as const) {
+      const jobs = (YAML.parse(text) as { jobs: Record<string, { needs?: string | string[]; if?: unknown }> }).jobs;
+      for (const [name, job] of Object.entries(jobs)) {
+        const needs = job.needs === undefined ? [] : Array.isArray(job.needs) ? job.needs : [job.needs];
+        const tolerant = needs.filter(need => tolerates(jobs[need]?.if));
+        if (tolerant.length === 0) continue;
+        expect(tolerates(job.if), `${file} ${name} must not inherit the skipped ancestor of ${tolerant.join(", ")}`).toBe(true);
+        for (const need of needs) expect(String(job.if), `${file} ${name} still requires ${need} to succeed`).toContain(`needs.${need}.result == 'success'`);
+      }
+    }
+    for (const verifier of ["verify-macos", "verify-platforms"]) {
+      expect((YAML.parse(desktopWorkflow) as { jobs: Record<string, { if?: unknown }> }).jobs[verifier]?.if).toBe("${{ !cancelled() && needs.package.result == 'success' }}");
     }
   });
 });

@@ -262,6 +262,9 @@ jobs:
 
   verify-macos:
     needs: package
+    # The implicit success() checks every ancestor, and a release skips `agent` because
+    # it passes `agent_artifact`. Without this condition both verifiers never ran on a release.
+    if: ${{ !cancelled() && needs.package.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -308,6 +311,7 @@ jobs:
 
   verify-platforms:
     needs: package
+    if: ${{ !cancelled() && needs.package.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
