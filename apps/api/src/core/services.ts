@@ -9,6 +9,7 @@ import { Database } from "../database/database";
 import { migrationSet } from "../database/migration-files";
 import { MIGRATIONS_READINESS_CHECK, pendingMigrationsCheck } from "../database/migration-readiness";
 import { DATABASE_READINESS_CHECK, ReadinessService } from "../health/readiness.service";
+import { Shutdown } from "./shutdown";
 
 export type { ServiceKey } from "@podosoft/podokit-runtime";
 
@@ -363,6 +364,8 @@ export const REQUEST_GUARDS = Symbol("request-guards") as ServiceKey<RequestGuar
 export const REQUEST_IDENTITY = Symbol("request-identity") as ServiceKey<RequestIdentity>;
 export const RESOLVED_SESSIONS = Symbol("resolved-sessions") as ServiceKey<ResolvedSessions>;
 export const OPENAPI = Symbol("openapi") as ServiceKey<OpenApiRegistry>;
+/** Ends streams and WebSockets when the API shuts down; see core/shutdown.ts. */
+export const SHUTDOWN = Symbol("shutdown") as ServiceKey<Shutdown>;
 
 export interface AppContext {
   env: AppEnv;
@@ -373,6 +376,7 @@ export interface AppContext {
   accessPolicy: AccessPolicy;
   requestGuards: RequestGuardRegistry;
   openapi: OpenApiRegistry;
+  shutdown: Shutdown;
 }
 
 export type ElysiaPlugin = Parameters<Elysia["use"]>[0];
@@ -434,6 +438,9 @@ export function createCoreServices(env: AppEnv): ServiceRegistry {
   });
   services.register(RESOLVED_SESSIONS, new ResolvedSessions());
   services.register(OPENAPI, openapiRegistry);
+  services.register(SHUTDOWN, new Shutdown((error) => {
+    services.resolve(LOGGER).warn({ reason: reasonOf(error) }, "Close a connection at shutdown failed");
+  }));
   return services;
 }
 
@@ -447,5 +454,6 @@ export function appContext(env: AppEnv, services: ServiceRegistry): AppContext {
     accessPolicy: services.resolve(ACCESS_POLICY),
     requestGuards: services.resolve(REQUEST_GUARDS),
     openapi: services.resolve(OPENAPI),
+    shutdown: services.resolve(SHUTDOWN),
   };
 }

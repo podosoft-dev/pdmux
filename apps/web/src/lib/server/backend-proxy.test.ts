@@ -1,5 +1,9 @@
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -1079,4 +1083,142 @@ describe("backend proxy application timeouts", () => {
       "APP_PROXY_TIMEOUTS timeoutMs for /api/exports must be null",
     );
   });
+});
+
+describe("backend proxy shutdown", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // A fresh module, so the shutdown it starts does not reach other tests.
+  async function freshProxy(): Promise<typeof import("./backend-proxy")> {
+    vi.resetModules();
+    return import("./backend-proxy");
+  }
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  function stubEventStream(contentType = "text/event-stream"): { cancelled: () => boolean } {
+    let cancelled = false;
+    vi.stubGlobal("fetch", async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller): void {
+        controller.enqueue(encoder.encode("retry: 3000\n\n"));
+      },
+      cancel(): void {
+        cancelled = true;
+      },
+    }), { headers: { "content-type": contentType } }));
+    return { cancelled: () => cancelled };
+  }
+
+  async function openStream(
+    proxy: typeof import("./backend-proxy"),
+  ): Promise<ReadableStreamDefaultReader<Uint8Array>> {
+    const response = await proxy.proxyRequest(
+      new Request("http://app.localhost/api/events/stream"),
+      "http://api:5002/events/stream",
+    );
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("missing body");
+    return reader;
+  }
+
+  it("ends a relayed event stream cleanly at shutdown and cancels it upstream", async () => {
+    const proxy = await freshProxy();
+    const upstream = stubEventStream();
+    const reader = await openStream(proxy);
+    expect(decoder.decode((await reader.read()).value)).toBe("retry: 3000\n\n");
+
+    proxy.endEventStreams();
+
+    expect(await reader.read()).toEqual({ done: true, value: undefined });
+    await vi.waitFor(() => expect(upstream.cancelled()).toBe(true));
+  });
+
+  it("ends an event stream relayed after shutdown started right away", async () => {
+    const proxy = await freshProxy();
+    proxy.endEventStreams();
+    const upstream = stubEventStream();
+
+    const reader = await openStream(proxy);
+
+    expect((await reader.read()).done).toBe(true);
+    await vi.waitFor(() => expect(upstream.cancelled()).toBe(true));
+  });
+
+  it("leaves other streamed bodies to finish", async () => {
+    const proxy = await freshProxy();
+    const upstream = stubEventStream("application/octet-stream");
+    const reader = await openStream(proxy);
+
+    proxy.endEventStreams();
+
+    expect(decoder.decode((await reader.read()).value)).toBe("retry: 3000\n\n");
+    expect(upstream.cancelled()).toBe(false);
+    await reader.cancel();
+  });
+
+  /** Runs the proxy in its own process with one relayed event stream open, and sends it SIGTERM. */
+  async function terminateWithOpenStream(
+    serverListener: boolean,
+  ): Promise<{ code: number | null; signal: NodeJS.Signals | null; stdout: string }> {
+    // Next to the proxy, which the script imports.
+    const root = mkdtempSync(join(fileURLToPath(new URL(".", import.meta.url)), ".shutdown-"));
+    try {
+      writeFileSync(join(root, "server.ts"), [
+        'import { proxyRequest } from "../backend-proxy";',
+        "const encoder = new TextEncoder();",
+        "globalThis.fetch = (async () => new Response(new ReadableStream({",
+        '  start(controller) { controller.enqueue(encoder.encode("retry: 3000\\n\\n")); },',
+        '}), { headers: { "content-type": "text/event-stream" } })) as unknown as typeof fetch;',
+        "const response = await proxyRequest(",
+        '  new Request("http://app.localhost/api/events/stream"),',
+        '  "http://api:5002/events/stream",',
+        ");",
+        "const reader = response.body!.getReader();",
+        "await reader.read();",
+        "const ended = (async () => { while (!(await reader.read()).done); })();",
+        // adapter-bun's own listener waits for open responses before the process exits.
+        'if (process.argv[2] === "server") process.on("SIGTERM", () => void ended.then(() => {',
+        '  console.log("stream ended");',
+        "  process.exit(0);",
+        "}));",
+        'console.log("stream open");',
+        "setInterval(() => undefined, 1_000);",
+      ].join("\n"));
+      const child = spawn(process.execPath, [join(root, "server.ts"), serverListener ? "server" : "alone"], {
+        stdio: ["ignore", "pipe", "inherit"],
+      });
+      let stdout = "";
+      const opened = new Promise<void>((resolve) => {
+        child.stdout.on("data", (chunk: Buffer) => {
+          stdout += chunk.toString();
+          if (stdout.includes("stream open")) resolve();
+        });
+      });
+      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+        child.once("exit", (code, signal) => resolve({ code, signal }));
+      });
+      await opened;
+      child.kill("SIGTERM");
+      const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+      const result = await exited;
+      clearTimeout(timer);
+      return { ...result, stdout };
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("ends relayed event streams on SIGTERM while the server drains", async () => {
+    const result = await terminateWithOpenStream(true);
+
+    expect(result).toMatchObject({ code: 0, signal: null });
+    expect(result.stdout).toContain("stream ended");
+  }, 10_000);
+
+  it("still lets SIGTERM end a process that has no listener of its own", async () => {
+    expect(await terminateWithOpenStream(false)).toMatchObject({ signal: "SIGTERM" });
+  }, 10_000);
 });

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vitest/config";
+import { appSvelteKitConfig } from "./vite.extensions";
 
 /**
  * Unit tests for the app's own logic: the mappers that turn API JSON into what the
@@ -21,6 +22,11 @@ export default defineConfig({
    * and `@pdmux/ui` are for.
    */
   plugins: [svelte()],
+  // The managed vite.config.ts defines this for builds and the dev server; this
+  // config replaces it for unit tests, so the CSRF check needs the same value here.
+  define: {
+    __PODOKIT_CSRF_TRUSTED_ORIGINS__: JSON.stringify(appSvelteKitConfig.csrf?.trustedOrigins ?? []),
+  },
   test: {
     // PodoKit ships unit tests next to its managed modules under src/.
     include: ["test/**/*.test.ts", "src/**/*.test.ts"],

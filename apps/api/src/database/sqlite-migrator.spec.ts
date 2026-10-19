@@ -27,8 +27,8 @@ describe("SQLite migrator", () => {
   it("runs each migration once and records it atomically", async () => {
     const database = new SqliteDatabase(":memory:");
     try {
-      await runSqliteMigrations(database, definitions);
-      await runSqliteMigrations(database, definitions);
+      await expect(runSqliteMigrations(database, definitions)).resolves.toEqual(["CreateExample1000"]);
+      await expect(runSqliteMigrations(database, definitions)).resolves.toEqual([]);
       expect(database.query<{ count: number }, []>('SELECT count(*) AS "count" FROM "migrations"').get()?.count).toBe(1);
       expect(database.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE name = 'example'").get()?.name).toBe("example");
     } finally {

@@ -10,7 +10,7 @@ import {
   migrateSqliteLegacyAccountIssuers,
   postgresAccountIssuerMigrationDatabase,
 } from "./auth/account-issuer-migration";
-import { assertMigrationsLoaded } from "./database/migration-files";
+import { assertMigrationsLoaded, reportApplied } from "./database/migration-files";
 import { runSqliteMigrations } from "./database/sqlite-migrator";
 
 async function runMigrations(): Promise<void> {
@@ -21,15 +21,19 @@ async function runMigrations(): Promise<void> {
 
   const authMigrations = await getMigrations(auth.options);
   await authMigrations.runMigrations();
+  const created = authMigrations.toBeCreated.map((change) => change.table);
+  const extended = authMigrations.toBeAdded.map((change) => change.table);
+  if (created.length > 0) process.stdout.write(`Created auth tables: ${created.join(", ")}\n`);
+  if (extended.length > 0) process.stdout.write(`Added auth columns to: ${extended.join(", ")}\n`);
 
   if (sqliteDatabase) {
-    await runSqliteMigrations(sqliteDatabase);
+    reportApplied(await runSqliteMigrations(sqliteDatabase));
   } else {
     const { appDataSource: dataSource, appMigrations } = await import("./database/data-source.js");
     await dataSource.initialize();
     try {
       assertMigrationsLoaded(dataSource.migrations, appMigrations);
-      await dataSource.runMigrations();
+      reportApplied((await dataSource.runMigrations()).map((migration) => migration.name));
     } finally {
       await dataSource.destroy();
     }

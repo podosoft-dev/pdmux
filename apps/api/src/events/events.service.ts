@@ -45,6 +45,7 @@ export class EventsService {
   private unregisterReadiness?: () => void;
   private unsubscribe?: Unsubscribe;
   private stopResync?: () => void;
+  private ending = false;
 
   constructor(
     private readonly transport: EventBus,
@@ -134,7 +135,18 @@ export class EventsService {
     );
     this.attach(stream);
     stream.start(signal);
+    if (this.ending) stream.close();
     return stream;
+  }
+
+  /**
+   * Ends every open stream cleanly, and every later one right after its retry
+   * hint, so EventSource clients reconnect to another instance. The API calls
+   * it when shutdown starts, since a stream never finishes on its own.
+   */
+  endStreams(): void {
+    this.ending = true;
+    for (const stream of [...this.streams]) stream.close();
   }
 
   async close(): Promise<void> {

@@ -4,6 +4,7 @@ import { Elysia, t } from "elysia";
 import {
   READINESS,
   REQUEST_IDENTITY,
+  SHUTDOWN,
   type AppPlugin,
   type ElysiaPlugin,
   type PodokitModule,
@@ -148,6 +149,7 @@ export const eventsModule: PodokitModule = {
     });
     services.register(SSE_EVENTS, events, () => events.close());
     services.onStart(() => events.connect());
+    services.resolve(SHUTDOWN).onShutdown(() => events.endStreams());
   },
   plugin: eventsPlugin,
 };

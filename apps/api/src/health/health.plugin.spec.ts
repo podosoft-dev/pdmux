@@ -10,6 +10,7 @@ import {
   createCoreServices,
   DATABASE,
   READINESS,
+  SHUTDOWN,
   type ServiceRegistry,
 } from "../core/services";
 import { Database } from "../database/database";
@@ -27,7 +28,7 @@ afterEach(async () => {
 });
 
 async function readiness(
-  options: { databaseUp: boolean; checks?: Record<string, ReadinessCheck> },
+  options: { databaseUp: boolean; checks?: Record<string, ReadinessCheck>; shuttingDown?: boolean },
 ): Promise<{ status: number; body: unknown }> {
   const env = validateEnv({
     NODE_ENV: "test",
@@ -46,6 +47,7 @@ async function readiness(
   for (const [name, check] of Object.entries(options.checks ?? {})) {
     services.resolve(READINESS).register(name, check);
   }
+  if (options.shuttingDown) services.resolve(SHUTDOWN).begin();
   const app = new Elysia()
     .onError(({ error, set }) => {
       set.status = error instanceof AppException ? error.statusCode : 500;
@@ -93,6 +95,15 @@ describe("GET /health/ready", () => {
     expect(result).toEqual({
       status: 503,
       body: { code: "READINESS_FAILED", message: "One or more dependencies are unavailable: redis, events" },
+    });
+  });
+
+  it("reports not ready once the API starts shutting down", async () => {
+    const result = await readiness({ databaseUp: true, shuttingDown: true });
+
+    expect(result).toEqual({
+      status: 503,
+      body: { code: "SHUTTING_DOWN", message: "The API is shutting down" },
     });
   });
 

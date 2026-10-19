@@ -3,7 +3,7 @@ import { AppException } from "../common/app-exception";
 import type { AppPlugin } from "../core/services";
 import { DATABASE_READINESS_CHECK } from "./readiness.service";
 
-export const healthPlugin: AppPlugin = ({ readiness }) =>
+export const healthPlugin: AppPlugin = ({ readiness, shutdown }) =>
   new Elysia({ name: "podokit.health" })
     .get(
       "/health",
@@ -13,6 +13,8 @@ export const healthPlugin: AppPlugin = ({ readiness }) =>
     .get(
       "/health/ready",
       async () => {
+        // A stopping API takes no new work, though open connections can still ask.
+        if (shutdown.started) throw new AppException("SHUTTING_DOWN", "The API is shutting down", 503);
         const { [DATABASE_READINESS_CHECK]: db, ...checks } = await readiness.run();
         const down = [
           ...(db === "up" ? [] : ["db"]),

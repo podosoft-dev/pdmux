@@ -386,6 +386,28 @@ describe("per-connection safety", () => {
   });
 });
 
+describe("shutdown", () => {
+  it("ends every open stream and each later one right after it opens", async () => {
+    const scheduler = fakeScheduler();
+    const events = await service({ scheduler });
+    const stream = await open(events, user("a"), ["t"]);
+    const waiting = stream.next();
+
+    events.endStreams();
+
+    expect(await waiting).toBeUndefined();
+    expect(events.streamCount).toBe(0);
+    expect(scheduler.active()).toBe(0);
+    const late = await open(events, user("b"));
+    expect(late.isClosed).toBe(true);
+    expect(events.streamCount).toBe(0);
+    const reader = eventStreamResponse(late, events.retryMs).body?.getReader();
+    if (!reader) throw new Error("missing body");
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe("retry: 3000\n\n");
+    expect((await reader.read()).done).toBe(true);
+  });
+});
+
 describe("per-user stream limit", () => {
   it("refuses a user's stream beyond the limit on this replica and frees slots on close", async () => {
     const events = await service({ maxStreamsPerUser: 2 });

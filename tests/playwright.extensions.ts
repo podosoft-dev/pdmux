@@ -76,6 +76,33 @@ export function e2eWorkers(value = process.env.E2E_WORKERS): number {
   return workers;
 }
 
+const TRACE_MODES = [
+  "off",
+  "on",
+  "retain-on-failure",
+  "on-first-retry",
+  "on-all-retries",
+  "retain-on-first-failure",
+  "retain-on-failure-and-retries",
+] as const;
+
+/** A Playwright `trace` mode. */
+export type E2eTrace = (typeof TRACE_MODES)[number];
+
+/**
+ * The Playwright trace mode: `E2E_TRACE`, or `on-first-retry` on CI and `off`
+ * elsewhere. Recording a trace of every test, even one kept only when the test
+ * fails, made the UI tests on the Vite dev server about 30% slower, and those
+ * on one worker about 75%. CI retries a failed test, so the retry records a
+ * trace; locally, rerun the failed file with `E2E_TRACE=retain-on-failure`.
+ */
+export function e2eTrace(value = process.env.E2E_TRACE, ci = Boolean(process.env.CI)): E2eTrace {
+  if (value === undefined || value.trim() === "") return ci ? "on-first-retry" : "off";
+  const mode = TRACE_MODES.find((candidate) => candidate === value.trim());
+  if (!mode) throw new Error(`E2E_TRACE must be one of ${TRACE_MODES.join(", ")}, got "${value}".`);
+  return mode;
+}
+
 /** The run `run-e2e.ts` started, from `E2E_PHASE`, or undefined for a single run. */
 export function e2ePhase(value = process.env.E2E_PHASE): E2ePhase | undefined {
   if (value === undefined || value === "") return undefined;

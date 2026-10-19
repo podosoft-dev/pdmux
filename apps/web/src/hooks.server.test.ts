@@ -21,6 +21,10 @@ const appHook = vi.hoisted(() => ({
 }));
 vi.mock("#lib/server/app-hooks.js", () => ({ appHandle: appHook.handle }));
 
+// The cross-site form check itself is tested in csrf.test.ts.
+const csrf = vi.hoisted(() => ({ refuse: vi.fn<(event: RequestEvent) => Response | null>(() => null) }));
+vi.mock("#lib/server/csrf.js", () => ({ refuseCrossSiteForm: csrf.refuse }));
+
 vi.mock("#lib/server/api.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("#lib/server/api.js")>()),
   serverApiClient: () => ({ get: client.get, auth: { getSession: client.getSession } }),
@@ -48,6 +52,7 @@ describe("handle", () => {
     client.getSession.mockReset();
     resolve.mockClear();
     appHook.handle.mockClear();
+    csrf.refuse.mockClear();
   });
 
   it("requests the session without waiting for site settings", async () => {
@@ -170,6 +175,20 @@ describe("handle", () => {
     expect(resolve).toHaveBeenCalledTimes(1);
     expect(resolve.mock.calls[0]?.[0].locals.user).toMatchObject({ id: "local", role: "admin" });
     expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it("refuses a cross-site form submission before any API lookup or the application hook", async () => {
+    csrf.refuse.mockReturnValueOnce(new Response("Cross-site POST form submissions are forbidden", { status: 403 }));
+    const event = requestEvent("/account");
+
+    const response = await handle({ event, resolve });
+
+    expect(response.status).toBe(403);
+    expect(csrf.refuse).toHaveBeenCalledWith(event);
+    expect(client.get).not.toHaveBeenCalled();
+    expect(client.getSession).not.toHaveBeenCalled();
+    expect(appHook.handle).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
   });
 
   it("lets the application hook answer a request itself", async () => {

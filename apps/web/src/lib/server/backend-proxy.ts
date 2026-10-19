@@ -569,6 +569,69 @@ export function resolveClientIp(getClientAddress: () => string): string | undefi
   }
 }
 
+// adapter-bun waits up to SHUTDOWN_TIMEOUT seconds for open responses when it
+// stops, and a relayed event stream never ends on its own, so one open
+// EventSource held every shutdown for the whole timeout. Relayed streams end as
+// soon as the server receives SIGTERM or SIGINT instead, and their clients
+// reconnect to another instance.
+const relayedEventStreams = new Set<TransformStreamDefaultController<Uint8Array>>();
+let endingEventStreams = false;
+
+/** End every relayed event stream cleanly, and each one relayed afterwards at once. */
+export function endEventStreams(): void {
+  endingEventStreams = true;
+  for (const stream of relayedEventStreams) stream.terminate();
+  relayedEventStreams.clear();
+}
+
+// One signal listener per process serves every instance of this module, since
+// the dev server loads it again after an edit.
+const EVENT_STREAM_ENDERS: unique symbol = Symbol.for("podokit.backend-proxy.event-stream-enders");
+
+function endEventStreamsAtShutdown(): void {
+  const scope = globalThis as typeof globalThis & { [EVENT_STREAM_ENDERS]?: Set<() => void> };
+  let enders = scope[EVENT_STREAM_ENDERS];
+  if (!enders) {
+    const registered = new Set<() => void>();
+    // A once listener is already removed when it runs, so no other listener
+    // left means this one alone kept the signal from ending the process.
+    const onSignal = (signal: NodeJS.Signals): void => {
+      for (const end of registered) end();
+      if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+    };
+    process.once("SIGTERM", onSignal);
+    process.once("SIGINT", onSignal);
+    enders = registered;
+    scope[EVENT_STREAM_ENDERS] = registered;
+  }
+  enders.add(endEventStreams);
+}
+
+/** Relay an upstream event stream so the proxy can end it at shutdown. */
+export function relayEventStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  endEventStreamsAtShutdown();
+  const started: { controller?: TransformStreamDefaultController<Uint8Array> } = {};
+  const relay = new TransformStream<Uint8Array, Uint8Array>({
+    start(controller): void {
+      started.controller = controller;
+    },
+  });
+  const { controller } = started;
+  if (!controller) throw new Error("The event stream relay did not start");
+  if (endingEventStreams) {
+    controller.terminate();
+  } else {
+    relayedEventStreams.add(controller);
+  }
+  // Ending the relay errors its writable side, which cancels the upstream body
+  // and with it the request to the API.
+  void body
+    .pipeTo(relay.writable)
+    .catch(() => undefined)
+    .finally(() => relayedEventStreams.delete(controller));
+  return relay.readable;
+}
+
 export async function proxyRequest(
   request: Request,
   targetUrl: string,
@@ -665,6 +728,8 @@ export async function proxyRequest(
   // unless the body is in memory, so a body of modest, known size is read first.
   const relayedBody = relayedLength && upstream.body && Number(relayedLength) <= IN_MEMORY_RESPONSE_BYTES
     ? await upstream.arrayBuffer()
-    : upstream.body;
+    : upstream.body && upstream.headers.get("content-type")?.startsWith("text/event-stream")
+      ? relayEventStream(upstream.body)
+      : upstream.body;
   return new Response(relayedBody, { status: upstream.status, headers: responseHeaders });
 }

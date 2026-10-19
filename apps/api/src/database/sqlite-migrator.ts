@@ -44,10 +44,11 @@ function migrationName(migration: MigrationInterface): string {
   return migration.name;
 }
 
+/** Applies every pending migration in timestamp order and returns the names it applied. */
 export async function runSqliteMigrations(
   database: SqliteDatabase,
   supplied?: readonly SqliteMigrationDefinition[],
-): Promise<void> {
+): Promise<string[]> {
   prepare(database);
   const definitions = supplied ? [...supplied] : await discoverMigrations();
   definitions.sort((left, right) => left.timestamp - right.timestamp);
@@ -57,6 +58,7 @@ export async function runSqliteMigrations(
     ).all().map((row) => row.name),
   );
   const runner = queryRunner(database);
+  const ran: string[] = [];
   for (const definition of definitions) {
     const name = migrationName(definition.migration);
     if (applied.has(name)) continue;
@@ -71,7 +73,9 @@ export async function runSqliteMigrations(
       database.run("ROLLBACK");
       throw error;
     }
+    ran.push(name);
   }
+  return ran;
 }
 
 export async function revertLatestSqliteMigration(

@@ -8,6 +8,16 @@ describe("environment validation", () => {
     expect(validateEnv({})).toMatchObject({ HOST: "0.0.0.0", SQLITE_PATH: "./data/podokit.sqlite" });
   });
 
+  it("reads SHUTDOWN_TIMEOUT in whole seconds, 30 when unset or empty", () => {
+    expect(validateEnv({}).SHUTDOWN_TIMEOUT).toBe(30);
+    expect(validateEnv({ SHUTDOWN_TIMEOUT: "" }).SHUTDOWN_TIMEOUT).toBe(30);
+    expect(validateEnv({ SHUTDOWN_TIMEOUT: "0" }).SHUTDOWN_TIMEOUT).toBe(0);
+    expect(validateEnv({ SHUTDOWN_TIMEOUT: "45" }).SHUTDOWN_TIMEOUT).toBe(45);
+    for (const value of ["-1", "1.5", "soon", "2147484"]) {
+      expect(() => validateEnv({ SHUTDOWN_TIMEOUT: value })).toThrow("Invalid environment");
+    }
+  });
+
   it("reads HOST and SQLITE_PATH", () => {
     expect(validateEnv({ HOST: " 127.0.0.1 ", SQLITE_PATH: "/var/lib/app/app.sqlite" }))
       .toMatchObject({ HOST: "127.0.0.1", SQLITE_PATH: "/var/lib/app/app.sqlite" });

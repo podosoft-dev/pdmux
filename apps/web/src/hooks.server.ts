@@ -4,6 +4,7 @@ import { building } from "$app/env";
 import { routes } from "$app/manifest";
 import { serverApiClient } from "#lib/server/api.js";
 import { appHandle } from "#lib/server/app-hooks.js";
+import { refuseCrossSiteForm } from "#lib/server/csrf.js";
 import { resolveLocale } from "#lib/i18n/messages.js";
 import { applySearchIndexingHeaders } from "#lib/server/search-indexing.js";
 import { isPublicPath } from "#lib/server/guards.js";
@@ -83,6 +84,10 @@ async function loadRuntimeContext(event: RequestEvent): Promise<void> {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+  // The cross-site form check, which vite.config.ts moves here from SvelteKit so
+  // that /api serves clients without an Origin header (see csrf.ts), comes first.
+  const refused = refuseCrossSiteForm(event);
+  if (refused) return refused;
   // Listed asset endpoints, missing subresources, the API proxy, and
   // prerendering skip the two API lookups. Pages, their data, form actions,
   // remote functions, and the 404 page get the complete runtime context.

@@ -3,7 +3,13 @@ import type { DatabaseProviderName } from "@podosoft/podokit-runtime";
 import { validateEnv } from "../config/env.validation";
 import { PROVIDERS } from "../config/providers";
 import { databaseUrl, sqliteDatabasePath } from "./database";
-import { assertMigrationsLoaded, loadMigrations, migrationName, migrationSet } from "./migration-files";
+import {
+  assertMigrationsLoaded,
+  loadMigrations,
+  migrationName,
+  migrationSet,
+  reportApplied,
+} from "./migration-files";
 import { revertLatestSqliteMigration, runSqliteMigrations } from "./sqlite-migrator";
 
 function databaseProvider(): DatabaseProviderName {
@@ -24,7 +30,7 @@ async function migrate(): Promise<void> {
     const database = new SqliteDatabase(sqliteDatabasePath(databaseUrl(env)), { create: true });
     try {
       if (process.argv.includes("--revert")) await revertLatestSqliteMigration(database);
-      else await runSqliteMigrations(database);
+      else reportApplied(await runSqliteMigrations(database));
     } finally {
       database.close();
     }
@@ -35,7 +41,7 @@ async function migrate(): Promise<void> {
   try {
     assertMigrationsLoaded(dataSource.migrations, appMigrations);
     if (process.argv.includes("--revert")) await dataSource.undoLastMigration({ transaction: "all" });
-    else await dataSource.runMigrations();
+    else reportApplied((await dataSource.runMigrations()).map((migration) => migration.name));
   } finally {
     await dataSource.destroy();
   }

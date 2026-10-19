@@ -71,6 +71,39 @@ tests not run, and selecting an exclusive test runs every other test first. Use
 Application-owned projects in `playwright.projects.cjs` get twins too. A project
 that another project depends on is a setup project and keeps a single copy.
 
+## Failed tests
+
+A failed test keeps a screenshot and a page snapshot (`error-context.md`) in
+its folder under `test-results/`. Passing tests keep nothing.
+
+A local run records no trace, because recording one for every test makes the UI
+tests on the dev server about 30% slower. To get the trace of a failure, rerun
+the failed file with `E2E_TRACE=retain-on-failure`:
+
+```bash
+E2E_TRACE=retain-on-failure E2E_BASE_URL=http://pdmux.localhost bun run test:e2e ui/<file>.ui.spec.ts
+bunx playwright show-trace test-results/<test folder>/trace.zip
+```
+
+The trace shows each action with the page before and after it, the console, and
+the network log of the failed run. `E2E_TRACE` takes any Playwright trace mode.
+On CI (`CI` set), which retries a failed test twice, the first retry records a
+trace (`on-first-retry`) unless `E2E_TRACE` says otherwise.
+
+The hydration helpers in `helpers/hydration.ts` (`ready`, `hydrated`), which
+the `admin-dashboard` module adds, fail at once on a page that cannot hydrate:
+SvelteKit's static error page (`src/error.html`), or a page that throws an
+uncaught error and has not hydrated five seconds later.
+SvelteKit also renders that error page in the browser when hydration fails,
+after a page the server answered with 200. The cause is then in the browser: in
+the helper's error, the dev server output, and the trace of a rerun with
+`E2E_TRACE=retain-on-failure`.
+
+On Linux, a container that starts or stops on the same host changes the
+network, and Chromium drops the page's waiting requests with
+`net::ERR_NETWORK_CHANGED`. The helpers load such a page once more and add a
+`network-changed` annotation to the test; any other failure fails the test.
+
 ## Email tests
 
 The email specs that the `admin-dashboard` module adds read messages from the

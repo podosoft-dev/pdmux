@@ -132,3 +132,8 @@ export function assertMigrationsLoaded(loaded: readonly MigrationInterface[], se
     throw new Error(`Migrations listed in ${MIGRATION_LIST} did not load: ${absent.map((entry) => entry.name).join(", ")}`);
   }
 }
+
+/** Names the migrations a run applied, so deployment and development logs show them. */
+export function reportApplied(names: readonly string[]): void {
+  if (names.length > 0) process.stdout.write(`Applied ${names.length} migrations: ${names.join(", ")}\n`);
+}

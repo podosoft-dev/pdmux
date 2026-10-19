@@ -237,7 +237,8 @@ export const appViteConfig: UserConfig | UserConfigFnObject = {
 /**
  * Application-owned SvelteKit options, such as `alias`, `csrf`, or `prerender`.
  * PodoKit sets `adapter` and `preprocess`, and `paths.origin` from
- * PODOKIT_BUILD_ORIGIN at build time.
+ * PODOKIT_BUILD_ORIGIN at build time. The managed hooks.server.ts applies
+ * `csrf.trustedOrigins` in SvelteKit's place.
  */
 export const appSvelteKitConfig: SvelteKitConfig = desktopBuild ? {
   adapter: adapter({ out: "build-desktop" }),

@@ -26,8 +26,8 @@ services:
     networks: [podokit]
 
   web:
-    mem_limit: ${WEB_MEM_LIMIT:-2g}
-    memswap_limit: ${WEB_MEM_LIMIT:-2g}
+    mem_limit: ${WEB_MEM_LIMIT:-3g}
+    memswap_limit: ${WEB_MEM_LIMIT:-3g}
     build:
       context: .
       dockerfile: Dockerfile.dev

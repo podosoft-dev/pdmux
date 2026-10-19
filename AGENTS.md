@@ -83,6 +83,14 @@ Merge added module settings from `.env.example` into an existing `.env`.
   `apps/web/vite.extensions.ts`. `bun run dev` proxies the exact
   `webSocketPaths` of `.podokit/dev.json` to the API like the `podo dev` gateway,
   so do not add a WebSocket proxy of your own.
+- The managed `apps/web/src/hooks.server.ts` runs the cross-site form check
+  (`apps/web/src/lib/server/csrf.ts`) before anything else, in place of
+  SvelteKit's: a form-type or body-less `POST`/`PUT`/`PATCH`/`DELETE` from another
+  `Origin` gets 403 everywhere, and one without an `Origin` gets 403 except under
+  `/api`, where the API's authentication decides. List trusted origins in
+  `csrf.trustedOrigins` of `appSvelteKitConfig`; never set SvelteKit's `csrf`
+  elsewhere or drop the check from a hook. The check, like SvelteKit's, does not
+  run under `bun run dev`, so verify request handling against the built web app.
 - Server-side API calls (`serverApiClient`) give up after `BACKEND_TIMEOUT_MS`
   (2000), and the proxy answers 504 `BACKEND_TIMEOUT` when the API sends no
   response headers within `BACKEND_PROXY_TIMEOUT_MS` (30000). Once the API's
@@ -99,6 +107,17 @@ Merge added module settings from `.env.example` into an existing `.env`.
   API resolves it once per request from `TRUSTED_PROXY_HOPS` (1: the web proxy) and
   `TRUSTED_PROXY_HEADER`; Better Auth sessions, audit entries, and rate limits use
   the same address.
+- On `SIGTERM` the API and the built web server stop accepting connections, end
+  server-sent event streams at once, give in-flight requests up to
+  `SHUTDOWN_TIMEOUT` seconds (30), and exit. Register every API WebSocket or
+  stream of your own with the `shutdown` service of the plugin context
+  (`shutdown.onShutdown(() => ws.close(GOING_AWAY, "Server shutting down"))`, from
+  `apps/api/src/core/shutdown.ts`) and call the returned function when it closes;
+  an unregistered one holds the process until the timeout. pdmux registers the
+  agent and terminal sockets (`apps/api/src/pdmux/pdmux.ws.ts`), the desktop bridge
+  (`apps/api/src/desktop/desktop.module.ts`), and the fleet event stream
+  (`apps/api/src/pdmux/fleet-events.ts`). The agent, the dashboard, and the
+  desktop read `GOING_AWAY` (1001) as an ordinary drop and reconnect.
 - pdmux keeps the managed proxy unchanged. File transfers
   (`/api/hosts/:hostId/file-transfers`) have no proxy deadline in
   `APP_PROXY_TIMEOUTS` and their chunk route a 1 MiB cap in `APP_BODY_LIMITS`,
@@ -256,8 +275,13 @@ Useful commands:
 - `podo dev watch|up|ps|logs|exec|down` — run container development through the
   shared loopback gateway. `.podokit/dev.json` owns the local hostname and exact
   API WebSocket path allowlist.
-  `podo dev up` rebuilds the images from the current source so a recreated
-  container never runs code older than the files Compose Watch synced.
+  `podo dev up` and `podo dev watch` rebuild the images from the current source so
+  a recreated container never runs code older than the files Compose Watch synced,
+  and `podo dev watch` rebuilds a service another command recreated from an older
+  image. The API container applies pending migrations before every start
+  (`PODOKIT_DEV_MIGRATE`, set by `podo dev`), so a new migration needs no manual step
+  there. A failing migration leaves the API running but not ready, and the API retries
+  it, up to every 10 seconds, until it succeeds; check `podo dev logs api` for the error.
   `podo dev down` also stops this project's running `podo dev watch`; do not
   kill Compose processes by hand.
   The containers read the untracked `.env.docker`; `podo dev` creates it from the
@@ -267,7 +291,7 @@ Useful commands:
 - `podo remove <module>` — un-apply a module (inverse of add; refuses if another module needs it, keeps files you edited).
 - `podo provider list` / `podo provider set <capability> <provider> [--apply]` — inspect or switch database, cache, object storage, events, and jobs. Set is dry-run by default and never migrates or deletes provider data. Local providers require one API process.
 - `podo status` / `podo diff` — see your local edits vs. what PodoKit generated.
-- `podo update` — pull in template/module improvements (3-way merges your edits; never touches owned files).
+- `podo update` — pull in template/module improvements (keeps your edits, 3-way merging the ones whose template changed; never touches owned files).
 - `podo deploy` — plan, apply, verify, or roll back an immutable release on Kubernetes or one Docker host. Production API WebSocket paths belong in the deployment profile's exact `exposure.webSocketPaths` allowlist, and API routes that take bodies above the web server's `BODY_SIZE_LIMIT` (file uploads) in `exposure.apiPaths` (and `.podokit/dev.json` `apiPaths` for `podo dev`; `podo add` and `podo deploy init` fill in the paths modules declare), which reach the API without the web proxy, so the API must check their size, session, and `Origin` itself; Compose trusts forwarding headers only from `exposure.trustedProxyCidrs`. Tag `vX.Y.Z` to build and push the images (`.github/workflows/release.yml`; check its runner — GitHub-hosted minutes are free for public repositories only). Use `.agents/skills/podokit-deploy`.
 - `podo deploy sync` — copy local build output into a running Compose deployment and restart it, for iterating without a release. Not a release: no image is published and the next `apply` discards it. Use `.agents/skills/podokit-deploy-fast`.
 

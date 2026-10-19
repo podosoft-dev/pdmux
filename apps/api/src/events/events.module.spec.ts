@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { AppException } from "@podosoft/podokit-contracts";
-import { MemoryEventBus } from "@podosoft/podokit-runtime";
+import { EVENTS, MemoryEventBus } from "@podosoft/podokit-runtime";
 import { Elysia } from "elysia";
-import type { RequestIdentity } from "../core/services";
+import { validateEnv } from "../config/env.validation";
+import { READINESS, SHUTDOWN, ServiceRegistry, type RequestIdentity } from "../core/services";
+import { Shutdown } from "../core/shutdown";
 import { ReadinessService } from "../health/readiness.service";
 import {
+  eventsModule,
   eventsRoutes,
   maxStreamsPerUser,
   requestEventIdentity,
+  SSE_EVENTS,
   type EventIdentity,
 } from "./events.module";
 import { EventsService } from "./events.service";
@@ -204,6 +208,32 @@ describe("default event identity", () => {
     expect(await identity.subscriber(new Request("http://localhost/events/stream", { headers: { "x-user": "u2" } })))
       .toEqual({ userId: "u2", roles: [] });
     expect(await identity.subscriber(new Request("http://localhost/events/stream"))).toBeUndefined();
+  });
+});
+
+describe("events module", () => {
+  it("ends open streams when the API starts shutting down", async () => {
+    const services = new ServiceRegistry();
+    const shutdown = new Shutdown();
+    services.register(EVENTS, new MemoryEventBus());
+    services.register(READINESS, new ReadinessService());
+    services.register(SHUTDOWN, shutdown);
+    eventsModule.configure?.(validateEnv({}), services);
+    await services.start();
+    try {
+      const stream = await services.resolve(SSE_EVENTS).open(
+        { userId: "u1", roles: [] },
+        undefined,
+        new AbortController().signal,
+      );
+
+      shutdown.begin();
+
+      expect(stream.isClosed).toBe(true);
+      expect(await stream.next()).toBeUndefined();
+    } finally {
+      await services.close();
+    }
   });
 });
 
