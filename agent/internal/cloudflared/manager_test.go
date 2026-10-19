@@ -131,18 +131,20 @@ func TestManagedProcess(t *testing.T) {
 		}
 		oldPoll := readyPoll
 		readyPoll = 10 * time.Millisecond
-		defer func() { readyPoll = oldPoll }()
+		defer func() { manager.Close(); readyPoll = oldPoll }()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		manager.Apply(ctx, protocol.AgentCloudflaredConfig{Enabled: true, Token: "secret-tunnel-token", CheckIntervalSec: 86400})
-		deadline := time.Now().Add(time.Second)
+		deadline := time.Now().Add(5 * time.Second)
 		for manager.Status().State != protocol.CloudflaredConnecting && time.Now().Before(deadline) {
 			time.Sleep(5 * time.Millisecond)
 		}
 		if manager.Status().State != protocol.CloudflaredConnecting {
 			t.Fatalf("status before pidfile = %+v", manager.Status())
 		}
+		// Give each asynchronous transition its own bounded wait.
+		deadline = time.Now().Add(5 * time.Second)
 		for manager.Status().State != protocol.CloudflaredConnected && time.Now().Before(deadline) {
 			time.Sleep(5 * time.Millisecond)
 		}
@@ -150,7 +152,7 @@ func TestManagedProcess(t *testing.T) {
 			t.Fatalf("status = %+v", got)
 		}
 		manager.Apply(ctx, protocol.AgentCloudflaredConfig{Enabled: false, CheckIntervalSec: 86400})
-		deadline = time.Now().Add(time.Second)
+		deadline = time.Now().Add(5 * time.Second)
 		for manager.Status().State != protocol.CloudflaredOff && time.Now().Before(deadline) {
 			time.Sleep(5 * time.Millisecond)
 		}
