@@ -93,7 +93,9 @@ export const test = base.extend<object, { runtime: ReadinessRuntime }>({
         await execute("docker", ["run", "--detach", "--name", postgresContainer, "--publish", "127.0.0.1::5432", "--env", "POSTGRES_HOST_AUTH_METHOD=trust", "--env", "POSTGRES_DB=pdmux", "postgres:16-alpine"]);
         const address = (await execute("docker", ["port", postgresContainer, "5432/tcp"])).stdout.trim();
         databaseEnvironment = { DATABASE_PROVIDER: "postgres", DATABASE_URL: `postgres://postgres@${address}/pdmux`, POSTGRES_HOST: "127.0.0.1", POSTGRES_PORT: address.split(":")[1], POSTGRES_USER: "postgres", POSTGRES_PASSWORD: password, POSTGRES_DB: "pdmux" };
-        await expect.poll(async () => (await execute("docker", ["exec", postgresContainer, "pg_isready", "-U", "postgres"]).catch(() => ({ stdout: "" }))).stdout, { timeout: 30_000 }).toContain("accepting connections");
+        // The image's temporary init server accepts Unix sockets before it restarts.
+        // Wait for TCP so migrations cannot connect to that short-lived server.
+        await expect.poll(async () => (await execute("docker", ["exec", postgresContainer, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]).catch(() => ({ stdout: "" }))).stdout, { timeout: 30_000 }).toContain("accepting connections");
       }
       const addresses = await stack.start();
       await execute("docker", ["build", "-f", join(repository, "tests/readiness/Dockerfile.agent"), "-t", "pdmux-readiness-agent:local", join(repository, "tests/readiness")], { timeout: 180_000 });
