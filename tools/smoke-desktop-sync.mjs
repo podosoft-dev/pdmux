@@ -143,7 +143,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
     const mirror = cloudHosts.find(host => host.label === "desktop-owned");
     assert.ok(mirror, "Publish desktop hosts to the web workspace");
     await json(localUrl, `/hosts/${localHost.id}`, localCookie, "PATCH", { label: "Desktop workstation" });
-    assert.equal((await json(serverUrl, `/hosts/${mirror.id}`, cloudCookie)).label, "Desktop workstation", "[TC-PDDESKTOP-017] a local computer-name change reaches the existing web host");
+    assert.equal((await json(serverUrl, `/hosts/${mirror.id}`, cloudCookie)).label, "Desktop workstation", "[TC-PDDESKTOP-017] a local host rename reaches the existing web host");
     await local.control("disconnect");
     await json(localUrl, `/hosts/${localHost.id}`, localCookie, "PATCH", { label: "Renamed workstation" });
     await local.control("connect", { url: tlsOrigin, cookie: cloudCookie });
