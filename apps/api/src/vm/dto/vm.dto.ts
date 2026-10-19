@@ -1,4 +1,5 @@
 import { Transform, Type } from "class-transformer";
+import { VM_ACTIONS, type VmAction } from "../vm-provider";
 import {
   IsBoolean,
   IsIn,
@@ -142,4 +143,9 @@ export class LinkHostVmDto {
 
   @Type(() => Number) @IsInt() @Min(100) @Max(999_999_999)
   vmid!: number;
+}
+
+export class PowerVmDto {
+  @IsIn([...VM_ACTIONS])
+  action!: VmAction;
 }

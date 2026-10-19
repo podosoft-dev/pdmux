@@ -83,6 +83,20 @@ export function assertCanManageFleet(session: ScopedSession): void {
 }
 
 /**
+ * Who may power a host's machine on, off, to sleep or through a restart.
+ *
+ * ⚠ WIDER THAN `assertCanManageFleet`, ON PURPOSE (2026-10-19 decision). Starting the machine
+ * a member is about to work on, or putting it to sleep when they are done, is the everyday use
+ * of a VM provider — making it an administrator's job would make the feature useless to the
+ * people it is for. Changing what the fleet IS (connecting a provider, creating or deleting a
+ * machine) stays with administrators, and so do the forced power changes that can lose unsaved
+ * work: those go through `assertCanManageFleet` at the route.
+ */
+export function assertCanOperateHostPower(session: ScopedSession): void {
+  resolveScopeId(session);
+}
+
+/**
  * The strongest MCP token this session may mint.
  *
  * ⚠ IT IS `assertCanManageFleet` EXPRESSED AS A CEILING, NOT A SECOND RULE. A fleet

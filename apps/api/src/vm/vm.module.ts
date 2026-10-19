@@ -1,3 +1,4 @@
+import { RATE_LIMIT_ROUTES } from "@podosoft/podokit-runtime";
 import { Elysia } from "elysia";
 import type { PodokitModule } from "../core/services";
 import { isDesktopRuntime } from "../desktop/local-auth";
@@ -5,9 +6,11 @@ import { PDMUX } from "../pdmux/pdmux.services";
 import { HostVm } from "./host-vm.entity";
 import { HostVmsService } from "./host-vms.service";
 import { VmProvider } from "./vm-provider.entity";
+import { VmOperationsService } from "./vm-operations.service";
 import { VmProvidersService } from "./vm-providers.service";
+import { VM_POWER_BUDGET } from "./vm.contract";
 import { vmHttpPlugin } from "./vm.http";
-import { VM } from "./vm.module-key";
+import { VM, VM_OPERATIONS } from "./vm.module-key";
 
 /**
  * VM providers: connect a VM platform, link or create the machine behind a host, power it.
@@ -26,8 +29,14 @@ export const vmModule: PodokitModule = {
       pdmux.dataSource.getRepository(HostVm),
     );
     const machines = new HostVmsService(pdmux.dataSource.getRepository(HostVm), providers, pdmux.hosts, pdmux.hostEvents);
-    services.register(VM, { providers, machines });
-    services.onStart(() => machines.connect());
+    const operations = new VmOperationsService(pdmux.dataSource.getRepository(HostVm), providers, pdmux.hostEvents);
+    services.register(VM, { providers, machines, operations });
+    services.register(VM_OPERATIONS, operations, () => operations.stop());
+    services.onStart(() => {
+      machines.connect();
+      operations.start();
+    });
+    services.tryResolve(RATE_LIMIT_ROUTES)?.register(VM_POWER_BUDGET);
   },
   plugin: (context) => (context.services.tryResolve(VM) ? vmHttpPlugin(context) : new Elysia({ name: "pdmux.vm.http" })),
 };

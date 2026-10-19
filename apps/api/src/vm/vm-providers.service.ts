@@ -1,6 +1,6 @@
 import { X509Certificate } from "node:crypto";
 import { decryptSecret, encryptSecret } from "@podosoft/podokit-auth";
-import type { Repository } from "typeorm";
+import { IsNull, LessThan, type Repository } from "typeorm";
 import { AppException } from "../common/app-exception";
 import { HostVm } from "./host-vm.entity";
 import { ProxmoxDriver } from "./proxmox/proxmox.driver";
@@ -199,6 +199,25 @@ export class VmProvidersService {
     const row = await this.providers.findOne({ where: { id, organizationId } });
     if (!row) throw new AppException("VM_PROVIDER_NOT_FOUND", "VM provider not found", 404);
     return row;
+  }
+
+  /** Every provider in every scope — the reconcile's list, never a request's. */
+  allRows(): Promise<VmProvider[]> {
+    return this.providers.find();
+  }
+
+  /**
+   * Take this provider's reconcile for a while, if nobody holds it.
+   *
+   * Two API replicas would otherwise both read the provider every minute and both write what
+   * they saw. A conditional write decides who does it; the lease runs out on its own, so a
+   * replica that died does not keep it.
+   */
+  async claimLease(id: string, now: Date, until: Date): Promise<boolean> {
+    const free = await this.providers.update({ id, reconcileLeaseUntil: IsNull() }, { reconcileLeaseUntil: until });
+    if ((free.affected ?? 0) > 0) return true;
+    const expired = await this.providers.update({ id, reconcileLeaseUntil: LessThan(now) }, { reconcileLeaseUntil: until });
+    return (expired.affected ?? 0) > 0;
   }
 
   driver(row: VmProvider): VmProviderDriver {

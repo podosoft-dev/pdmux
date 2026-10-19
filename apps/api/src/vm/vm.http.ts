@@ -1,10 +1,11 @@
 import { Elysia } from "elysia";
 import type { AppPlugin } from "../core/services";
-import { assertCanManageFleet, resolveScopeId } from "../fleet/session-scope";
+import { assertCanManageFleet, assertCanOperateHostPower, resolveScopeId } from "../fleet/session-scope";
 import { dto } from "../common/dto";
 import { audit, sessionFor } from "../pdmux/pdmux.http";
 import { PDMUX } from "../pdmux/pdmux.services";
-import { LinkHostVmDto, UpdateVmProviderDto, VmProviderDto } from "./dto/vm.dto";
+import { LinkHostVmDto, PowerVmDto, UpdateVmProviderDto, VmProviderDto } from "./dto/vm.dto";
+import { FORCED_VM_ACTIONS } from "./vm.contract";
 import type { VmProviderInput } from "./vm-providers.service";
 import { VM } from "./vm.module-key";
 
@@ -121,5 +122,19 @@ export const vmHttpPlugin: AppPlugin = (context) => {
       return audit(pdmux, request, session, "vm.unlink",
         () => vm.machines.unlink(resolveScopeId(session), params.hostId),
         (result) => ({ type: "host", id: params.hostId, label: result.name }));
+    })
+    .post("/hosts/:hostId/vm/power", async ({ request, params, body, set }) => {
+      const session = await sessionFor(pdmux, request);
+      const { action } = dto(PowerVmDto, body);
+      if (FORCED_VM_ACTIONS.has(action)) assertCanManageFleet(session);
+      else assertCanOperateHostPower(session);
+      const user = session.user as { id: string; name?: unknown; email?: unknown };
+      const actor = { id: user.id, name: [user.name, user.email].find((value): value is string => typeof value === "string" && value.length > 0) ?? user.id };
+      const view = await audit(pdmux, request, session, "vm.power.request",
+        () => vm.operations.power(resolveScopeId(session), params.hostId, action, actor),
+        (result) => ({ type: "host", id: params.hostId, label: result.name, metadata: { action, provider: result.provider.name } }));
+      // Accepted, not done: the change runs on, and every screen hears of each step.
+      set.status = 202;
+      return view;
     });
 };
