@@ -1158,6 +1158,63 @@ test.describe('pdmux ui geometry', () => {
 		expect(narrow.chip[0]).toMatchObject({ text: 'main', cut: false });
 	});
 
+	/**
+	 * FOUND WHILE FIXING THE CHIPS: in the app's default 420px dock with the refs column
+	 * open, the list is about 270px wide and the author (110px), the date (112px) and the
+	 * sha (60px) filled all of it — every commit's subject was 0px, chips or not. The
+	 * columns that repeat on every row give way first, by the list's own width.
+	 */
+	const dockRows = (page: import('@playwright/test').Page) =>
+		page.evaluate(() => {
+			const list = document.querySelector('.pdmux-graph-list') as HTMLElement;
+			const shown = (node: Element | null) => (node && getComputedStyle(node).display !== 'none' ? Math.round(node.getBoundingClientRect().width) : 0);
+			const rows = [...document.querySelectorAll<HTMLElement>('.pdmux-graph-row')].slice(0, 12);
+			return {
+				list: Math.round(list.getBoundingClientRect().width),
+				rows: rows.map((row) => ({
+					subject: shown(row.querySelector('.pdmux-graph-subject')),
+					author: shown(row.querySelector('.pdmux-graph-author')),
+					date: shown(row.querySelector('.pdmux-graph-date')),
+					sha: shown(row.querySelector('.pdmux-graph-sha')),
+					spills: row.scrollWidth > row.clientWidth + 1,
+					title: row.getAttribute('title'),
+				})),
+			};
+		});
+
+	test('[TC-PDUI-235] the default dock with its refs column open still shows every subject', async ({ page }, testInfo) => {
+		await page.goto(graphUrl(420, ['HEAD -> main', 'origin/main', 'origin/HEAD']).replace('screen=graph', 'screen=dock'));
+		await page.waitForSelector('.pdmux-graph-row');
+		const dock = await dockRows(page);
+		console.log(`TC-PDUI-235 420px refs open ${JSON.stringify(dock)}`);
+		await page.screenshot({ path: testInfo.outputPath('dock-420-refs.png'), animations: 'disabled' });
+		expect(dock.list).toBeLessThan(300);
+		for (const row of dock.rows) {
+			expect(row.subject, 'the subject is what a person reads').toBeGreaterThanOrEqual(120);
+			expect(row.spills, 'nothing runs past the row').toBe(false);
+		}
+		// What gave way is still one hover away, and the detail panel has all of it.
+		expect(dock.rows[1]?.title).toContain('tester');
+		expect(dock.rows[1]?.title).toContain('0001aaa');
+	});
+
+	test('[TC-PDUI-235] a dock with room keeps every column', async ({ page }) => {
+		await page.goto(graphUrl(900, ['HEAD -> main', 'origin/main']).replace('screen=graph', 'screen=dock'));
+		await page.waitForSelector('.pdmux-graph-row');
+		const wide = await dockRows(page);
+		console.log(`TC-PDUI-235 900px refs open ${JSON.stringify(wide.rows[1])} list=${wide.list}`);
+		expect(wide.rows[1]).toMatchObject({ author: 110, date: 112, sha: 60 });
+		expect(wide.rows[1]?.subject ?? 0).toBeGreaterThanOrEqual(120);
+
+		// The default dock with the refs column closed keeps the date and the sha.
+		await page.goto(`${graphUrl(420, ['HEAD -> main'])}&refsPanel=0`.replace('screen=graph', 'screen=dock'));
+		await page.waitForSelector('.pdmux-graph-row');
+		const plain = await dockRows(page);
+		console.log(`TC-PDUI-235 420px refs closed ${JSON.stringify(plain.rows[1])} list=${plain.list}`);
+		expect(plain.rows[1]).toMatchObject({ author: 0, date: 112, sha: 60 });
+		for (const row of plain.rows) expect(row.subject).toBeGreaterThanOrEqual(120);
+	});
+
 	test.describe('on a coarse pointer', () => {
 		test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 

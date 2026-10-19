@@ -1876,6 +1876,9 @@
    Chrome. Left as it is on purpose — changing it changes what a live screen looks
    like, which is a decision rather than a tidy-up. */
 .pdmux-graph-list {
+	/* The row columns size themselves from this box: see the container queries after
+	   `.pdmux-graph-chip`. */
+	container: pdmux-graph-list / inline-size;
 	flex: 1;
 	min-height: 0;
 	min-width: 0;
@@ -1952,7 +1955,8 @@
 
 .pdmux-graph-subject {
 	flex: 1;
-	min-width: 0;
+	/* The floor the columns around it give way to (`[TC-PDUI-235]`). */
+	min-width: 120px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -1999,9 +2003,11 @@
    name's whole width: measured at 390px, a 30-character branch on the latest commit left
    the subject 39px (`chor…`). The chips now take at most a quarter of the row and each one
    ends in an ellipsis; the whole name is in the chip's tooltip and in the commit detail.
-   A quarter is what keeps the subject above 120px on a 390px phone (`[TC-PDUI-234]`). */
+   A quarter is what keeps the subject above 120px on a 390px phone (`[TC-PDUI-234]`),
+   and they shrink before the subject's floor does. */
 .pdmux-graph-chips {
-	flex: none;
+	flex: 0 1 auto;
+	min-width: 0;
 	max-width: 25%;
 	display: flex;
 	gap: 3px;
@@ -2039,6 +2045,32 @@
 
 .pdmux-graph-chip[data-kind='tag'] {
 	color: #ca8a04;
+}
+
+/* On a wide screen the dock is a column the person sizes, and in its default 420px with
+   the refs column open the list is about 270px: the author (110px), the date (112px) and
+   the sha (60px) filled all of it and every subject was 0px. The columns that repeat
+   on every row give way to the subject, in that order, by the list's own width; the
+   row's tooltip and the commit detail still carry them. Phones keep the viewport rules
+   at the end of this file, where the app also shortens the date. */
+@media (min-width: 900px) {
+	@container pdmux-graph-list (max-width: 599px) {
+		.pdmux-graph-author {
+			display: none;
+		}
+	}
+
+	@container pdmux-graph-list (max-width: 399px) {
+		.pdmux-graph-date {
+			display: none;
+		}
+	}
+
+	@container pdmux-graph-list (max-width: 299px) {
+		.pdmux-graph-sha {
+			display: none;
+		}
+	}
 }
 
 .pdmux-edge {

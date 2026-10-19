@@ -408,6 +408,49 @@ test.describe.serial("pdmux dashboard", () => {
     await page.waitForTimeout(1200);
   });
 
+  test("[TC-PDUI-235] the default dock with its refs panel open still shows every subject", async ({ page, request }, testInfo) => {
+    const target = await repoTarget(request);
+    test.skip(!target, "no repository has been collected yet — run an agent with gitRoots configured");
+    if (!target) return;
+
+    // The default dock (420px) with the refs panel open, which is how it opens. The list
+    // is about 270px there, and the author, the date and the sha filled all of it: every
+    // subject was 0px wide, chips or not.
+    await resetDock(request);
+    await ready(page, "/");
+    const shell = page.locator("[data-testid='dashboard-shell']");
+    await expect(async () => {
+      if ((await shell.getAttribute("data-dock")) !== "open") {
+        await page.locator("[data-testid='toggle-dock']").click();
+      }
+      await expect(shell).toHaveAttribute("data-dock", "open", { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
+    await expect(page.locator("[data-pdmux-refs]")).toBeVisible();
+    await expect(page.locator(".pdmux-graph-row:not(.pdmux-wip)").first()).toBeVisible();
+
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>(".pdmux-graph-row:not(.pdmux-wip)")].slice(0, 12).map((row) => ({
+        subject: Math.round(row.querySelector(".pdmux-graph-subject")!.getBoundingClientRect().width),
+        spills: row.scrollWidth > row.clientWidth + 1,
+        title: row.getAttribute("title") ?? "",
+      })),
+    );
+    const list = await page.locator(".pdmux-graph-list").evaluate((node) => Math.round(node.getBoundingClientRect().width));
+    await testInfo.attach("dock-rows", { body: JSON.stringify({ list, rows }, null, 2), contentType: "application/json" });
+    await page.screenshot({ path: testInfo.outputPath("dock-default-refs.png") });
+    expect(list, "the refs panel shares the default dock").toBeLessThan(320);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.subject, "the subject is what a person reads").toBeGreaterThanOrEqual(120);
+      expect(row.spills, "nothing runs past the row").toBe(false);
+      // What gave way is a hover away (and in the detail).
+      expect(row.title).toMatch(/ · [0-9a-f]{7}$/);
+    }
+
+    await page.locator("[data-testid='toggle-dock']").click();
+    await page.waitForTimeout(1200);
+  });
+
   test("[TC-PDUI-144] clicking the open commit row closes its detail", async ({ page, request }) => {
     const target = await repoTarget(request);
     test.skip(!target, "no repository has been collected yet — run an agent with gitRoots configured");

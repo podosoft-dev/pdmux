@@ -178,6 +178,11 @@
 	const dateOf = (epoch: number | null | undefined): string =>
 		epoch == null ? '' : (formatDate ?? ((s: number) => new Date(s * 1000).toISOString().slice(0, 16)))(epoch);
 	const pathOf = (edge: GraphEdge, rows: readonly GraphRow[]): string => edgePath(edge, rows, rowHeight);
+	/** Everything the row says, for when a narrow dock hides the author, date or sha. */
+	const titleOf = (row: GraphRow, commit: CommitInput | undefined): string | undefined =>
+		commit
+			? [commit.subject ?? '', [commit.author, dateOf(commit.date), row.sha.slice(0, 7)].filter(Boolean).join(' · ')].join('\n')
+			: undefined;
 </script>
 
 <div class="pdmux pdmux-graph-list" data-pdmux-graph tabindex="-1" bind:this={listEl}>
@@ -222,6 +227,7 @@
 					class:pdmux-wip={row.kind === 'uncommitted'}
 					type="button"
 					data-pdmux-sha={row.sha}
+					title={titleOf(row, commit)}
 					aria-current={selectedSha === row.sha}
 					onclick={() => onSelect?.(row.sha)}
 				>

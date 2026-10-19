@@ -44,7 +44,7 @@ describe('[TC-PDUI-234] a ref chip never takes the width the subject needs', () 
 		const css = readFileSync(join(import.meta.dirname, '../src/styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 		const rule = (selector: string): string => css.match(new RegExp(`\\n${selector.replace(/[.[\]'=]/g, '\\$&')}\\s*\\{[^}]*\\}`))?.[0] ?? '';
 		const chips = rule('.pdmux-graph-chips');
-		for (const declaration of ['max-width: 25%', 'overflow: hidden']) {
+		for (const declaration of ['flex: 0 1 auto', 'min-width: 0', 'max-width: 25%', 'overflow: hidden']) {
 			expect(chips, `.pdmux-graph-chips lost ${declaration}`).toContain(declaration);
 		}
 		const chip = rule('.pdmux-graph-chip');
@@ -52,6 +52,33 @@ describe('[TC-PDUI-234] a ref chip never takes the width the subject needs', () 
 			expect(chip, `.pdmux-graph-chip lost ${declaration}`).toContain(declaration);
 		}
 		expect(rule(".pdmux-graph-chip[data-kind='head']")).toContain('flex-shrink: 0');
+	});
+});
+
+describe('[TC-PDUI-235] a narrow dock gives way to the subject, not the other way round', () => {
+	it('puts the author, the date and the sha in every row\'s tooltip', () => {
+		const { container } = render(GitGraph, {
+			props: { commits: COMMITS, refs: REFS, head: COMMITS[0]!.sha, formatDate: () => '07/25' },
+		});
+		const row = container.querySelector(`[data-pdmux-sha="${COMMITS[1]!.sha}"]`) as HTMLElement;
+		expect(row.getAttribute('title')).toBe('feature commit\ntester · 07/25 · f100000');
+	});
+
+	it('hides the repeating columns by the list\'s own width, in priority order', () => {
+		// jsdom has no layout and the browser geometry spec is opt-in, so CI would not see
+		// these rules reverted. They are the ones that spec measured at the 420px dock.
+		const css = readFileSync(join(import.meta.dirname, '../src/styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+		expect(css).toMatch(/\.pdmux-graph-list\s*\{[^}]*container: pdmux-graph-list \/ inline-size/);
+		expect(css).toMatch(/\.pdmux-graph-subject\s*\{[^}]*min-width: 120px/);
+		const desktop = css.slice(css.indexOf('@media (min-width: 900px) {'));
+		const tiers = [...desktop.matchAll(/@container pdmux-graph-list \(max-width: (\d+)px\)\s*\{\s*\.pdmux-graph-(\w+)\s*\{\s*display: none;/g)].map(
+			(match) => [match[2], Number(match[1])],
+		);
+		expect(tiers).toEqual([
+			['author', 599],
+			['date', 399],
+			['sha', 299],
+		]);
 	});
 });
 

@@ -32,6 +32,7 @@
 	import CommitDetail from '../../src/components/CommitDetail.svelte';
 	import FileExplorer from '../../src/components/FileExplorer.svelte';
 	import GitGraph from '../../src/components/GitGraph.svelte';
+	import GitRefPanel from '../../src/components/GitRefPanel.svelte';
 	import HostSidebar from '../../src/components/HostSidebar.svelte';
 	import SplitHandle from '../../src/components/SplitHandle.svelte';
 	import TerminalGrid from '../../src/components/TerminalGrid.svelte';
@@ -309,6 +310,13 @@
 		.map((ref) => ref.trim())
 		.filter(Boolean);
 	const graphCommits = commits.map((commit, i) => (i === 0 ? { ...commit, refs: graphRefs } : commit));
+	const graphRefPanel = [
+		{ name: 'main', kind: 'local' as const, sha: graphCommits[0]?.sha },
+		{ name: 'origin/main', kind: 'remote' as const, sha: graphCommits[0]?.sha },
+	];
+	/** `?refsPanel=0` closes the refs column, as the dock's toggle does. */
+	const dockRefsOpen =
+		(typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('refsPanel')) !== '0';
 </script>
 
 {#if screen === 'files'}
@@ -351,6 +359,26 @@
 			selectedSha={selected}
 			onSelect={(sha) => (selected = sha)}
 		/>
+	</div>
+{:else if screen === 'dock'}
+	<!-- The commit dock as the app lays it out: the refs column beside the list inside
+	     `.pdmux-graph-body`, at the dock width the spec asks for. The app's default is a
+	     420px dock, which leaves the list about 270px once the refs column is open. -->
+	<div class="pdmux pdmux-graph" data-harness="dock" style="width:{filesWidth}px;height:600px">
+		<div class="pdmux pdmux-graph-body">
+			{#if dockRefsOpen}
+				<div class="pdmux pdmux-refs-column">
+					<GitRefPanel head={{ branch: 'main', sha: graphCommits[0]?.sha, upstream: 'origin/main', ahead: 0, behind: 0, path: '/home/pdmux/project' }} refs={graphRefPanel} />
+				</div>
+			{/if}
+			<GitGraph
+				commits={graphCommits}
+				refs={graphRefPanel}
+				head={graphCommits[0]?.sha}
+				selectedSha={selected}
+				onSelect={(sha) => (selected = sha)}
+			/>
+		</div>
 	</div>
 {:else if screen === 'tree'}
 <!--
