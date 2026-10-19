@@ -214,7 +214,10 @@ three problems disappear **structurally**.
   frame when an agent attaches again. If the grace period expires, or an open reaches an offline
   host, the relay closes the transport with code 4001. Clients retain the pane targets and keep
   retrying with jittered backoff. Sending `error`/`exit` first would permanently release those
-  targets and leave the screen frozen until a reload.
+  targets and leave the screen frozen until a reload. On 4001 each pane writes one notice that its
+  host is offline, once per outage rather than per retry, and says it is back when it attaches.
+  An offline host does not count toward the shared transport status, so panes on healthy hosts
+  do not show a reconnecting state.
 - A successful WebSocket upgrade alone does not confirm recovery. The client resets its backoff
   and reports reconnection after `ready` or output confirms the terminal. A handshake that never
   completes is closed after 15 seconds; retries stop when the pane is closed or its relay disposed.
