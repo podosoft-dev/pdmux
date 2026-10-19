@@ -249,6 +249,53 @@ a GitHub Release remains a separate release action.
 
 ## Desktop development
 
+### Local product update lab on macOS
+
+The local lab packages the current product source twice, as fixture versions `0.0.1` and `0.0.2`.
+These are disposable package versions; the repository's product versions and release metadata
+are unchanged. Both apps use the maintainer's Developer ID and Apple notarization. Supply the
+eight `APPLE_*` credentials through the existing secret-store adapter, then run:
+
+```bash
+bun run desktop:update-lab:build
+bun run desktop:update-lab:serve
+```
+
+Keep the feed server running in that terminal. In another terminal:
+
+```bash
+bun run desktop:update-lab:open
+bun tools/desktop-update-lab.mjs publish 0.0.2
+```
+
+The app is **PDMux Update Lab**, with a separate bundle identifier, executable and profile under
+`apps/desktop/release/local-update-lab/`. It does not replace the installed PDMux, register its
+login protocol or read the normal application profile. Its title identifies the fixture version.
+The update feed binds only to `127.0.0.1` on a dynamic port printed by the server. It serves only
+update metadata and archives; profiles and signing credentials cannot be downloaded. ZIP transfer
+is limited to 4 MiB/s so progress can be inspected. No GitHub release, upload or deployment occurs.
+
+Choose **Check for updates** in the app's user menu to exercise the real checking, download and
+restart prompts. Publish `0.0.1` to test the up-to-date message. To repeat an upgrade, quit the lab
+app and run `bun tools/desktop-update-lab.mjs reset`; this reinstalls the baseline while retaining
+the lab profile. Reset refuses to replace a running lab app. Previous bundles are moved into
+`retired/`, since Squirrel's installed replacement can be root-owned; no administrator command
+or signature modification is needed to repeat the test. Stop the feed with Ctrl+C when done.
+
+With the feed running and the baseline installed, `bun run desktop:update-lab:test` runs
+`[TC-PDDESKTOP-008]` against the packaged product. It downloads the actual signed ZIP, calls the
+real Squirrel.Mac installer, waits for the new app to relaunch and verifies its profile, local
+authentication secret, host settings and backup. Only confirmation choices are automated, through
+the disposable bootstrap; the production shell has no lab flag. To inspect and click the native
+dialogs yourself instead, run `bun tools/verify-desktop-update-lab.mjs --native-dialogs`.
+Screenshots, geometry and `result.json` are saved in the lab's `evidence/` directory. Unit coverage
+for feed switching, archive/range requests and package isolation is
+`bun test tools/desktop-update-lab.test.mjs`.
+
+This lab verifies a full ZIP update of the embedded product on the current Mac architecture.
+Differential downloads, other operating systems, browser-download Gatekeeper prompts and updates
+of the user's existing installation remain separate acceptance checks.
+
 ### macOS signing and update feasibility gate
 
 `bun tools/probe-macos-adhoc-update.mjs` requires native macOS and runs only against disposable
