@@ -7,6 +7,8 @@ import type {
   HostSummary,
   PdmuxFleetGateway,
   PdmuxTier,
+  VmCreateRequest,
+  VmPowerAction,
 } from "@pdmux/mcp";
 
 import { AgentEnrollmentsService } from "../agents/agent-enrollments.service";
@@ -17,6 +19,26 @@ import { HostServicesService } from "../hosts/host-services.service";
 import { HostsService } from "../hosts/hosts.service";
 import { MetricsService } from "../metrics/metrics.service";
 import type { McpUserIdentity } from "./user-mcp-keys.service";
+
+/** Who asked, as the panes of the machine show it. A coding CLI's change reads as "MCP". */
+export interface VmToolActor {
+  id: string;
+  name: string;
+}
+
+/**
+ * The machine tools, when this server runs the VM module — never in the desktop app, which
+ * holds no provider credentials. Every method takes the caller's scope and resolves the host
+ * in it first, the same guarantee as the rest of this gateway.
+ */
+export interface FleetVmTools {
+  status(scope: string, hostId: string | null): Promise<unknown>;
+  powerPlan(scope: string, hostId: string, action: VmPowerAction): Promise<DestroyPlan | null>;
+  power(scope: string, hostId: string, action: VmPowerAction, actor: VmToolActor): Promise<{ name: string }>;
+  create(scope: string, input: VmCreateRequest & { idempotencyKey: string }, actor: VmToolActor): Promise<{ hostId: string; label: string }>;
+  deletePlan(scope: string, hostId: string): Promise<DestroyPlan>;
+  remove(scope: string, hostId: string, confirmName: string, actor: VmToolActor): Promise<{ name: string }>;
+}
 
 /**
  * A whole fleet's view of pdmux, assembled from the same services the dashboard's
@@ -54,6 +76,8 @@ export class ApiFleetGateway implements PdmuxFleetGateway {
       scopeLabel: string;
       /** Mutating calls only — see `recordToolAudit` at the call site. */
       audit: (entry: { tool: string; target?: { type: string; id?: string; label?: string }; metadata?: Record<string, unknown> }) => void;
+      /** `null` on a server without the VM module; the vm_* tools then answer VM_PROVIDERS_UNAVAILABLE. */
+      vm?: FleetVmTools | null;
     },
   ) {}
 
@@ -334,6 +358,61 @@ export class ApiFleetGateway implements PdmuxFleetGateway {
       metadata: { dryRun: false, confirmed: true },
     });
     return removed;
+  }
+
+  private get vm(): FleetVmTools {
+    const tools = this.deps.vm;
+    if (!tools) throw Object.assign(new Error("This pdmux server has no VM providers"), { code: "VM_PROVIDERS_UNAVAILABLE" });
+    return tools;
+  }
+
+  private get vmActor(): VmToolActor {
+    return { id: this.identity.userId, name: "MCP" };
+  }
+
+  /** The second half of the tier rule, like `run`'s: it survives a tool registered by mistake. */
+  private assertTier(needs: PdmuxTier, what: string): void {
+    const rank: PdmuxTier[] = ["read", "operate", "admin"];
+    if (rank.indexOf(this.tier) < rank.indexOf(needs)) {
+      throw Object.assign(new Error(`This token cannot ${what}`), { code: "MCP_TIER_INSUFFICIENT" });
+    }
+  }
+
+  async vmStatus(hostId?: string): Promise<unknown> {
+    return this.vm.status(this.scope, hostId ?? null);
+  }
+
+  async vmPowerPlan(hostId: string, action: VmPowerAction): Promise<DestroyPlan | null> {
+    const plan = await this.vm.powerPlan(this.scope, hostId, action);
+    if (plan) this.deps.audit({ tool: "vm_power", target: { type: "host", id: hostId }, metadata: { action, dryRun: true, confirmed: false } });
+    return plan;
+  }
+
+  async vmPower(hostId: string, action: VmPowerAction): Promise<unknown> {
+    this.assertTier(action === "stop" || action === "reset" ? "admin" : "operate", `${action} a machine`);
+    const view = await this.vm.power(this.scope, hostId, action, this.vmActor);
+    this.deps.audit({ tool: "vm_power", target: { type: "host", id: hostId, label: view.name }, metadata: { action } });
+    return view;
+  }
+
+  async vmCreate(input: VmCreateRequest): Promise<unknown> {
+    this.assertTier("admin", "create a machine");
+    const created = await this.vm.create(this.scope, { ...input, idempotencyKey: input.idempotencyKey ?? crypto.randomUUID() }, this.vmActor);
+    this.deps.audit({ tool: "vm_create", target: { type: "host", id: created.hostId, label: created.label } });
+    return created;
+  }
+
+  async vmDeletePlan(hostId: string): Promise<DestroyPlan> {
+    const plan = await this.vm.deletePlan(this.scope, hostId);
+    this.deps.audit({ tool: "vm_delete", target: { type: "host", id: hostId }, metadata: { dryRun: true, confirmed: false } });
+    return plan;
+  }
+
+  async vmDelete(hostId: string, confirmName: string): Promise<unknown> {
+    this.assertTier("admin", "delete a machine");
+    const view = await this.vm.remove(this.scope, hostId, confirmName, this.vmActor);
+    this.deps.audit({ tool: "vm_delete", target: { type: "host", id: hostId, label: view.name }, metadata: { dryRun: false, confirmed: true } });
+    return view;
   }
 
   async run(

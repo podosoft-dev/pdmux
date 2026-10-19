@@ -8,6 +8,7 @@ import { HostVm } from "./host-vm.entity";
 import { HostVmsService } from "./host-vms.service";
 import { VmProvider } from "./vm-provider.entity";
 import { VmLifecycleService, type VmEnrollment } from "./vm-lifecycle.service";
+import { VmFleetTools } from "./vm-mcp";
 import { VmOperationsService } from "./vm-operations.service";
 import { VmProvidersService } from "./vm-providers.service";
 import { VM_CREATE_BUDGET, VM_POWER_BUDGET } from "./vm.contract";
@@ -54,6 +55,7 @@ export const vmModule: PodokitModule = {
       authBaseUrl,
     );
     services.register(VM, { providers, machines, operations, lifecycle });
+    pdmux.mcp.setVmTools(new VmFleetTools({ providers, machines, operations, lifecycle }, pdmux.hosts));
     services.register(VM_OPERATIONS, operations, () => operations.stop());
     services.onStart(() => {
       machines.connect();

@@ -141,6 +141,14 @@ function fakeFleetGateway(): PdmuxFleetGateway & { calls: string[] } {
     updateFleetPlan: (hostIds) => note(`updateFleetPlan:${hostIds.join(",")}`, plan({ hostIds })),
     deleteHostPlan: (hostId) => note(`deleteHostPlan:${hostId}`, plan({ hostId })),
     deleteHost: (hostId) => note(`deleteHost:${hostId}`, { id: hostId, label: "build-01" }),
+    vmStatus: (hostId) => note(`vmStatus:${hostId ?? "fleet"}`, { state: "running" }),
+    // Hibernating with nobody attached cuts nobody off; anything forced always asks.
+    vmPowerPlan: (hostId, action) =>
+      note(`vmPowerPlan:${hostId}:${action}`, action === "stop" || action === "reset" || action === "reboot" ? plan({ hostId, action }) : null),
+    vmPower: (hostId, action) => note(`vmPower:${hostId}:${action}`, { accepted: action }),
+    vmCreate: (input) => note(`vmCreate:${input.label}`, { hostId: "h-vm" }),
+    vmDeletePlan: (hostId) => note(`vmDeletePlan:${hostId}`, plan({ hostId, confirmName: "build-01" })),
+    vmDelete: (hostId, confirmName) => note(`vmDelete:${hostId}:${confirmName}`, { hostId }),
     run: (hostId, input) => {
       calls.push(`run:${hostId}`);
       return Promise.resolve({
@@ -527,5 +535,63 @@ describe("[TC-PDMCP-070] pdmux_whoami carries what the tier hides", () => {
     // ⚠ It is built by the SERVER, not fetched — the gateway does not know the tool
     // table, so the API package never needs that value at runtime.
     expect(gateway.calls).toEqual([]);
+  });
+});
+
+describe("[TC-PDVM-036] the VM tools, by tier", () => {
+  it("[TC-PDVM-036] lets a read token see machines and nothing that changes one", async () => {
+    const { client } = await connectFleet("read");
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    expect(names).toContain("vm_status");
+    expect(names).not.toContain("vm_power");
+    expect(names).not.toContain("vm_create");
+    expect(names).not.toContain("vm_delete");
+  });
+
+  it("[TC-PDVM-036] lets an operate token sleep a machine nobody is attached to, and asks first when it would cut someone off", async () => {
+    const { client, gateway } = await connectFleet("operate");
+    const sleep = body(await client.callTool({ name: "vm_power", arguments: { hostId: HOST_A, action: "hibernate" } }));
+    expect(sleep.pdmux).toBe("done");
+    expect(gateway.calls).toContain(`vmPower:${HOST_A}:hibernate`);
+
+    const reboot = body(await client.callTool({ name: "vm_power", arguments: { hostId: HOST_A, action: "reboot" } }));
+    expect(reboot.pdmux).toBe("dry-run");
+    expect(gateway.calls).not.toContain(`vmPower:${HOST_A}:reboot`);
+    const confirmed = body(await client.callTool({ name: "vm_power", arguments: reboot.retryWith as Record<string, unknown> }));
+    expect(confirmed.pdmux).toBe("done");
+    expect(gateway.calls).toContain(`vmPower:${HOST_A}:reboot`);
+  });
+
+  it("[TC-PDVM-036] keeps forcing a machine off with admin tokens, and still plans it there", async () => {
+    const operate = await connectFleet("operate");
+    const refused = await operate.client.callTool({ name: "vm_power", arguments: { hostId: HOST_A, action: "stop", confirm: true } });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain("MCP_TIER_INSUFFICIENT");
+    expect(operate.gateway.calls).toEqual([]);
+
+    const admin = await connectFleet("admin");
+    const dry = body(await admin.client.callTool({ name: "vm_power", arguments: { hostId: HOST_A, action: "stop" } }));
+    expect(dry.pdmux).toBe("dry-run");
+    expect(admin.gateway.calls).not.toContain(`vmPower:${HOST_A}:stop`);
+  });
+
+  it("[TC-PDVM-036] asks for a name before creating, and creates with one", async () => {
+    const { client, gateway } = await connectFleet("admin");
+    const asked = body(await client.callTool({ name: "vm_create", arguments: {} }));
+    expect(asked.pdmux).toBe("needs-input");
+    expect(gateway.calls).toEqual([]);
+    await client.callTool({ name: "vm_create", arguments: { label: "build-02", idempotencyKey: "key-12345678" } });
+    expect(gateway.calls).toEqual(["vmCreate:build-02"]);
+  });
+
+  it("[TC-PDVM-036] deletes only after the plan, with the machine's name it carried", async () => {
+    const { client, gateway } = await connectFleet("admin");
+    const dry = body(await client.callTool({ name: "vm_delete", arguments: { hostId: HOST_A } }));
+    expect(dry.pdmux).toBe("dry-run");
+    expect(dry.retryWith).toMatchObject({ hostId: HOST_A, confirmName: "build-01", confirm: true });
+    expect(gateway.calls).not.toContain(`vmDelete:${HOST_A}:build-01`);
+    const done = body(await client.callTool({ name: "vm_delete", arguments: dry.retryWith as Record<string, unknown> }));
+    expect(done.pdmux).toBe("done");
+    expect(gateway.calls).toContain(`vmDelete:${HOST_A}:build-01`);
   });
 });

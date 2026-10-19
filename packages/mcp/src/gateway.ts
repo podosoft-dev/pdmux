@@ -201,6 +201,23 @@ export interface FleetEnrollmentOffer extends EnrollmentOffer {
  * Everything a host-bound gateway can do, but for a NAMED host, plus the operations
  * that only make sense across a fleet.
  */
+/** A power change for the machine behind a host. `stop` and `reset` cut power at once. */
+export const VM_POWER_ACTIONS = ["start", "hibernate", "shutdown", "stop", "reboot", "reset"] as const;
+export type VmPowerAction = (typeof VM_POWER_ACTIONS)[number];
+
+/** A machine to create from a template at the fleet's VM provider; it becomes a host. */
+export interface VmCreateRequest {
+  label: string;
+  /** Omitted when the fleet has exactly one provider. */
+  providerId?: string;
+  templateNode?: string;
+  templateVmid?: number;
+  cores?: number;
+  memoryMb?: number;
+  /** The same key on a retry makes one machine; omitted, each call is a new machine. */
+  idempotencyKey?: string;
+}
+
 export interface PdmuxFleetGateway {
   listHosts(filter: { onlineOnly?: boolean; tag?: string; query?: string }): Promise<HostBrief[]>;
 
@@ -228,6 +245,16 @@ export interface PdmuxFleetGateway {
 
   deleteHostPlan(hostId: string): Promise<DestroyPlan>;
   deleteHost(hostId: string): Promise<{ id: string; label: string }>;
+
+  /** One host's machine, or — without a host — the fleet's VM providers. */
+  vmStatus(hostId?: string): Promise<unknown>;
+  /** `null` when the change cuts nobody off — then it runs without confirmation. */
+  vmPowerPlan(hostId: string, action: VmPowerAction): Promise<DestroyPlan | null>;
+  vmPower(hostId: string, action: VmPowerAction): Promise<unknown>;
+  vmCreate(input: VmCreateRequest): Promise<unknown>;
+  vmDeletePlan(hostId: string): Promise<DestroyPlan>;
+  /** `confirmName` must be the machine's name, as the plan's `retryWith` carries it. */
+  vmDelete(hostId: string, confirmName: string): Promise<unknown>;
 
   run(
     hostId: string,

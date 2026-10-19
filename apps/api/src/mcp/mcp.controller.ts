@@ -10,7 +10,7 @@ import { HostServicesService } from "../hosts/host-services.service";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
 import { HostsService } from "../hosts/hosts.service";
 import { MetricsService } from "../metrics/metrics.service";
-import { ApiFleetGateway } from "./fleet-gateway";
+import { ApiFleetGateway, type FleetVmTools } from "./fleet-gateway";
 import { ApiHostGateway } from "./host-gateway";
 import { recordAudit } from "../audit/audit-events";
 import { clientAddressOf } from "../core/client-address";
@@ -90,6 +90,13 @@ export class McpController {
     private readonly updates: AgentUpdateService,
     private readonly enabled: McpEnabled = mcpEnabled,
   ) {}
+
+  private vmTools: FleetVmTools | null = null;
+
+  /** Called once by the VM module at startup: it loads after this one, on servers only. */
+  setVmTools(tools: FleetVmTools): void {
+    this.vmTools = tools;
+  }
 
   async handle(request: Request): Promise<Response> {
     this.assertOrigin(request);
@@ -187,6 +194,7 @@ export class McpController {
           updates: this.updates,
           scopeLabel: identity.organizationId.startsWith("personal:") ? "your machines" : identity.organizationId,
           audit: (entry) => this.recordToolAudit(request, identity, entry),
+          vm: this.vmTools,
         }),
         scopeLabel: identity.organizationId.startsWith("personal:") ? "your machines" : identity.organizationId,
         origin: publicOrigin(request),

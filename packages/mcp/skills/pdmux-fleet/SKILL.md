@@ -137,6 +137,23 @@ call again with `retryWith` unchanged. Do not reconstruct the arguments, and do 
 treat an earlier instruction as consent: "clean up the test hosts" is not agreement
 to twelve deletions.
 
+## Machines at a VM provider
+
+When the fleet has a VM provider (Proxmox VE today), a host can be the machine behind it.
+`vm_status { hostId }` says what it is doing; without `hostId` it lists the providers and
+their default templates.
+
+- `vm_power` starts (and wakes), hibernates ("sleep" — every session resumes), shuts down
+  or reboots it. It answers that the change was **accepted**; poll `vm_status` until its
+  `operation` is gone. When the change would cut people off — open terminals, or
+  sessions that end with the machine — you get the plan first: show it and wait, as for
+  any destructive tool. `stop` and `reset` force it and need an admin token.
+- `vm_create { label }` makes a new machine from a template; it registers itself on
+  first boot, so there is **nothing to install** — do not look for an ssh route. Retry with
+  the same `idempotencyKey` if you lost the answer.
+- `vm_delete` removes a machine pdmux created, with its disks, and its host. The plan
+  carries the machine's name in `retryWith`; confirm with it unchanged.
+
 ## What you cannot do, at any tier
 
 Create or revoke a credential — an MCP token, an agent token, anything. There is no

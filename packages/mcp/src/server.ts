@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { destructive, needsInput } from "./confirm.js";
-import type { FleetIdentity, PdmuxFleetGateway, PdmuxHostGateway, PdmuxTier } from "./gateway.js";
+import { VM_POWER_ACTIONS, type FleetIdentity, type PdmuxFleetGateway, type PdmuxHostGateway, type PdmuxTier } from "./gateway.js";
 
 /**
  * The pdmux tool surface — two of them, for two credentials.
@@ -259,6 +259,7 @@ function whoami(options: { tier: PdmuxTier; scopeLabel: string; origin: string }
       "A host's `address` is operator context only. It is free-form text pdmux never connects to; do not ssh to it without asking.",
       "An enrollment code is single-use and expires in 15 minutes. For several machines, do one at a time: create, install, verify.",
       "Accepting an agent update is not the same as it succeeding — poll host_agent_update_status.",
+      "vm_* tools act on the machine behind a host at the fleet's VM provider. A host without one answers VM_NOT_LINKED; a server without providers answers VM_PROVIDERS_UNAVAILABLE. A power change is accepted, then runs — poll vm_status.",
     ],
   };
 }
@@ -380,6 +381,16 @@ function registerFleetTools(
       inputSchema: { hostId: HOST_ID },
     },
     ({ hostId }) => call(() => gateway.agentUpdateStatus(hostId)),
+  );
+
+  server.registerTool(
+    "vm_status",
+    {
+      description:
+        "The machine behind a host, at the fleet's VM provider: its state (running, hibernated = asleep, stopped …), the change in flight and who asked, and which changes its state allows. Without hostId: the fleet's VM providers and their default templates. Read-only.",
+      inputSchema: { hostId: HOST_ID.optional() },
+    },
+    ({ hostId }) => call(() => gateway.vmStatus(hostId)),
   );
 
   if (!allows(tier, "operate")) {
@@ -537,7 +548,92 @@ function registerFleetTools(
     ({ hostId, ...input }) => call(() => gateway.run(hostId, input)),
   );
 
+  server.registerTool(
+    "vm_power",
+    {
+      description:
+        "Power the machine behind a host: start (also wakes a hibernated one), hibernate (\"sleep\": memory to disk, start resumes it with every session intact), shutdown, reboot — and, with an admin token only, stop and reset, which cut power at once and lose unsaved work. Returns that the change was ACCEPTED; poll vm_status until its operation is gone. When the change would cut off open terminals, or forces the machine, you get what it would cut first and must confirm.",
+      inputSchema: {
+        hostId: HOST_ID,
+        action: z.enum(VM_POWER_ACTIONS),
+        confirm: z.boolean().default(false),
+      },
+    },
+    async (input) => {
+      if ((input.action === "stop" || input.action === "reset") && !allows(tier, "admin")) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "MCP_TIER_INSUFFICIENT: stop and reset cut power without asking the guest and need an admin token. shutdown and reboot ask it first.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      return guard(() =>
+        destructive(
+          "vm_power",
+          input,
+          () => gateway.vmPowerPlan(input.hostId, input.action),
+          () => gateway.vmPower(input.hostId, input.action),
+        ),
+      );
+    },
+  );
+
   if (!allows(tier, "admin")) return;
+
+  server.registerTool(
+    "vm_create",
+    {
+      description:
+        "Create a machine from a template at the fleet's VM provider; it becomes a new host and registers itself on first boot — nothing to install, nothing to run over ssh. Returns at once with the host, its operation `create`; poll vm_status (or host_detail for online). Pass the same idempotencyKey when retrying a call whose answer you did not get.",
+      inputSchema: {
+        label: z.string().max(64).optional().describe("The new host's label; the machine is named after it"),
+        providerId: z.string().max(64).optional().describe("Omit when the fleet has one provider — see vm_status"),
+        templateNode: z.string().max(64).optional(),
+        templateVmid: z.number().int().min(100).optional().describe("Omit both template fields for the provider's default"),
+        cores: z.number().int().min(1).max(128).optional(),
+        memoryMb: z.number().int().min(512).max(1_048_576).optional(),
+        idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),
+      },
+    },
+    async (input) => {
+      if (!input.label?.trim()) {
+        return needsInput(
+          "vm_create",
+          [
+            { field: "label", required: true, why: "The new host's name in pdmux; the machine at the provider is named after it.", constraint: "1-64 characters", example: "build-02" },
+          ],
+          "Ask the user what to call the machine, and which provider or template if vm_status lists more than one. Do not invent a name.",
+        );
+      }
+      return call(() => gateway.vmCreate({ ...input, label: input.label?.trim() ?? "" }));
+    },
+  );
+
+  server.registerTool(
+    "vm_delete",
+    {
+      description:
+        "Delete a machine pdmux created, with its disks, and then its host — its tokens, sessions and history go too. Backups at the provider are kept. A machine pdmux only linked cannot be deleted here. Needs confirm, and the machine's name as the plan's retryWith carries it — without them you get what would be destroyed.",
+      inputSchema: {
+        hostId: HOST_ID,
+        confirmName: z.string().max(128).optional(),
+        confirm: z.boolean().default(false),
+      },
+    },
+    (input) =>
+      guard(() =>
+        destructive(
+          "vm_delete",
+          input,
+          () => gateway.vmDeletePlan(input.hostId),
+          () => gateway.vmDelete(input.hostId, input.confirmName ?? ""),
+        ),
+      ),
+  );
 
   server.registerTool(
     "fleet_agent_update",
@@ -643,6 +739,7 @@ export const PDMUX_FLEET_TOOL_NAMES: Record<PdmuxTier, readonly string[]> = {
     "host_repos",
     "host_enrollment_status",
     "host_agent_update_status",
+    "vm_status",
     "run_command",
   ],
   operate: [
@@ -660,6 +757,8 @@ export const PDMUX_FLEET_TOOL_NAMES: Record<PdmuxTier, readonly string[]> = {
     "host_update",
     "host_install_command",
     "host_agent_update",
+    "vm_status",
+    "vm_power",
     "run_command",
   ],
   admin: [
@@ -680,5 +779,9 @@ export const PDMUX_FLEET_TOOL_NAMES: Record<PdmuxTier, readonly string[]> = {
     "run_command",
     "fleet_agent_update",
     "host_delete",
+    "vm_status",
+    "vm_power",
+    "vm_create",
+    "vm_delete",
   ],
 };

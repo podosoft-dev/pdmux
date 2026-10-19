@@ -141,6 +141,9 @@ null, because a host key belongs to a machine's connection and not to a person).
 | `fleet_agent_update` | always | N machines each replace their binary and exit, and there is no downgrade tool |
 | `host_agent_update` | only with `force` | the plain path is one machine and the agent restores itself if the new binary cannot connect |
 | `host_install_command` | only when a code is live | minting retires the previous code, voiding an install somebody is part-way through. It also needs **write** (`operate`) in both modes: the code it returns is redeemable for an agent token that outlives the credential that minted it |
+| `vm_delete` | always | the machine is deleted at its provider with its disks, then its host as `host_delete` would; the plan's `retryWith` carries the machine's name and the server compares it — the tool's form of typing the name on the screen. Machines pdmux only linked are refused (`VM_NOT_CREATED_BY_PDMUX`) |
+| `vm_power` | `stop`/`reset` always; the others when they cut someone off | a forced change loses unsaved work in the guest (and needs an **admin** token). `shutdown`/`reboot` end the machine's sessions, `hibernate` cuts open terminals until it is woken — a model cannot see who is working on a machine, so those are described first. A change that cuts nobody off runs at once, and `start` never asks |
+| `vm_create` | no | it adds a machine and a host; `vm_delete` takes them back. Admin only, and asks for a label instead of inventing one |
 | `host_update` | no | reversible by calling again, including `enabled: false` |
 | `run_command` | no | arbitrary, so it cannot be pre-classified — and a confirmation on every call is a rubber stamp the model learns to pass |
 
