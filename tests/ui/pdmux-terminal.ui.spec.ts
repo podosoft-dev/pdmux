@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { expect, test, workerSession } from "../helpers/pdmux-test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
-import { openSidebar, openUserMenu } from "../helpers/shell";
+import { openSidebar, openUserMenu, openSettings } from "../helpers/shell";
 import { seedSoloPane } from "../helpers/pdmux-layout";
 import english from "../../apps/web/src/lib/i18n/catalogs/app/en.json";
 
@@ -615,17 +615,14 @@ test.describe("pdmux terminal", () => {
       await expect.poll(async () => terminalShows(surface, marker), { timeout: 5_000 }).toBe(true);
     }).toPass({ timeout: 25_000 });
 
-    // The dashboard page owns the grid, so leaving it really does tear the panes down —
-    // that is the honest cost of the terminals living in a page rather than the shell.
+    // Modal settings keeps the existing terminal grid and relay mounted.
     await openSidebar(page);
-    await openUserMenu(page);
-    await page.locator("[data-testid='nav-hosts']").click();
+    await openSettings(page, "hosts");
     await expect(page.locator("[data-testid='hosts-panel']")).toBeVisible();
-    await expect(page.locator("[data-pdmux-grid]")).toHaveCount(0);
+    await expect(page.locator("[data-pdmux-grid]")).toHaveCount(1);
 
-    // What must NOT be lost is the work: the slot keeps its multiplexer session, so
-    // coming back reattaches to the same shell with the same scrollback.
-    await page.locator("[data-testid='open-dashboard']").click();
+    // Closing settings reveals the same shell and scrollback.
+    await page.getByTestId("settings-close").click();
     const back = ownPane().locator("[data-pdmux-surface]");
     await expect(back.locator(".xterm-rows")).toBeVisible({ timeout: 15_000 });
     await expect.poll(async () => terminalShows(back, marker), { timeout: 20_000 }).toBe(true);

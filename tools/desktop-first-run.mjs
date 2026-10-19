@@ -68,7 +68,7 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
   await page.locator('[data-testid="shell-user"]').click();
   const menu = page.locator('[data-testid="shell-user-menu"]');
   await menu.waitFor();
-  for (const id of ["desktop-menu-settings","desktop-menu-updates"]) assert.equal(await menu.locator(`[data-testid="${id}"]`).count(),1,"[TC-PDDESKTOP-016] desktop menu action");
+  for (const id of ["shell-user-settings","shell-user-signin"]) assert.equal(await menu.locator(`[data-testid="${id}"]`).count(),1,"[TC-PDDESKTOP-016] desktop menu action");
   for (const id of ["shell-user-admin","shell-user-account","shell-user-signout","shell-user-identity","nav-hosts","nav-settings","nav-access","shell-server-connection","desktop-menu-backup","desktop-menu-data"]) assert.equal(await menu.locator(`[data-testid="${id}"]`).count(),0,"[TC-PDDESKTOP-016] omit server account actions");
   const geometry = await menu.evaluate(node => {
     const box = node.getBoundingClientRect();

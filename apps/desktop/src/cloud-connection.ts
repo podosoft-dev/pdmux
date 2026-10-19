@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { authorizationCode } from "./auth-code.js";
-import { app, ipcMain, safeStorage, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { app, ipcMain, safeStorage, shell, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { createAuthClient } from "better-auth/client";
 import { electronClient } from "@better-auth/electron/client";
 import { DESKTOP_PROTOCOL_VERSION, DESKTOP_SCHEME } from "@pdmux/desktop-protocol";
@@ -22,7 +22,7 @@ export class CloudConnection {
   private generation = 0;
   private write = Promise.resolve();
   private readonly file: string;
-  constructor(private readonly window: BrowserWindow, private readonly stack: StackManager, private appUrl: string, userData: string, profileId: string, private readonly beforeConnect: () => Promise<unknown>) {
+  constructor(private readonly window: BrowserWindow, private readonly stack: StackManager, private appUrl: string, userData: string, profileId: string, private readonly beforeConnect: () => Promise<unknown>, private readonly defaultServer: string) {
     this.file = join(userData, `cloud-session-${createHash("sha256").update(profileId).digest("hex")}.encrypted`);
   }
   private createClient(): ReturnType<typeof cloudClient> {
@@ -46,15 +46,20 @@ export class CloudConnection {
   async initialize(): Promise<void> {
     ipcMain.handle("pdmux:connection:connect", async (event, url: unknown) => {
       this.requireSender(event);
+      url ??= this.defaultServer;
       if (typeof url !== "string") throw new Error("Invalid server");
       const parsed = new URL(url);
       if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) throw new Error("Use an HTTPS server origin");
+      const generation = ++this.generation;
       const response = await fetch(`${parsed.origin}/api/desktop/capabilities`, { signal: AbortSignal.timeout(15_000), redirect: "error" });
       const capabilities: unknown = response.ok ? await response.json() : null;
       if (!capabilities || typeof capabilities !== "object" || !("version" in capabilities) || capabilities.version !== DESKTOP_PROTOCOL_VERSION || !("local" in capabilities) || capabilities.local !== false) throw new Error("The server does not support desktop connections");
+      if (generation !== this.generation) throw new Error("Desktop connection was cancelled");
       await this.beforeConnect();
+      if (generation !== this.generation) throw new Error("Desktop connection was cancelled");
       await this.stack.control("disconnect");
-      this.generation += 1; this.values = new Map();
+      if (generation !== this.generation) throw new Error("Desktop connection was cancelled");
+      this.values = new Map();
       this.url = parsed.origin;
       this.client = this.createClient();
       this.persist();
@@ -83,6 +88,11 @@ export class CloudConnection {
       try { await client?.signOut(); } finally { this.values = new Map(); this.persist(); }
       return { connected: false };
     });
+    ipcMain.handle("pdmux:connection:open", async (event, page: unknown) => {
+      this.requireSender(event);
+      if (!this.client?.getCookie() || (page !== "account" && page !== "admin")) throw new Error("Sign in and choose a supported account page");
+      await shell.openExternal(new URL(`/${page}`, this.url).href);
+    });
     if (this.secureStorage()) {
       try {
         const saved = JSON.parse(safeStorage.decryptString(await readFile(this.file))) as { url: string; values: Array<[string, unknown]> };
@@ -108,13 +118,14 @@ export class CloudConnection {
     if (result.error) throw new Error("Desktop authorization failed");
     await this.stack.control("connect", { url: this.url, cookie: this.client.getCookie() });
     this.persist();
+    this.window.webContents.send("pdmux:connection:changed");
   }
   async setAppUrl(url: string): Promise<void> {
     this.appUrl = url;
     if (this.client?.getCookie()) await this.stack.control("connect", { url: this.url, cookie: this.client.getCookie() });
   }
   close(): void {
-    for (const name of ["connect", "authenticate", "workspace", "disconnect"]) ipcMain.removeHandler(`pdmux:connection:${name}`);
+    for (const name of ["connect", "authenticate", "workspace", "disconnect", "open"]) ipcMain.removeHandler(`pdmux:connection:${name}`);
   }
 }
 

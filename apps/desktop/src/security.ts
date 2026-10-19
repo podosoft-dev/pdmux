@@ -20,6 +20,12 @@ export function isAllowedAppNavigation(target: string, appUrl: string): boolean 
   }
 }
 
+/** Installed fonts are available only to the local app's own main frame. */
+export function isAllowedFontPermission(permission: string, local: boolean, ownWindow: boolean, mainFrame: boolean, requestingUrl: string | undefined, appUrl: string): boolean {
+  return permission === "local-fonts" && local && ownWindow && mainFrame &&
+    requestingUrl !== undefined && isAllowedAppNavigation(requestingUrl, appUrl);
+}
+
 export function isAllowedExternalUrl(target: string, appUrl: string): boolean {
   try {
     const url = new URL(target);

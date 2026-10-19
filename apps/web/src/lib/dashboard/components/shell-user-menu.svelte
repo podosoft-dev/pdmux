@@ -18,11 +18,10 @@
    * are reused, and the trigger is rebuilt from the same dropdown primitive with the
    * same routes and the same message keys.
    */
-  import { onMount } from "svelte";
-  import { desktopConnection } from "#lib/desktop.js";
   import { goto } from "$app/navigation";
   import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
   import { Button } from "#lib/components/ui/button/index.js";
+  import ProfileIdentity from "./profile-identity.svelte";
   import UserAvatar from "#lib/components/user-avatar.svelte";
   import LogOutIcon from "@lucide/svelte/icons/log-out";
   import ShieldIcon from "@lucide/svelte/icons/shield";
@@ -33,35 +32,9 @@
   import { APP_VERSION } from "#lib/version.js";
   import type { SessionUser } from "../../../app.d.ts";
 
-  let { user, canManage }: { user: SessionUser; canManage: boolean } = $props();
+  let { user }: { user: SessionUser; canManage: boolean; desktopStatus?: import("#lib/desktop.js").DesktopStatusView } = $props();
 
-  /**
-   * The address, split so that NO SINGLE TEXT NODE looks like an email address.
-   *
-   * ⚠ THIS IS LOAD-BEARING, NOT A STYLE CHOICE. A CDN in front of a self-hosted pdmux
-   * may rewrite email addresses it finds in the HTML it serves — replacing the text
-   * with an anchor plus a decoder script — one large CDN ships this as "email address
-   * obfuscation" and has it ON BY DEFAULT. That mutates the DOM between what the server
-   * rendered and what the client hydrates against, and Svelte's hydration walks that
-   * tree positionally: it dies with `Failed to hydrate: Cannot read properties of
-   * undefined`, the page paints once and then goes blank.
-   *
-   * The failure appears ONLY through the CDN, never on localhost, and no amount of
-   * cache clearing touches it — which is what made it cost an afternoon (2026-07-27).
-   * Splitting the value defeats every such rewriter without asking the operator to turn
-   * a CDN feature off, and renders identically: two inline spans, no gap, and a copy
-   * still yields the whole address.
-   *
-   * `<!--email_off-->`, the documented opt-out, does NOT work here — Svelte strips
-   * template comments from its output, so the marker never reaches the browser.
-   */
-  const emailParts = $derived.by(() => {
-    const at = user.email.lastIndexOf("@");
-    return at > 0 ? { local: user.email.slice(0, at), domain: user.email.slice(at) } : { local: user.email, domain: "" };
-  });
   const i18n = getI18n();
-  let desktop = $state(false);
-  onMount(() => { desktop = Boolean(desktopConnection()); });
 
   /**
    * The way into the platform console — the only one left, now that the account page's
@@ -110,19 +83,10 @@
     <!-- The identity the trigger gave up. It is a `Label`, not an `Item`: it answers a
          question, nothing here is clickable. -->
     <DropdownMenu.Label class="flex items-center gap-2 py-1.5 font-normal" data-testid="shell-user-identity">
-      <UserAvatar {user} class="size-8 shrink-0" />
-      <span class="flex min-w-0 flex-col text-left leading-tight">
-        <span class="truncate text-sm font-medium">{desktop && user.email.endsWith("@local.invalid") ? i18n.t.desktop.localOnly : user.name}</span>
-        <!-- Split on purpose — see `emailParts`. Do not collapse back into one node. -->
-        {#if desktop}<span class="text-muted-foreground text-xs">{i18n.t.desktop.localOnly}</span>{:else}
-        <span class="text-muted-foreground truncate text-xs"
-          >{emailParts.local}<span>{emailParts.domain}</span></span
-        >
-        {/if}
-      </span>
+      <ProfileIdentity {user} />
     </DropdownMenu.Label>
     <DropdownMenu.Separator />
-    <ShellNavigationMenu {canManage} />
+    <ShellNavigationMenu />
     <DropdownMenu.Separator />
     <DropdownMenu.Item onSelect={() => goto("/account")} data-testid="shell-user-account">
       <UserIcon class="mr-2 size-4" /> {i18n.t.nav.account}
@@ -133,13 +97,9 @@
       </DropdownMenu.Item>
     {/if}
     <DropdownMenu.Separator />
-    {#if desktop}
-      <DropdownMenu.Item onSelect={() => goto("/connection")} data-testid="shell-server-connection">{i18n.t.desktop.title}</DropdownMenu.Item>
-    {:else}
     <DropdownMenu.Item onSelect={signOut} data-testid="shell-user-signout">
       <LogOutIcon class="mr-2 size-4" /> {i18n.t.nav.signOut}
     </DropdownMenu.Item>
-    {/if}
     <!-- Which pdmux this is. It belongs here rather than on a card because it is the
          SERVER's version, not any host's — a host's agent has its own, and the two
          are released independently.

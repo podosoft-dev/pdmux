@@ -3,10 +3,21 @@ import {
   certificateMatches,
   isAllowedAppNavigation,
   isAllowedExternalUrl,
+  isAllowedFontPermission,
 } from "./security.js";
 
 describe("[TC-PDDESKTOP-006] desktop navigation and certificate policy", () => {
   const appUrl = "http://127.0.0.1:51001";
+
+  it("[TC-PDDESKTOP-025] allows fonts only in the local app main frame", () => {
+    expect(isAllowedFontPermission("local-fonts", true, true, true, appUrl + "/", appUrl)).toBe(true);
+    for (const [permission, local, ownWindow, mainFrame, url] of [
+      ["media", true, true, true, appUrl], ["local-fonts", false, true, true, appUrl],
+      ["local-fonts", true, false, true, appUrl], ["local-fonts", true, true, false, appUrl],
+      ["local-fonts", true, true, true, "https://untrusted.example.test"],
+      ["local-fonts", true, true, true, undefined],
+    ] as const) expect(isAllowedFontPermission(permission, local, ownWindow, mainFrame, url, appUrl)).toBe(false);
+  });
 
   it("keeps application navigation on its configured origin", () => {
     expect(isAllowedAppNavigation(`${appUrl}/hosts`, appUrl)).toBe(true);

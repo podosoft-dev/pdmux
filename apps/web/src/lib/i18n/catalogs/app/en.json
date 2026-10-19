@@ -1345,7 +1345,13 @@
       "font": "Font",
       "systemFont": "System monospace",
       "customFont": "Custom font",
-      "fontHelp": "Use a font installed on this computer. If it is unavailable, PDMux uses the default monospace font.",
+      "fontHelp": "Read the fixed-width fonts installed on this device. On the web, allow font access when your browser asks. Fonts are neither bundled nor downloaded from the server. Custom font accepts another installed family name; unavailable fonts use the default monospace font.",
+      "fontsLoad": "Load installed fonts",
+      "fontsRefresh": "Refresh installed fonts",
+      "fontsLoading": "Reading fonts…",
+      "fontsLoaded": "Installed fixed-width fonts loaded.",
+      "fontsFailed": "Could not read installed fonts. Allow font access and retry, or enter a font name manually.",
+      "fontsUnsupported": "This browser cannot list installed fonts. Use the system font or enter an installed font's family name.",
       "fontSize": "Font size (px)",
       "lineHeight": "Line height",
       "theme": "Terminal theme",
@@ -1375,6 +1381,28 @@
       "appTheme": "App theme",
       "generalHelp": "Choose the app language and interface theme. Terminal colors are configured in Terminal.",
       "previewSample": "PDMux · Abc · 0123456789"
+    },
+    "profile": {
+      "signedOut": "Not signed in",
+      "signIn": "Sign in",
+      "browserTitle": "Sign in to PDMux",
+      "browserHelp": "Finish signing in in your default browser. This window closes when the connection is ready.",
+      "openBrowser": "Open browser",
+      "accountHelp": "Account and administrator settings open on the connected server in your browser."
     }
+  },
+  "settingsDialog": {
+    "title": "Settings",
+    "description": "Application and workspace settings",
+    "ok": "OK",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Settings saved",
+    "failed": "Could not save settings. Check the highlighted fields and try again.",
+    "loading": "Loading settings…",
+    "loadFailed": "Could not load settings. Try again.",
+    "close": "Close settings",
+    "browserScope": "Saved in this browser for your account."
   }
 }

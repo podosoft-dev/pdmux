@@ -142,11 +142,8 @@ test.describe("coding CLI access", () => {
     const panel = page.locator("[data-testid='mcp-tokens']");
     await expect(panel).toHaveAttribute("data-pdmux-region", "page");
 
-    // The way back. Every other full-screen route carries one; this one did not, so
-    // the only exit was the browser's own back button.
-    const crumb = page.locator("[data-testid='open-dashboard']");
-    await expect(crumb).toBeVisible();
-    await expect(crumb).toHaveAttribute("href", "/");
+    await expect(page.getByTestId("settings-close")).toBeVisible();
+    await expect(page.getByTestId("settings-dialog").getByTestId("open-dashboard")).toHaveCount(0);
 
     /**
      * ⚠ THE CONTAINER HAS TO ACTUALLY SCROLL, and that is a different question from

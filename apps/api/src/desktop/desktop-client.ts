@@ -20,6 +20,7 @@ interface AccountState {
 }
 interface ClientState { deviceId: string; selected: string; accounts: Record<string, AccountState> }
 const contextSchema = z.object({ version: z.literal(DESKTOP_PROTOCOL_VERSION), userId: z.string(), scopeId: z.string(), organizations: z.array(z.object({ id: z.string(), name: z.string() })).optional() });
+const cloudUserSchema = z.object({ id: z.string(), name: z.string(), email: z.string(), image: z.string().nullable().optional(), role: z.string().nullable().optional() });
 /**
  * Each server settings operation the desktop forwards, with the body schema of the
  * server route itself (`null`: no body). Sharing the DTOs keeps the two in step, and
@@ -59,6 +60,8 @@ export class DesktopClient {
   private stopped = true;
   private error: string | null = null;
   private lastSync: string | null = null;
+  private cloudUser: z.infer<typeof cloudUserSchema> | null = null;
+  private identityCheckedAt = 0;
   constructor(private readonly service: DesktopService, private readonly store: Repository<DesktopConnection>, private readonly options: DesktopClientOptions = {}) {}
 
   async attach(session: AuthSession, cookie: string): Promise<void> {
@@ -80,6 +83,7 @@ export class DesktopClient {
   status(): object {
     const account = this.state.accounts[this.state.selected];
     return { local: true, connected: !this.stopped, bridgeConnected: this.socket?.readyState === WebSocket.OPEN,
+      user: this.stopped ? null : this.cloudUser,
       serverUrl: account?.url ?? null, userId: account?.userId ?? null, scopeId: account?.scopeId ?? null,
       organizations: account?.organizations ?? [], lastSync: this.lastSync, error: this.error, conflicts: account?.conflicts ?? [] };
   }
@@ -120,6 +124,7 @@ export class DesktopClient {
   disconnect(): void {
     this.epoch += 1; this.connectionAbort.abort();
     this.stopped = true; this.cloudCookie = "";
+    this.cloudUser = null; this.identityCheckedAt = 0;
     clearInterval(this.timer); this.timer = undefined;
     clearTimeout(this.bridgeTimer); this.bridgeTimer = undefined;
     this.bridge?.close(); this.bridge = undefined;
@@ -175,6 +180,23 @@ export class DesktopClient {
     if (!response.ok) throw new AppException("DESKTOP_SERVER_UNAVAILABLE", "The server is temporarily unavailable", 503);
     const context = contextSchema.parse(await response.json());
     if (context.userId !== account.userId || context.scopeId !== account.scopeId) { this.disconnect(); throw new AppException("DESKTOP_SCOPE_CHANGED", "Reconnect after switching workspace", 409); }
+    // get-session also works with servers that predate profile information in the
+    // desktop protocol. Never expose the synthetic local user's name or role.
+    if (!this.cloudUser || Date.now() - this.identityCheckedAt > 30_000) {
+      try {
+        const identity = await fetch(`${account.url}/api/auth/get-session`, { headers: { cookie: this.cloudCookie }, signal: AbortSignal.any([AbortSignal.timeout(5_000), this.connectionAbort.signal]), redirect: "error" });
+        if (epoch !== this.epoch || this.stopped) return;
+        if (identity.status === 401 || identity.status === 403) { this.disconnect(); throw new AppException("DESKTOP_SESSION_EXPIRED", "Sign in again", 401); }
+        if (identity.ok) {
+          const parsed = z.object({ user: cloudUserSchema }).safeParse(await identity.json());
+          if (epoch !== this.epoch || this.stopped) return;
+          if (parsed.success) {
+            if (parsed.data.user.id !== account.userId) { this.disconnect(); throw new AppException("DESKTOP_SCOPE_CHANGED", "Reconnect after switching account", 409); }
+            this.cloudUser = parsed.data.user; this.identityCheckedAt = Date.now();
+          } else this.cloudUser = null;
+        }
+      } catch (error) { if (this.stopped) throw error; /* A profile lookup outage does not erase a valid connection. */ }
+    }
   }
   async sync(resolution?: { key: string; choice: "local" | "server" }): Promise<void> {
     if (this.running) { if (resolution) throw new AppException("DESKTOP_SYNC_BUSY", "Synchronization is in progress", 409); return; }

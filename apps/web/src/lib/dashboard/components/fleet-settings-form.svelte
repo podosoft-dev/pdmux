@@ -26,7 +26,8 @@
    * the wrong way round.
    */
   import VmProvidersCard from "#lib/vm/vm-providers-card.svelte";
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { useSettings } from "#lib/settings/settings-state.svelte.js";
   import { invalidateAll, replaceState } from "$app/navigation";
   import { page } from "$app/state";
   import { toast } from "svelte-sonner";
@@ -66,6 +67,7 @@
     serverFeatures?: boolean;
     hosts: HostView[];
   } = $props();
+  const settings = useSettings();
   const i18n = getI18n();
   /**
    * What the server last said, and what is being typed over it.
@@ -121,6 +123,10 @@
   const requestedTab = untrack(() => page.url.searchParams.get("tab"));
   let chosenTab = $state<FleetTab>(isTab(requestedTab) ? requestedTab : "collection");
   const tab = $derived(tabs.includes(chosenTab) ? chosenTab : "collection");
+  $effect(() => {
+    const requested = page.url.searchParams.get("tab");
+    if (isTab(requested)) chosenTab = requested;
+  });
 
   function chooseTab(value: string): void {
     if (!isTab(value)) return;
@@ -181,19 +187,32 @@
    * a fleet that keeps polling, and the dialog must show the machines it named when it
    * opened rather than a list that shifts under the confirmation.
    */
-  function requestSave(): void {
-    if (!canSave) return;
+  let finishSweep: ((saved: boolean) => void) | undefined;
+  onMount(() => {
+    const unregister = settings?.register(`fleet:${target}`, {
+      get dirty() { return dirty; },
+      get valid() { return !blocked && !invalid; },
+      get busy() { return saving; },
+      reset() { draft = draftFrom(saved); },
+      save: requestSave,
+    });
+    return () => { unregister?.(); finishSweep?.(false); finishSweep = undefined; };
+  });
+  $effect(() => { if (!sweepOpen && finishSweep) { finishSweep(false); finishSweep = undefined; } });
+
+  async function requestSave(): Promise<boolean> {
+    if (!canSave) return !dirty;
     const next = review.patch[SWEEP_KEY];
     if (next !== undefined && armsHostSweep(savedNumber(saved, SWEEP_KEY), next)) {
       sweepDays = next;
       sweepAtRisk = hostsPastWindow(hosts, next, Date.now());
       sweepOpen = true;
-      return;
+      return new Promise(resolve => { finishSweep = resolve; });
     }
-    void commit();
+    return commit();
   }
 
-  async function commit(): Promise<void> {
+  async function commit(): Promise<boolean> {
     saving = true;
     try {
       const next = await fleetApi.updateSettings(review.patch, target);
@@ -205,8 +224,12 @@
       // client-side navigation does not re-run a layout load on its own, so without
       // this the list would keep warning by the old window until a full reload.
       await invalidateAll();
+      finishSweep?.(true); finishSweep = undefined;
+      return true;
     } catch (cause: unknown) {
       toast.error(message(cause));
+      finishSweep?.(false); finishSweep = undefined;
+      return false;
     } finally {
       saving = false;
     }
@@ -290,6 +313,7 @@
           type="checkbox"
           class="border-input mt-0.5 size-4 rounded"
           checked={draft.mcpUserTokens === "true"}
+          disabled={blocked}
           data-testid="fleet-mcp-user-tokens"
           onchange={(event) => (draft.mcpUserTokens = String(event.currentTarget.checked))}
         />
@@ -332,8 +356,8 @@
        and a Save that scrolled away would be found by scrolling back past every field
        the operator had just decided about. The column is the scroller (see above), so
        `bottom-0` pins to its edge rather than the viewport's. -->
-  <!-- The integrations save themselves; there Save shows only when another tab has a change waiting. -->
-  {#if tab !== "integrations" || dirty}
+  <!-- Standalone integrations save themselves; the shared modal owns its footer. -->
+  {#if !settings && (tab !== "integrations" || dirty)}
   <div class="bg-background sticky bottom-0 -mx-6 -mb-6 flex items-center gap-2 border-t px-6 py-3">
     <Button disabled={!canSave} data-testid="fleet-save" onclick={requestSave}>
       {saving ? i18n.t.dash.fleet.saving : i18n.t.dash.fleet.save}

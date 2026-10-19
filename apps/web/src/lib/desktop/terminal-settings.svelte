@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { useSettings } from "#lib/settings/settings-state.svelte.js";
+  import { parseTerminalPreferences } from "@pdmux/core";
   import { onMount } from "svelte";
   import { DEFAULT_TERMINAL_PREFERENCES, type TerminalPreferences } from "@pdmux/core";
   import { terminalPalette } from "@pdmux/ui";
@@ -11,10 +13,17 @@
   import InfoHint from "#lib/dashboard/components/info-hint.svelte";
   import { getI18n } from "#lib/i18n/index.js";
   import { terminalPreferences } from "./terminal-preferences.svelte.js";
+  import { canReadLocalFonts, installedTerminalFonts } from "./terminal-fonts.js";
 
+  let { local = false }: { local?: boolean } = $props();
+  const settings = useSettings();
   const i18n = getI18n();
   const text = $derived(i18n.t.desktop.preferences);
-  const fonts = ["monospace", "Menlo", "Monaco", "SF Mono", "Cascadia Code", "Consolas", "JetBrains Mono", "Fira Code"];
+  let fonts = $state(["monospace"]);
+  let fontAccess = $state(false);
+  let fontsPending = $state(false);
+  let fontsLoaded = $state(false);
+  let fontsFailed = $state(false);
   let draft = $state<TerminalPreferences>({ ...DEFAULT_TERMINAL_PREFERENCES });
   let ready = $state(false);
   let pending = $state(false);
@@ -24,22 +33,47 @@
   const font = $derived(fonts.includes(draft.fontFamily) ? draft.fontFamily : "custom");
   const fontLabel = $derived(draft.fontFamily === "monospace" ? text.systemFont : draft.fontFamily);
   const fontFamily = $derived(draft.fontFamily === "monospace" ? "monospace" : `"${draft.fontFamily.replaceAll('"', '')}", monospace`);
+  const fontStatus = $derived.by((): string => {
+    if (fontsFailed) return text.fontsFailed;
+    if (!fontAccess) return text.fontsUnsupported;
+    return fontsLoaded ? text.fontsLoaded : "";
+  });
 
   onMount(() => {
     void terminalPreferences.load().then(() => { draft = { ...terminalPreferences.value }; ready = true; }).catch(() => { error = text.loadFailed; });
+    fontAccess = canReadLocalFonts();
+    // Desktop grants access only to its trusted local main frame. A website asks
+    // for permission on the explicit button, never merely on opening Settings.
+    if (local && fontAccess) void readFonts();
   });
 
-  async function save(): Promise<void> {
+  async function readFonts(): Promise<void> {
+    if (fontsPending) return;
+    fontsPending = true; fontsFailed = false;
+    try { fonts = ["monospace", ...await installedTerminalFonts()]; fontsLoaded = true; }
+    catch { fontsFailed = true; }
+    finally { fontsPending = false; }
+  }
+
+  onMount(() => settings?.register("terminal", {
+    get dirty() { return ready && JSON.stringify(draft) !== JSON.stringify(terminalPreferences.value); },
+    get valid() { try { parseTerminalPreferences(draft); return true; } catch { return false; } },
+    get busy() { return pending; },
+    reset() { draft = { ...terminalPreferences.value }; },
+    save,
+  }));
+
+  async function save(): Promise<boolean> {
     pending = true; error = ""; saved = false;
-    try { await terminalPreferences.save(draft); draft = { ...terminalPreferences.value }; saved = true; }
-    catch { error = text.saveFailed; }
+    try { await terminalPreferences.save(draft); draft = { ...terminalPreferences.value }; saved = true; return true; }
+    catch { error = text.saveFailed; return false; }
     finally { pending = false; }
   }
 </script>
 
 <form class="grid gap-4" oninput={() => (saved = false)} onchange={() => (saved = false)} onsubmit={event => { event.preventDefault(); void save(); }} data-testid="terminal-settings-form">
   <Card.Root>
-    <Card.Header><Card.Title class="flex items-center gap-1">{text.terminal}<InfoHint label={text.terminal} text={text.scope} /></Card.Title></Card.Header>
+    <Card.Header><Card.Title class="flex items-center gap-1">{text.terminal}<InfoHint label={text.terminal} text={local ? text.scope : i18n.t.settingsDialog.browserScope} /></Card.Title></Card.Header>
     <Card.Content class="grid gap-5 sm:grid-cols-2">
       <div class="grid content-start gap-2">
         <div class="flex items-center gap-1"><Label for="terminal-font">{text.font}</Label><InfoHint label={text.font} text={text.fontHelp} /></div>
@@ -48,8 +82,10 @@
           <Select.Content>{#each fonts as family}<Select.Item value={family}>{family === "monospace" ? text.systemFont : family}</Select.Item>{/each}<Select.Item value="custom">{text.customFont}</Select.Item></Select.Content>
         </Select.Root>
         {#if font === "custom"}<Input aria-label={text.customFont} bind:value={draft.fontFamily} maxlength={120} disabled={!ready || pending} data-testid="terminal-custom-font" />{/if}
+        {#if fontAccess}<Button type="button" variant="outline" size="sm" class="w-fit max-w-full whitespace-normal" disabled={fontsPending || pending} onclick={() => void readFonts()} data-testid="terminal-fonts-load">{fontsPending ? text.fontsLoading : fontsLoaded ? text.fontsRefresh : text.fontsLoad}</Button>{/if}
+        <p class="text-muted-foreground text-xs" role="status" data-testid="terminal-fonts-status">{fontStatus}</p>
       </div>
-      <div class="grid content-start gap-2"><Label for="terminal-size">{text.fontSize}</Label><Input id="terminal-size" type="number" min={8} max={32} step={1} bind:value={draft.fontSize} disabled={!ready || pending} data-testid="terminal-font-size" /></div>
+      <div class="grid content-start gap-2"><div class="flex min-h-6 items-center pointer-coarse:min-h-11"><Label for="terminal-size">{text.fontSize}</Label></div><Input id="terminal-size" type="number" min={8} max={32} step={1} bind:value={draft.fontSize} disabled={!ready || pending} data-testid="terminal-font-size" /></div>
       <div class="grid content-start gap-2">
         <Label for="terminal-theme">{text.theme}</Label>
         <Select.Root type="single" value={draft.theme} onValueChange={value => { if (value === "pdmux" || value === "dracula" || value === "light") { draft.theme = value; saved = false; } }}><Select.Trigger class="w-full min-w-0" id="terminal-theme" disabled={!ready || pending} data-testid="terminal-theme"><span class="truncate">{text.themes[draft.theme]}</span></Select.Trigger><Select.Content>{#each ["pdmux", "dracula", "light"] as theme}<Select.Item value={theme}>{text.themes[theme as TerminalPreferences["theme"]]}</Select.Item>{/each}</Select.Content></Select.Root>
@@ -57,7 +93,7 @@
       <div class="grid content-start gap-2"><Label for="terminal-line-height">{text.lineHeight}</Label><Input id="terminal-line-height" type="number" min={1} max={2} step={0.1} bind:value={draft.lineHeight} disabled={!ready || pending} data-testid="terminal-line-height" /></div>
       <div class="grid content-start gap-2">
         <Label for="terminal-cursor">{text.cursor}</Label>
-        <Select.Root type="single" value={draft.cursorStyle} onValueChange={value => { if (value === "block" || value === "bar" || value === "underline") { draft.cursorStyle = value; saved = false; } }}><Select.Trigger class="w-full min-w-0" id="terminal-cursor" disabled={!ready || pending} data-testid="terminal-cursor"><span class="truncate">{text.cursors[draft.cursorStyle]}</span></Select.Trigger><Select.Content>{#each ["auto", "block", "bar", "underline"] as style}<Select.Item value={style}>{text.cursors[style as TerminalPreferences["cursorStyle"]]}</Select.Item>{/each}</Select.Content></Select.Root>
+        <Select.Root type="single" value={draft.cursorStyle} onValueChange={value => { if (value === "auto" || value === "block" || value === "bar" || value === "underline") { draft.cursorStyle = value; saved = false; } }}><Select.Trigger class="w-full min-w-0" id="terminal-cursor" disabled={!ready || pending} data-testid="terminal-cursor"><span class="truncate">{text.cursors[draft.cursorStyle]}</span></Select.Trigger><Select.Content>{#each ["auto", "block", "bar", "underline"] as style}<Select.Item value={style}>{text.cursors[style as TerminalPreferences["cursorStyle"]]}</Select.Item>{/each}</Select.Content></Select.Root>
       </div>
       <div class="flex items-center gap-2"><Checkbox.Root id="terminal-cursor-blink" checked={draft.cursorBlink} onCheckedChange={value => { draft.cursorBlink = value; saved = false; }} disabled={!ready || pending || draft.cursorStyle === "auto"} data-testid="terminal-cursor-blink" /><Label for="terminal-cursor-blink">{text.cursorBlink}</Label></div>
     </Card.Content>
@@ -67,5 +103,5 @@
 <span style:color={palette.red}>Red</span> <span style:color={palette.green}>Green</span> <span style:color={palette.yellow}>Yellow</span> <span style:color={palette.blue}>Blue</span> <span style:color={palette.magenta}>Magenta</span> <span style:color={palette.cyan}>Cyan</span></pre></Card.Content></Card.Root>
   {#if error}<p class="text-destructive text-sm" role="alert">{error}</p>{/if}
   {#if saved}<p class="text-muted-foreground text-sm" role="status">{text.saved}</p>{/if}
-  <div class="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={!ready || pending} onclick={() => { draft = { ...DEFAULT_TERMINAL_PREFERENCES }; saved = false; }}>{text.reset}</Button><Button type="submit" disabled={!ready || pending} data-testid="terminal-settings-save">{text.save}</Button></div>
+  <div class="flex flex-wrap justify-end gap-2"><Button type="button" variant="outline" disabled={!ready || pending} onclick={() => { draft = { ...DEFAULT_TERMINAL_PREFERENCES }; saved = false; }}>{text.reset}</Button>{#if !settings}<Button type="submit" disabled={!ready || pending} data-testid="terminal-settings-save">{text.save}</Button>{/if}</div>
 </form>

@@ -45,16 +45,16 @@ session in its own browser session. The capability is never exposed to web conte
 command-line arguments. An existing local profile is reused; multiple profiles require a one-time
 native profile selection. Ordinary web servers do not accept this bootstrap path.
 
-Open **Settings → Server connection** from the local-mode menu to connect one HTTPS server/account/workspace at a
-time. Authentication uses the system browser and PKCE; a manual authorization code supports
+Choose **Sign in** from the avatar menu, or **Settings → Server connection** for a self-hosted
+origin, to connect one HTTPS server/account/workspace at a time. Authentication uses the system browser and PKCE; a manual authorization code supports
 platforms where a deep link cannot reopen the app. Cloud credentials are kept out of the renderer
 and protected with the OS credential store. Without a secure store, the session is memory-only.
 
-Open **Settings** from the local-mode menu to manage the app in one place. The left vertical tabs
+Open **Settings** from the avatar menu to manage the app in one modal. The left vertical tabs
 select General, Terminal, Hosts, Host common settings, Coding CLI access, Server connection, and Advanced;
-the selected page appears on the right. The Dashboard button to the left of the settings heading
-returns to the terminal screen. Opening settings does not change the saved dashboard sidebar layout.
-The browser edition retains its existing profile navigation and page headings.
+the selected content appears on the right. Close the modal to return to the existing dashboard.
+The browser edition uses the same settings entry and modal. See the
+[feature profile](#desktop-feature-profile-and-the-first-local-terminal) for save/cancel behavior.
 
 **Host common settings** separates **Local settings** from **Server settings**. Local settings
 configure hosts owned by the desktop and exclude server integrations. The server tab becomes
@@ -100,7 +100,15 @@ shortcuts remain available; app theme and terminal palette are separate choices.
 
 Use **Settings → Terminal** to select a font, font size (8–32 px), line height (1–2), terminal
 palette, and cursor shape/blinking. The preview updates while editing; Save applies the changes.
-Installed system fonts are used with a monospace fallback. These rendering preferences apply to
+On macOS, Windows, and Linux, desktop reads the OS font families through Chromium's Local Font Access API and measures
+character widths to list installed fixed-width fonts, including separately installed fonts.
+Access is limited to the local application's trusted main frame. **Refresh installed fonts**
+reads the inventory again after a font installation. On the web, choose **Load installed fonts**
+and grant the browser's font permission. Unsupported browsers and denied access keep the system
+font and **Custom font** input available. Custom font accepts an installed family name.
+Both web and desktop use fonts on the viewing device; no terminal fonts are bundled or
+downloaded from the server, and font inventory is not sent to the server. An unavailable font
+falls back to the device's default monospace font. These rendering preferences apply to
 local and server terminal views inside this desktop app and persist across application restarts.
 
 Preferences live in `terminal-preferences.json` in the Electron user-data directory, independently
@@ -462,9 +470,32 @@ MCP, Git, transfers, and optional server synchronization remain available.
 `desktop:prepare` builds `apps/api/dist-desktop` and `apps/web/build-desktop` without
 changing the ordinary API/web output. Build substitutions are application owned;
 generated toolkit modules and the source web routes retain their server behavior.
-The desktop menu provides settings, server connection, backup, data folder, and
-application update actions. Its native actions accept requests only from the main
-application frame and origin.
+The desktop uses an anonymous avatar until a server account is connected. Sign in
+opens the existing web login in the default browser; no separate password form is
+embedded in Electron. The first-party server is the default, and a local desktop
+configuration can override `serverUrl` with another HTTPS origin. Local terminals
+remain available without signing in. A connected menu shows the server's name and
+email, Settings, Account, Admin console (administrators only), Sign out, and version.
+Account and administration open on that server in the browser; these server pages
+are still excluded from the desktop bundle. Signing out clears the cloud identity
+and connection while retaining local work.
+
+Web and desktop both open Settings as a modal, with tabs on the left and content
+on the right. The dashboard and its terminal relays remain mounted behind it.
+Old host, fleet settings, CLI access, and desktop preferences links open the same
+modal. Save applies edited preferences without closing; OK applies them and closes;
+Cancel, Escape, and the close button discard unsaved drafts. The footer remains
+visible while the content scrolls. Host/token creation and other explicit operations
+keep their own confirmation dialogs. Switching server accounts or workspaces
+discards drafts for the previous server. Read failures and fleet permissions block
+saving, including when shipped defaults were used as a fallback.
+
+Terminal appearance uses the desktop's private preferences file or per-account
+browser storage. Application language and theme also participate in the modal's
+save/cancel flow. Server connection and Advanced are desktop-only tabs; update
+checks and the diagnostic data-folder action live in Advanced. There is no manual
+backup entry. Native actions accept requests only from the main application frame
+and origin.
 
 On first launch, Electron verifies and copies the bundled native agent, creates a
 host in the selected local profile, and runs the agent as a supervised child. It

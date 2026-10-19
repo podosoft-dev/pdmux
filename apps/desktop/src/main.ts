@@ -21,7 +21,7 @@ import { BackupService } from "./backup.js";
 import { loadDesktopConfig, type DesktopConfig } from "./config.js";
 import { desktopMessages } from "./i18n.js";
 import { logError } from "./log.js";
-import { certificateMatches, isAllowedAppNavigation, isAllowedExternalUrl } from "./security.js";
+import { certificateMatches, isAllowedAppNavigation, isAllowedExternalUrl, isAllowedFontPermission } from "./security.js";
 import { StackManager, type RuntimeLayout } from "./stack-manager.js";
 import { UpdateCoordinator } from "./updater.js";
 import { UpdateWindow } from "./update-window.js";
@@ -205,12 +205,15 @@ async function initialize(): Promise<void> {
     configureRemoteCertificatePin(config);
   }
 
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   const window = secureWindow(appUrl);
   mainWindow = window;
+  session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
+    isAllowedFontPermission(permission, Boolean(stack), contents === window.webContents, details.isMainFrame, details.requestingUrl, appUrl));
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+    callback(isAllowedFontPermission(permission, Boolean(stack), contents === window.webContents, details.isMainFrame, details.requestingUrl, appUrl)));
   fileTransfers = new DesktopFileTransfers(window, session.defaultSession, appUrl, userData);
   await fileTransfers.initialize();
-  if (stack && localProfileId) { cloud = new CloudConnection(window, stack, appUrl, userData, localProfileId, () => backup.create("manual")); await cloud.initialize(); }
+  if (stack && localProfileId) { cloud = new CloudConnection(window, stack, appUrl, userData, localProfileId, () => backup.create("manual"), config.mode === "local" ? config.serverUrl : config.url); await cloud.initialize(); }
   if (pendingDeepLink) { await cloud?.handleUrl(pendingDeepLink); pendingDeepLink = undefined; }
   window.on("close", (event) => {
     if (quitting || !config.closeToTray) return;
@@ -267,7 +270,7 @@ async function initialize(): Promise<void> {
   tray.on("double-click", () => mainWindow?.show());
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: messages.show, click: () => mainWindow?.show() },
-    ...(config.mode === "local" ? [{ label: messages.settings, click: () => { mainWindow?.show(); void window.loadURL(new URL("/preferences?tab=general", appUrl).href); } }] : []),
+    ...(config.mode === "local" ? [{ label: messages.settings, click: () => { mainWindow?.show(); window.webContents.send("pdmux:settings:open"); } }] : []),
     { label: messages.checkUpdates, click: () => { void updater.check(true).catch((error: unknown) => logError("Check desktop update", error)); } },
     { type: "separator" },
     { label: messages.quit, click: () => { quitting = true; app.quit(); } },

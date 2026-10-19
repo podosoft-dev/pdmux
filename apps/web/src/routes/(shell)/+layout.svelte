@@ -14,7 +14,7 @@
    */
   import "@pdmux/ui/styles.css";
   import { onDestroy, onMount, untrack } from "svelte";
-  import { goto } from "$app/navigation";
+  import { beforeNavigate, goto, replaceState } from "$app/navigation";
   import { page } from "$app/state";
   import { CardSettingsPopover, HostSidebar, ShellViewTabs, SplitHandle } from "@pdmux/ui";
   import {
@@ -56,12 +56,51 @@
   import { cardPowerKind, elapsedSeconds } from "#lib/vm/power.js";
   import type { HostPowerMark } from "@pdmux/ui";
   import type { LayoutData } from "./$types";
-  import DesktopSettingsFrame from "#lib/desktop/settings-frame.svelte";
-  import { desktopSettingsTab } from "#lib/desktop/settings-navigation.js";
+  import SettingsDialog from "#lib/settings/settings-dialog.svelte";
+  import { provideSettings, settingsLocation } from "#lib/settings/settings-state.svelte.js";
+  import { desktopActions } from "#lib/desktop.js";
 
   let { data, children }: { data: LayoutData; children: import("svelte").Snippet } = $props();
 
   const i18n = getI18n();
+  let settingsView: ShellView | undefined;
+  const settingsDialog = provideSettings({
+    onOpen: () => { settingsView = shell.view; },
+    onClose: () => {
+      if (settingsView) {
+        shell.view = settingsView;
+        replaceState("", { ...page.state, pdmuxView: settingsView });
+        settingsView = undefined;
+      }
+    },
+  });
+  beforeNavigate(navigation => {
+    if (!navigation.to || navigation.willUnload) return;
+    const location = settingsLocation(navigation.to.url);
+    if (!location) return;
+    navigation.cancel();
+    const fleetTab = navigation.to.url.searchParams.get("tab");
+    if (location.tab === "fleet" && fleetTab) {
+      const url = new URL(page.url.href);
+      url.searchParams.set("tab", fleetTab);
+      replaceState(url, page.state);
+    }
+    if (location.target) settingsDialog.target = location.target;
+    settingsDialog.show(location.tab, location.host ?? null);
+  });
+  $effect(() => {
+    if (!page.url.searchParams.has("preferences")) return;
+    const location = settingsLocation(new URL(page.url.href));
+    if (!location) return;
+    untrack(() => {
+      if (location.target) settingsDialog.target = location.target;
+      settingsDialog.show(location.tab, location.host ?? null);
+      const url = new URL(page.url.href);
+      for (const key of ["preferences", "host", "scope"]) url.searchParams.delete(key);
+      replaceState(url, page.state);
+    });
+  });
+  onMount(() => desktopActions()?.onSettings?.(() => settingsDialog.show()));
   const t = $derived(uiTranslate(i18n.t));
 
   /**
@@ -168,7 +207,6 @@
   // Secondary navigation lives in the profile menu; product pages provide their own
   // return action and adding a host already has a tile below the cards.
   const onDashboard = $derived(page.url.pathname === "/");
-  const desktopSettings = $derived(data.desktopStatus.local && desktopSettingsTab(page.url.pathname, page.url.searchParams) !== null);
 
   // --- narrow screens: one region at a time ---------------------------------
   // Three regions side by side need about 1000px. Below that they were stacked and the
@@ -195,6 +233,9 @@
    */
   $effect(() => {
     const entry = page.state;
+    // invalidateAll may replace shallow page state during a settings save. Keep
+    // the background region and restore its history value when the modal closes.
+    if (settingsDialog.open) return;
     untrack(() => syncViewFromHistory(shell, entry));
   });
 
@@ -329,7 +370,7 @@
   <main
   class="pdmux pdmux-shell min-h-0 flex-1"
   data-testid="dashboard-shell"
-  data-sidebar={desktopSettings ? "hidden" : layout.sidebarOpen || !onDashboard ? "open" : "hidden"}
+  data-sidebar={layout.sidebarOpen || !onDashboard ? "open" : "hidden"}
   data-dock={dockOpen ? "open" : "closed"}
   data-view={view}
   data-keyboard={keyboard.open ? "open" : "closed"}
@@ -353,7 +394,7 @@
         <div class="ms-auto flex items-center gap-0.5">
           <LanguageSwitch />
           <ThemeToggle />
-          <ShellUserMenu user={data.user} canManage={data.canManage} />
+          <ShellUserMenu user={data.user} canManage={data.canManage} desktopStatus={data.desktopStatus} />
         </div>
       </div>
     {/snippet}
@@ -361,13 +402,15 @@
 
   <SplitHandle {t} onDrag={(delta) => dragSidebar(delta, false)} onCommit={(delta) => dragSidebar(delta, true)} />
 
-  {#if desktopSettings}<DesktopSettingsFrame>{@render children()}</DesktopSettingsFrame>{:else}{@render children()}{/if}
+  {@render children()}
 
   <!-- Last in DOM order and pinned to row 2 by CSS, so what a route renders cannot
        displace it. Hidden entirely at desktop widths. -->
   <ShellViewTabs {tabs} active={onDashboard ? shell.view : null} {t} onSelect={chooseView} />
   </main>
 </div>
+
+<SettingsDialog data={data} />
 
 <!-- The card's own way out of the fleet. Declared here and handed to the popover as a
      value, so a member is passed nothing at all rather than an empty section.
@@ -445,4 +488,7 @@
 <HostFormDialog bind:open={addOpen} />
 
 <VmPowerConfirm power={vmPower} panesOn={(hostId: string) => shell.layout.slots.filter((slot) => slot?.hostId === hostId).length} />
-<Toaster />
+<Toaster
+  offset={settingsDialog.open ? { bottom: "calc(max(1rem, (100dvh - 52rem) / 2) + 5rem)" } : undefined}
+  mobileOffset={settingsDialog.open ? { bottom: "6rem" } : undefined}
+/>

@@ -35,6 +35,7 @@ function reconnectFixture(acceptBridge = true): { client: DesktopClient; sockets
   spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => {
     const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url).pathname;
     if (path === "/api/desktop/context") return Response.json({ version: 1, userId: "remote", scopeId: "personal:remote", organizations: [] }, { status });
+    if (path === "/api/auth/get-session") return Response.json({ user: { id: "remote", name: "Remote user", email: "remote@example.test", role: "user" } });
     if (path === "/api/desktop/sync") { syncs += 1; return Response.json({ version: 1, userId: "remote", scopeId: "personal:remote", hostIds: {}, conflicts: [], records: [] }); }
     throw new Error(`Unexpected test request ${path}`);
   }, { preconnect: (): void => {} }));
@@ -215,5 +216,41 @@ it("[TC-PDDESKTOP-024] forwards only the validated server settings body", async 
     expect(forwarded()).toEqual({ path: "/api/integrations/cloudflare", method: "DELETE", body: null });
     await request("GET", "/fleet/scope", undefined);
     expect(forwarded()).toEqual({ path: "/api/fleet/scope", method: "GET", body: null });
+  } finally { client.disconnect(); }
+});
+
+
+it("[TC-PDDESKTOP-027] exposes only the authenticated server profile and clears it on sign out", async () => {
+  const { client } = reconnectFixture();
+  try {
+    await client.attach(session("local-synthetic"), "local-cookie");
+    expect(client.status()).toMatchObject({ connected: false, user: null });
+    await client.connect("https://server.example.test", "cloud-cookie");
+    expect(client.status()).toMatchObject({ connected: true, user: { id: "remote", name: "Remote user", email: "remote@example.test", role: "user" } });
+    client.disconnect();
+    expect(client.status()).toMatchObject({ connected: false, user: null });
+  } finally { client.disconnect(); }
+});
+
+it("[TC-PDDESKTOP-027] cannot resurrect a profile lookup after disconnect", async () => {
+  const { client } = fixture({ syncIntervalMs: 60_000 });
+  let identityStarted!: () => void;
+  const started = new Promise<void>(resolve => { identityStarted = resolve; });
+  let identityComplete!: (response: Response) => void;
+  const identity = new Promise<Response>(resolve => { identityComplete = resolve; });
+  spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0]) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+    if (url.pathname === "/api/desktop/context") return Response.json({ version: 1, userId: "remote", scopeId: "personal:remote" });
+    if (url.pathname === "/api/auth/get-session") { identityStarted(); return identity; }
+    throw new Error("Unexpected identity test request");
+  }, { preconnect: (): void => {} }));
+  try {
+    await client.attach(session("local"), "local-cookie");
+    const pending = client.connect("https://server.example.test", "cloud-cookie");
+    await started;
+    client.disconnect();
+    identityComplete(Response.json({ user: { id: "remote", name: "Old admin", email: "admin@example.test", role: "admin" } }));
+    await pending;
+    expect(client.status()).toMatchObject({ connected: false, user: null });
   } finally { client.disconnect(); }
 });

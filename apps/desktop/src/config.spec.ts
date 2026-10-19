@@ -7,6 +7,12 @@ describe("[TC-PDDESKTOP-004] desktop configuration", () => {
     expect(parseDesktopConfig(undefined)).toEqual(DEFAULT_DESKTOP_CONFIG);
   });
 
+  it("[TC-PDDESKTOP-027] keeps old local configs compatible and validates a self-hosted login origin", () => {
+    expect(parseDesktopConfig({ mode: "local" })).toEqual(DEFAULT_DESKTOP_CONFIG);
+    expect(parseDesktopConfig({ mode: "local", serverUrl: "https://self-hosted.example.test" })).toMatchObject({ serverUrl: "https://self-hosted.example.test" });
+    for (const serverUrl of ["http://example.test", "https://user:secret@example.test", "https://example.test/path", "https://example.test?token=x", "https://example.test#fragment"]) expect(() => parseDesktopConfig({ mode: "local", serverUrl })).toThrow();
+  });
+
   it("normalizes a pinned HTTPS remote", () => {
     const config = parseDesktopConfig({
       mode: "remote",

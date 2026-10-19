@@ -1,7 +1,7 @@
 import { expect, test } from "../helpers/pdmux-test";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
-import { openSidebar, openUserMenu } from "../helpers/shell";
+import { openSidebar, openUserMenu, openSettings } from "../helpers/shell";
 
 /** A marker written onto a live element; it survives only if the element does. */
 type Marked = HTMLElement & { __pdmuxMark?: number };
@@ -93,12 +93,8 @@ test.describe.serial("pdmux fleet settings", () => {
     const sidebar = page.locator("[data-pdmux-sidebar]");
     await sidebar.evaluate((el: Marked, mark: number) => (el.__pdmuxMark = mark), MARK);
 
-    await openUserMenu(page);
-    await clickUntil(page, "[data-testid='nav-settings']", page.locator("[data-testid='fleet-settings-panel']"));
-    await expect(page).toHaveURL(/\/settings$/);
-    await openUserMenu(page);
-    await expect(page.locator("[data-testid='nav-settings']")).toHaveAttribute("aria-current", "page");
-    await page.keyboard.press("Escape");
+    await openSettings(page, "fleet");
+    await expect(page.getByTestId("fleet-settings-panel")).toBeVisible();
     // In the product shell, beside the fleet it is about — not in the admin console.
     // The cards are the same live element they were on the dashboard, so this is one
     // level inside the shell rather than a screen of its own.
@@ -226,7 +222,7 @@ test.describe.serial("pdmux fleet settings", () => {
 
       await ready(page, "/settings");
       const field = page.locator("[data-testid='fleet-field-heartbeatSec']");
-      const save = page.locator("[data-testid='fleet-save']");
+      const save = page.locator("[data-testid='settings-save']");
 
       // Nothing typed yet: there is nothing to save, so there is no button to press.
       await expect(save).toBeDisabled();
@@ -320,8 +316,8 @@ test.describe.serial("pdmux fleet settings", () => {
         .toBeGreaterThan(0);
 
       await page.locator("[data-testid='fleet-field-staleHostRetentionDays']").fill("30");
-      await expect(page.locator("[data-testid='fleet-save']")).toBeEnabled();
-      await clickUntil(page, "[data-testid='fleet-save']", page.locator("[data-testid='fleet-sweep-confirm']"));
+      await expect(page.locator("[data-testid='settings-save']")).toBeEnabled();
+      await clickUntil(page, "[data-testid='settings-save']", page.locator("[data-testid='fleet-sweep-confirm']"));
 
       // The click did not save; it asked.
       expect(bodies, "the sweep was armed without a confirmation").toHaveLength(0);
@@ -359,7 +355,7 @@ test.describe.serial("pdmux fleet settings", () => {
       await page.reload();
       await expect(page.locator("[data-testid='fleet-field-staleHostRetentionDays']")).toHaveValue("3650");
       await page.locator("[data-testid='fleet-field-staleHostRetentionDays']").fill("0");
-      await page.locator("[data-testid='fleet-save']").click();
+      await page.locator("[data-testid='settings-save']").click();
 
       await expect.poll(() => bodies.length, { message: "turning the sweep off was blocked" }).toBe(1);
       expect(bodies[0]).toEqual({ staleHostRetentionDays: 0 });

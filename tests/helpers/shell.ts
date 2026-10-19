@@ -59,3 +59,15 @@ export async function openUserMenu(page: Page): Promise<void> {
   if (await menu.isVisible()) return;
   await clickUntil(page, "[data-testid='shell-user']", menu);
 }
+
+
+/** Opens the shared modal without navigating away from the terminal grid. */
+export async function openSettings(page: Page, tab: string): Promise<void> {
+  if (!await page.getByTestId("settings-dialog").isVisible()) {
+    await openSidebar(page);
+    await openUserMenu(page);
+    await page.getByTestId("shell-user-settings").click();
+  }
+  await page.getByTestId(`settings-tab-${tab}`).click();
+  await page.getByTestId(`settings-content-${tab}`).waitFor();
+}

@@ -132,6 +132,12 @@ const devAllowedHosts = (process.env.DEV_ALLOWED_HOSTS ?? fileEnv.DEV_ALLOWED_HO
   .filter((host) => host !== "");
 
 export const appViteConfig: UserConfig | UserConfigFnObject = {
+  // Keep toolbelt's SSR no-op helpers in one real utility chunk. Separate empty
+  // re-import chunks can collide in Bun's second bundling pass (oven-sh/bun#37576).
+  // Client chunking and the adapter's normal code splitting remain enabled.
+  environments: { ssr: { build: { rolldownOptions: { output: {
+    codeSplitting: { groups: [{ name: "ssr-toolbelt", test: /node_modules\/svelte-toolbelt\// }] },
+  } } } } },
   ...(desktopBuild ? { resolve: { alias: {
     "#lib/dashboard/components/shell-user-menu.svelte": fileURLToPath(new URL("./src/lib/desktop/user-menu.svelte", import.meta.url)),
     "#lib/components/impersonation-banner.svelte": fileURLToPath(new URL("./src/lib/desktop/empty.svelte", import.meta.url)),

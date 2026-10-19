@@ -111,7 +111,8 @@ test.describe.serial("pdmux VM create and delete", () => {
     await expect(confirm).toBeEnabled();
     await confirm.click();
     await expect.poll(() => sent).toEqual([{ confirmName: "e2e-vm-500" }]);
-    await expect(page).toHaveURL(/\/hosts$/);
+    await expect(page.getByTestId("hosts-panel")).toBeVisible();
+    await expect(page.getByTestId("host-vm")).toBeHidden();
   });
 
   test("[TC-PDVM-030] a created machine that never registered says so and offers a retry", async ({ page }) => {

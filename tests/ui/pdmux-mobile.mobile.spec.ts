@@ -161,17 +161,13 @@ test.describe("pdmux on a phone", () => {
     const shell = page.locator("[data-testid='dashboard-shell']");
     // `/hosts` renders no terminal and no dock, so its own panel is the view. Naming a
     // region the route did not render would show an empty screen.
-    await expect(shell).toHaveAttribute("data-view", "page");
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
     await expect(page.locator("[data-testid='hosts-panel']")).toBeVisible();
     await expectOnScreen(page.locator("[data-testid='hosts-panel']"), "hosts panel on a phone");
 
-    // A page owns its return action; the sidebar keeps only its global controls.
-    const back = page.locator("[data-testid='hosts-panel'] [data-testid='open-dashboard']");
-    await expectOnScreen(back, "page dashboard button on a phone");
-    const backBox = await back.boundingBox();
-    const titleBox = await page.locator("[data-testid='hosts-panel']").getByRole("heading", { level: 1 }).boundingBox();
-    expect(backBox && titleBox && backBox.x + backBox.width <= titleBox.x && backBox.y < titleBox.y + titleBox.height && titleBox.y < backBox.y + backBox.height, "the return button stays left of the title").toBeTruthy();
-    await expect(page.locator("[data-testid='shell-toolbar'] [data-testid='open-dashboard']")).toHaveCount(0);
+    const back = page.getByTestId("settings-close");
+    await expectOnScreen(back, "settings close button on a phone");
+    await expect(page.getByTestId("settings-dialog").getByTestId("open-dashboard")).toHaveCount(0);
     const help = page.locator("[data-testid='hosts-panel'] [data-testid='info-hint']").first();
     await help.tap();
     const content = page.locator("[data-testid='info-hint-content']");
@@ -184,7 +180,7 @@ test.describe("pdmux on a phone", () => {
     await expect(content).toBeHidden();
     await back.click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(shell).toHaveAttribute("data-view", "terminal");
+    await expect(page.getByTestId("settings-dialog")).toBeHidden();
     await expectViewportBound(page);
   });
 

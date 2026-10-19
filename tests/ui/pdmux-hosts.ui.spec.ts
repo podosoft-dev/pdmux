@@ -2,7 +2,7 @@ import { expect, test } from "../helpers/pdmux-test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
-import { collapseSidebar, openSidebar, openUserMenu } from "../helpers/shell";
+import { collapseSidebar, openSidebar, openUserMenu, openSettings } from "../helpers/shell";
 import { userState } from "../helpers/accounts";
 import { mockHost, mockUpdate, type MockHost } from "../helpers/fleet";
 
@@ -220,16 +220,13 @@ test.describe.serial("pdmux hosts", () => {
     // is precisely the regression this guards (the sidebar used to be page content).
     await sidebar.evaluate((el: Marked, mark: number) => (el.__pdmuxMark = mark), MARK);
 
-    await openUserMenu(page);
-    await clickUntil(page, "[data-testid='nav-hosts']", page.locator("[data-testid='hosts-panel']"));
-    await expect(page).toHaveURL(/\/hosts$/);
-    await openUserMenu(page);
-    await expect(page.locator("[data-testid='nav-hosts']")).toHaveAttribute("aria-current", "page");
-    await page.keyboard.press("Escape");
+    await openSettings(page, "hosts");
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
     expect(await sidebar.evaluate((el: Marked) => el.__pdmuxMark ?? null)).toBe(MARK);
 
     // The persistent Dashboard button returns to the terminals.
-    await clickUntil(page, "[data-testid='open-dashboard']", page.locator("[data-pdmux-grid]"));
+    await page.getByTestId("settings-close").click();
+    await expect(page.getByTestId("settings-dialog")).toBeHidden();
     await expect(page).toHaveURL((url) => url.pathname === "/");
     expect(await sidebar.evaluate((el: Marked) => el.__pdmuxMark ?? null)).toBe(MARK);
   });
@@ -1043,10 +1040,11 @@ test.describe("pdmux shell navigation", () => {
 
     try {
       await ready(page, "/hosts");
-      await expect(shell).toHaveAttribute("data-sidebar", "open");
-      const back = page.locator("[data-testid='open-dashboard']");
-      await expectOnScreen(back, "the Dashboard button on /hosts");
-      await clickUntil(page, "[data-testid='open-dashboard']", page.locator("[data-pdmux-grid]"));
+      await expect(shell).toHaveAttribute("data-sidebar", "hidden");
+      const back = page.getByTestId("settings-close");
+      await expectOnScreen(back, "the settings close button");
+      await page.getByTestId("settings-close").click();
+    await expect(page.getByTestId("settings-dialog")).toBeHidden();
       await expect(page).toHaveURL((url) => url.pathname === "/");
       await expect(shell, "the dashboard forgot the collapsed column").toHaveAttribute("data-sidebar", "hidden");
     } finally {

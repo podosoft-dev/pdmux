@@ -6,8 +6,14 @@ import { z } from "zod";
 const fingerprint = z.string().transform((value) => value.replaceAll(":", "").toUpperCase())
   .pipe(z.string().regex(/^[A-F0-9]{64}$/, "Certificate pins must be SHA-256 fingerprints"));
 
+const DEFAULT_SERVER_URL = "https://pdmux.podosoft.io";
+
 const localConfig = z.object({
   mode: z.literal("local"),
+  serverUrl: z.string().url().refine(value => {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash;
+  }, "Server URL must be an HTTPS origin").default(DEFAULT_SERVER_URL),
   closeToTray: z.boolean().default(true),
   backupRetention: z.number().int().min(1).max(100).default(5),
 }).strict();
@@ -25,6 +31,7 @@ export type DesktopConfig = LocalDesktopConfig | RemoteDesktopConfig;
 
 export const DEFAULT_DESKTOP_CONFIG: LocalDesktopConfig = {
   mode: "local",
+  serverUrl: DEFAULT_SERVER_URL,
   closeToTray: true,
   backupRetention: 5,
 };

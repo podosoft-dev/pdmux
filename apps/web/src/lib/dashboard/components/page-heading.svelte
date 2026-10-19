@@ -1,11 +1,11 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { page } from "$app/state";
+  import { useSettings } from "#lib/settings/settings-state.svelte.js";
   import DashboardBack from "./dashboard-back.svelte";
   import InfoHint from "./info-hint.svelte";
-  import { localDesktopPage, desktopSettingsTab } from "#lib/desktop/settings-navigation.js";
   let { title, help, testId, children }: { title: string; help?: string; testId?: string; children?: Snippet } = $props();
-  const embedded = $derived(localDesktopPage(page.data) && desktopSettingsTab(page.url.pathname, page.url.searchParams) !== null);
+  const settings = useSettings();
+  const embedded = $derived(settings?.open ?? false);
 </script>
 
 <div class="flex shrink-0 flex-wrap items-center justify-between gap-3">

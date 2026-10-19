@@ -27,9 +27,9 @@ try {
  await delayed;
  await page.unroute("**/_app/immutable/**/*.js");
  await page.locator('[data-testid="shell-user"]').click();
- await page.locator('[data-testid="desktop-menu-settings"]').click();
+ await page.locator('[data-testid="shell-user-settings"]').click();
     await page.locator('[data-testid="settings-tab-connection"]').click();
- await page.waitForURL("**/connection");
+ await page.getByTestId("desktop-connection").waitFor();
  await page.locator('[data-testid="desktop-local-host"]').waitFor({timeout:10_000});
  await page.screenshot({path:"/tmp/pdmux-desktop-local-connection.png"});
  await verifyDesktopNavigation(page, process.env.PDMUX_NAVIGATION_OUTPUT ?? join(directory,"navigation"));
