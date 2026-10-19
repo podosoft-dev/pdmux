@@ -85,6 +85,7 @@ interface Mailbox {
   verification: string;
   reset: string;
   sms: string;
+  deletion: string;
 }
 
 interface AuthHandler {
@@ -137,6 +138,8 @@ interface StartOptions {
   signupApproval?: boolean;
   /** Whether an email verification link signs its user in. */
   verificationSignIn?: boolean;
+  /** Lets users delete their own account, at once or through a mailed link. */
+  accountDeletion?: "immediate" | "link";
 }
 
 // Like auth.ts with sign-up approval on: a self-registered account starts
@@ -160,8 +163,14 @@ const signupApprovalHooks: BetterAuthOptions["databaseHooks"] = {
 // The sign-in methods PodoKit's auth.ts enables and plugins that set or swap
 // sessions without a sign-in, on an in-memory database, with the audit plugin
 // pushed last as the audit-log module does.
-function startAuth({ enabled = async () => true, session, signupApproval = false, verificationSignIn = true }: StartOptions = {}) {
-  const mail: Mailbox = { magicLink: "", otp: "", verification: "", reset: "", sms: "" };
+function startAuth({
+  enabled = async () => true,
+  session,
+  signupApproval = false,
+  verificationSignIn = true,
+  accountDeletion,
+}: StartOptions = {}) {
+  const mail: Mailbox = { magicLink: "", otp: "", verification: "", reset: "", sms: "", deletion: "" };
   const db: Record<string, Record<string, unknown>[]> = {};
   const options = {
     baseURL: BASE_URL,
@@ -171,6 +180,20 @@ function startAuth({ enabled = async () => true, session, signupApproval = false
     ...(signupApproval ? { databaseHooks: signupApprovalHooks } : {}),
     user: {
       changeEmail: { enabled: true, updateEmailWithoutVerification: true },
+      ...(accountDeletion
+        ? {
+            deleteUser: {
+              enabled: true,
+              ...(accountDeletion === "link"
+                ? {
+                    sendDeleteAccountVerification: async ({ token }: { token: string }) => {
+                      mail.deletion = token;
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
       additionalFields: { signupApproved: { type: "boolean" as const, required: false, defaultValue: true, input: false } },
     },
     emailAndPassword: {
@@ -798,6 +821,85 @@ describe("audit plugin accounts and sessions", () => {
     ]);
     // Ending the impersonation session is not a sign-out.
     expect(actions("auth.logout")).toEqual([]);
+  });
+
+  test("names the user an administrator removes by the email it had", async () => {
+    const { auth, db } = startAuth();
+    const operator = await signUp(auth, "remover@example.com");
+    await makeAdmin(db, operator);
+    const target = await signUp(auth, "removed@example.com");
+    const targetId = await userId(target);
+    entries = [];
+
+    expect((await operator.post("/admin/remove-user", { userId: "missing" })).status).toBe(404);
+    expect((await operator.post("/admin/remove-user", { userId: targetId })).status).toBe(200);
+    expect(db.user?.some((user) => user.id === targetId)).toBe(false);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        action: "user.delete",
+        actorEmail: "remover@example.com",
+        targetId,
+        targetLabel: "removed@example.com",
+      }),
+    ]);
+  });
+
+  test("names the account a user deletes", async () => {
+    const { auth, db } = startAuth({ accountDeletion: "immediate" });
+    const owner = await signUp(auth, "deleting@example.com");
+    const id = await userId(owner);
+    entries = [];
+
+    expect((await owner.post("/delete-user", { password: "Wrong-password-1" })).status).toBe(400);
+    expect((await owner.post("/delete-user", { password: PASSWORD })).status).toBe(200);
+    expect(db.user).toEqual([]);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        action: "account.delete",
+        actorId: id,
+        actorEmail: "deleting@example.com",
+        targetId: id,
+        targetLabel: "deleting@example.com",
+      }),
+    ]);
+  });
+
+  test("records an account deletion confirmed by link when the link deletes it", async () => {
+    const { auth, db, mail } = startAuth({ accountDeletion: "link" });
+    const owner = await signUp(auth, "confirming@example.com");
+    const id = await userId(owner);
+    const other = await signUp(auth, "confirming-in-app@example.com");
+    const otherId = await userId(other);
+    entries = [];
+
+    // Asking only mails the link, and the link needs its user's session.
+    expect((await owner.post("/delete-user", {})).status).toBe(200);
+    expect(db.user).toHaveLength(2);
+    expect(entries).toEqual([]);
+    expect((await new Browser(auth).get(`/delete-user/callback?token=${mail.deletion}`)).status).toBeGreaterThanOrEqual(400);
+    expect(entries).toEqual([]);
+    expect((await owner.get(`/delete-user/callback?token=${mail.deletion}`)).status).toBe(200);
+
+    // The token can also come back in the body of a second /delete-user.
+    expect((await other.post("/delete-user", {})).status).toBe(200);
+    expect((await other.post("/delete-user", { token: mail.deletion })).status).toBe(200);
+    expect(db.user).toEqual([]);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        action: "account.delete",
+        actorId: id,
+        actorEmail: "confirming@example.com",
+        targetId: id,
+        targetLabel: "confirming@example.com",
+      }),
+      expect.objectContaining({
+        action: "account.delete",
+        actorId: otherId,
+        actorEmail: "confirming-in-app@example.com",
+        targetId: otherId,
+        targetLabel: "confirming-in-app@example.com",
+      }),
+    ]);
   });
 
   test("names the user a password reset link, email code, or text message code resets", async () => {

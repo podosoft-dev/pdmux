@@ -111,7 +111,7 @@
     },
     ".env.example": {
       "tier": "owned",
-      "outHash": "sha256:02b8cd5687f1deaccc85813b9a911bdb37e6eac5a142f12c133adebe9b5f2bd7",
+      "outHash": "sha256:09ec5580883cb16b3f1de58f81b45ddcf6d021b7d39fb27edd49fa78869fa94d",
       "templateHash": "sha256:29f6b8bbde89321097633e8e9ad8de8378f5cb32a6b467a73dc9e9278f7172a4"
     },
     ".github/copilot-instructions.md": {
@@ -279,7 +279,7 @@
     },
     "apps/api/src/audit/README.md": {
       "tier": "managed",
-      "outHash": "sha256:7b7d70593aefbb3e7682372a7c26ae5a889e1cbce2305ee70d999d55c5b780c1"
+      "outHash": "sha256:eaf8583f775a4e077aa46728d48dd0aef13b7d22801ae7fe66e99eaa6b3c3882"
     },
     "apps/api/src/audit/audit-enabled.ts": {
       "tier": "managed",
@@ -291,11 +291,11 @@
     },
     "apps/api/src/audit/audit-hook.spec.ts": {
       "tier": "managed",
-      "outHash": "sha256:c7305eed22ade2cac5bc1640e7dac9335f9581ddbf94caedae304241aa46bda7"
+      "outHash": "sha256:de5c83c14782f1a169b7550faef05a80643b0921f084d565c0575ddae16ff4d7"
     },
     "apps/api/src/audit/audit-hook.ts": {
       "tier": "managed",
-      "outHash": "sha256:381c4de804e0afad318c1c69ddf24f2589a67d98f9085ea706add7b0cbf5dbbd"
+      "outHash": "sha256:4f59f563fbd4303ca9e58194d8b6e94b8a01c9c44640ab578b2856371e70fd3d"
     },
     "apps/api/src/audit/audit.migration.spec.ts": {
       "tier": "managed",
@@ -359,7 +359,7 @@
     },
     "apps/api/src/auth/admin-emails.spec.ts": {
       "tier": "managed",
-      "outHash": "sha256:1b1adc01945cb163015a26a271b6f644cb368da656cc391b553a3209ffe6ec8c"
+      "outHash": "sha256:e6016a492785a225d0cc36cb199edac01deaf0806a7ae0d32e714cb6936edabc"
     },
     "apps/api/src/auth/admin-emails.ts": {
       "tier": "managed",
@@ -2078,7 +2078,7 @@
     },
     "apps/web/src/lib/server/backend-proxy.test.ts": {
       "tier": "managed",
-      "outHash": "sha256:3f4b1e2e485bc63291a743f457e001a29484ae75afd61e42f42e974a93b808f4"
+      "outHash": "sha256:56c990b815f221ff6748f19a674d114e76397063ce6a2f4fb174f91edba9c49d"
     },
     "apps/web/src/lib/server/backend-proxy.ts": {
       "tier": "managed",
@@ -2542,7 +2542,7 @@
     },
     "tests/README.md": {
       "tier": "owned",
-      "outHash": "sha256:f1edf79bee0301c559e34e4374dd048a63667f02104adfc3f6a38d2a0b8553d8",
+      "outHash": "sha256:ea416647888274a0002e39956a9269260d05093fe6e68bdc5b83def531efce6f",
       "templateHash": "sha256:93ff1fd310d0e29c9ad3e7e3275600521aec0de79929c17f6fd2de5149b278ea"
     },
     "tests/api/account-sessions.api.spec.ts": {
@@ -2559,7 +2559,7 @@
     },
     "tests/api/audit.api.spec.ts": {
       "tier": "managed",
-      "outHash": "sha256:a7f2db25b03c1007b534c4b23cff57a648a196f45e2a282604c6eaf3be8c9179"
+      "outHash": "sha256:f5f43dc9917619a558ba64c792d2918b6f603cc53336cbb71d16a8e7aa7dc704"
     },
     "tests/api/auth-config.api.spec.ts": {
       "tier": "managed",
@@ -2619,12 +2619,12 @@
     },
     "tests/helpers/accounts.ts": {
       "tier": "managed",
-      "outHash": "sha256:5164d031b92a0635de811961f58adf459539417c3efb60c44e76bdbf10117037"
+      "outHash": "sha256:6df7212a9de91a7a32075865c65b72282efc2b1a38d6ce0d846daa2ee0c667e3"
     },
     "tests/helpers/app-accounts.ts": {
       "tier": "owned",
       "outHash": "sha256:801196de9ecfedd096fd8220212893196dd17796255f2e8cb4cdf998b950b562",
-      "templateHash": "sha256:801196de9ecfedd096fd8220212893196dd17796255f2e8cb4cdf998b950b562"
+      "templateHash": "sha256:ab0978a882bb0a014f4e047286fd7674978e18ee961eda1a1ac33083e21b6730"
     },
     "tests/helpers/app-paths.ts": {
       "tier": "owned",
@@ -2697,7 +2697,7 @@
     },
     "tests/ui/account-flows.ui.spec.ts": {
       "tier": "managed",
-      "outHash": "sha256:63072193c9d0c486d6f5f4b59a4ac9e62f98d1777d7dd06994032af20f1e0fd7"
+      "outHash": "sha256:934ad05e6e30ad53c20d7ab5521fbd92db95d06bfd7a54d45d11825bb105217d"
     },
     "tests/ui/account-sessions.ui.spec.ts": {
       "tier": "managed",

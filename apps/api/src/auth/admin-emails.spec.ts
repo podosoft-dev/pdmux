@@ -37,26 +37,33 @@ describe("ADMIN_EMAILS", () => {
   });
 
   test("stops a production API whose ADMIN_EMAILS holds a placeholder", () => {
+    // The child loads auth.ts with this test's environment, as this file did,
+    // then evaluates auth.ts again in production. The second import is a new
+    // instance of auth.ts alone: its dependencies are already loaded, so the
+    // application's own production rules in env.extensions.ts, which this test
+    // cannot know, never run before auth.ts reads ADMIN_EMAILS.
+    const auth = JSON.stringify(join(__dirname, "auth.ts"));
+    const message = "ADMIN_EMAILS must list real administrator addresses in production";
     const load = (adminEmails: string): { exitCode: number; stderr: string } => {
-      const result = Bun.spawnSync(
-        [process.execPath, "--eval", `await import(${JSON.stringify(join(__dirname, "auth.ts"))}); process.exit(0);`],
-        {
-          env: {
-            PATH: process.env.PATH ?? "",
-            NODE_ENV: "production",
-            ADMIN_EMAILS: adminEmails,
-            BETTER_AUTH_SECRET: "admin-emails-production-secret-0123456789",
-            BETTER_AUTH_URL: "https://app.podokit.dev",
-          },
-          stderr: "pipe",
-        },
-      );
+      const production = {
+        NODE_ENV: "production",
+        ADMIN_EMAILS: adminEmails,
+        BETTER_AUTH_SECRET: "admin-emails-production-secret-0123456789",
+        BETTER_AUTH_URL: "https://app.podokit.dev",
+      };
+      const script = [
+        `await import(${auth});`,
+        `Object.assign(process.env, ${JSON.stringify(production)});`,
+        `await import(${auth} + "?production");`,
+        "process.exit(0);",
+      ].join("\n");
+      const result = Bun.spawnSync([process.execPath, "--eval", script], { env: { ...process.env }, stderr: "pipe" });
       return { exitCode: result.exitCode, stderr: result.stderr.toString() };
     };
     const placeholder = load("admin@example.com");
     expect(placeholder.exitCode).not.toBe(0);
-    expect(placeholder.stderr).toContain('ADMIN_EMAILS must list real administrator addresses in production');
-    expect(load("owner@podokit.dev").exitCode).toBe(0);
+    expect(placeholder.stderr).toContain(message);
+    expect(load("owner@podokit.dev").stderr).not.toContain(message);
   });
 
   test("names why an entry is no administrator's address", () => {

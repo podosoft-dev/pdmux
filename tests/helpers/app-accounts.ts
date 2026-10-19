@@ -7,9 +7,10 @@ import type { Account } from "./accounts";
  * `E2E_ADMIN_EMAIL`, `E2E_USER_EMAIL`, `E2E_ADMIN_PASSWORD`, and
  * `E2E_USER_PASSWORD` still win over what is set here.
  *
- * The seed signs the accounts up, so the API must promote the administrator:
- * list its address in `ADMIN_EMAILS`. For example, accounts named by the
- * application's own variables:
+ * The seed signs the user up but only signs the administrator in: the API
+ * refuses a sign-up with an `ADMIN_EMAILS` address, so create the administrator
+ * first with `admin:bootstrap` and list its address in `ADMIN_EMAILS`. For
+ * example, accounts named by the application's own variables:
  *
  * ```ts
  * export const appAccounts: AppAccounts = {

@@ -25,8 +25,11 @@ is recorded as `user.create` only. Entries name the user even when the request
 carries no session: `auth.logout` names each account whose session the sign-out
 ended (a sign-out without a session records nothing), a password reset by link
 or code and an email verification name the account they changed,
-`user.session_revoke` names the owner of the revoked session, and
-`user.stop_impersonate` names the administrator. Every sign-in method records
+`user.session_revoke` names the owner of the revoked session,
+`user.stop_impersonate` names the administrator, and `user.delete` and
+`account.delete` name the deleted user by the email it had. A self-service
+deletion that asks for a confirmation link is recorded when the link deletes the
+account, not when it is sent. Every sign-in method records
 `auth.login` with the method in `metadata.method` (`password`, `email-otp`,
 `magic-link`, `passkey`, `two-factor-totp`, ...) and, for social sign-in, the
 provider in `metadata.provider`. A sign-in through an endpoint of a plugin the

@@ -58,6 +58,7 @@ const ACTIONS: Readonly<Record<string, string>> = {
   "/email-otp/verify-email": "auth.email_verified",
   "/update-user": "account.update",
   "/delete-user": "account.delete",
+  "/delete-user/callback": "account.delete",
   "/revoke-session": "session.revoke",
   "/revoke-sessions": "session.revoke_all",
   "/revoke-other-sessions": "session.revoke_others",
@@ -100,6 +101,8 @@ interface Observed {
   resetUserId?: string;
   /** The owners of the sessions the request ended, in order. */
   endedSessions: string[];
+  /** The users the request deleted, as they were before deletion. */
+  deleted: AuditUser[];
 }
 
 const observations = new WeakMap<object, Observed>();
@@ -107,7 +110,7 @@ const observations = new WeakMap<object, Observed>();
 function observe(context: object): Observed {
   let observed = observations.get(context);
   if (!observed) {
-    observed = { endedSessions: [] };
+    observed = { endedSessions: [], deleted: [] };
     observations.set(context, observed);
   }
   return observed;
@@ -209,7 +212,8 @@ const who = (user: AuditUser | null | undefined): Pick<AuditEntry, "actorId" | "
 // name the user even when the request carries no session: a new account is
 // recorded when it is stored, whichever endpoint creates it and even when the
 // request then fails (a social sign-up that waits for approval gets no
-// session), and a sign-out names the owner of the session it ended.
+// session), a sign-out names the owner of the session it ended, and a deletion
+// names the user it deleted.
 export function auditPlugin(options: AuditPluginOptions = {}): BetterAuthPlugin & { id: "podokit-audit" } {
   const enabled = options.enabled ?? auditEnabled;
 
@@ -236,6 +240,13 @@ export function auditPlugin(options: AuditPluginOptions = {}): BetterAuthPlugin 
       update: {
         after: async (user, context) => {
           if (context) observe(context.context).updated = user;
+        },
+      },
+      delete: {
+        // As for sessions, deleteWithHooks reads the row before it deletes it,
+        // so the entry keeps the user's email at no extra query.
+        before: async (user, context) => {
+          if (context) observe(context.context).deleted.push(user);
         },
       },
     },
@@ -310,8 +321,16 @@ export function auditPlugin(options: AuditPluginOptions = {}): BetterAuthPlugin 
               let actor: AuditUser | null = session?.user ?? ctx.context.newSession?.user ?? null;
               // The user the request acted on when its body does not name one.
               let subject: AuditUser | null = null;
+              const deleted = (id: string | null | undefined): AuditUser | null =>
+                seen?.deleted.find((user) => user.id === id) ?? null;
               if (action === "user.create") subject = seen?.created ?? null;
-              else if (action === "user.session_revoke") subject = await userById(seen?.endedSessions[0]);
+              else if (action === "user.delete") subject = deleted(body.userId);
+              else if (action === "account.delete") {
+                // With sendDeleteAccountVerification, /delete-user only mails a
+                // link, and the deletion is recorded by the request that opens it.
+                subject = deleted(session?.user.id);
+                if (!subject) return;
+              } else if (action === "user.session_revoke") subject = await userById(seen?.endedSessions[0]);
               else if (action === "user.stop_impersonate" && session?.session.impersonatedBy) {
                 // The session is the impersonated user's; the administrator ends it.
                 subject = session.user;
@@ -335,7 +354,7 @@ export function auditPlugin(options: AuditPluginOptions = {}): BetterAuthPlugin 
               }
 
               // Prefer a human-readable target: the email in the body, otherwise
-              // the target user's email by id (the id for already-deleted users).
+              // the target user's email by id, or the id when the lookup fails.
               const targetId = body.userId ?? subject?.id ?? null;
               let targetLabel = body.email ?? subject?.email ?? body.phoneNumber ?? null;
               if (!targetLabel && targetId) targetLabel = (await userById(targetId))?.email ?? targetId;

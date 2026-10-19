@@ -57,8 +57,12 @@ test("audit log records auth/admin actions", async ({ playwright, disposableUser
   expect(entries, "user.create should be audited with the target").toHaveLength(1);
   expect(entries[0]?.actorEmail, "audit entry records the acting admin").toBe(ADMIN.email);
 
-  await admin.post("/api/auth/admin/remove-user", { data: { userId } });
+  expect((await admin.post("/api/auth/admin/remove-user", { data: { userId } })).ok()).toBeTruthy();
   disposableUsers.forget(userId);
+  const removed = (await (await admin.get(auditQuery({ action: "user.delete", target: email }))).json()) as Entry[];
+  expect(removed, "user.delete names the removed user by the email it had").toEqual([
+    expect.objectContaining({ actorEmail: ADMIN.email, targetId: userId, targetLabel: email }),
+  ]);
   await admin.dispose();
 });
 

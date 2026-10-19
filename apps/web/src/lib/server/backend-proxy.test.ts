@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { gzipSync } from "node:zlib";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   backendReachable,
   bodyLimitFor,
@@ -858,6 +858,13 @@ describe("backend proxy outages", () => {
 });
 
 describe("backend proxy application timeouts", () => {
+  // The module checks CONNECTION_IDLE_TIMEOUT against the routes when it loads,
+  // so a value from the developer's .env, such as the example's 35, would refuse
+  // the routes without a deadline below. Tests of that check set their own.
+  beforeEach(() => {
+    vi.stubEnv("CONNECTION_IDLE_TIMEOUT", "0");
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();

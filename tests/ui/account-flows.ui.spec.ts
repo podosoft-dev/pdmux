@@ -58,7 +58,8 @@ test("account: delete my own account", { tag: "@exclusive" }, async ({ page, pla
       expect(caps.deleteAccount).toBe(true);
     }).toPass({ timeout: 8000 });
 
-    await loginFresh(page, playwright, `acc-del-${Date.now()}@example.com`);
+    const email = `acc-del-${Date.now()}@example.com`;
+    await loginFresh(page, playwright, email);
     await page.getByRole("button", { name: "Danger zone" }).click();
     await page.getByRole("button", { name: "Delete account" }).first().click();
     await page.locator("#del-pw").fill(PW);
@@ -68,6 +69,13 @@ test("account: delete my own account", { tag: "@exclusive" }, async ({ page, pla
       await page.getByRole("dialog").getByRole("button", { name: "Delete account" }).click();
       await expect(page).toHaveURL(/\/login/, { timeout: 3000 });
     }).toPass({ timeout: 15000 });
+
+    const audit = await admin.get(`/api/audit-logs?${new URLSearchParams({ action: "account.delete", target: email })}`);
+    if (audit.status() !== 404) {
+      expect(await audit.json(), "account.delete names the deleted account").toEqual([
+        expect.objectContaining({ actorEmail: email, targetLabel: email }),
+      ]);
+    }
   } finally {
     await admin.put("/api/account/auth-config", { data: { server: { allowDelete: false } } });
     await admin.dispose();

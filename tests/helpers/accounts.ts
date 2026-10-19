@@ -14,12 +14,12 @@ function fromEnv(name: string): string | undefined {
  * an `E2E_*` environment variable, the application-owned `app-accounts.ts`, and
  * the generated default.
  *
- * A test must never change an existing account's credentials. `seed.setup.ts` signs up
- * idempotently and then signs in with these values, which is right on a stack the suite
- * created — and wrong on every stack where the account already exists with a password of
- * its own. An install bootstrapped with `admin:bootstrap` is exactly that: `admin@example.com`
- * is a real account somebody logs in as, and resetting it to match the constant takes their
- * login with it while the run goes green.
+ * A test must never change an existing account's credentials. `seed.setup.ts` signs the
+ * user up idempotently and signs both accounts in with these values, which is right on a
+ * stack the suite created — and wrong on every stack where the account already exists with
+ * a password of its own. An install bootstrapped with `admin:bootstrap` is exactly that:
+ * `admin@example.com` is a real account somebody logs in as, and resetting it to match the
+ * constant takes their login with it while the run goes green.
  *
  * So the constant is a DEFAULT and the environment wins:
  *
