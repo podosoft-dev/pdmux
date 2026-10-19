@@ -2,7 +2,7 @@ import { expect, test } from "../helpers/pdmux-test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
-import { collapseSidebar, openSidebar } from "../helpers/shell";
+import { collapseSidebar, openSidebar, openUserMenu } from "../helpers/shell";
 import { userState } from "../helpers/accounts";
 import { mockHost, mockUpdate, type MockHost } from "../helpers/fleet";
 
@@ -220,12 +220,15 @@ test.describe.serial("pdmux hosts", () => {
     // is precisely the regression this guards (the sidebar used to be page content).
     await sidebar.evaluate((el: Marked, mark: number) => (el.__pdmuxMark = mark), MARK);
 
+    await openUserMenu(page);
     await clickUntil(page, "[data-testid='nav-hosts']", page.locator("[data-testid='hosts-panel']"));
     await expect(page).toHaveURL(/\/hosts$/);
+    await openUserMenu(page);
     await expect(page.locator("[data-testid='nav-hosts']")).toHaveAttribute("aria-current", "page");
+    await page.keyboard.press("Escape");
     expect(await sidebar.evaluate((el: Marked) => el.__pdmuxMark ?? null)).toBe(MARK);
 
-    // The compact breadcrumb is what replaced the old "back to the dashboard" button.
+    // The persistent Dashboard button returns to the terminals.
     await clickUntil(page, "[data-testid='open-dashboard']", page.locator("[data-pdmux-grid]"));
     await expect(page).toHaveURL((url) => url.pathname === "/");
     expect(await sidebar.evaluate((el: Marked) => el.__pdmuxMark ?? null)).toBe(MARK);
@@ -1016,13 +1019,12 @@ test.describe("pdmux hosts (member)", () => {
     await ready(page, "/");
     await openSidebar(page);
 
-    // Both entry points, because they are gated separately: the tile at the end of the
-    // card list, and the `+` in the sidebar's control row.
+    // Registration stays on the existing card tile, without a duplicate toolbar action.
     await expect(page.locator("[data-pdmux-add-host]")).toBeVisible();
-    await expect(page.locator("[data-testid='host-add-sidebar']")).toBeVisible();
+    await expect(page.locator("[data-testid='host-add-sidebar']")).toHaveCount(0);
 
     // And it leads somewhere: the dialog opens rather than the button answering 403.
-    await page.locator("[data-testid='host-add-sidebar']").click();
+    await page.locator("[data-pdmux-add-host]").click();
     await expect(page.locator("[data-testid='host-label']")).toBeVisible();
   });
 });
@@ -1032,11 +1034,8 @@ test.describe("pdmux shell navigation", () => {
     page,
   }) => {
     /**
-     * The sidebar's toggle is on the dashboard only, and the way back to the dashboard is
-     * the Dashboard button inside the sidebar, now that the breadcrumb is gone. A collapsed
-     * column carried over to another page therefore left that page with no way back but
-     * the browser's. Collapsing is a dashboard choice: the other pages show the column,
-     * and the dashboard keeps it collapsed.
+     * A product page owns its return button, independently of the sidebar. Returning
+     * must preserve the dashboard's saved collapsed state.
      */
     await ready(page, "/");
     await collapseSidebar(page);

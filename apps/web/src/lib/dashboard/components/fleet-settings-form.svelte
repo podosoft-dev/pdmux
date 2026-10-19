@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoHint from "./info-hint.svelte";
   /**
    * The fleet's own settings — cadence, stored history, caps, lists, and the sweep.
    *
@@ -187,8 +188,7 @@
   {#each REGULAR_GROUPS as group (group.id)}
     <Card.Root class="shrink-0" data-testid={`fleet-group-${group.id}`}>
       <Card.Header>
-        <Card.Title>{i18n.t.dash.fleet.group[group.id].title}</Card.Title>
-        <Card.Description>{i18n.t.dash.fleet.group[group.id].blurb}</Card.Description>
+        <Card.Title class="flex items-center gap-1">{i18n.t.dash.fleet.group[group.id].title}<InfoHint label={i18n.t.dash.fleet.group[group.id].title} text={i18n.t.dash.fleet.group[group.id].blurb} /></Card.Title>
       </Card.Header>
       <Card.Content class="grid gap-5">
         {#each numberKeysOf(group) as key (key)}
@@ -216,11 +216,10 @@
   -->
   <Card.Root class="shrink-0" data-testid="fleet-group-access">
     <Card.Header>
-      <Card.Title>{i18n.t.dash.fleet.group.access.title}</Card.Title>
-      <Card.Description>{i18n.t.dash.fleet.group.access.blurb}</Card.Description>
+      <Card.Title class="flex items-center gap-1">{i18n.t.dash.fleet.group.access.title}<InfoHint label={i18n.t.dash.fleet.group.access.title} text={i18n.t.dash.fleet.group.access.blurb} /></Card.Title>
     </Card.Header>
     <Card.Content class="grid gap-3">
-      <label class="flex items-start gap-3 text-sm">
+      <div class="flex items-start gap-1"><label class="flex items-start gap-3 text-sm">
         <input
           type="checkbox"
           class="border-input mt-0.5 size-4 rounded"
@@ -230,9 +229,8 @@
         />
         <span>
           <span class="font-medium">{i18n.t.dash.fleet.field.mcpUserTokens.label}</span>
-          <span class="text-muted-foreground block">{i18n.t.dash.fleet.field.mcpUserTokens.hint}</span>
         </span>
-      </label>
+      </label><InfoHint label={i18n.t.dash.fleet.field.mcpUserTokens.label} text={i18n.t.dash.fleet.field.mcpUserTokens.hint} /></div>
     </Card.Content>
   </Card.Root>
 
@@ -252,15 +250,14 @@
       <Card.Title class="flex items-center gap-2">
         <TriangleAlertIcon class="text-destructive size-4" aria-hidden="true" />
         {i18n.t.dash.fleet.group.sweep.title}
+        <InfoHint label={i18n.t.dash.fleet.group.sweep.title} text={i18n.t.dash.fleet.group.sweep.blurb} />
       </Card.Title>
-      <Card.Description>{i18n.t.dash.fleet.group.sweep.blurb}</Card.Description>
     </Card.Header>
     <Card.Content class="grid gap-3">
       {@render numberField(SWEEP_KEY)}
       <p class="text-muted-foreground text-xs" data-testid="fleet-sweep-state">
         {sweepValue > 0 ? i18n.t.dash.fleet.sweep.onNote : i18n.t.dash.fleet.sweep.offNote}
       </p>
-      <p class="text-muted-foreground text-xs">{i18n.t.dash.fleet.sweep.neverSwept}</p>
     </Card.Content>
   </Card.Root>
 
@@ -286,8 +283,7 @@
   {@const bounds = FLEET_NUMBER_BOUNDS[key]}
   {@const reason = review.errors[key]}
   <div class="grid gap-1">
-    <Label for={`fleet-${key}`}>{i18n.t.dash.fleet.field[key].label}</Label>
-    <p class="text-muted-foreground text-xs">{i18n.t.dash.fleet.field[key].why}</p>
+    <div class="flex items-center gap-1"><Label for={`fleet-${key}`}>{i18n.t.dash.fleet.field[key].label}</Label><InfoHint label={i18n.t.dash.fleet.field[key].label} text={i18n.t.dash.fleet.field[key].why} /></div>
     <div class="flex flex-wrap items-center gap-2">
       <!-- `type="text"` with a numeric keypad hint, NOT `type="number"`: a number input
            hands back an empty string for anything it considers unparsable, so "12x"
@@ -320,15 +316,13 @@
 
 {#snippet listField(key: FleetListKey)}
   <div class="grid gap-1">
-    <Label for={`fleet-${key}`}>{i18n.t.dash.fleet.field[key].label}</Label>
-    <p class="text-muted-foreground text-xs">{i18n.t.dash.fleet.field[key].why}</p>
+    <div class="flex items-center gap-1"><Label for={`fleet-${key}`}>{i18n.t.dash.fleet.field[key].label}</Label><InfoHint label={i18n.t.dash.fleet.field[key].label} text={`${i18n.t.dash.fleet.field[key].why}\n${i18n.t.dash.fleet.listHint}`} /></div>
     <Input
       id={`fleet-${key}`}
       bind:value={draft[key]}
       disabled={blocked}
       data-testid={`fleet-field-${key}`}
     />
-    <p class="text-muted-foreground text-xs">{i18n.t.dash.fleet.listHint}</p>
   </div>
 {/snippet}
 

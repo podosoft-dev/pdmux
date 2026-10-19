@@ -42,7 +42,8 @@ try {
     assert.ok(actual.prefs.layouts.some(row => row.payload.slots.some(slot => slot?.session === "preserved-session")));
     assert.equal(await application.evaluate(({ app }) => app.getName()), "PDMux");
     await page.locator('[data-testid="shell-user"]').click();
-    await page.locator('[data-testid="shell-server-connection"]').click();
+    await page.locator('[data-testid="desktop-menu-settings"]').click();
+    await page.locator('[data-testid="settings-tab-connection"]').click();
     await page.locator('[data-testid="desktop-connection"]').waitFor();
   }
   await page.waitForTimeout(500);

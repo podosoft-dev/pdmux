@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("pdmuxDesktop", Object.freeze({
     workspace: (id: string | null): Promise<unknown> => ipcRenderer.invoke("pdmux:connection:workspace", id),
     disconnect: (): Promise<unknown> => ipcRenderer.invoke("pdmux:connection:disconnect"),
   }), actions: Object.freeze({ run: (action: "backup" | "open-data" | "check-updates"): Promise<void> => ipcRenderer.invoke("pdmux:desktop:action", action) }),
+    preferences: Object.freeze({ read: (): Promise<unknown> => ipcRenderer.invoke("pdmux:preferences:read"), save: (value: unknown): Promise<unknown> => ipcRenderer.invoke("pdmux:preferences:save", value) }),
     localAgent: Object.freeze({ status: (): Promise<unknown> => ipcRenderer.invoke("pdmux:local-agent:status"), retry: (): Promise<unknown> => ipcRenderer.invoke("pdmux:local-agent:retry") }),
   } : {}),
   transfers: Object.freeze({

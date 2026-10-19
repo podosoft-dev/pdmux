@@ -27,11 +27,6 @@
   import LanguageSwitch from "#lib/components/language-switch.svelte";
   import ImpersonationBanner from "#lib/components/impersonation-banner.svelte";
   import ThemeToggle from "#lib/components/theme-toggle.svelte";
-  import DashboardIcon from "@lucide/svelte/icons/layout-dashboard";
-  import PlusIcon from "@lucide/svelte/icons/plus";
-  import ServerIcon from "@lucide/svelte/icons/server";
-  import SlidersIcon from "@lucide/svelte/icons/sliders-horizontal";
-  import KeyRoundIcon from "@lucide/svelte/icons/key-round";
   import { toast } from "svelte-sonner";
   import { Button } from "#lib/components/ui/button/index.js";
   import { Toaster } from "#lib/components/ui/sonner/index.js";
@@ -57,6 +52,8 @@
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
   import type { HostView } from "#lib/dashboard/types.js";
   import type { LayoutData } from "./$types";
+  import DesktopSettingsFrame from "#lib/desktop/settings-frame.svelte";
+  import { desktopSettingsTab } from "#lib/desktop/settings-navigation.js";
 
   let { data, children }: { data: LayoutData; children: import("svelte").Snippet } = $props();
 
@@ -140,16 +137,10 @@
   );
 
   // --- navigation -----------------------------------------------------------
-  // The sidebar carries the shell's own navigation, so "how do I get back to the
-  // dashboard" has one persistent answer on every page in the group. Host management
-  // is administrator-only on the API, so a link to it for anyone else would lead to a
-  // page of buttons that all answer 403.
-  const onHosts = $derived(page.url.pathname.startsWith("/hosts"));
+  // Secondary navigation lives in the profile menu; product pages provide their own
+  // return action and adding a host already has a tile below the cards.
   const onDashboard = $derived(page.url.pathname === "/");
-  // `/settings` is the FLEET's settings, not the installation's — those are `/admin/*`
-  // and live outside this shell entirely, so there is no prefix to disambiguate here.
-  const onSettings = $derived(page.url.pathname.startsWith("/settings"));
-  const onAccess = $derived(page.url.pathname.startsWith("/access"));
+  const desktopSettings = $derived(data.desktopStatus.local && desktopSettingsTab(page.url.pathname, page.url.searchParams) !== null);
 
   // --- narrow screens: one region at a time ---------------------------------
   // Three regions side by side need about 1000px. Below that they were stacked and the
@@ -162,6 +153,7 @@
     { id: "hosts", label: i18n.t.dash.tabs.hosts, iconKind: "servers" as const },
     { id: "terminal", label: i18n.t.dash.tabs.terminal, iconKind: "terminal" as const },
     { id: "git", label: i18n.t.dash.tabs.git, iconKind: "git" as const },
+    { id: "files", label: i18n.t.dash.tabs.files, iconKind: "files" as const },
   ]);
 
   /**
@@ -305,12 +297,11 @@
   {/if}
   <!-- `main`, not a div: this shell IS the page's content, and the landmark is what lets
        a screen reader (and the shared "back to home" check) find it.
-       Collapsing the sidebar is a dashboard choice: its toggle is on the dashboard only and
-       the way back to the dashboard is in the sidebar, so other pages always show it. -->
+       Collapsing the sidebar is a dashboard choice; other pages keep the fleet visible. -->
   <main
   class="pdmux pdmux-shell min-h-0 flex-1"
   data-testid="dashboard-shell"
-  data-sidebar={layout.sidebarOpen || !onDashboard ? "open" : "hidden"}
+  data-sidebar={desktopSettings ? "hidden" : layout.sidebarOpen || !onDashboard ? "open" : "hidden"}
   data-dock={dockOpen ? "open" : "closed"}
   data-view={view}
   data-keyboard={keyboard.open ? "open" : "closed"}
@@ -329,88 +320,12 @@
     onAddHost={data.canManage ? () => (addOpen = true) : undefined}
   >
     {#snippet header()}
-      <!-- Keep navigation in the persistent sidebar, including the connection page. -->
-      <div class="flex flex-wrap items-center gap-1" data-testid="shell-toolbar">
-        <Button
-          href="/"
-          variant="ghost"
-          size="sm"
-          class="text-muted-foreground hover:text-foreground size-7 w-fit px-1.5 text-xs aria-[current=page]:text-foreground aria-[current=page]:bg-accent"
-          title={i18n.t.dash.title}
-          aria-label={i18n.t.dash.title}
-          data-testid="open-dashboard"
-          aria-current={onDashboard ? "page" : undefined}
-          onclick={(event) => {
-            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            event.preventDefault();
-            void chooseView("terminal");
-          }}
-        ><DashboardIcon class="size-4" aria-hidden="true" /></Button>
-        {#if data.canManage}
-          <Button
-            variant="ghost"
-            size="sm"
-            class="text-muted-foreground hover:text-foreground size-7 w-fit px-1.5 text-xs"
-            title={i18n.t.dash.hosts.add}
-            aria-label={i18n.t.dash.hosts.add}
-            data-testid="host-add-sidebar"
-            onclick={() => (addOpen = true)}
-          >
-            <PlusIcon class="size-3.5" aria-hidden="true" />
-          </Button>
-          <!-- A `Button` with an `href`, not a bare `<a>`: it sits in the same row as ADD,
-               which is a button. Hand-styled, it rendered 22px tall beside a 28px sibling
-               and answered hover with an outline where every other control in the shell
-               answers with a fill. `aria-current` still drives the active look — that
-               variant is the one thing the primitive has no opinion on. -->
-          <Button
-            href="/hosts"
-            variant="ghost"
-            size="sm"
-            class="text-muted-foreground hover:text-foreground size-7 w-fit px-1.5 text-xs aria-[current=page]:text-foreground aria-[current=page]:bg-accent"
-            title={i18n.t.dash.hostsLink}
-            aria-label={i18n.t.dash.hostsLink}
-            data-testid="nav-hosts"
-            aria-current={onHosts ? "page" : undefined}
-          >
-            <ServerIcon class="size-3.5" aria-hidden="true" />
-          </Button>
-          <!-- The fleet's settings, beside the fleet. Same `Button href=` as its
-               neighbour for the same reason (a hand-styled `<a>` renders short and
-               answers hover differently), and gated by the same `canManage`: the API
-               refuses `PUT /fleet/settings` without it, so a member offered the door
-               would arrive at a form whose only button is a 403. -->
-          <Button
-            href="/settings"
-            variant="ghost"
-            size="sm"
-            class="text-muted-foreground hover:text-foreground size-7 w-fit px-1.5 text-xs aria-[current=page]:text-foreground aria-[current=page]:bg-accent"
-            title={i18n.t.dash.fleet.title}
-            aria-label={i18n.t.dash.fleet.title}
-            data-testid="nav-settings"
-            aria-current={onSettings ? "page" : undefined}
-          >
-            <SlidersIcon class="size-3.5" aria-hidden="true" />
-          </Button>
-        {/if}
-        <!-- Not gated on `canManage`: a read-only token is exactly what a member who
-             cannot change anything still wants, so the door has to be open to them. -->
-        <Button
-          href="/access"
-          variant="ghost"
-          size="sm"
-          class="text-muted-foreground hover:text-foreground size-7 w-fit px-1.5 text-xs aria-[current=page]:text-foreground aria-[current=page]:bg-accent"
-          title={i18n.t.dash.mcpTokens.title}
-          aria-label={i18n.t.dash.mcpTokens.title}
-          data-testid="nav-access"
-          aria-current={onAccess ? "page" : undefined}
-        >
-          <KeyRoundIcon class="size-3.5" aria-hidden="true" />
-        </Button>
+      <!-- Preferences and profile stay here; return navigation belongs to each page. -->
+      <div class="flex items-center gap-1" data-testid="shell-toolbar">
         <div class="ms-auto flex items-center gap-0.5">
           <LanguageSwitch />
           <ThemeToggle />
-          <ShellUserMenu user={data.user} />
+          <ShellUserMenu user={data.user} canManage={data.canManage} />
         </div>
       </div>
     {/snippet}
@@ -418,7 +333,7 @@
 
   <SplitHandle {t} onDrag={(delta) => dragSidebar(delta, false)} onCommit={(delta) => dragSidebar(delta, true)} />
 
-  {@render children()}
+  {#if desktopSettings}<DesktopSettingsFrame>{@render children()}</DesktopSettingsFrame>{:else}{@render children()}{/if}
 
   <!-- Last in DOM order and pinned to row 2 by CSS, so what a route renders cannot
        displace it. Hidden entirely at desktop widths. -->

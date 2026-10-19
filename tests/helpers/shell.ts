@@ -1,4 +1,5 @@
 import { type Page, expect } from "@playwright/test";
+import { clickUntil } from "./pdmux-hydration";
 
 type SidebarState = "open" | "hidden";
 
@@ -50,4 +51,11 @@ export async function openSidebar(page: Page): Promise<void> {
 /** Collapse the dashboard's sidebar and wait until the server has the collapsed layout. */
 export async function collapseSidebar(page: Page): Promise<void> {
   await setSidebar(page, "hidden");
+}
+
+/** Secondary product navigation is inside the profile menu. */
+export async function openUserMenu(page: Page): Promise<void> {
+  const menu = page.locator("[data-testid='shell-user-menu']");
+  if (await menu.isVisible()) return;
+  await clickUntil(page, "[data-testid='shell-user']", menu);
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeading from "#lib/dashboard/components/page-heading.svelte";
   /**
    * The host list: add, edit, enable, reorder, delete — rendered in the shell's right-
    * hand area, beside the same cards the dashboard shows.
@@ -447,17 +448,9 @@
 <!-- The shell owns the viewport, so this column owns its own scrolling (ARCHITECTURE §7). -->
 <div class="flex min-h-0 flex-col gap-4 overflow-y-auto p-6" data-testid="hosts-panel" data-pdmux-region="page">
 
-  <div class="flex items-center justify-between gap-2">
-    <div>
-      <h1 class="text-2xl font-semibold">{i18n.t.dash.hosts.title}</h1>
-      <p class="text-muted-foreground text-sm">{i18n.t.dash.hosts.subtitle}</p>
-    </div>
-    {#if data.canManage}
-      <Button onclick={openCreate} data-testid="host-add">
-        <PlusIcon class="size-4" />{i18n.t.dash.hosts.add}
-      </Button>
-    {/if}
-  </div>
+  <PageHeading title={i18n.t.dash.hosts.title} help={i18n.t.dash.hosts.subtitle}>
+    {#if data.canManage}<Button onclick={openCreate} data-testid="host-add"><PlusIcon class="size-4" />{i18n.t.dash.hosts.add}</Button>{/if}
+  </PageHeading>
 
   <TableToolbar
     {filters}

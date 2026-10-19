@@ -15,6 +15,7 @@
   import AccountPage from "#lib/components/account-page.svelte";
   import { getI18n } from "#lib/i18n/index.js";
   import type { PageData } from "./$types";
+  import DashboardBack from "#lib/dashboard/components/dashboard-back.svelte";
 
   let { data }: { data: PageData } = $props();
   const i18n = getI18n();
@@ -32,8 +33,9 @@
 
 <!-- The shell owns the viewport, so this column owns its own scrolling (ARCHITECTURE §7). -->
 <div class="flex min-h-0 flex-col gap-4 overflow-y-auto p-6" data-testid="account-panel" data-pdmux-region="page">
+  <div class="flex items-center gap-3"><DashboardBack /><h1 class="text-2xl font-semibold">{i18n.t.account.title}</h1></div>
   <!-- The forms read better at a measure than stretched across a wide column. -->
-  <div class="w-full max-w-5xl">
+  <div class="w-full max-w-5xl [&>div>h1]:hidden">
     {#if account}<AccountPage data={account} />{/if}
   </div>
 </div>

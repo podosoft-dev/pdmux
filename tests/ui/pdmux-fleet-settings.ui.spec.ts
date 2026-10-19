@@ -1,7 +1,7 @@
 import { expect, test } from "../helpers/pdmux-test";
 import { ready } from "../helpers/hydration";
 import { clickUntil } from "../helpers/pdmux-hydration";
-import { openSidebar } from "../helpers/shell";
+import { openSidebar, openUserMenu } from "../helpers/shell";
 
 /** A marker written onto a live element; it survives only if the element does. */
 type Marked = HTMLElement & { __pdmuxMark?: number };
@@ -93,9 +93,12 @@ test.describe.serial("pdmux fleet settings", () => {
     const sidebar = page.locator("[data-pdmux-sidebar]");
     await sidebar.evaluate((el: Marked, mark: number) => (el.__pdmuxMark = mark), MARK);
 
+    await openUserMenu(page);
     await clickUntil(page, "[data-testid='nav-settings']", page.locator("[data-testid='fleet-settings-panel']"));
     await expect(page).toHaveURL(/\/settings$/);
+    await openUserMenu(page);
     await expect(page.locator("[data-testid='nav-settings']")).toHaveAttribute("aria-current", "page");
+    await page.keyboard.press("Escape");
     // In the product shell, beside the fleet it is about — not in the admin console.
     // The cards are the same live element they were on the dashboard, so this is one
     // level inside the shell rather than a screen of its own.
@@ -108,17 +111,20 @@ test.describe.serial("pdmux fleet settings", () => {
     // the screen is a setting that is still curl-only.
     await expect(page.locator("[data-testid^='fleet-field-']")).toHaveCount(14);
 
-    // The consequence, not the label: the metric step is the field whose cost is a row
-    // count, and the number is the one the API's own comment gives.
-    await expect(page.locator("[data-testid='fleet-group-history']")).toContainText("17,000");
+    // Supporting explanations live behind the field's information button.
+    await page.getByRole("button", { name: "Help: Metric sample interval (seconds)", exact: true }).click();
+    await expect(page.locator("[data-testid='info-hint-content']")).toContainText("use less storage");
+    await page.keyboard.press("Escape");
     // The bounds are on screen, so an out-of-range value is knowable before it is typed.
     await expect(page.locator("[data-testid='fleet-bounds-heartbeatSec']")).toContainText("3600");
 
     // The sweep says what is LOST — the cascade is why this is not just another
     // retention number, and it is the only reason a warning here is worth the space.
-    const sweep = page.locator("[data-testid='fleet-group-sweep']");
-    await expect(sweep).toContainText(/agent tokens|에이전트 토큰/);
-    await expect(sweep).toContainText(/re-runs the installer|설치 명령을 다시/);
+    await page.getByRole("button", { name: "Help: Delete a host after (days of silence)", exact: true }).click();
+    const sweep = page.locator("[data-testid='info-hint-content']");
+    await expect(sweep).toContainText(/tokens and history|토큰·이력/);
+    await expect(sweep).toContainText(/Register them again|재등록/);
+    await page.keyboard.press("Escape");
     // Off is the shipped state and the card says so rather than leaving `0` to be read.
     await expect(page.locator("[data-testid='fleet-sweep-state']")).toContainText(/deleted automatically|자동으로 삭제/);
   });

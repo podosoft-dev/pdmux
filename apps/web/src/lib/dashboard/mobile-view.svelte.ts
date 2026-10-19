@@ -21,7 +21,7 @@ import { pushState } from "$app/navigation";
 import { page } from "$app/state";
 import type { ShellState, ShellView } from "./shell-state.svelte";
 
-const VIEWS: readonly ShellView[] = ["hosts", "terminal", "git", "page"];
+const VIEWS: readonly ShellView[] = ["hosts", "terminal", "git", "files", "page"];
 
 /** History state we own. Anything else in `page.state` belongs to another feature. */
 interface ViewState {

@@ -127,9 +127,9 @@
 	{/if}
 	{#if onAddHost}
 		<!-- OUTSIDE the if/else on purpose: this is the end of the list whether the list has
-		     nine cards or none, and an empty fleet is exactly when it matters most — the
-		     header's own add button is a 28px glyph, and "you have no hosts" with no way to
-		     get one from where you are reading it is a dead end. It scrolls with the cards
+		     nine cards or none, and an empty fleet is exactly when it matters most —
+		     "you have no hosts" with no way to get one from where you are reading it is a
+		     dead end. It scrolls with the cards
 		     rather than pinning like the footer slot, because it IS the last card. -->
 		<!-- ⚠ NOT `.pdmux-card`. It is card-SHAPED, and reusing the class made it a card to
 		     every query that has ever been written against one: two geometry specs walk

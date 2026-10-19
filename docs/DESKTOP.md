@@ -45,14 +45,16 @@ session in its own browser session. The capability is never exposed to web conte
 command-line arguments. An existing local profile is reused; multiple profiles require a one-time
 native profile selection. Ordinary web servers do not accept this bootstrap path.
 
-Open **Server connection** from the user menu to connect one HTTPS server/account/workspace at a
+Open **Settings → Server connection** from the local-mode menu to connect one HTTPS server/account/workspace at a
 time. Authentication uses the system browser and PKCE; a manual authorization code supports
 platforms where a deep link cannot reopen the app. Cloud credentials are kept out of the renderer
 and protected with the OS credential store. Without a secure store, the session is memory-only.
 
-The sidebar's **Dashboard** button returns to the terminal screen from every product page,
-including Server connection. Host management, settings, CLI access and account pages share this
-navigation instead of repeating a dashboard breadcrumb above their headings.
+Open **Settings** from the local-mode menu to manage the app in one place. The left vertical tabs
+select General, Terminal, Hosts, Host common settings, Coding CLI access, Server connection, and Advanced;
+the selected page appears on the right. The Dashboard button to the left of the settings heading
+returns to the terminal screen. Opening settings does not change the saved dashboard sidebar layout.
+The browser edition retains its existing profile navigation and page headings.
 
 **Host common settings** separates **Local settings** from **Server settings**. Local settings
 configure hosts owned by the desktop and exclude server integrations. The server tab becomes
@@ -91,16 +93,38 @@ handshake that stalls is bounded to 15 seconds. Session rejection (401/403), wor
 and an explicit disconnect still stop access. Persistent multiplexer sessions can reattach;
 an ephemeral plain shell cannot preserve its process across a disconnect.
 
+## Terminal preferences
+
+**General** also provides the existing language and app theme controls. Their dashboard toolbar
+shortcuts remain available; app theme and terminal palette are separate choices.
+
+Use **Settings → Terminal** to select a font, font size (8–32 px), line height (1–2), terminal
+palette, and cursor shape/blinking. The preview updates while editing; Save applies the changes.
+Installed system fonts are used with a monospace fallback. These rendering preferences apply to
+local and server terminal views inside this desktop app and persist across application restarts.
+
+Preferences live in `terminal-preferences.json` in the Electron user-data directory, independently
+of the runtime's changing loopback ports and server synchronization. Writes validate every value
+and replace the file atomically with user-only permissions. An invalid file is reported rather
+than silently overwritten. Existing terminal surfaces refit their current connection when their
+rendering changes; the session engine and shell are not restarted. Cursor appearance follows the program by default;
+choosing a specific shape also enables the device blinking preference.
+
+The profile and tray menus do not expose manual backups or the data directory. **Settings →
+Advanced → Open data folder** retains the troubleshooting action. Automatic backups before
+migrations, updates, and first server connections remain internal safety measures.
+
 ## Data and backups
 
 The visible application name is **PDMux**. The legacy bundle/executable and user-data directory
 retain their stable identifiers; the user-data directory is `pdmux-desktop`: by default,
 `~/Library/Application Support/pdmux-desktop` on macOS, `%APPDATA%\pdmux-desktop` on Windows,
-and `~/.config/pdmux-desktop` on Linux (or `$XDG_CONFIG_HOME/pdmux-desktop`). The tray's
-**Open data folder** action opens the actual directory. It contains:
+and `~/.config/pdmux-desktop` on Linux (or `$XDG_CONFIG_HOME/pdmux-desktop`).
+**Settings → Advanced → Open data folder** opens the actual directory. It contains:
 
 ```text
 desktop.json
+terminal-preferences.json
 runtime/
   auth.secret
   pdmux.sqlite
@@ -116,9 +140,9 @@ backups/
     files/
 ```
 
-Use **Create backup** from the tray menu. The backup helper checkpoints SQLite, creates a consistent
-database copy with `VACUUM INTO`, copies the atomically-written object tree, writes a manifest, and
-only then publishes the timestamped generation. Incomplete temporary generations are not treated as
+The automatic backup helper checkpoints SQLite, creates a consistent database copy with
+`VACUUM INTO`, copies the atomically-written object tree, writes a manifest, and only then
+publishes the timestamped generation. Incomplete temporary generations are not treated as
 backups. Five generations are retained by default; set `backupRetention` in `desktop.json` to a value
 from 1 to 100. A downloaded update uses the same backup gate before installation. Existing databases are also
 backed up before startup migrations; starting a new server connection creates a workspace backup.
@@ -206,7 +230,7 @@ unidentified-developer exception, quarantine removal, or a custom trusted certif
 
 1. Download the native DMG and `DESKTOP-SHA256SUMS` from the same official GitHub release.
    Compare `shasum -a 256 <downloaded-dmg>` with that file.
-2. Create a backup, quit pdmux from its tray menu, and copy `pdmux.app` into Applications.
+2. Quit PDMux from its tray menu, preserve its user-data folder if needed, and copy `pdmux.app` into Applications.
 3. Open pdmux normally. Keep `~/Library/Application Support/pdmux-desktop`: it contains your data.
 
 **Unsigned and self-signed versions through 0.17.0 require this manual replacement once.** Their

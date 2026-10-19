@@ -9,6 +9,7 @@
 // Type-only: erased at build, so it adds nothing to the module graph the dev server
 // externalises — a runtime import here would need a dev-server restart to be seen.
 import type { HistoryColor, HistoryLine, HistorySpan } from '@pdmux/core';
+import type { TerminalPreferences } from '@pdmux/core';
 
 /**
  * What a pane can read back out of its terminal.
@@ -60,6 +61,9 @@ export interface GestureInfo {
 }
 
 export interface TerminalSurface {
+	/** Update rendering in place; callers refit the existing connection afterward. */
+	setAppearance?(preferences: TerminalPreferences): void;
+	onAppearanceChange?(listener: () => void): () => void;
 	write(data: string): void;
 	/** Called when the pane resizes; returns the geometry to report upstream. */
 	fit(): { cols: number; rows: number };
@@ -163,6 +167,12 @@ export const TERMINAL_THEME = {
  * alone: the request was for the colours, and the family is a separate call.)
  */
 export const TERMINAL_FONT_SIZE = 13;
+
+export function terminalPalette(theme: TerminalPreferences['theme']): Record<string, string> {
+	if (theme === 'dracula') return { ...TERMINAL_THEME, background: '#282a36', foreground: '#f8f8f2', cursor: '#f8f8f2', black: '#21222c', red: '#ff5555', green: '#50fa7b', yellow: '#f1fa8c', blue: '#bd93f9', magenta: '#ff79c6', cyan: '#8be9fd', white: '#f8f8f2', brightBlack: '#6272a4', brightRed: '#ff6e6e', brightGreen: '#69ff94', brightYellow: '#ffffa5', brightBlue: '#d6acff', brightMagenta: '#ff92df', brightCyan: '#a4ffff', brightWhite: '#ffffff' };
+	if (theme === 'light') return { ...TERMINAL_THEME, background: '#fafafa', foreground: '#24292f', cursor: '#24292f', cursorAccent: '#fafafa', selectionBackground: 'rgba(9, 105, 218, 0.2)', selectionInactiveBackground: 'rgba(9, 105, 218, 0.15)', black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#7d4e00', blue: '#0550ae', magenta: '#8250df', cyan: '#1b7c83', white: '#6e7781', brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37', brightYellow: '#9a6700', brightBlue: '#0969da', brightMagenta: '#a475f9', brightCyan: '#3192aa', brightWhite: '#8c959f' };
+	return { ...TERMINAL_THEME };
+}
 
 /** What `getCell` fills in — the subset this module reads. Structural, so no import. */
 interface Cell {
@@ -375,6 +385,7 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 		import('@xterm/xterm'), import('@xterm/addon-fit'), import('@xterm/addon-unicode11'),
 	]);
 	const { terminalKeyAction, TERMINAL_NEWLINE } = await import('@pdmux/core');
+	let appearance: TerminalPreferences | undefined;
 	const term = new Terminal({
 		allowProposedApi: true,
 		convertEol: false,
@@ -1228,10 +1239,26 @@ export const createXtermSurface: TerminalSurfaceFactory = async (host: HTMLEleme
 	const sub = term.onData((data) => emit(data));
 
 	return {
+		setAppearance: (preferences) => {
+			appearance = { ...preferences };
+			term.options.fontFamily = preferences.fontFamily === 'monospace' ? 'monospace' : `"${preferences.fontFamily.replaceAll('"', '')}", monospace`;
+			term.options.fontSize = preferences.fontSize;
+			term.options.lineHeight = preferences.lineHeight;
+			term.options.cursorStyle = preferences.cursorStyle === 'auto' ? 'block' : preferences.cursorStyle;
+			term.options.cursorBlink = preferences.cursorBlink;
+			term.options.theme = terminalPalette(preferences.theme);
+			host.closest<HTMLElement>('.pdmux-pane-body')?.style.setProperty('--pdmux-term-bg', terminalPalette(preferences.theme).background ?? '#2b2b2b');
+		},
 		write: (data) => {
 			// Output is the only acknowledgement a terminal gives: the pacer above waits for it.
 			noteRedraw();
 			term.write(data, () => {
+				// A native repaint includes the program cursor shape. Explicit device
+				// overrides apply afterward, while auto preserves program control.
+				if (appearance && appearance.cursorStyle !== 'auto') {
+					term.options.cursorStyle = appearance.cursorStyle;
+					term.options.cursorBlink = appearance.cursorBlink;
+				}
 				const next = term.modes.mouseTrackingMode;
 				if (previousMouseMode !== 'none' && next === 'none') { stopFling(); carry = 0; }
 				previousMouseMode = next;

@@ -33,6 +33,8 @@
   import { causeMessage } from "#lib/dashboard/wording.js";
   import type { McpTokenPolicy, McpTokenView, MintedMcpToken } from "#lib/dashboard/types.js";
   import { fmt, getI18n } from "#lib/i18n/index.js";
+  import PageHeading from "#lib/dashboard/components/page-heading.svelte";
+  import InfoHint from "#lib/dashboard/components/info-hint.svelte";
 
   const i18n = getI18n();
   const ENV_VAR = "PDMUX_MCP_TOKEN";
@@ -185,14 +187,11 @@
   data-pdmux-region="page"
 >
 
-  <div>
-    <h1 class="text-2xl font-semibold">{i18n.t.dash.mcpTokens.title}</h1>
-    <p class="text-muted-foreground text-sm">{i18n.t.dash.mcpTokens.blurb}</p>
-  </div>
+  <PageHeading title={i18n.t.dash.mcpTokens.title} help={i18n.t.dash.mcpTokens.blurb} />
 
   <Card.Root class="shrink-0">
     <Card.Header>
-      <Card.Title>{i18n.t.dash.mcpTokens.endpointTitle}</Card.Title>
+      <Card.Title class="flex items-center gap-1">{i18n.t.dash.mcpTokens.endpointTitle}<InfoHint label={i18n.t.dash.mcpTokens.endpointTitle} text={fmt(i18n.t.dash.mcpTokens.envHint, { envVar: ENV_VAR })} /></Card.Title>
     </Card.Header>
     <Card.Content class="grid gap-3">
       <pre
@@ -203,7 +202,6 @@
            to be committed, so it carries the variable name and nothing else. -->
       <pre class="bg-muted overflow-x-auto rounded-md p-3 text-xs" data-testid="mcp-token-config">{codexConfig}</pre>
       <pre class="bg-muted overflow-x-auto rounded-md p-3 text-xs" data-testid="mcp-token-config-claude">{claudeConfig}</pre>
-      <p class="text-muted-foreground text-xs">{fmt(i18n.t.dash.mcpTokens.envHint, { envVar: ENV_VAR })}</p>
       <div>
         <Button variant="outline" size="sm" onclick={() => copy(codexConfig, "config")}>
           {copied === "config" ? i18n.t.dash.tokens.copied : i18n.t.dash.mcpTokens.copyConfig}
@@ -237,7 +235,18 @@
             </Select.Root>
           </div>
           <div class="flex flex-col gap-1.5">
-            <Label for="token-tier">{i18n.t.dash.mcpTokens.tierField}</Label>
+            <div class="flex items-center gap-1">
+              <Label for="token-tier">{i18n.t.dash.mcpTokens.tierField}</Label>
+              <InfoHint label={i18n.t.dash.mcpTokens.tierField}>
+                <div class="grid gap-1" data-testid="mcp-tier-detail">
+                  <p class="font-medium">{fmt(i18n.t.dash.mcpTokens.canDo, { tier: i18n.t.dash.mcpTokens.tier[tier].name })}</p>
+                  <ul class="grid gap-1">
+                    {#each i18n.t.dash.mcpTokens.tier[tier].can as line (line)}<li>✓ {line}</li>{/each}
+                    {#each i18n.t.dash.mcpTokens.tier[tier].cannot as line (line)}<li>✗ {line}</li>{/each}
+                  </ul>
+                </div>
+              </InfoHint>
+            </div>
             <!-- ⚠ EVERY TIER IS LISTED; the ones above the ceiling are DISABLED rather
                  than absent, so the permission model stays legible from inside the
                  list. What a closed select cannot show is said below it. -->
@@ -263,18 +272,6 @@
             {i18n.t.dash.mcpTokens.aboveCeiling}
           </p>
         {/if}
-
-        <div class="bg-muted/50 grid gap-1 rounded-md p-3 text-sm" data-testid="mcp-tier-detail">
-          <p class="font-medium">{fmt(i18n.t.dash.mcpTokens.canDo, { tier: i18n.t.dash.mcpTokens.tier[tier].name })}</p>
-          <ul class="grid gap-0.5">
-            {#each i18n.t.dash.mcpTokens.tier[tier].can as line (line)}
-              <li>✓ {line}</li>
-            {/each}
-            {#each i18n.t.dash.mcpTokens.tier[tier].cannot as line (line)}
-              <li class="text-muted-foreground">✗ {line}</li>
-            {/each}
-          </ul>
-        </div>
 
         <div class="flex justify-end">
           <!-- Disabled while the policy is still loading: the tier defaults to `operate`, and

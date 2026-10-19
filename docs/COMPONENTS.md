@@ -216,6 +216,11 @@ Clicking a pane header toggles `onZoom` independently of the body click preferen
 `toggleZoom` reducer restores the previous split, slot order, and page on the second click without
 remounting terminals. Header drags, cancelled presses, and embedded action buttons do not toggle zoom.
 
+The optional `TerminalSurface.setAppearance(preferences)` updates font, palette and cursor options
+without replacing its buffer. A factory that changes rendering after connection creation can expose
+`onAppearanceChange(listener)`; the pane then refits and resizes its existing adapter connection.
+The desktop factory uses device preferences while ordinary web consumers keep the existing defaults.
+
 ### `TerminalPane` / `EmptyCell`
 
 The grid renders these for you. Only needed when using them directly:
@@ -237,13 +242,17 @@ TC-PDTERM-123.
 
 | prop | type | description |
 |---|---|---|
-| `tabs` | `ShellViewTab[]` | `{ id, label, iconKind?, icon?, hint? }` — `iconKind` accepts `servers`, `terminal` or `git`; the string `icon` remains compatible |
+| `tabs` | `ShellViewTab[]` | `{ id, label, iconKind?, icon?, hint? }` — `iconKind` accepts `servers`, `terminal`, `git` or `files`; the string `icon` remains compatible |
 | `active` | `string \| null` | the current region. `null` highlights no tab |
 | `onSelect` | `(id: string) => void` | tab selection. **Pushing a history entry is the caller's responsibility** (Android Back) |
 
 On desktop the stylesheet hides it with `display:none` — the component need not know about media
 queries. Targets are 48 px plus `env(safe-area-inset-bottom)` (currently 0, which is correct — there is
 no `viewport-fit=cover`).
+
+The product shell provides Servers, Terminals, Git and Files destinations. On a phone,
+Git and Files each fill the content area and keep the other panel mounted but hidden.
+Selecting them does not change the saved desktop dock toggles or split proportions.
 
 ### `TerminalComposer` (the phone's composition input line)
 

@@ -7,6 +7,8 @@
   import FleetSettingsForm from "#lib/dashboard/components/fleet-settings-form.svelte";
   import { useShellState } from "#lib/dashboard/shell-state.svelte.ts";
   import type { PageData } from "./$types";
+  import PageHeading from "#lib/dashboard/components/page-heading.svelte";
+  import InfoHint from "#lib/dashboard/components/info-hint.svelte";
 
   let { data }: { data: PageData } = $props();
   const i18n = getI18n();
@@ -17,11 +19,7 @@
 <svelte:head><title>{i18n.t.dash.fleet.title} · PDMux</title></svelte:head>
 
 <div class="flex min-h-0 flex-col gap-4 overflow-y-auto p-6" data-testid="fleet-settings-panel" data-pdmux-region="page">
-  <div>
-    <h1 class="text-2xl font-semibold" data-testid="fleet-settings-title">{i18n.t.dash.fleet.title}</h1>
-    <p class="text-muted-foreground text-sm">{i18n.t.dash.fleet.subtitle}</p>
-    <p class="text-muted-foreground mt-1 text-xs">{data.desktopStatus.local ? i18n.t.desktop.settings.separate : i18n.t.dash.fleet.scopeNote}</p>
-  </div>
+  <PageHeading title={i18n.t.dash.fleet.title} testId="fleet-settings-title" help={`${i18n.t.dash.fleet.subtitle}\n${data.desktopStatus.local ? i18n.t.desktop.settings.separate : i18n.t.dash.fleet.scopeNote}`} />
   {#if data.desktopStatus.local}
     <Tabs.Root class="contents" value={data.settingsTarget} onValueChange={value => { void goto(value === "server" ? "/settings?scope=server" : "/settings", { reset: false }); }}>
       <Tabs.List aria-label={i18n.t.desktop.settings.target}>
@@ -40,7 +38,7 @@
 {#snippet settingsContent()}
   {#if data.desktopStatus.local}
     <div class="text-muted-foreground space-y-1 text-sm" data-testid="settings-target-description">
-      <p>{data.settingsTarget === "server" ? i18n.t.desktop.settings.serverDescription : i18n.t.desktop.settings.localDescription}</p>
+      <div class="flex items-center gap-1"><span>{data.settingsTarget === "server" ? i18n.t.desktop.settings.server : i18n.t.desktop.settings.local}</span><InfoHint label={i18n.t.desktop.settings.target} text={data.settingsTarget === "server" ? i18n.t.desktop.settings.serverDescription : i18n.t.desktop.settings.localDescription} /></div>
       {#if data.settingsTarget === "server"}<p class="break-all">{data.desktopStatus.serverUrl} · {data.desktopStatus.organizations?.find(organization => organization.id === data.desktopStatus.scopeId)?.name ?? i18n.t.desktop.personal}</p>{/if}
       {#if !data.desktopStatus.connected}<p>{i18n.t.desktop.settings.signInRequired} <Button href="/connection" variant="link" size="sm" class="h-auto p-0">{i18n.t.desktop.title}</Button></p>{/if}
     </div>

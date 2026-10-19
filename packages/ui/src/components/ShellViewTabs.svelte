@@ -16,9 +16,10 @@
 	import ServerIcon from '@lucide/svelte/icons/server';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import GitBranchIcon from '@lucide/svelte/icons/git-branch';
+	import FolderTreeIcon from '@lucide/svelte/icons/folder-tree';
 	import { type Translate, translator } from '../i18n.js';
 
-	export type ShellViewTabIcon = 'servers' | 'terminal' | 'git';
+	export type ShellViewTabIcon = 'servers' | 'terminal' | 'git' | 'files';
 
 	/** One destination. `icon` remains for source compatibility; `iconKind` is semantic. */
 	export interface ShellViewTab {
@@ -70,6 +71,8 @@
 				<SquareTerminalIcon class="pdmux-tab-icon" aria-hidden="true" />
 			{:else if tab.iconKind === 'git'}
 				<GitBranchIcon class="pdmux-tab-icon" aria-hidden="true" />
+			{:else if tab.iconKind === 'files'}
+				<FolderTreeIcon class="pdmux-tab-icon" aria-hidden="true" />
 			{:else if tab.icon}
 				<span class="pdmux-tab-icon" aria-hidden="true">{tab.icon}</span>
 			{/if}
