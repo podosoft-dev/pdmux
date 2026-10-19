@@ -2,8 +2,6 @@ import { DESKTOP } from "../desktop/desktop.module";
 import { inlineSafe, mimeOf } from "@pdmux/core";
 import { FS_CAPS, FS_CHUNK_BYTES } from "@pdmux/protocol";
 import { AppException } from "@podosoft/podokit-contracts";
-import { plainToInstance } from "class-transformer";
-import { validateSync } from "class-validator";
 import { Elysia } from "elysia";
 import { controlBody, createTransferBody, decisionBody, manifestBody, transferChunkBody } from "../file-transfers/http-schema";
 import type { TransferOwner } from "../file-transfers/file-transfers.service";
@@ -12,6 +10,7 @@ import { CreateAgentTokenDto } from "../agents/dto/create-agent-token.dto";
 import { EnrollAgentDto } from "../agents/dto/enroll-agent.dto";
 import { FleetUpdateAgentDto, UpdateAgentDto } from "../agents/dto/update-agent.dto";
 import type { AuthSession } from "../auth/auth.service";
+import { dto } from "../common/dto";
 import { clientAddressOf } from "../core/client-address";
 import type { AppPlugin } from "../core/services";
 import { UpdateFleetSettingsDto } from "../fleet/dto/update-fleet-settings.dto";
@@ -49,22 +48,6 @@ import {
 import { MuxCopyModeDto, MuxHistoryDto } from "../terminal/dto/terminal-mux.dto";
 import { PDMUX, type PdmuxServices } from "./pdmux.services";
 import { fleetEventResponse } from "./fleet-events";
-
-type DtoConstructor<T extends object> = new () => T;
-
-function dto<T extends object>(constructor: DtoConstructor<T>, value: unknown): T {
-  const instance = plainToInstance(constructor, value ?? {});
-  const errors = validateSync(instance, {
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    forbidUnknownValues: true,
-  });
-  if (errors.length > 0) {
-    const fields = errors.map((error) => error.property).join(", ");
-    throw new AppException("VALIDATION_ERROR", `Request validation failed: ${fields}`, 400);
-  }
-  return instance;
-}
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)

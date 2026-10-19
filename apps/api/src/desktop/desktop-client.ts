@@ -3,6 +3,9 @@ import { DESKTOP_BRIDGE_PATH, DESKTOP_PROTOCOL_VERSION, type SyncChange, type Sy
 import type { Repository } from "typeorm";
 import { z } from "zod";
 import { AppException } from "../common/app-exception";
+import { dto, type DtoConstructor } from "../common/dto";
+import { UpdateFleetSettingsDto } from "../fleet/dto/update-fleet-settings.dto";
+import { DiscoverCloudflareDto, PutCloudflareIntegrationDto } from "../integrations/dto/cloudflare.dto";
 import type { AuthSession } from "../auth/auth.service";
 import { DesktopConnection } from "./desktop-connection.entity";
 import { DesktopService, recordHash } from "./desktop.service";
@@ -17,11 +20,21 @@ interface AccountState {
 }
 interface ClientState { deviceId: string; selected: string; accounts: Record<string, AccountState> }
 const contextSchema = z.object({ version: z.literal(DESKTOP_PROTOCOL_VERSION), userId: z.string(), scopeId: z.string(), organizations: z.array(z.object({ id: z.string(), name: z.string() })).optional() });
-const SERVER_SETTINGS_ROUTES = new Set([
-  "GET /fleet/settings", "PUT /fleet/settings", "GET /fleet/scope", "GET /hosts",
-  "GET /integrations/cloudflare", "PUT /integrations/cloudflare", "DELETE /integrations/cloudflare",
-  "POST /integrations/cloudflare/discover",
+/**
+ * Each server settings operation the desktop forwards, with the body schema of the
+ * server route itself (`null`: no body). Sharing the DTOs keeps the two in step, and
+ * nothing reaches the server that its own validation would refuse.
+ */
+const SERVER_SETTINGS_ROUTES = new Map<string, DtoConstructor<object> | null>([
+  ["GET /fleet/settings", null], ["PUT /fleet/settings", UpdateFleetSettingsDto], ["GET /fleet/scope", null], ["GET /hosts", null],
+  ["GET /integrations/cloudflare", null], ["PUT /integrations/cloudflare", PutCloudflareIntegrationDto], ["DELETE /integrations/cloudflare", null],
+  ["POST /integrations/cloudflare/discover", DiscoverCloudflareDto],
 ]);
+function settingsBody(schema: DtoConstructor<object> | null, body: unknown): string | undefined {
+  if (schema) return JSON.stringify(dto(schema, body));
+  if (body !== undefined) throw new AppException("VALIDATION_ERROR", "Request validation failed: this operation takes no body", 400);
+  return undefined;
+}
 
 /** Injectable transport and timing keep outage recovery tests off the network. */
 export interface DesktopClientOptions {
@@ -120,7 +133,9 @@ export class DesktopClient {
   /** Settings belong to the selected server, never to a synchronized local copy. */
   async serverSettingsRequest(session: AuthSession, method: string, path: string, body: unknown, signal: AbortSignal): Promise<Response> {
     this.requireProfile(session);
-    if (!SERVER_SETTINGS_ROUTES.has(`${method} ${path}`)) throw new AppException("DESKTOP_OPERATION_DENIED", "Unsupported server settings operation", 403);
+    const schema = SERVER_SETTINGS_ROUTES.get(`${method} ${path}`);
+    if (schema === undefined) throw new AppException("DESKTOP_OPERATION_DENIED", "Unsupported server settings operation", 403);
+    const payload = settingsBody(schema, body);
     if (this.stopped) throw new AppException("DESKTOP_NOT_CONNECTED", "Sign in to configure the server", 409);
     const epoch = this.epoch;
     const account = this.account();
@@ -128,7 +143,7 @@ export class DesktopClient {
     if (epoch !== this.epoch || this.stopped) throw new AppException("DESKTOP_CONNECTION_CANCELLED", "Connection was cancelled", 409);
     const response = await fetch(`${account.url}/api${path}`, {
       method, headers: { cookie: this.cloudCookie, origin: account.url, "content-type": "application/json" },
-      body: method === "GET" || body === undefined ? undefined : JSON.stringify(body),
+      body: payload,
       signal: AbortSignal.any([signal, this.connectionAbort.signal, AbortSignal.timeout(15_000)]), redirect: "error",
     });
     if (epoch !== this.epoch || this.stopped) throw new AppException("DESKTOP_CONNECTION_CANCELLED", "Connection was cancelled", 409);

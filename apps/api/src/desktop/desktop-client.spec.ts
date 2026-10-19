@@ -148,3 +148,72 @@ it("[TC-PDDESKTOP-020] refuses server settings without a connected, active local
     await expect(request("old", path)).rejects.toMatchObject({ code: "DESKTOP_OPERATION_DENIED" });
   }
 });
+
+interface SentRequest { path: string; method: string; body: string | null }
+function settingsFixture(): { client: DesktopClient; requests: SentRequest[] } {
+  const { client } = fixture({ syncIntervalMs: 60_000, createSocket: () => new BridgeSocket() as unknown as WebSocket });
+  const requests: SentRequest[] = [];
+  spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url).pathname;
+    requests.push({ path, method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : null });
+    if (path === "/api/desktop/context") return Response.json({ version: 1, userId: "remote", scopeId: "personal:remote", organizations: [] });
+    if (path === "/api/desktop/sync") return Response.json({ version: 1, userId: "remote", scopeId: "personal:remote", hostIds: {}, conflicts: [], records: [] });
+    return Response.json({ forwarded: true });
+  }, { preconnect: (): void => {} }));
+  return { client, requests };
+}
+
+it("[TC-PDDESKTOP-024] rejects a server settings body that fails its schema before any request", async () => {
+  const { client, requests } = settingsFixture();
+  try {
+    await client.attach(session("new"), "local-cookie");
+    await client.connect("https://server.example.test", "cloud-cookie");
+    const request = (method: string, path: string, body: unknown): Promise<Response> =>
+      client.serverSettingsRequest(session("new"), method, path, body, new AbortController().signal);
+    const cloudflare = { apiToken: "token", zoneId: "zone", baseDomain: "example.com", accessPolicyId: "policy" };
+    const invalid: Array<[string, string, unknown]> = [
+      ["PUT", "/fleet/settings", { heartbeatSec: "fast" }],
+      ["PUT", "/fleet/settings", { heartbeatSec: 30, scopeId: "another-organization" }],
+      ["PUT", "/fleet/settings", [{ heartbeatSec: 30 }]],
+      ["PUT", "/integrations/cloudflare", { ...cloudflare, zoneId: 7 }],
+      ["PUT", "/integrations/cloudflare", { ...cloudflare, ownerId: "someone-else" }],
+      ["POST", "/integrations/cloudflare/discover", { apiToken: "token", accountId: "other" }],
+      ["POST", "/integrations/cloudflare/discover", {}],
+      ["GET", "/fleet/settings", { heartbeatSec: 30 }],
+      ["GET", "/hosts", {}],
+      ["DELETE", "/integrations/cloudflare", { zoneId: "zone" }],
+      ["DELETE", "/integrations/cloudflare", null],
+    ];
+    const before = requests.length;
+    for (const [method, path, body] of invalid) {
+      await expect(request(method, path, body), `${method} ${path} ${JSON.stringify(body)}`).rejects.toMatchObject({ code: "VALIDATION_ERROR", statusCode: 400 });
+    }
+    await expect(request("PATCH", "/fleet/settings", { heartbeatSec: 30 })).rejects.toMatchObject({ code: "DESKTOP_OPERATION_DENIED", statusCode: 403 });
+    expect(requests.slice(before)).toEqual([]);
+  } finally { client.disconnect(); }
+});
+
+it("[TC-PDDESKTOP-024] forwards only the validated server settings body", async () => {
+  const { client, requests } = settingsFixture();
+  try {
+    await client.attach(session("new"), "local-cookie");
+    await client.connect("https://server.example.test", "cloud-cookie");
+    const request = (method: string, path: string, body: unknown): Promise<Response> =>
+      client.serverSettingsRequest(session("new"), method, path, body, new AbortController().signal);
+    const forwarded = (): SentRequest | undefined => requests.filter(sent => sent.path !== "/api/desktop/context").at(-1);
+
+    expect((await request("PUT", "/fleet/settings", { heartbeatSec: 30, mcpUserTokens: true })).status).toBe(200);
+    expect(forwarded()).toEqual({ path: "/api/fleet/settings", method: "PUT", body: JSON.stringify({ heartbeatSec: 30, mcpUserTokens: true }) });
+
+    await request("PUT", "/integrations/cloudflare", { apiToken: "  token  ", zoneId: " zone ", baseDomain: " Example.COM ", accessPolicyId: "policy" });
+    expect(forwarded()).toEqual({ path: "/api/integrations/cloudflare", method: "PUT", body: JSON.stringify({ apiToken: "token", zoneId: "zone", baseDomain: "example.com", accessPolicyId: "policy" }) });
+
+    await request("POST", "/integrations/cloudflare/discover", { apiToken: " token " });
+    expect(forwarded()).toEqual({ path: "/api/integrations/cloudflare/discover", method: "POST", body: JSON.stringify({ apiToken: "token" }) });
+
+    await request("DELETE", "/integrations/cloudflare", undefined);
+    expect(forwarded()).toEqual({ path: "/api/integrations/cloudflare", method: "DELETE", body: null });
+    await request("GET", "/fleet/scope", undefined);
+    expect(forwarded()).toEqual({ path: "/api/fleet/scope", method: "GET", body: null });
+  } finally { client.disconnect(); }
+});
