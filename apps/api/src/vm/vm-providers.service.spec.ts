@@ -72,7 +72,7 @@ describe("VmProvidersService", () => {
     const first = await harness.providers.create(ORG, providerInput({ name: "" }));
     const second = await harness.providers.create(ORG, providerInput({ name: "" }));
     expect([first.name, second.name]).toEqual(["pve.example.test", "pve.example.test-2"]);
-    expect(nameFromAddress("https://192.168.0.10:8006")).toBe("192.168.0.10");
+    expect(nameFromAddress("https://192.0.2.10:8006")).toBe("192.0.2.10");
     expect(nameFromAddress("not a url")).toBe("provider");
   });
 

@@ -67,7 +67,7 @@ export function providerKinds(): VmProviderKindView[] {
   return (Object.keys(PROVIDER_DEFAULTS) as VmProviderKind[]).map((kind) => ({ kind, defaults: PROVIDER_DEFAULTS[kind] }));
 }
 
-/** A provider name from its address: the host, as a name allows (`pve.example.com`, `192.168.0.10`). */
+/** A provider name from its address: the host, as a name allows (`pve.example.com`, `192.0.2.10`). */
 export function nameFromAddress(baseUrl: string): string {
   let host = "";
   try {

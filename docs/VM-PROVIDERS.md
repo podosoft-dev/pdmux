@@ -27,7 +27,7 @@ Proxmox VE defaults:
 
 | setting | default |
 |---|---|
-| name | the address's host (`pve.example.com`, `192.168.0.10`; `-2` … if taken) |
+| name | the address's host (`pve.example.com`, `192.0.2.10`; `-2` … if taken) |
 | new machine size | 4 vCPU, 16 GB memory, 64 GB disk (the template's boot disk is grown before first boot when smaller; disks only grow) |
 | template | the one tagged `pdmux-template` — none, or several, is asked rather than guessed |
 | pool | `pdmux` when the cluster has it, otherwise none |
