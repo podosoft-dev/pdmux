@@ -3,6 +3,8 @@ import { expect, test, workerSession } from "../helpers/pdmux-test";
 import { expectOnScreen, expectViewportBound } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
 import { openSidebar } from "../helpers/shell";
+import { seedSoloPane } from "../helpers/pdmux-layout";
+import english from "../../apps/web/src/lib/i18n/catalogs/app/en.json";
 
 /**
  * The terminal panel end to end: browser -> SvelteKit origin -> relay -> agent PTY.
@@ -629,5 +631,56 @@ test.describe("pdmux terminal", () => {
 
     // Give the user their grid back — this test added a cell to work in.
     await restoreLayout(request, saved);
+  });
+});
+
+test.describe("pdmux terminal on a host without an agent", () => {
+  test("[TC-PDTERM-153] the pane says its host is offline, once, while it retries", async ({ page, request, baseURL }) => {
+    /**
+     * The relay closes the socket of a host with no connected agent (4001) and the pane
+     * retries with backoff. It used to retry in silence: a pane opened on such a host stayed
+     * blank, and one whose agent went away said the relay was reconnecting. No agent is
+     * needed here — its absence is the subject.
+     */
+    const notice = english.dash.terminal.hostOffline.replace(/…$/, "");
+    const created = await request.post("/api/hosts", { data: { label: `e2e-offline-${Date.now()}`, address: "127.0.0.1" } });
+    expect(created.ok(), "create a host with no agent").toBeTruthy();
+    const { id: hostId } = (await created.json()) as { id: string };
+    const saved = await captureLayout(request);
+    let dials = 0;
+    page.on("websocket", (socket) => {
+      if (socket.url().includes(`hostId=${hostId}`)) dials += 1;
+    });
+    try {
+      await seedSoloPane(request, saved, { id: "offline-1", hostId, kind: "shell", session: null });
+      await ready(page, "/");
+      const pane = page.locator("[data-pdmux-pane='offline-1']");
+      await expect(pane).toBeVisible();
+      await expectOnScreen(pane, "offline host pane");
+      const surface = pane.locator("[data-pdmux-surface]");
+      await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 15_000 });
+      await expect.poll(async () => terminalShows(surface, notice), { timeout: 15_000 }).toBe(true);
+
+      // Several retries later the notice is still there exactly once: retrying must not
+      // fill the scrollback.
+      await expect.poll(() => dials, { timeout: 15_000 }).toBeGreaterThanOrEqual(3);
+      const shown = (await surface.innerText()).replace(/\s+/g, "");
+      expect(shown.split(notice.replace(/\s+/g, "")).length - 1, "offline notices in the pane").toBe(1);
+
+      const box = await pane.boundingBox();
+      expect(box?.width ?? 0, "pane width").toBeGreaterThan(200);
+      expect(box?.height ?? 0, "pane height").toBeGreaterThan(100);
+      const shot = test.info().outputPath("offline-host-pane.png");
+      await pane.screenshot({ path: shot });
+      await test.info().attach("offline host pane", { path: shot, contentType: "image/png" });
+    } finally {
+      // Leave the dashboard first: it removes a pane whose host is deleted and saves that.
+      await page.goto("about:blank");
+      await restoreLayout(request, saved);
+      // A body-less DELETE without an Origin is a cross-site form submission to a built
+      // web server, so name the origin.
+      const removed = await request.delete(`/api/hosts/${hostId}`, { headers: { origin: new URL(baseURL ?? "").origin } });
+      expect(removed.ok(), "remove the host this test created").toBeTruthy();
+    }
   });
 });

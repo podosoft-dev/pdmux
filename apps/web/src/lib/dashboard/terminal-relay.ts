@@ -36,13 +36,15 @@ export interface RelaySocket {
   close(code?: number, reason?: string): void;
   onopen: (() => void) | null;
   onmessage: ((event: { data: unknown }) => void) | null;
-  onclose: (() => void) | null;
+  onclose: ((event: { code: number }) => void) | null;
   onerror: (() => void) | null;
 }
 
 /** Notices written into a pane's scrollback. The app owns the wording (i18n). */
 export interface RelayMessages {
   reconnecting: string;
+  /** Written once per outage when the relay says the pane's host has no connected agent. */
+  hostOffline: string;
   restored: string;
   dropped: (bytes: number) => string;
   failed: (message: string) => string;
@@ -64,12 +66,15 @@ export interface TerminalRelayOptions {
 
 const DEFAULT_MESSAGES: RelayMessages = {
   reconnecting: "reconnecting to the relay",
+  hostOffline: "the host is offline; retrying until its agent reconnects",
   restored: "reconnected",
   dropped: (bytes) => `${bytes} bytes dropped`,
   failed: (message) => message,
 };
 
 const OPEN = 1;
+/** The API relay's close code for a host without a connected agent (`terminal-relay.service.ts`). */
+const HOST_OFFLINE_CLOSE = 4001;
 
 /** ANSI-dimmed, on its own lines, so a notice cannot be mistaken for program output. */
 function notice(text: string): string {
@@ -97,6 +102,8 @@ interface PaneEntry {
   started: boolean;
   /** Confirmed on this socket, rather than merely attached before an outage. */
   attached: boolean;
+  /** Told that its host is offline, and not attached since. */
+  offline: boolean;
   closed: boolean;
 }
 
@@ -170,6 +177,7 @@ export class TerminalRelay implements TerminalAdapter {
       buffered: "",
       started: false,
       attached: false,
+      offline: false,
       closed: false,
     };
     connection.panes.set(entry.termId, entry);
@@ -348,15 +356,21 @@ export class TerminalRelay implements TerminalAdapter {
       this.refreshStatus();
     };
     socket.onmessage = (event: { data: unknown }): void => this.receive(connection, event.data);
-    socket.onclose = (): void => this.dropped(connection);
+    socket.onclose = (event: { code: number }): void => this.dropped(connection, event.code);
     socket.onerror = (): void => this.dropped(connection);
   }
 
-  private dropped(connection: HostConnection): void {
+  private dropped(connection: HostConnection, code?: number): void {
     if (this.disposed || !connection.socket) return;
     this.closeSocket(connection);
+    // An offline host is not a relay outage, and a pane that never attached would
+    // otherwise stay blank while it retries. Say so once per outage, not per retry.
+    const hostOffline = code === HOST_OFFLINE_CLOSE;
     for (const pane of connection.panes.values()) {
-      if (pane.attached) this.emit(pane, notice(this.messages.reconnecting));
+      if (hostOffline) {
+        if (!pane.offline) this.emit(pane, notice(this.messages.hostOffline));
+        pane.offline = true;
+      } else if (pane.attached) this.emit(pane, notice(this.messages.reconnecting));
       pane.attached = false;
     }
     if (connection.panes.size > 0) this.retry(connection);
@@ -440,9 +454,10 @@ export class TerminalRelay implements TerminalAdapter {
   private attached(connection: HostConnection, pane: PaneEntry): void {
     // A successful upgrade is not a restored terminal: the agent may still be
     // offline. Reset backoff and announce recovery only after terminal frames arrive.
-    if (pane.started && !pane.attached) this.emit(pane, notice(this.messages.restored));
+    if ((pane.started || pane.offline) && !pane.attached) this.emit(pane, notice(this.messages.restored));
     pane.started = true;
     pane.attached = true;
+    pane.offline = false;
     connection.attempts = 0;
     this.refreshStatus();
   }

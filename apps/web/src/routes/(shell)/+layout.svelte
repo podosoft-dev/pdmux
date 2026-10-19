@@ -77,7 +77,8 @@
       fleet: data.fleet,
       relayMessages: {
         reconnecting: i18n.t.dash.terminal.reconnecting,
-        restored: i18n.t.dash.terminal.detached,
+        hostOffline: i18n.t.dash.terminal.hostOffline,
+        restored: i18n.t.dash.terminal.restored,
         dropped: (bytes: number) => i18n.t.dash.terminal.dropped.replace("{count}", String(bytes)),
       },
     }),

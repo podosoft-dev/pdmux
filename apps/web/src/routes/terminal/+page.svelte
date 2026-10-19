@@ -29,6 +29,8 @@
     url: browser ? defaultRelayUrl(window.location) : "",
     messages: {
       reconnecting: i18n.t.dash.terminal.reconnecting,
+      hostOffline: i18n.t.dash.terminal.hostOffline,
+      restored: i18n.t.dash.terminal.restored,
       dropped: (bytes: number) => i18n.t.dash.terminal.dropped.replace("{count}", String(bytes)),
     },
     onStatus: (status: RelayStatus) => (relayStatus = status),

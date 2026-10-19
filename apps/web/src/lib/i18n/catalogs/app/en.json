@@ -743,8 +743,10 @@
       "closeWarning": "{label} stops being shown here. The session keeps running on the host, so reopening this cell attaches to it again.",
       "detached": "Detached terminal",
       "dropped": "{count} bytes were dropped to keep up with the output",
+      "hostOffline": "The host is offline. Retrying until its agent reconnects…",
       "missingTarget": "No terminal target was given",
       "reconnecting": "Reconnecting to the terminal relay…",
+      "restored": "Reconnected to the terminal",
       "unavailable": "The terminal relay is not reachable"
     },
     "title": "Dashboard",

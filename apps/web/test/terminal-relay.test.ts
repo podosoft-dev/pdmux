@@ -14,7 +14,7 @@ class FakeSocket implements RelaySocket {
   readonly sent: string[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: { code: number }) => void) | null = null;
   onerror: (() => void) | null = null;
   closed = false;
 
@@ -38,10 +38,10 @@ class FakeSocket implements RelaySocket {
     this.onmessage?.({ data: JSON.stringify(frame) });
   }
 
-  /** Lose the connection the way a network does — without warning. */
-  drop(): void {
+  /** Lose the connection the way a network does — without warning (1006) — or as the server closed it. */
+  drop(code = 1006): void {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code });
   }
 
   frames(): Record<string, unknown>[] {
@@ -74,6 +74,7 @@ function harness(): Harness {
     },
     messages: {
       reconnecting: "relay lost",
+      hostOffline: "host away",
       restored: "relay back",
       dropped: (bytes) => `${bytes} bytes lost`,
       failed: (message) => `failed: ${message}`,
@@ -363,6 +364,86 @@ describe("[TC-PDTERM-105] the pane learns when its process is gone", () => {
     socket?.deliver({ type: "error", termId: "t1", message: "host offline" });
     expect(chunks.join("")).toContain("failed: host offline");
     expect(codes).toEqual([null]);
+  });
+});
+
+/** How many chunks written into a pane carry `text`. */
+function count(chunks: string[], text: string): number {
+  return chunks.filter((chunk) => chunk.includes(text)).length;
+}
+
+/** The close the API relay sends when the pane's host has no connected agent. */
+const HOST_OFFLINE = 4001;
+
+describe("[TC-PDTERM-153] a pane on an offline host says so once", () => {
+  it("tells a pane that never attached, once, however many retries the outage takes", () => {
+    const { relay, sockets, run } = harness();
+    const pane = relay.open(target);
+    const chunks: string[] = [];
+    pane.onData((chunk) => chunks.push(chunk));
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (attempt > 0) run();
+      sockets[attempt]?.accept();
+      sockets[attempt]?.drop(HOST_OFFLINE);
+      expect(relay.status).toBe("reconnecting");
+    }
+    // An API restart in the middle of the outage is still the same episode.
+    run(); sockets[4]?.accept(); sockets[4]?.drop();
+    run(); sockets[5]?.accept(); sockets[5]?.drop(HOST_OFFLINE);
+    expect(sockets).toHaveLength(6);
+    expect(count(chunks, "host away")).toBe(1);
+    expect(count(chunks, "relay lost")).toBe(0);
+    relay.dispose();
+  });
+
+  it("tells an attached pane its host went offline instead of blaming the relay", () => {
+    const { relay, sockets, run } = harness();
+    const pane = relay.open(target);
+    const chunks: string[] = [];
+    pane.onData((chunk) => chunks.push(chunk));
+    sockets[0]?.accept(); sockets[0]?.deliver({ type: "ready", termId: "t1", pid: 42 });
+    sockets[0]?.drop(HOST_OFFLINE);
+    run(); sockets[1]?.accept(); sockets[1]?.drop(HOST_OFFLINE);
+    expect(count(chunks, "host away")).toBe(1);
+    expect(count(chunks, "relay lost")).toBe(0);
+    expect(relay.status).toBe("reconnecting");
+    relay.dispose();
+  });
+
+  it("says the pane is back when the agent returns, even if it had never attached", () => {
+    const { relay, sockets, run, retryDelays } = harness();
+    const pane = relay.open(target);
+    const chunks: string[] = [];
+    pane.onData((chunk) => chunks.push(chunk));
+    sockets[0]?.accept(); sockets[0]?.drop(HOST_OFFLINE);
+    run(); sockets[1]?.accept(); sockets[1]?.drop(HOST_OFFLINE);
+    run(); sockets[2]?.accept(); sockets[2]?.deliver({ type: "ready", termId: "t1", pid: 42 });
+    expect(relay.status).toBe("open");
+    expect(count(chunks, "relay back")).toBe(1);
+    expect(chunks.findIndex((chunk) => chunk.includes("host away")))
+      .toBeLessThan(chunks.findIndex((chunk) => chunk.includes("relay back")));
+    // The next outage is a new episode, and it gets its own notice.
+    sockets[2]?.drop(HOST_OFFLINE);
+    expect(count(chunks, "host away")).toBe(2);
+    expect(retryDelays.at(-1)).toBe(500);
+    relay.dispose();
+  });
+
+  it("keeps the relay notice for every other close", () => {
+    const { relay, sockets, run } = harness();
+    const pane = relay.open(target);
+    const chunks: string[] = [];
+    pane.onData((chunk) => chunks.push(chunk));
+    sockets[0]?.accept(); sockets[0]?.drop(1011);
+    // A pane that never attached learns nothing from a relay that is down…
+    expect(chunks).toEqual([]);
+    run(); sockets[1]?.accept(); sockets[1]?.deliver({ type: "ready", termId: "t1", pid: 42 });
+    expect(chunks).toEqual([]);
+    // …and an attached one still hears that the relay went away.
+    sockets[1]?.drop(1001);
+    expect(count(chunks, "relay lost")).toBe(1);
+    expect(count(chunks, "host away")).toBe(0);
+    relay.dispose();
   });
 });
 
