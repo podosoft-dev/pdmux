@@ -56,24 +56,46 @@ export function signingDiagnostic(stderr) {
   if (/MAC verification failed/.test(stderr)) return "PKCS12 integrity verification failed";
   if (/User interaction is not allowed/.test(stderr)) return "keychain interaction unavailable";
   if (/One or more parameters/.test(stderr)) return "unsupported keychain import parameters";
-  return stderr.match(/CSSMERR_[A-Z_]+|errSec[A-Za-z]+|no identity found|The (?:staple and )?validate action failed! Error -?\d+|The timestamp service is not available|code failed to satisfy specified code requirement\(s\)|code object is not signed at all|invalid signature|main executable failed strict validation|unable to build chain to self-signed root|a sealed resource is missing or invalid|code or signature have been modified/)?.[0] ?? "output suppressed";
+  const known = stderr.match(/CSSMERR_[A-Z_]+|errSec[A-Za-z]+|no identity found|The (?:staple and )?validate action failed! Error -?\d+|The timestamp service is not available|code failed to satisfy specified code requirement\(s\)|code object is not signed at all|invalid signature|main executable failed strict validation|unable to build chain to self-signed root|a sealed resource is missing or invalid|code or signature have been modified/)?.[0];
+  const cloudKit = CLOUDKIT_CONNECTION_LOST.test(stderr) ? "Apple CloudKit lost its network connection (-1005)" : undefined;
+  return [cloudKit, known].filter(Boolean).join("; ") || "output suppressed";
+}
+
+const CLOUDKIT_CONNECTION_LOST = /NSURLErrorDomain Code=-1005|network connection was lost/i;
+
+/** Waits between stapler attempts while signing a release: about eight minutes in all. */
+export const RELEASE_STAPLER_DELAYS_MS = [20_000, 30_000, 45_000, 60_000, 90_000, 120_000, 120_000];
+/** Waits per stapler call when verifying finished packages, whose job has a shorter timeout. */
+export const VERIFY_STAPLER_DELAYS_MS = [15_000, 30_000];
+
+function retryableStapler(result) {
+  if ([65, 68].includes(result.status)) return true;
+  if (result.error?.code === "ETIMEDOUT") return true;
+  return CLOUDKIT_CONNECTION_LOST.test(`${result.stderr ?? ""}\n${result.stdout ?? ""}`);
 }
 
 /**
  * Runs `xcrun stapler staple` or `validate`. Right after Apple accepts a submission
  * its CDN can still lack the ticket, and stapler exits 65 or 68: the 0.17.1 macOS
  * Intel DMG failed `staple` that way 7 s after an Accepted receipt, and the 0.17.2 and
- * 0.17.4 Intel DMGs failed `validate` 7-8 s after one. Those two codes are retried.
+ * 0.17.4 Intel DMGs failed `validate` 7-8 s after one. Apple's CloudKit ticket lookup
+ * also drops its connection (`NSURLErrorDomain -1005`) for minutes at a time: on
+ * 2026-10-19 the 0.17.5 Intel DMG exhausted six tries 20 s apart, and the published
+ * file check failed once. Those failures, and a lookup that stalls past the timeout,
+ * are retried on a growing schedule.
  */
-export async function staplerWithRetry(action, path, env, { attempts = 6, delayMs = 20_000, run = spawnSync, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+export async function staplerWithRetry(action, path, env, { delaysMs = RELEASE_STAPLER_DELAYS_MS, run = spawnSync, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), log = message => console.warn(message) } = {}) {
   assert.ok(["staple", "validate"].includes(action), `Unsupported stapler action ${action}`);
-  for (let attempt = 1; ; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     const result = run("xcrun", ["stapler", action, path], { encoding: "utf8", timeout: 60_000, env });
     if (result.status === 0) return;
-    if (attempt >= attempts || ![65, 68].includes(result.status)) {
-      assert.equal(result.status, 0, `Apple signing operation failed: xcrun/stapler ${action}; ${signingDiagnostic(result.stderr ?? "")}`);
+    const delay = delaysMs[attempt];
+    const diagnostic = signingDiagnostic(`${result.stderr ?? ""}\n${result.stdout ?? ""}`);
+    if (delay === undefined || !retryableStapler(result)) {
+      assert.equal(result.status, 0, `Apple signing operation failed: xcrun/stapler ${action}; ${diagnostic}`);
     }
-    await wait(delayMs);
+    log(`Retry xcrun stapler ${action} in ${delay / 1000} s after attempt ${attempt + 1} failed: ${diagnostic}`);
+    await wait(delay);
   }
 }
 

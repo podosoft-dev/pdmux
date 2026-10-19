@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { parseAgentVersion } from "../apps/desktop/src/staging.ts";
 import { assertCertificate } from "./release-macos-signing.mjs";
 import { verifyAgentDirectory } from "./agent-artifacts.mjs";
+import { staplerWithRetry, VERIFY_STAPLER_DELAYS_MS } from "./apple-signing.mjs";
 
 const repository = resolve(import.meta.dirname, "..");
 const agentNames = ["linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64", "windows-amd64"].map(arch => `pdmux-agent-${arch}`);
@@ -58,7 +59,7 @@ async function verifyApp(app) {
   await verifyAgentResources(agentResources, reference);
   if (process.env.PDMUX_VERIFY_RELEASE_IDENTITY === "1") {
     await verifyAgentDirectory(agentResources, { signed: true, native: true, subset: true, sourceDirectory: join(repository, "apps/web/static/agent", version) });
-    execFileSync("xcrun", ["stapler", "validate", app], { stdio: "inherit", timeout: 30_000 });
+    await staplerWithRetry("validate", app, process.env, { delaysMs: VERIFY_STAPLER_DELAYS_MS });
     execFileSync("spctl", ["--assess", "--type", "execute", app], { stdio: "inherit", timeout: 60_000 });
   }
 }
@@ -74,7 +75,7 @@ export async function verifyMacArtifacts(directory, runtime = false) {
       assert.equal(matches.length, 1, `Require exactly one ${extension} for this native architecture`);
       const artifact = join(directory, matches[0]);
       if (extension === "dmg" && process.env.PDMUX_VERIFY_RELEASE_IDENTITY === "1") {
-        execFileSync("xcrun", ["stapler", "validate", artifact], { stdio: "inherit", timeout: 30_000 });
+        await staplerWithRetry("validate", artifact, process.env, { delaysMs: VERIFY_STAPLER_DELAYS_MS });
         execFileSync("spctl", ["--assess", "--type", "open", "--context", "context:primary-signature", artifact], { stdio: "inherit", timeout: 60_000 });
       }
       const extracted = join(temporary, extension);

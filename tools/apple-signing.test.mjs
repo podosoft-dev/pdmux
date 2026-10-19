@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { X509Certificate } from "node:crypto";
-import { acceptedNotarization, appleCredentialKeys, assertAppleCredentials, parseKeychainList, signingDiagnostic, signingEnvironment, staplerWithRetry, withAppleSigning } from "./apple-signing.mjs";
+import { acceptedNotarization, appleCredentialKeys, assertAppleCredentials, parseKeychainList, RELEASE_STAPLER_DELAYS_MS, signingDiagnostic, signingEnvironment, staplerWithRetry, VERIFY_STAPLER_DELAYS_MS, withAppleSigning } from "./apple-signing.mjs";
 
 describe("[TC-PDDESKTOP-009] Apple signing credential boundary", () => {
   const fixture = Object.fromEntries(appleCredentialKeys.map(key => [key, "fixture"]));
@@ -27,24 +27,45 @@ describe("[TC-PDDESKTOP-009] Apple signing credential boundary", () => {
   it("retries stapling and validation only while the fresh ticket is unavailable", async () => {
     const waits = [];
     const runs = (statuses, stderr = "The staple and validate action failed! Error 68.") => { const calls = []; return { calls, run: (...args) => { calls.push(args); return { status: statuses.shift(), stderr }; } }; };
+    const quiet = { log: () => {} };
     const flaky = runs([68, 65, 0]);
-    await staplerWithRetry("staple", "a.dmg", {}, { run: flaky.run, wait: async ms => { waits.push(ms); } });
+    await staplerWithRetry("staple", "a.dmg", {}, { ...quiet, run: flaky.run, wait: async ms => { waits.push(ms); } });
     expect(flaky.calls.length).toBe(3);
     expect(flaky.calls[0].slice(0, 2)).toEqual(["xcrun", ["stapler", "staple", "a.dmg"]]);
-    expect(waits).toEqual([20_000, 20_000]);
+    expect(waits).toEqual(RELEASE_STAPLER_DELAYS_MS.slice(0, 2));
     const broken = runs([1]);
-    await expect(staplerWithRetry("staple", "a.dmg", {}, { run: broken.run, wait: async () => {} })).rejects.toThrow("xcrun/stapler staple");
+    await expect(staplerWithRetry("staple", "a.dmg", {}, { ...quiet, run: broken.run, wait: async () => {} })).rejects.toThrow("xcrun/stapler staple");
     expect(broken.calls.length).toBe(1);
     const missing = runs([68, 68, 68]);
-    await expect(staplerWithRetry("staple", "a.dmg", {}, { attempts: 3, run: missing.run, wait: async () => {} })).rejects.toThrow("Error 68");
+    await expect(staplerWithRetry("staple", "a.dmg", {}, { ...quiet, delaysMs: [1, 1], run: missing.run, wait: async () => {} })).rejects.toThrow("Error 68");
     expect(missing.calls.length).toBe(3);
     // The 0.17.4 Intel DMG: validate exited 68 seconds after an Accepted receipt.
     const validating = runs([68, 0], "The validate action failed! Error 68.");
-    await staplerWithRetry("validate", "a.dmg", {}, { run: validating.run, wait: async () => {} });
+    await staplerWithRetry("validate", "a.dmg", {}, { ...quiet, run: validating.run, wait: async () => {} });
     expect(validating.calls.map(call => call[1])).toEqual([["stapler", "validate", "a.dmg"], ["stapler", "validate", "a.dmg"]]);
     const invalid = runs([68, 68], "The validate action failed! Error 68.");
-    await expect(staplerWithRetry("validate", "a.dmg", {}, { attempts: 2, run: invalid.run, wait: async () => {} })).rejects.toThrow("xcrun/stapler validate; The validate action failed! Error 68");
-    await expect(staplerWithRetry("remove", "a.dmg", {}, { run: invalid.run, wait: async () => {} })).rejects.toThrow("Unsupported stapler action");
+    await expect(staplerWithRetry("validate", "a.dmg", {}, { ...quiet, delaysMs: [1], run: invalid.run, wait: async () => {} })).rejects.toThrow("xcrun/stapler validate; The validate action failed! Error 68");
+    await expect(staplerWithRetry("remove", "a.dmg", {}, { ...quiet, run: invalid.run, wait: async () => {} })).rejects.toThrow("Unsupported stapler action");
+  });
+  it("outlasts an Apple CloudKit outage and treats its connection loss as retryable", async () => {
+    // 2026-10-19 v0.17.5 Intel: validate exhausted six tries 20 s apart in the release, and
+    // the published-file check failed once on CloudKit -1005 "network connection was lost".
+    const cloudKit = "Could not validate ticket for a.dmg: Error Domain=NSURLErrorDomain Code=-1005 \"The network connection was lost.\"";
+    expect(RELEASE_STAPLER_DELAYS_MS.reduce((total, delay) => total + delay, 0)).toBeGreaterThanOrEqual(5 * 60_000);
+    expect(RELEASE_STAPLER_DELAYS_MS.every((delay, index, all) => index === 0 || delay >= all[index - 1])).toBe(true);
+    const statuses = [1, 1, 68, 0]; const calls = []; const waits = []; const logs = [];
+    await staplerWithRetry("validate", "a.dmg", {}, { run: (...args) => { calls.push(args); return { status: statuses.shift(), stderr: cloudKit }; }, wait: async ms => { waits.push(ms); }, log: message => logs.push(message) });
+    expect(calls.length).toBe(4);
+    expect(waits).toEqual(RELEASE_STAPLER_DELAYS_MS.slice(0, 3));
+    expect(logs[0]).toContain("Apple CloudKit lost its network connection (-1005)");
+    const stalled = [null, 0];
+    await staplerWithRetry("validate", "a.dmg", {}, { log: () => {}, run: () => { const status = stalled.shift(); return status === null ? { status, error: Object.assign(new Error("spawnSync xcrun ETIMEDOUT"), { code: "ETIMEDOUT" }) } : { status }; }, wait: async () => {} });
+    expect(stalled).toEqual([]);
+    expect(signingDiagnostic(`${cloudKit}\nThe validate action failed! Error 68.`)).toBe("Apple CloudKit lost its network connection (-1005); The validate action failed! Error 68");
+    expect(VERIFY_STAPLER_DELAYS_MS.length).toBeGreaterThan(0);
+    const verifier = readFileSync(new URL("./verify-macos-desktop.mjs", import.meta.url), "utf8");
+    expect(verifier).not.toContain('execFileSync("xcrun", ["stapler"');
+    expect(verifier.match(/staplerWithRetry\("validate", [a-z]+, process\.env, \{ delaysMs: VERIFY_STAPLER_DELAYS_MS \}\)/g)).toHaveLength(2);
   });
   it("cannot opt CI into the local signing entrypoint", async () => {
     await expect(withAppleSigning(() => { throw new Error("Must not run"); }, { local: true, env: { GITHUB_ACTIONS: "true" } })).rejects.toThrow("CI must use the release signing boundary");

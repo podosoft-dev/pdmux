@@ -173,3 +173,12 @@ GitHub's implicit `success()` checks every ancestor, not only `needs`, so `verif
 place of the real work (run 39229613862) skipped both under the old conditions and ran both under the
 new ones. The release's critical path grows again by the macOS Intel verification (2.7 minutes on
 v0.16.0, before notarization).
+
+**Stapler retries.** Apple's ticket lookup loses its connection (`NSURLErrorDomain -1005`) for
+minutes at a time: on 2026-10-19 the 0.17.5 macOS Intel DMG exhausted six `stapler validate` tries
+20 seconds apart, and the published-release check failed once. `staplerWithRetry` in
+`tools/apple-signing.mjs` now waits 20, 30, 45, 60, 90, 120 and 120 seconds (about eight minutes)
+while signing, and retries exit codes 65 and 68, the `-1005` connection loss and a lookup that
+times out. `tools/verify-macos-desktop.mjs` retries each `stapler validate` after 15 and 30 seconds,
+inside the published-release check's three full attempts, which keeps that job under its 20-minute
+timeout.
