@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Update the PodoKit foundation to 1.6.5. The audit log names a deleted user by id and email on
+  `user.delete`, when an administrator removes the account, and on `account.delete`, when a user
+  deletes their own; a deletion that needs email confirmation is recorded by the confirming request.
 - Show update checking and no-update results, ask before downloading, display download percentage
   and bytes, and offer restart after completion. Postponed updates stay pending until confirmed.
 - Name the desktop's default local host after the system computer name, including when shared
