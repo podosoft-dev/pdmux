@@ -114,6 +114,8 @@ interface HostConnection {
   retryHandle: unknown;
   connectHandle: unknown;
   hadConnection: boolean;
+  /** The relay's last close said the host has no agent; cleared once a pane attaches. */
+  hostOffline: boolean;
   panes: Map<string, PaneEntry>;
 }
 
@@ -274,6 +276,7 @@ export class TerminalRelay implements TerminalAdapter {
       retryHandle: null,
       connectHandle: null,
       hadConnection: false,
+      hostOffline: false,
       panes: new Map(),
     };
     this.connections.set(hostId, created);
@@ -323,6 +326,9 @@ export class TerminalRelay implements TerminalAdapter {
     let anyConnecting = false;
     for (const connection of this.connections.values()) {
       if (connection.panes.size === 0) continue;
+      // An offline host is not a transport fault: its panes say so themselves, and
+      // counting it would mark every healthy pane on the screen as reconnecting.
+      if (connection.hostOffline) continue;
       if (connection.retryHandle !== null || (connection.hadConnection && !connection.socket)) {
         return this.setStatus("reconnecting");
       }
@@ -366,6 +372,7 @@ export class TerminalRelay implements TerminalAdapter {
     // An offline host is not a relay outage, and a pane that never attached would
     // otherwise stay blank while it retries. Say so once per outage, not per retry.
     const hostOffline = code === HOST_OFFLINE_CLOSE;
+    connection.hostOffline = hostOffline;
     for (const pane of connection.panes.values()) {
       if (hostOffline) {
         if (!pane.offline) this.emit(pane, notice(this.messages.hostOffline));
@@ -459,6 +466,7 @@ export class TerminalRelay implements TerminalAdapter {
     pane.attached = true;
     pane.offline = false;
     connection.attempts = 0;
+    connection.hostOffline = false;
     this.refreshStatus();
   }
 

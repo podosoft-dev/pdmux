@@ -385,7 +385,7 @@ describe("[TC-PDTERM-153] a pane on an offline host says so once", () => {
       if (attempt > 0) run();
       sockets[attempt]?.accept();
       sockets[attempt]?.drop(HOST_OFFLINE);
-      expect(relay.status).toBe("reconnecting");
+      expect(relay.status).not.toBe("reconnecting");
     }
     // An API restart in the middle of the outage is still the same episode.
     run(); sockets[4]?.accept(); sockets[4]?.drop();
@@ -406,6 +406,22 @@ describe("[TC-PDTERM-153] a pane on an offline host says so once", () => {
     run(); sockets[1]?.accept(); sockets[1]?.drop(HOST_OFFLINE);
     expect(count(chunks, "host away")).toBe(1);
     expect(count(chunks, "relay lost")).toBe(0);
+    expect(relay.status).not.toBe("reconnecting");
+    relay.dispose();
+  });
+
+  it("keeps an offline host out of the relay status, so healthy panes do not read as reconnecting", () => {
+    const { relay, sockets, run, statuses } = harness();
+    relay.open(target);
+    relay.open({ ...target, slotId: "t2", hostId: "h2" });
+    sockets[0]?.accept(); sockets[0]?.deliver({ type: "ready", termId: "t1", pid: 42 });
+    sockets[1]?.accept(); sockets[1]?.drop(HOST_OFFLINE);
+    expect(relay.status).toBe("open");
+    run(); sockets[2]?.accept(); sockets[2]?.drop(HOST_OFFLINE);
+    expect(relay.status).toBe("open");
+    expect(statuses).not.toContain("reconnecting");
+    // A relay outage during the host's outage is still the relay's, and says so.
+    sockets[0]?.drop();
     expect(relay.status).toBe("reconnecting");
     relay.dispose();
   });
