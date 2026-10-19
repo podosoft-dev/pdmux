@@ -214,6 +214,15 @@ signing identity cannot authenticate the new Developer ID identity. Later automa
 signature verification and backup-before-install. Do not re-sign the app or disable Gatekeeper.
 Previously published downloads retain their original signatures and checksums.
 
+**Check for updates** opens a checking window, followed by either an up-to-date notice or a
+confirmation showing the available version. Downloads start only after confirmation. A separate
+progress window displays the percentage and transferred/total bytes, and the Dock or taskbar
+also shows progress. Until the total size is known, the indicator is indeterminate. A completed
+download offers **Install and restart** or **Later**. Choosing Later keeps the workspace running;
+the next manual check reopens the restart confirmation using the staged download. Merely quitting
+the app does not install an update. Startup checks remain silent when no update is available.
+Concurrent checks share one operation, and failures close the progress window and show a notice.
+
 The updater must finish its backup, allow windows to close and stop file transfers, the embedded
 agent and local services before calling `quitAndInstall()`. Squirrel.Mac closes windows before
 Electron emits `before-quit`; a close-to-tray handler must not cancel those closes. A failed
@@ -222,9 +231,11 @@ shown in a dialog. If an older app hides when installing an update, quit from it
 reopen it after the staged update is applied, or replace it with the official DMG.
 
 With the desktop shell, API and web builds available, `bun tools/smoke-macos-update-lifecycle.mjs`
-checks the real macOS window and runtime against a disposable profile. It requires a completed
-backup, stopped API/web/agent processes and a closed window before installer handoff. The installer
-is stubbed in this probe; signed replacement and relaunch remain the separate native update probe.
+checks the real macOS progress windows and runtime against a disposable profile. It verifies
+checking, no-update feedback, download consent, percentage changes, postponement and restart.
+It requires a completed backup, stopped API/web/agent processes and a closed window before
+installer handoff. Network transfers, native dialog choices and the installer are stubbed in
+this probe; signed replacement and relaunch remain the separate native update probe.
 
 For a local artifact on the current operating system:
 

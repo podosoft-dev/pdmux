@@ -11,6 +11,16 @@ export interface DesktopMessages {
   updateReady: string;
   updateInstall: string;
   updateFailed: string;
+  updateChecking: string;
+  updateAvailable: string;
+  updateDownload: string;
+  updateDownloading: string;
+  updatePreparing: string;
+  updateCurrent: string;
+  updateDisabled: string;
+  updateError: string;
+  updateLater: string;
+  updateClose: string;
   cancel: string;
   runtimeFailed: string;
 }
@@ -25,9 +35,19 @@ const ENGLISH: DesktopMessages = {
   quit: "Quit",
   backupComplete: "Backup completed",
   backupFailed: "Backup failed",
-  updateReady: "An update is ready to install. PDMux will create a backup first.",
+  updateReady: "Download complete. Restart PDMux to install the update. Your local workspace will be backed up first. Running plain shell terminals will close.",
   updateInstall: "Install and restart",
   updateFailed: "Update installation failed",
+  updateChecking: "Checking for updates…",
+  updateAvailable: "PDMux {version} is available. Download the update?",
+  updateDownload: "Download update",
+  updateDownloading: "Downloading update…",
+  updatePreparing: "Backing up your workspace and preparing installation…",
+  updateCurrent: "PDMux is up to date. No updates are available.",
+  updateDisabled: "Update checks are available in the installed release of PDMux.",
+  updateError: "The update could not be completed. Check your connection and try again.",
+  updateLater: "Later",
+  updateClose: "Close",
   cancel: "Cancel",
   runtimeFailed: "The local PDMux runtime stopped unexpectedly.",
 };
@@ -42,9 +62,19 @@ const KOREAN: DesktopMessages = {
   quit: "종료",
   backupComplete: "백업이 완료되었습니다",
   backupFailed: "백업에 실패했습니다",
-  updateReady: "설치할 업데이트가 있습니다. 먼저 PDMux 백업을 만듭니다.",
+  updateReady: "다운로드가 완료되었습니다. PDMux를 재시작하여 업데이트를 설치하세요. 먼저 로컬 작업공간을 백업하며, 실행 중인 일반 셸 터미널은 종료됩니다.",
   updateInstall: "설치 후 다시 시작",
   updateFailed: "업데이트 설치에 실패했습니다",
+  updateChecking: "업데이트를 확인하고 있습니다…",
+  updateAvailable: "PDMux {version} 업데이트가 있습니다. 다운로드하시겠습니까?",
+  updateDownload: "업데이트 다운로드",
+  updateDownloading: "업데이트를 다운로드하고 있습니다…",
+  updatePreparing: "작업공간을 백업하고 설치를 준비하고 있습니다…",
+  updateCurrent: "최신 버전의 PDMux입니다. 사용 가능한 업데이트가 없습니다.",
+  updateDisabled: "업데이트 확인은 정식 설치된 PDMux에서 사용할 수 있습니다.",
+  updateError: "업데이트를 완료하지 못했습니다. 연결 상태를 확인하고 다시 시도하세요.",
+  updateLater: "나중에",
+  updateClose: "닫기",
   cancel: "취소",
   runtimeFailed: "로컬 PDMux 런타임이 예기치 않게 종료되었습니다.",
 };

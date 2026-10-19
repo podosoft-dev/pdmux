@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show update checking and no-update results, ask before downloading, display download percentage
+  and bytes, and offer restart after completion. Postponed updates stay pending until confirmed.
 - Name the desktop's default local host after the system computer name, including when shared
   with the web. Migrate legacy default names while preserving custom names and existing terminals.
 - Fix macOS update installation being cancelled by close-to-tray. Complete the backup, allow

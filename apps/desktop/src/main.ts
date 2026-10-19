@@ -23,6 +23,7 @@ import { desktopMessages } from "./i18n.js";
 import { certificateMatches, isAllowedAppNavigation, isAllowedExternalUrl } from "./security.js";
 import { StackManager, type RuntimeLayout } from "./stack-manager.js";
 import { UpdateCoordinator } from "./updater.js";
+import { UpdateWindow } from "./update-window.js";
 import { DesktopFileTransfers } from "./file-transfers.js";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
@@ -227,11 +228,15 @@ async function initialize(): Promise<void> {
   const updateBackup = config.mode === "local"
     ? backup
     : { create: (_reason: "update"): Promise<string> => Promise.resolve(userData) };
+  const updateWindow = new UpdateWindow(window, messages, error => logError("Show desktop update progress", error));
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
   const updater = new UpdateCoordinator(app.isPackaged, autoUpdater, updateBackup, async () => {
+    window.show();
     const result = await dialog.showMessageBox(window, {
       type: "info",
       message: messages.updateReady,
-      buttons: [messages.updateInstall, messages.cancel],
+      buttons: [messages.updateInstall, messages.updateLater],
       defaultId: 0,
       cancelId: 1,
     });
@@ -240,7 +245,7 @@ async function initialize(): Promise<void> {
     // Squirrel.Mac closes windows before before-quit, so disable close-to-tray first.
     quitting = true;
     await stopRuntime();
-  });
+  }, updateWindow);
   const requireSender = (event: Electron.IpcMainInvokeEvent): void => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || new URL(event.senderFrame.url).origin !== new URL(appUrl).origin) throw new Error("Desktop origin required");
   };
@@ -249,20 +254,14 @@ async function initialize(): Promise<void> {
       requireSender(event);
       if (action === "backup") { const path = await backup.create("manual"); await dialog.showMessageBox(window, { message: messages.backupComplete, detail: path }); }
       else if (action === "open-data") { const error = await shell.openPath(userData); if (error) throw new Error("Cannot open desktop data"); }
-      else if (action === "check-updates") await updater.check();
+      else if (action === "check-updates") await updater.check(true).catch(error => logError("Check desktop update", error));
       else throw new Error("Unknown desktop action");
     });
     ipcMain.handle("pdmux:local-agent:status", event => { requireSender(event); return localAgent?.status(); });
     ipcMain.handle("pdmux:local-agent:retry", async event => { requireSender(event); await localAgent?.start(true); return localAgent?.status(); });
   }
-  autoUpdater.autoDownload = true;
   autoUpdater.on("error", (error: Error) => logError("Update desktop application", error));
-  autoUpdater.on("update-downloaded", () => {
-    void updater.installDownloadedUpdate().catch((error: unknown) => {
-      logError("Install desktop update", error);
-      dialog.showErrorBox(messages.updateFailed, error instanceof Error ? error.message : String(error));
-    });
-  });
+  autoUpdater.on("download-progress", progress => updater.progress(progress));
 
   const icon = nativeImage.createFromPath(join(app.isPackaged ? process.resourcesPath : resolve(moduleDirectory, "../resources"), "tray.png"));
   if (icon.isEmpty()) throw new Error("Desktop tray image is missing");
@@ -282,7 +281,7 @@ async function initialize(): Promise<void> {
       },
     },
     { label: messages.openData, click: () => { void shell.openPath(userData); } },
-    { label: messages.checkUpdates, click: () => { void updater.check().catch((error: unknown) => logError("Check desktop update", error)); } },
+    { label: messages.checkUpdates, click: () => { void updater.check(true).catch((error: unknown) => logError("Check desktop update", error)); } },
     { type: "separator" },
     { label: messages.quit, click: () => { quitting = true; app.quit(); } },
   ]));
