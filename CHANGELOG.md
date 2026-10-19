@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fix macOS update installation being cancelled by close-to-tray. Complete the backup, allow
+  window closure and stop the local runtime before handing off installation; show preparation
+  failures instead of leaving the install action silent.
+
 ## 0.17.4
 
 - Update the PodoKit foundation to 1.6.4. `ADMIN_EMAILS` makes an account an administrator only when the

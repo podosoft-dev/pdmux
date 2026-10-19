@@ -13,6 +13,7 @@ export class UpdateCoordinator {
     private readonly client: UpdateClient,
     private readonly backup: UpdateBackup,
     private readonly confirmInstall: () => Promise<boolean>,
+    private readonly prepareInstall: () => Promise<void>,
   ) {}
 
   async check(): Promise<boolean> {
@@ -24,6 +25,7 @@ export class UpdateCoordinator {
   async installDownloadedUpdate(): Promise<boolean> {
     if (!this.packaged || !(await this.confirmInstall())) return false;
     await this.backup.create("update");
+    await this.prepareInstall();
     this.client.quitAndInstall();
     return true;
   }

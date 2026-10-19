@@ -46,6 +46,17 @@ function logError(action: string, error: unknown, context: Record<string, unknow
   })}\n`);
 }
 
+async function stopRuntime(): Promise<void> {
+  cloud?.close(); cloud = undefined;
+  const running = stack;
+  const transfers = fileTransfers;
+  const agent = localAgent; localAgent = undefined;
+  stack = undefined;
+  fileTransfers = undefined;
+  for (const name of ["pdmux:desktop:action", "pdmux:local-agent:status", "pdmux:local-agent:retry"]) ipcMain.removeHandler(name);
+  await Promise.resolve(transfers?.close()).finally(() => agent?.stop()).finally(() => running?.stop());
+}
+
 function runtimeLayout(userData: string): RuntimeLayout {
   const root = app.isPackaged ? process.resourcesPath : resolve(moduleDirectory, "../../..");
   const dataDirectory = join(userData, "runtime");
@@ -225,6 +236,10 @@ async function initialize(): Promise<void> {
       cancelId: 1,
     });
     return result.response === 0;
+  }, async () => {
+    // Squirrel.Mac closes windows before before-quit, so disable close-to-tray first.
+    quitting = true;
+    await stopRuntime();
   });
   const requireSender = (event: Electron.IpcMainInvokeEvent): void => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || new URL(event.senderFrame.url).origin !== new URL(appUrl).origin) throw new Error("Desktop origin required");
@@ -241,8 +256,12 @@ async function initialize(): Promise<void> {
     ipcMain.handle("pdmux:local-agent:retry", async event => { requireSender(event); await localAgent?.start(true); return localAgent?.status(); });
   }
   autoUpdater.autoDownload = true;
+  autoUpdater.on("error", (error: Error) => logError("Update desktop application", error));
   autoUpdater.on("update-downloaded", () => {
-    void updater.installDownloadedUpdate().catch((error: unknown) => logError("Install desktop update", error));
+    void updater.installDownloadedUpdate().catch((error: unknown) => {
+      logError("Install desktop update", error);
+      dialog.showErrorBox(messages.updateFailed, error instanceof Error ? error.message : String(error));
+    });
   });
 
   const icon = nativeImage.createFromPath(join(app.isPackaged ? process.resourcesPath : resolve(moduleDirectory, "../resources"), "tray.png"));
@@ -300,14 +319,7 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     if (!stack && !fileTransfers) return;
     event.preventDefault();
-    cloud?.close(); cloud = undefined;
-    const running = stack;
-    const transfers = fileTransfers;
-    const agent = localAgent; localAgent = undefined;
-    stack = undefined;
-    fileTransfers = undefined;
-    for (const name of ["pdmux:desktop:action", "pdmux:local-agent:status", "pdmux:local-agent:retry"]) ipcMain.removeHandler(name);
-    void Promise.resolve(transfers?.close()).finally(() => agent?.stop()).finally(() => running?.stop())
+    void stopRuntime()
       .catch((error: unknown) => logError("Stop desktop runtime", error))
       .finally(() => app.quit());
   });

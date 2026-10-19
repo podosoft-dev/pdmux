@@ -152,6 +152,12 @@ jobs:
           bun run --filter pdmux-desktop test
           bun test tools/desktop-build-profile.test.mjs tools/seed-desktop-agents.test.mjs
 
+      - name: Verify macOS update shutdown
+        if: runner.os == 'macOS'
+        env:
+          PDMUX_UPDATE_OUTPUT: ${{ runner.temp }}/desktop-update-lifecycle
+        run: bun tools/smoke-macos-update-lifecycle.mjs
+
       - name: Package unsigned desktop application
         if: runner.os != 'macOS'
         run: bun run --cwd apps/desktop package -- ${{ matrix.command }} --publish never

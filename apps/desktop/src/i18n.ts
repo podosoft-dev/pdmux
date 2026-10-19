@@ -10,6 +10,7 @@ export interface DesktopMessages {
   backupFailed: string;
   updateReady: string;
   updateInstall: string;
+  updateFailed: string;
   cancel: string;
   runtimeFailed: string;
 }
@@ -26,6 +27,7 @@ const ENGLISH: DesktopMessages = {
   backupFailed: "Backup failed",
   updateReady: "An update is ready to install. PDMux will create a backup first.",
   updateInstall: "Install and restart",
+  updateFailed: "Update installation failed",
   cancel: "Cancel",
   runtimeFailed: "The local PDMux runtime stopped unexpectedly.",
 };
@@ -42,6 +44,7 @@ const KOREAN: DesktopMessages = {
   backupFailed: "백업에 실패했습니다",
   updateReady: "설치할 업데이트가 있습니다. 먼저 PDMux 백업을 만듭니다.",
   updateInstall: "설치 후 다시 시작",
+  updateFailed: "업데이트 설치에 실패했습니다",
   cancel: "취소",
   runtimeFailed: "로컬 PDMux 런타임이 예기치 않게 종료되었습니다.",
 };
