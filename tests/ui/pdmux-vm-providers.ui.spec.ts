@@ -164,11 +164,12 @@ test("[TC-PDVM-040] a new provider asks for its platform, address and credential
   await expect(form.locator("[data-testid=vm-p-perm] dt")).toHaveText(["Pool for new machines", "Template", "VM disk and backup storage", "Network (the bridge's SDN zone)", "Machines you only link"]);
 
   // What a setting means is one hover — or tap — away, on the setting itself.
-  await form.getByTestId("vm-p-full-clone-tip").hover();
-  await expect(page.locator("[data-slot=tooltip-content]")).toContainText("linked clone");
+  await form.getByRole("button", { name: "Help: Full copy", exact: true }).click();
+  await expect(page.getByTestId("info-hint-content")).toContainText("linked clone");
+  await page.keyboard.press("Escape");
   await form.getByTestId("vm-p-advanced-toggle").click();
-  for (const id of ["node", "storage", "pool", "sleep-tag", "backup", "enroll-url"]) {
-    await expect(form.getByTestId(`vm-p-${id}-tip`)).toHaveAttribute("aria-label", /.{30,}/);
+  for (const label of ["Node", "Storage", "Pool", "Only hibernate machines tagged", "Back up before sleep to storage", "Address new machines reach pdmux at"]) {
+    await expect(form.getByRole("button", { name: `Help: ${label}`, exact: true })).toBeVisible();
   }
 
   await form.getByTestId("vm-p-save").click();

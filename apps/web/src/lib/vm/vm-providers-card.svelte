@@ -25,7 +25,7 @@
   import { Textarea } from "#lib/components/ui/textarea/index.js";
   import * as ToggleGroup from "#lib/components/ui/toggle-group/index.js";
   import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
-  import InfoTip from "#lib/components/info-tip.svelte";
+  import InfoHint from "#lib/dashboard/components/info-hint.svelte";
   import { fmt, formatDateTime, getI18n } from "#lib/i18n/index.js";
   import { vmApi } from "./api";
   import { useVmPower } from "./power-controller.svelte";
@@ -427,7 +427,8 @@
           i18n.t.vm.settings.form.change,
         )}
         <p class="text-muted-foreground text-xs">{i18n.t.vm.settings.form.templateAuto}</p>
-        <Collapsible.Content class="grid items-start gap-3 pt-3 sm:grid-cols-3">
+        <!-- Bottom-aligned: a label with an info button is taller, and the inputs should still line up. -->
+        <Collapsible.Content class="grid items-end gap-3 pt-3 sm:grid-cols-3">
           <div class="grid gap-1.5"><Label for="vm-p-cores">{i18n.t.vm.settings.form.cores}</Label><Input id="vm-p-cores" bind:value={cores} inputmode="numeric" data-testid="vm-p-cores" /></div>
           <div class="grid gap-1.5"><Label for="vm-p-memory">{i18n.t.vm.settings.form.memory}</Label><Input id="vm-p-memory" bind:value={memoryGb} inputmode="decimal" data-testid="vm-p-memory" /></div>
           <div class="grid gap-1.5">
@@ -447,14 +448,14 @@
           </div>
           <div class="flex items-center gap-2 text-sm sm:col-span-3">
             <label class="flex items-center gap-2"><Checkbox bind:checked={fullClone} data-testid="vm-p-full-clone" />{i18n.t.vm.settings.form.fullClone}</label>
-            <InfoTip text={i18n.t.vm.settings.form.fullCloneTip} testId="vm-p-full-clone-tip" />
+            <InfoHint label={i18n.t.vm.settings.form.fullClone} text={i18n.t.vm.settings.form.fullCloneTip} />
           </div>
         </Collapsible.Content>
       </Collapsible.Root>
 
       <Collapsible.Root bind:open={advancedOpen} class="rounded-lg border p-3" data-testid="vm-p-advanced">
         {@render fold(i18n.t.vm.settings.form.advanced, null, advancedOpen, "vm-p-advanced", i18n.t.vm.settings.form.change)}
-        <Collapsible.Content class="grid items-start gap-3 pt-3 sm:grid-cols-3">
+        <Collapsible.Content class="grid items-end gap-3 pt-3 sm:grid-cols-3">
           <div class="grid gap-1.5">
             {@render tipped("vm-p-node", i18n.t.vm.settings.form.node, i18n.t.vm.settings.form.nodeTip)}
             <Input id="vm-p-node" bind:value={defaultNode} placeholder={i18n.t.vm.settings.form.nodeAuto} />
@@ -513,7 +514,7 @@
 {#snippet tipped(id: string, label: string, tip: string)}
   <div class="flex items-center gap-1">
     <Label for={id}>{label}</Label>
-    <InfoTip text={tip} testId={`${id}-tip`} />
+    <InfoHint {label} text={tip} />
   </div>
 {/snippet}
 
