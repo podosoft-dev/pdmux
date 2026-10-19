@@ -1,15 +1,40 @@
 import { test as base, expect, type APIRequestContext, type APIResponse } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { StackManager, type StackAddresses } from "../../apps/desktop/src/stack-manager";
+import { StackManager, type RuntimeProcess, type StackAddresses } from "../../apps/desktop/src/stack-manager";
 
 const repository = resolve(__dirname, "../..");
 const execute = promisify(execFile);
-const emails = ["readiness-owner@example.com", "readiness-other@example.com"];
+// Production refuses documentation-domain administrators. These private-network
+// addresses receive no mail and exist only in the disposable runtime.
+const emails = ["readiness-owner@pdmux-readiness.internal", "readiness-other@pdmux-readiness.internal"];
+
+function bootstrapAfterMigration(migration: ReturnType<typeof spawn>, env: NodeJS.ProcessEnv, password: string): RuntimeProcess {
+  let current = migration;
+  const sequence = Object.assign(new EventEmitter(), {
+    exitCode: null as number | null,
+    kill: (signal?: NodeJS.Signals): boolean => current.kill(signal),
+  });
+  const finish = (code: number | null): void => { sequence.exitCode = code; sequence.emit("exit", code); };
+  const next = (index: number): void => {
+    const email = emails[index];
+    if (!email) { finish(0); return; }
+    current = spawn("bun", [join(repository, "apps/api/scripts/bootstrap-admin.mjs")], {
+      cwd: join(repository, "apps/api"), stdio: "inherit", timeout: 30_000,
+      env: { ...env, ADMIN_BOOTSTRAP_EMAIL: email, ADMIN_BOOTSTRAP_PASSWORD: password, ADMIN_BOOTSTRAP_NAME: `Readiness ${index}` },
+    });
+    current.once("error", () => finish(1));
+    current.once("exit", code => code === 0 ? next(index + 1) : finish(code));
+  };
+  migration.once("error", () => finish(1));
+  migration.once("exit", code => code === 0 ? next(0) : finish(code));
+  return sequence;
+}
 
 export interface ReadinessRuntime extends StackAddresses {
   owner: APIRequestContext;
@@ -45,14 +70,22 @@ export const test = base.extend<object, { runtime: ReadinessRuntime }>({
       secretPath: join(temporary, "auth-secret"),
       agentReleaseDirectory: join(repository, "apps/web/static/agent"),
     }, {
-      spawn: (command, args, options) => spawn(command, [...args], {
-        ...options,
-        // The API reads its migration list from dist/ under its working directory, as
-        // in the API image. StackManager starts it inside dist/, which has no dist/.
-        cwd: postgres && options.cwd === join(apiDirectory, "dist") ? apiDirectory : options.cwd,
-        // The application's supported bootstrap policy; no direct database writes.
-        env: { ...options.env, ...databaseEnvironment, ADMIN_EMAILS: emails.join(","), AUTH_REQUIRE_SIGNUP_APPROVAL: "false", AUTH_HIBP_ENABLED: "false", AUDIT_LOG_ENABLED: "true" },
-      }),
+      spawn: (command, args, options) => {
+        // This is the self-hosted server profile, even though its process lifecycle
+        // reuses the desktop stack supervisor and SQLite schema helper.
+        const env = { ...options.env, ...databaseEnvironment, PDMUX_DESKTOP_RUNTIME: "0", ADMIN_EMAILS: emails.join(","), AUTH_REQUIRE_SIGNUP_APPROVAL: "false", AUTH_HIBP_ENABLED: "false", AUDIT_LOG_ENABLED: "true" };
+        const child = spawn(command, [...args], {
+          ...options,
+          // The API reads its migration list from dist/ under its working directory,
+          // as in the API image. Starting inside dist/ would instead read dist/dist/.
+          cwd: postgres && options.cwd === join(apiDirectory, "dist") ? apiDirectory : options.cwd,
+          env,
+        });
+        // As on a real install, administrators must be bootstrapped after schema
+        // migration and before the server starts; public sign-up cannot create them.
+        return args[0]?.endsWith(postgres ? "/migrate.js" : "/desktop-migrate.js")
+          ? bootstrapAfterMigration(child, env, password) : child;
+      },
     });
     const contexts: APIRequestContext[] = [];
     try {
@@ -65,10 +98,9 @@ export const test = base.extend<object, { runtime: ReadinessRuntime }>({
       const addresses = await stack.start();
       await execute("docker", ["build", "-f", join(repository, "tests/readiness/Dockerfile.agent"), "-t", "pdmux-readiness-agent:local", join(repository, "tests/readiness")], { timeout: 180_000 });
       await execute("docker", ["run", "--detach", "--name", container, "--network", "host", "pdmux-readiness-agent:local"]);
-      for (const [index, email] of emails.entries()) {
+      for (const email of emails) {
         const context = await playwright.request.newContext({ baseURL: addresses.webUrl, extraHTTPHeaders: { origin: addresses.webUrl } });
         contexts.push(context);
-        await json(await context.post("/api/auth/sign-up/email", { data: { name: `Readiness ${index}`, email, password } }));
         await json(await context.post("/api/auth/sign-in/email", { data: { email, password } }));
       }
       const [owner, other] = contexts;
