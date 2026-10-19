@@ -10,6 +10,11 @@
   clones a template that enrolls itself on first boot. Deleting a machine asks for its name and
   leaves the provider's backups and backup, replication and HA settings alone. MCP tokens get
   `vm_status`, `vm_power`, `vm_create` and `vm_delete`. See `docs/VM-PROVIDERS.md`.
+- Update the PodoKit foundation to 1.6.6. A stopping API closes agent, terminal and desktop bridge
+  connections and the fleet event stream at once, so agents, dashboards and desktops reconnect to
+  the next instance instead of holding the old one until its shutdown timeout (`SHUTDOWN_TIMEOUT`,
+  30 seconds). The web app's cross-site form check moved into its request hooks, so `/api` requests
+  from clients that send no `Origin` header reach the API's own authentication.
 - Keep the agent's own settings out of what it starts for users. Agent 0.1.31's terminal shells,
   the tmux server it starts and git hooks no longer inherit `PDMUX_TOKEN`, `PDMUX_CONFIG`,
   `PDMUX_STATE_DIR`, `PDMUX_RESTART`, `PDMUX_DESKTOP_AGENT` or the agent's other `PDMUX_*`
