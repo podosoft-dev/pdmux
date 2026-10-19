@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Keep terminal programs running without tmux. Agent 0.1.30 adds native persistent sessions on
+  macOS, Linux and Windows: a detached helper owns the terminals, so closing a pane, quitting the
+  desktop, restarting the agent or deploying the server leaves the programs running, and viewers
+  reattach by session ID. Existing tmux sessions and layouts keep using tmux, and the session
+  picker lists both even under the same name. Several viewers share one size, with a smaller
+  viewer panning its own viewport. Over SSH, `pdmux-agent session new|list|attach|history|terminate`
+  reaches the same sessions. Native sessions do not survive a reboot. See `docs/NATIVE-SESSIONS.md`.
+- Open Settings as one dialog on the web and the desktop, with tabs on the left and Save, OK and
+  Cancel at the bottom, over the dashboard instead of on separate pages. Old settings links open
+  the same dialog. The desktop shows an avatar menu: Sign in opens the server's web login in the
+  default browser, and local terminals work without signing in. Settings gain a Terminal tab for
+  font, size, line height, palette and cursor, read from the fonts installed on the viewing device.
+- Reopen a terminal pane when its host comes back. A pane that ended while its machine powered off
+  or rebooted opens again once the host is reachable, without a reload, and each host's panes show
+  that host's connection state.
+- Build desktop installers only for releases and requested manual runs. Pull requests and pushes
+  test native terminals on Linux, macOS and Windows without packaging installers.
 - Power, create and delete the virtual machines behind hosts, starting with Proxmox VE (server
   only). An administrator connects a provider in Settings → VM providers with its address and an
   API token; the rest starts at the platform's defaults. Every pane on a machine — in every
