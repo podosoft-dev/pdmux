@@ -24,6 +24,13 @@
 - Keep a commit's subject readable next to long branch names. Ref chips in the commit graph take
   at most a quarter of the row and end in an ellipsis, the checked-out branch last, with the full
   name in a tooltip; on a 390px phone a 30-character branch had left the subject 39px wide.
+- Keep commit subjects readable in a narrow dock. In the default 420px dock with the branch panel
+  open, the author, date and sha left every subject 0px wide. On a wide screen they now make way in
+  that order as the commit list narrows, each row's tooltip still lists them, and the subject keeps
+  at least 120px.
+- Give the host column the same 16px margin on both sides wherever the scrollbar is not 11px wide.
+  The column measures the scrollbar it reserves instead of assuming macOS Chrome's width; on Linux
+  Chromium the right margin had been 15px. Overlay scrollbars get the full margin too.
 
 ## 0.17.5
 
