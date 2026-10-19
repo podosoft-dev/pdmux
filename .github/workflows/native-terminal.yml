@@ -1,0 +1,35 @@
+name: native-terminal
+
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        description: Git ref whose native terminal source is tested
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  native-terminal:
+    name: Native terminal (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-26, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Test native pseudoterminals and persistent sessions
+        working-directory: agent
+        run: go test ./internal/term ./internal/session ./cmd/pdmux-agent -run 'TestWindowsConPTY|TestNative|TestLocalIPC|TestEngineIPCIsolation|TestExistingTmuxCoexistence' -count=1 -timeout=120s

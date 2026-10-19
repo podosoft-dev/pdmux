@@ -18,24 +18,6 @@ on:
         required: false
         default: ""
         type: string
-  pull_request:
-    paths:
-      - ".gitattributes"
-      - "agent/**"
-      - "apps/api/**"
-      - "apps/web/**"
-      - "apps/desktop/**"
-      - "packages/**"
-      - "tools/prepare-desktop-runtime.mjs"
-      - "tools/merge-desktop-update-metadata.mjs"
-      - "tools/*macos*"
-      - "tools/apple-signing*"
-      - "tools/agent-artifacts*"
-      - ".github/workflows/agent-binaries.yml"
-      - "tools/*desktop*"
-      - "bun.lock"
-      - ".github/workflows/desktop.yml"
-      - ".github/workflows/release.yml"
   workflow_dispatch:
     inputs:
       signed:
@@ -47,13 +29,7 @@ on:
 permissions:
   contents: read
 
-# A newer push to a pull request supersedes the packages of the older one. A release
-# calls this workflow from a tag, so every other event gets a group of its own and is
-# never cancelled.
-concurrency:
-  group: desktop-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
+# Installer packaging is explicit: release workflow calls or manual dispatch only.
 jobs:
   agent:
     if: ${{ !inputs.agent_artifact }}
@@ -64,25 +40,9 @@ jobs:
     secrets: inherit
 
   native-terminal:
-    name: Native terminal (${{ matrix.runner }})
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-24.04, macos-26, windows-2025]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.source_ref || github.ref }}
-          persist-credentials: false
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: agent/go.mod
-          cache-dependency-path: agent/go.sum
-      - name: Test native pseudoterminals and persistent sessions
-        working-directory: agent
-        run: go test ./internal/term ./internal/session ./cmd/pdmux-agent -run 'TestWindowsConPTY|TestNative|TestLocalIPC|TestEngineIPCIsolation|TestExistingTmuxCoexistence' -count=1 -timeout=120s
+    uses: ./.github/workflows/native-terminal.yml
+    with:
+      source_ref: ${{ inputs.source_ref || github.ref }}
 
   package:
     name: ${{ matrix.name }}

@@ -13,6 +13,8 @@ function repositoryFile(relativePath: string): string {
 
 const workflow = readFileSync(repositoryFile(".github/workflows/release.yml"), "utf8");
 const desktopWorkflow = readFileSync(repositoryFile(".github/workflows/desktop.yml"), "utf8");
+const nativeWorkflow = readFileSync(repositoryFile(".github/workflows/native-terminal.yml"), "utf8");
+const probeWorkflow = readFileSync(repositoryFile(".github/workflows/macos-update-probe.yml"), "utf8");
 const ciWorkflow = readFileSync(repositoryFile(".github/workflows/ci.yml"), "utf8");
 
 describe("release workflow", () => {
@@ -92,6 +94,21 @@ describe("release workflow", () => {
     expect(workflow).not.toContain("npm ci");
   });
 
+  test("[TC-PDDESKTOP-009] packages only for releases or explicit manual runs", () => {
+    const triggers = (text: string): string[] => Object.keys((YAML.parse(text) as { on: Record<string, unknown> }).on).sort();
+    expect(triggers(desktopWorkflow)).toEqual(["workflow_call", "workflow_dispatch"]);
+    expect(triggers(probeWorkflow)).toEqual(["workflow_dispatch"]);
+    expect(triggers(nativeWorkflow)).toEqual(["workflow_call"]);
+    expect(triggers(ciWorkflow)).toEqual(["pull_request", "push"]);
+    expect(workflow).toContain("uses: ./.github/workflows/desktop.yml");
+    for (const caller of [ciWorkflow, desktopWorkflow]) {
+      const job = (YAML.parse(caller) as { jobs: Record<string, { uses?: string }> }).jobs["native-terminal"];
+      expect(job?.uses).toBe("./.github/workflows/native-terminal.yml");
+    }
+    expect(nativeWorkflow).not.toContain("package-desktop");
+    expect(nativeWorkflow).not.toContain("upload-artifact");
+  });
+
   test("[TC-PDDESKTOP-009] publishes only native desktop distributables", () => {
     for (const fragment of [
       "workflow_call:",
@@ -123,7 +140,7 @@ describe("release workflow", () => {
     expect(packageJob).toContain("needs: agent");
     expect(packageJob).toContain("inputs.agent_artifact || 'agent-binaries'");
     expect(packageJob).not.toContain("actions/setup-go");
-    const nativeJob = desktopWorkflow.slice(desktopWorkflow.indexOf("  native-terminal:"), desktopWorkflow.indexOf("  package:"));
+    const nativeJob = nativeWorkflow;
     expect(nativeJob).toContain("runner: [ubuntu-24.04, macos-26, windows-2025]");
     expect(nativeJob).toContain("./internal/session ./cmd/pdmux-agent");
     expect(nativeJob).toContain("TestWindowsConPTY|TestNative");

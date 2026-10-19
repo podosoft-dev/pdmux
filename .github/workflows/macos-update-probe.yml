@@ -1,10 +1,6 @@
 name: macOS self-signed update probe
 
 on:
-  pull_request:
-    paths:
-      - "tools/probe-macos-adhoc-update*"
-      - ".github/workflows/macos-update-probe.yml"
   workflow_dispatch:
 
 permissions:

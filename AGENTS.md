@@ -163,6 +163,11 @@ Merge added module settings from `.env.example` into an existing `.env`.
 for web) before considering it done. UI changes need a Playwright test; API
 changes need an e2e/unit test.
 
+Ordinary commit, push, merge, and pull-request work uses source validation, including native
+terminal tests. It does not request desktop installer packaging, update-installation probes,
+a version bump, release publication, or deployment. Run installer workflows only for an explicitly
+requested manual validation or release. See `docs/CI.md` for the trigger boundary.
+
 **Run the tests that cover the change, not the whole suite.** The full e2e sweep is
 ~5 minutes serial and it is the wrong loop for a one-file fix; a change is verified by
 the specs that assert its behaviour plus the unit suite of the package it lives in.

@@ -8,16 +8,35 @@ to accept** — but a speed-up must never drop something the release proves.
 
 | Workflow | Trigger | Runners | What it proves |
 |---|---|---|---|
-| `ci.yml` | push to `main`, every pull request (superseded runs cancelled) | `ubuntu-latest`, `ubuntu-24.04-arm` | build, lint, unit tests, migrations, database recovery, native migration images, agent version bump, reproducible agent binaries against the committed `SHA256SUMS` |
+| `ci.yml` | push to `main`, every pull request (superseded runs cancelled) | Linux plus the native terminal matrix | build, lint, unit tests, migrations, database recovery, native migration images, agent version bump, reproducible agent binaries against the committed `SHA256SUMS` |
+| `native-terminal.yml` | called by `ci.yml` and `desktop.yml` | Linux, macOS, Windows | real PTYs and persistent sessions without installer packaging |
 | `readiness.yml` | pull request, manual | `ubuntu-24.04` | the production runtime with a real agent on SQLite and PostgreSQL |
-| `desktop.yml` | pull request touching desktop inputs, manual, called by `release.yml` | one shared agent job, four native installer runners, four clean verification runners | installers for macOS Intel and Apple Silicon, Windows x64, Linux x64, verified on fresh machines |
+| `desktop.yml` | explicit manual run or called by `release.yml` | one shared agent job, four native installer runners, four clean verification runners | installers for macOS Intel and Apple Silicon, Windows x64, Linux x64, verified on fresh machines |
 | `release.yml` | `vX.Y.Z` tag, manual rebuild of an existing tag | Linux amd64 and arm64, plus `desktop.yml` | verified multi-architecture images, signed installers, agent binaries, checksums, the GitHub release |
-| `macos-update-probe.yml` | pull request touching the probe, manual | `macos-26` | self-signed update and relaunch between two disposable app versions |
+| `macos-update-probe.yml` | explicit manual run | `macos-26` | self-signed update and relaunch between two disposable app versions |
 
 All jobs use GitHub-hosted standard runners. They are free and unmetered for a public repository,
 so the cost that matters is wall time and the plan's concurrent-job limit, which is smaller for macOS.
 Do not move these workflows to self-hosted runners: on a public repository a pull request from a
 fork would run its code on that machine.
+
+### Source validation and installer packaging
+
+A commit, push, merge, or pull request does not request installer packaging or a release.
+Ordinary CI builds application code and tests contracts, runtime behavior, and native terminals.
+It does not create desktop installers or disposable update applications. Agent compilation and
+container image checks remain source validation; their results are not published as releases.
+
+Installer creation and clean-machine installation checks run through `release.yml` or an explicit
+manual dispatch of `desktop.yml`. The self-signed update probe is also manual only. A manual
+validation run uploads temporary Actions artifacts, while a release requires its own tag and
+publication workflow. Version changes, release publication, and deployment each require a separate
+explicit request; a commit/push/merge request authorizes none of them.
+
+The trigger boundary is checked by `[TC-PDDESKTOP-009]`. Native terminal tests share one reusable
+workflow between normal CI and release packaging, so removing automatic installer jobs does not
+remove Windows, macOS, or Linux terminal coverage. The timing tables below describe the earlier
+configuration, when pull requests still triggered packaging.
 
 ## 2. Measurements before the October 2026 speed-up
 
@@ -75,9 +94,9 @@ it on the same commit and added four macOS jobs (about 14 runner minutes) to eac
    hand with `signed` off for the same check on a branch.
 5. **Installer artifacts are uploaded without compression.** DMG, ZIP, NSIS, AppImage, Debian
    packages and blockmaps are already compressed, so `compression-level: 0` only saves time.
-6. **Superseded pull-request runs of `desktop.yml` are cancelled.** A release calls the workflow from
-   a tag, and every event other than `pull_request` gets a group of its own, so a release is never
-   cancelled.
+6. **Installer packaging is explicit.** Since 2026-10-19, `desktop.yml` has no pull-request or push
+   trigger. Release calls and requested manual runs retain the full installer verification. Ordinary
+   CI calls `native-terminal.yml` for native source tests without producing installers.
 7. **The TypeScript-compiling desktop test has a 30-second timeout.** The `dmgbuild` detach failure
    is not addressed; re-run the failed job when it happens.
 
