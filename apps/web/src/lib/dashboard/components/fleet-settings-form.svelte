@@ -27,11 +27,13 @@
    */
   import VmProvidersCard from "#lib/vm/vm-providers-card.svelte";
   import { untrack } from "svelte";
-  import { invalidateAll } from "$app/navigation";
+  import { invalidateAll, replaceState } from "$app/navigation";
+  import { page } from "$app/state";
   import { toast } from "svelte-sonner";
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import * as Alert from "#lib/components/ui/alert/index.js";
   import * as Card from "#lib/components/ui/card/index.js";
+  import * as Tabs from "#lib/components/ui/tabs/index.js";
   import { Button } from "#lib/components/ui/button/index.js";
   import { Input } from "#lib/components/ui/input/index.js";
   import { Label } from "#lib/components/ui/label/index.js";
@@ -45,6 +47,7 @@
     type FieldError,
     type FleetDraft,
     type FleetGroup,
+    type FleetGroupId,
     type FleetListKey,
     type FleetNumberKey,
     type SweepCandidate,
@@ -96,7 +99,42 @@
   /** Every group but the sweep — that one is drawn apart, at the bottom. */
   // The sweep and the access group are drawn by hand below: one deletes machines and
   // the other decides who can reach all of them, so neither is "another field".
-  const REGULAR_GROUPS = FLEET_FIELD_GROUPS.filter((group) => group.id !== "sweep" && group.id !== "access");
+  /**
+   * The page in tabs, each one kind of decision — on one page, fourteen fields, two
+   * integrations and the sweep read as one long form.
+   *
+   * ⚠ THE DRAFT SPANS THE TABS. A change made on one is kept while another is open, and
+   * Save sends them together — so a tab whose field needs fixing is marked: the field is out
+   * of sight, and Save is disabled because of it. The tab is in the address (`?tab=`), so a
+   * screen can link to the integrations directly.
+   */
+  type FleetTab = "collection" | "limits" | "access" | "integrations" | "sweep";
+  const TAB_GROUPS: Record<FleetTab, FleetGroupId[]> = {
+    collection: ["cadence", "history"],
+    limits: ["caps", "lists"],
+    access: ["access"],
+    integrations: [],
+    sweep: ["sweep"],
+  };
+  const isTab = (value: string | null): value is FleetTab => value !== null && value in TAB_GROUPS;
+  const tabs = $derived((Object.keys(TAB_GROUPS) as FleetTab[]).filter((id) => id !== "integrations" || serverFeatures));
+  const requestedTab = untrack(() => page.url.searchParams.get("tab"));
+  let chosenTab = $state<FleetTab>(isTab(requestedTab) ? requestedTab : "collection");
+  const tab = $derived(tabs.includes(chosenTab) ? chosenTab : "collection");
+
+  function chooseTab(value: string): void {
+    if (!isTab(value)) return;
+    chosenTab = value;
+    const url = new URL(page.url.href);
+    url.searchParams.set("tab", value);
+    replaceState(url, page.state);
+  }
+
+  function tabInvalid(id: FleetTab): boolean {
+    return FLEET_FIELD_GROUPS
+      .filter((group) => TAB_GROUPS[id].includes(group.id))
+      .some((group) => group.keys.some((key) => (review.errors as Record<string, unknown>)[key] !== undefined));
+  }
   const SWEEP_KEY = "staleHostRetentionDays";
 
   // Split by kind rather than branching inside the loop: `filter` with a type predicate
@@ -186,7 +224,32 @@
     </Alert.Root>
   {/if}
 
-  {#each REGULAR_GROUPS as group (group.id)}
+  <Tabs.Root value={tab} onValueChange={chooseTab} class="flex flex-none flex-col gap-4" data-testid="fleet-tabs">
+    <Tabs.List class="h-auto flex-wrap justify-start" aria-label={i18n.t.dash.fleet.title}>
+      {#each tabs as id (id)}
+        <Tabs.Trigger value={id} class="h-8 flex-none" data-testid={`fleet-tab-${id}`}>
+          {i18n.t.dash.fleet.tabs[id]}
+          {#if tabInvalid(id)}
+            <span class="bg-destructive size-1.5 rounded-full" role="img" aria-label={i18n.t.dash.fleet.tabs.invalid} title={i18n.t.dash.fleet.tabs.invalid} data-testid={`fleet-tab-invalid-${id}`}></span>
+          {/if}
+        </Tabs.Trigger>
+      {/each}
+    </Tabs.List>
+    <Tabs.Content value="collection" class="flex flex-none flex-col gap-4">{@render groups(TAB_GROUPS.collection)}</Tabs.Content>
+    <Tabs.Content value="limits" class="flex flex-none flex-col gap-4">{@render groups(TAB_GROUPS.limits)}</Tabs.Content>
+    <Tabs.Content value="access" class="flex flex-none flex-col gap-4">{@render accessCard()}</Tabs.Content>
+    {#if serverFeatures}
+      <Tabs.Content value="integrations" class="flex flex-none flex-col gap-4">
+        <CloudflareIntegrationCard canManage={data.canManage} {target} />
+        <!-- Only for this server: the desktop app does not hold provider credentials. -->
+        {#if target === "local"}<VmProvidersCard canManage={data.canManage} />{/if}
+      </Tabs.Content>
+    {/if}
+    <Tabs.Content value="sweep" class="flex flex-none flex-col gap-4">{@render sweepCard()}</Tabs.Content>
+  </Tabs.Root>
+
+{#snippet groups(ids: FleetGroupId[])}
+  {#each FLEET_FIELD_GROUPS.filter((group) => ids.includes(group.id)) as group (group.id)}
     <Card.Root class="shrink-0" data-testid={`fleet-group-${group.id}`}>
       <Card.Header>
         <Card.Title class="flex items-center gap-1">{i18n.t.dash.fleet.group[group.id].title}<InfoHint label={i18n.t.dash.fleet.group[group.id].title} text={i18n.t.dash.fleet.group[group.id].blurb} /></Card.Title>
@@ -201,7 +264,9 @@
       </Card.Content>
     </Card.Root>
   {/each}
+{/snippet}
 
+{#snippet accessCard()}
   <!--
     FLEET-WIDE CLI TOKENS.
 
@@ -234,11 +299,9 @@
       </label><InfoHint label={i18n.t.dash.fleet.field.mcpUserTokens.label} text={i18n.t.dash.fleet.field.mcpUserTokens.hint} /></div>
     </Card.Content>
   </Card.Root>
+{/snippet}
 
-  {#if serverFeatures}<CloudflareIntegrationCard canManage={data.canManage} {target} />{/if}
-  <!-- Server only, and only for this server: the desktop app does not hold provider credentials. -->
-  {#if serverFeatures && target === "local"}<VmProvidersCard canManage={data.canManage} />{/if}
-
+{#snippet sweepCard()}
   <!--
     THE SWEEP, APART FROM EVERYTHING ABOVE IT.
 
@@ -263,11 +326,14 @@
       </p>
     </Card.Content>
   </Card.Root>
+{/snippet}
 
   <!-- Sticky inside this column, not the page: fourteen fields is more than one screen,
        and a Save that scrolled away would be found by scrolling back past every field
        the operator had just decided about. The column is the scroller (see above), so
        `bottom-0` pins to its edge rather than the viewport's. -->
+  <!-- The integrations save themselves; there Save shows only when another tab has a change waiting. -->
+  {#if tab !== "integrations" || dirty}
   <div class="bg-background sticky bottom-0 -mx-6 -mb-6 flex items-center gap-2 border-t px-6 py-3">
     <Button disabled={!canSave} data-testid="fleet-save" onclick={requestSave}>
       {saving ? i18n.t.dash.fleet.saving : i18n.t.dash.fleet.save}
@@ -281,6 +347,7 @@
       {i18n.t.dash.fleet.reset}
     </Button>
   </div>
+  {/if}
 
 {#snippet numberField(key: FleetNumberKey)}
   {@const bounds = FLEET_NUMBER_BOUNDS[key]}

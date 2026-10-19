@@ -74,7 +74,7 @@ test.describe.serial("pdmux fleet settings", () => {
     await request.dispose();
   });
 
-  test("[TC-PDWEB-023] every setting is on one screen, grouped, with the sweep apart", async ({ page }) => {
+  test("[TC-PDWEB-023] every setting is on the settings screen, in tabs by kind, with the sweep apart", async ({ page }) => {
     /**
      * The defect this screen exists for: fourteen settings, no screen. So the first
      * thing worth asserting is that all fourteen are HERE — a group that quietly drops
@@ -104,12 +104,27 @@ test.describe.serial("pdmux fleet settings", () => {
     // level inside the shell rather than a screen of its own.
     expect(await sidebar.evaluate((el: Marked) => el.__pdmuxMark ?? null)).toBe(MARK);
 
-    for (const group of ["cadence", "history", "caps", "lists", "sweep"]) {
-      await expect(page.locator(`[data-testid='fleet-group-${group}']`)).toBeVisible();
+    // One kind of decision per tab (2026-10-19: on one page the form read as one long list).
+    // Every group is still on this screen — a tab away — and the fields add up to all of them.
+    const tabs: [string, string[]][] = [
+      ["collection", ["cadence", "history"]],
+      ["limits", ["caps", "lists"]],
+      ["access", ["access"]],
+      ["sweep", ["sweep"]],
+    ];
+    let fields = 0;
+    for (const [tab, groups] of tabs) {
+      await page.locator(`[data-testid='fleet-tab-${tab}']`).click();
+      // The open tab is the first; choosing another puts it in the address, for linking.
+      if (tab !== "collection") await expect(page).toHaveURL(new RegExp(`tab=${tab}`));
+      for (const group of groups) await expect(page.locator(`[data-testid='fleet-group-${group}']`)).toBeVisible();
+      // Visible ones only: the other tabs stay in the page, hidden, so a draft survives a switch.
+      fields += await page.locator("[data-testid^='fleet-field-']:visible").count();
     }
     // ⚠ THE COUNT IS THE POINT. Twelve numbers and two lists; a setting missing from
     // the screen is a setting that is still curl-only.
-    await expect(page.locator("[data-testid^='fleet-field-']")).toHaveCount(14);
+    expect(fields).toBe(14);
+    await page.locator("[data-testid='fleet-tab-collection']").click();
 
     // Supporting explanations live behind the field's information button.
     await page.getByRole("button", { name: "Help: Metric sample interval (seconds)", exact: true }).click();
@@ -120,6 +135,7 @@ test.describe.serial("pdmux fleet settings", () => {
 
     // The sweep says what is LOST — the cascade is why this is not just another
     // retention number, and it is the only reason a warning here is worth the space.
+    await page.locator("[data-testid='fleet-tab-sweep']").click();
     await page.getByRole("button", { name: "Help: Delete a host after (days of silence)", exact: true }).click();
     const sweep = page.locator("[data-testid='info-hint-content']");
     await expect(sweep).toContainText(/tokens and history|토큰·이력/);
@@ -146,15 +162,19 @@ test.describe.serial("pdmux fleet settings", () => {
      * with more content than room left silently clips instead of pushing the column
      * into scrolling.
      */
+    // Every tab: a card that clips is clipped whichever tab it is on.
     await ready(page, "/settings");
-    await expect(page.locator("[data-testid='fleet-group-sweep']")).toBeAttached();
-
-    const clipped = await page.evaluate(() =>
-      [...document.querySelectorAll("[data-testid^='fleet-group-']")]
-        .filter((card) => card.scrollHeight > card.clientHeight + 2)
-        .map((card) => (card as HTMLElement).dataset.testid ?? ""),
-    );
-    expect(clipped, "these groups are hiding their own fields").toEqual([]);
+    for (const tab of ["collection", "access", "sweep", "limits"]) {
+      await page.locator(`[data-testid='fleet-tab-${tab}']`).click();
+      await expect(page.locator("[data-testid^='fleet-group-']:visible").first()).toBeVisible();
+      const clipped = await page.evaluate(() =>
+        [...document.querySelectorAll("[data-testid^='fleet-group-']")]
+          .filter((card) => card.scrollHeight > card.clientHeight + 2)
+          .map((card) => (card as HTMLElement).dataset.testid ?? ""),
+      );
+      expect(clipped, `these groups on the ${tab} tab are hiding their own fields`).toEqual([]);
+    }
+    // The longest tab (caps and lists) is left open for the scrolling half below.
 
     // And the column really is the thing that scrolls, so the clipping was not
     // simply traded for a page that ends early.
@@ -167,10 +187,10 @@ test.describe.serial("pdmux fleet settings", () => {
       panel!.clientH,
     );
 
-    // The last control on the longest page must be reachable by scrolling to it.
-    const sweep = page.locator("[data-testid='fleet-field-staleHostRetentionDays']");
-    await sweep.scrollIntoViewIfNeeded();
-    await expect(sweep).toBeInViewport();
+    // The last control on the longest tab must be reachable by scrolling to it.
+    const last = page.locator("[data-testid^='fleet-field-']:visible").last();
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport();
   });
 
   test("[TC-PDWEB-024] an out-of-range value is refused beside the field, and only the change is sent", async ({
@@ -294,7 +314,7 @@ test.describe.serial("pdmux fleet settings", () => {
         return route.fulfill({ json: hosts });
       });
 
-      await ready(page, "/settings");
+      await ready(page, "/settings?tab=sweep");
       await expect
         .poll(() => polls, { message: "the fabricated fleet never reached the browser" })
         .toBeGreaterThan(0);

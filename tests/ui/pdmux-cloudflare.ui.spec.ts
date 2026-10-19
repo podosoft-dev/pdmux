@@ -35,7 +35,7 @@ test("[TC-PDUI-227] configures the fleet connection without ever rendering the t
     });
   });
 
-  await ready(page, "/settings");
+  await ready(page, "/settings?tab=integrations");
   const card = page.locator("[data-testid='cloudflare-integration']");
   await card.scrollIntoViewIfNeeded();
   await expect(card).toBeVisible();
