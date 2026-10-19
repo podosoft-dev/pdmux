@@ -448,12 +448,17 @@ waits for a real agent connection before assigning a plain shell terminal to cel
 empty on subsequent launches. The server connection page shows agent readiness and
 provides a retry action, including replacement credentials when needed.
 
-The default host label uses the system computer name: the friendly Computer Name on macOS,
-or the hostname on Windows and Linux. If macOS cannot read its friendly name, it falls back to
-the hostname. Labels are limited to 64 characters and receive a numeric suffix when another
-host already uses that name. Existing localized default labels are migrated once on startup;
-custom labels, host identity, credentials and layouts are preserved. Server synchronization
-shares the resulting host label with the web workspace.
+The default host label is the platform name with a short ID derived from the local profile,
+such as `Mac 1A2B`, `Windows 1A2B` or `Linux 1A2B`. Server synchronization shares the label with
+the web workspace, so it never uses the computer name or hostname, which often contain a
+person's name. Rename the host in the dashboard to give it a personal name. Labels are limited
+to 64 characters and receive a numeric suffix when another host already uses that name.
+
+On startup, a host that still has a default label from an earlier release is renamed once: the
+localized `This computer`, or the computer name that 0.17.5 used, with or without its numeric
+suffix. The computer name is read only for that local comparison and is never sent. Custom
+labels, host identity, credentials and layouts are preserved. If the rename fails, the agent
+starts with the old label, the failure is logged, and the next launch tries again.
 
 The embedded agent is separate from the standalone host installer. Electron owns
 its startup, bounded restart attempts, and shutdown. A stdin lifetime pipe cancels

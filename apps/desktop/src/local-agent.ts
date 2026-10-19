@@ -13,19 +13,28 @@ import { logError } from "./log.js";
 
 const execFileAsync = promisify(execFile);
 const legacyLabels = [desktopMessages("en").localHost, desktopMessages("ko").localHost];
-const configuration = z.object({ hostId: z.string().uuid(), token: z.string().default(""), server: z.string(), hostname: z.string(), layoutPrepared: z.boolean().default(false), computerNameApplied: z.boolean().default(false) });
+const LABEL_LIMIT = 64;
+const DEFAULT_LABEL_VERSION = 2;
+const configuration = z.object({ hostId: z.string().uuid(), token: z.string().default(""), server: z.string(), hostname: z.string(), layoutPrepared: z.boolean().default(false), defaultLabelVersion: z.number().int().default(1) });
 type Configuration = z.infer<typeof configuration>;
 export interface LocalAgentStatus { phase: "starting" | "ready" | "failed" | "stopped"; hostId?: string; code?: string }
-export interface LocalAgentDependencies { spawn: typeof spawn; platform: NodeJS.Platform; arch: string; environment: NodeJS.ProcessEnv; computerName: () => Promise<string>; log: typeof logError }
+export interface LocalAgentDependencies { spawn: typeof spawn; platform: NodeJS.Platform; arch: string; environment: NodeJS.ProcessEnv; legacyComputerName: () => Promise<string>; log: typeof logError }
 
-async function computerName(platform: NodeJS.Platform): Promise<string> {
+/** The name 0.17.5 used as the default label. It is read only to recognize that
+ * label during migration and is never sent anywhere. */
+async function legacyComputerName(platform: NodeJS.Platform): Promise<string> {
   if (platform === "darwin") {
     try {
       const { stdout } = await execFileAsync("/usr/sbin/scutil", ["--get", "ComputerName"], { timeout: 2_000 });
       if (stdout.trim()) return stdout.trim();
-    } catch { /* A missing friendly name falls back to the system hostname. */ }
+    } catch { /* 0.17.5 fell back to the system hostname as well. */ }
   }
   return hostname();
+}
+
+function suffixed(name: string, index: number): string {
+  const suffix = ` (${index})`;
+  return `${name.slice(0, LABEL_LIMIT - suffix.length).trimEnd()}${suffix}`;
 }
 
 /** The embedded agent belongs to the desktop runtime, not a standalone host
@@ -39,12 +48,14 @@ export class LocalAgent {
   private current: LocalAgentStatus = { phase: "stopped" };
   private readonly directory: string;
   private readonly configPath: string;
+  private readonly profileHash: string;
   private readonly dependencies: LocalAgentDependencies;
   private serial: Promise<void> = Promise.resolve();
 
-  constructor(private readonly stack: Pick<StackManager, "start" | "localRequest">, private readonly layout: RuntimeLayout, profileId: string, private readonly fallbackLabel: string, dependencies: Partial<LocalAgentDependencies> = {}) {
-    this.dependencies = { spawn, platform: process.platform, arch: process.arch, environment: process.env, computerName: () => computerName(dependencies.platform ?? process.platform), log: logError, ...dependencies };
-    this.directory = join(layout.dataDirectory, "local-agent", createHash("sha256").update(profileId).digest("hex").slice(0, 24));
+  constructor(private readonly stack: Pick<StackManager, "start" | "localRequest">, private readonly layout: RuntimeLayout, profileId: string, dependencies: Partial<LocalAgentDependencies> = {}) {
+    this.dependencies = { spawn, platform: process.platform, arch: process.arch, environment: process.env, legacyComputerName: () => legacyComputerName(dependencies.platform ?? process.platform), log: logError, ...dependencies };
+    this.profileHash = createHash("sha256").update(profileId).digest("hex");
+    this.directory = join(layout.dataDirectory, "local-agent", this.profileHash.slice(0, 24));
     this.configPath = join(this.directory, "agent.json");
   }
 
@@ -69,16 +80,25 @@ export class LocalAgent {
     await chmod(this.configPath, 0o600);
   }
 
+  /** Server sync shares the label with the web workspace, so it names the platform
+   * and the profile instead of the computer, whose name is often personal. */
   private async defaultLabel(exceptId?: string): Promise<string> {
-    const name = (await this.dependencies.computerName()).trim().slice(0, 64).trim() || this.fallbackLabel;
+    const platform = this.dependencies.platform === "darwin" ? "Mac" : this.dependencies.platform === "win32" ? "Windows" : "Linux";
+    const name = `${platform} ${this.profileHash.slice(0, 4).toUpperCase()}`;
     const hosts = await this.request<Array<{ id: string; label: string }>>("/hosts");
     const labels = new Set(hosts.filter(host => host.id !== exceptId).map(host => host.label));
     let label = name;
-    for (let index = 2; labels.has(label); index += 1) {
-      const suffix = ` (${index})`;
-      label = `${name.slice(0, 64 - suffix.length).trimEnd()}${suffix}`;
-    }
+    for (let index = 2; labels.has(label); index += 1) label = suffixed(name, index);
     return label;
+  }
+
+  /** Whether a label is one an earlier release generated: the localized default, or
+   * the computer name 0.17.5 used, with or without its collision suffix. */
+  private async legacyDefault(label: string): Promise<boolean> {
+    const computer = (await this.dependencies.legacyComputerName()).trim().slice(0, LABEL_LIMIT).trim();
+    const names = computer ? [...legacyLabels, computer] : legacyLabels;
+    const index = Number(/ \(([1-9]\d*)\)$/.exec(label)?.[1] ?? 0);
+    return names.some(name => label === name || (index >= 2 && suffixed(name, index) === label));
   }
 
   private async binary(): Promise<string> {
@@ -109,18 +129,18 @@ export class LocalAgent {
       const existing = await this.stack.localRequest(`/hosts/${config.hostId}`);
       if (existing.status === 404) config = undefined;
       else if (!existing.ok) throw new Error("Cannot read the local host");
-      else if (!config.computerNameApplied) {
+      else if (config.defaultLabelVersion < DEFAULT_LABEL_VERSION) {
         // A rename is cosmetic: keep the old name and retry on a later launch instead of blocking the agent.
         try {
           const host = await existing.json() as { label: string };
-          if (legacyLabels.includes(host.label)) await this.request(`/hosts/${config.hostId}`, "PATCH", { label: await this.defaultLabel(config.hostId) });
-          config.computerNameApplied = true;
+          if (await this.legacyDefault(host.label)) await this.request(`/hosts/${config.hostId}`, "PATCH", { label: await this.defaultLabel(config.hostId) });
+          config.defaultLabelVersion = DEFAULT_LABEL_VERSION;
         } catch (error) { this.dependencies.log("Rename the local desktop host", error, { hostId: config.hostId }); }
       }
     }
     if (!config) {
       const host = await this.request<{ id: string }>("/hosts", "POST", { label: await this.defaultLabel() });
-      config = { hostId: host.id, token: "", server: webUrl, hostname: hostname(), layoutPrepared: false, computerNameApplied: true };
+      config = { hostId: host.id, token: "", server: webUrl, hostname: hostname(), layoutPrepared: false, defaultLabelVersion: DEFAULT_LABEL_VERSION };
       await this.save(config);
     }
     config.server = webUrl;

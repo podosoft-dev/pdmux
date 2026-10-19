@@ -21,19 +21,21 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
   });
   if (fresh) {
     await page.reload();
-    let name = hostname();
+    const names = [hostname()];
     if (process.platform === "darwin") {
-      try { name = execFileSync("/usr/sbin/scutil",["--get","ComputerName"],{encoding:"utf8",timeout:2_000}).trim() || name; }
-      catch { /* Match the desktop fallback when no friendly computer name is set. */ }
+      try { names.push(execFileSync("/usr/sbin/scutil",["--get","ComputerName"],{encoding:"utf8",timeout:2_000}).trim()); }
+      catch { /* Without a friendly name only the hostname needs checking. */ }
     }
+    const platformName = process.platform === "darwin" ? "Mac" : process.platform === "win32" ? "Windows" : "Linux";
     const host = await page.evaluate(async id => (await fetch(`/api/hosts/${id}`)).json(),status.hostId);
-    assert.equal(host.label,name.trim().slice(0,64).trim(),"[TC-PDDESKTOP-017] the default host uses the system computer name");
+    assert.match(host.label,new RegExp(`^${platformName} [0-9A-F]{4}( \\(\\d+\\))?$`),"[TC-PDDESKTOP-017] the default host names the platform and profile");
+    for (const name of names.filter(Boolean)) assert.ok(!host.label.includes(name),"[TC-PDDESKTOP-017] the default host does not share the computer name");
     const card = page.locator(`[data-pdmux-host="${status.hostId}"]`);
     await card.waitFor();
-    assert.ok((await card.textContent()).includes(host.label),"[TC-PDDESKTOP-017] the computer name appears in the host sidebar");
+    assert.ok((await card.textContent()).includes(host.label),"[TC-PDDESKTOP-017] the default host name appears in the host sidebar");
     const hostBounds = await card.boundingBox();
     assert.ok(hostBounds.width>150 && hostBounds.height>50,"[TC-PDDESKTOP-017] the named host card has a usable surface");
-    assert.equal(await card.locator("[data-pdmux-name]").getAttribute("title"),host.label,"[TC-PDDESKTOP-017] the complete computer name is available on hover");
+    assert.equal(await card.locator("[data-pdmux-name]").getAttribute("title"),host.label,"[TC-PDDESKTOP-017] the complete host name is available on hover");
     await page.screenshot({path:`${screenshot}.host.png`});
     await writeFile(`${screenshot}.host.json`,JSON.stringify({label:host.label,bounds:hostBounds},null,2));
     const pane = page.locator('[data-pdmux-pane="slot-1"]');

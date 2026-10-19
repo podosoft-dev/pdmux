@@ -2,7 +2,7 @@ import { afterEach, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import { spawn, type SpawnOptions } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalAgent } from "./local-agent.js";
 import { desktopMessages } from "./i18n.js";
@@ -12,10 +12,12 @@ let root: string;
 let agent: LocalAgent | undefined;
 afterEach(async () => { await agent?.stop(); agent = undefined; if (root) await rm(root, { recursive: true, force: true }); });
 const hostId = "cc37aebc-f39a-4147-b31b-fb907fe8f78e";
+const profileTag = createHash("sha256").update("local-profile").digest("hex").slice(0, 4).toUpperCase();
+const defaultLabel = (platform: NodeJS.Platform = process.platform): string => `${platform === "darwin" ? "Mac" : platform === "win32" ? "Windows" : "Linux"} ${profileTag}`;
 async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
   run: () => Promise<void>; payload: () => Record<string, unknown>; setPayload: (value: Record<string, unknown>) => void;
   calls: Array<{ path: string; body?: object }>; spawned: Array<{ executable: string; args: readonly string[]; options: SpawnOptions }>; directory: string;
-  label: () => string; setLabel: (value: string) => void; setComputerName: (value: string) => void; otherLabels: string[]; legacyConfig: () => Promise<void>;
+  label: () => string; setLabel: (value: string) => void; setComputerName: (value: string) => void; computerNameReads: () => number; otherLabels: string[]; legacyConfig: (fields?: Record<string, unknown>) => Promise<void>;
   failures: Set<"list" | "rename">; logs: Array<{ action: string; error: unknown; context?: Record<string, unknown> }>; config: () => Promise<Record<string, unknown>>;
 }> {
   root = await mkdtemp(join(tmpdir(), "pdmux-local-agent-"));
@@ -27,7 +29,7 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
   const layout: RuntimeLayout = { bunExecutable: process.execPath, apiEntry:"unused", migrateEntry:"unused", webEntry:"unused", dataDirectory: root, filesDirectory: join(root,"files"), databasePath:join(root,"db"),secretPath:join(root,"secret"),agentReleaseDirectory:releases };
   const calls: Array<{ path: string; body?: object }> = [];
   const spawned: Array<{ executable: string; args: readonly string[]; options: SpawnOptions }> = [];
-  let payload: Record<string, unknown> = { slots: [] }; let created = false; let label = ""; let computerName = "Design workstation";
+  let payload: Record<string, unknown> = { slots: [] }; let created = false; let label = ""; let computerName = "Design workstation"; let computerNameReads = 0;
   const otherLabels: string[] = [];
   const failures = new Set<"list" | "rename">();
   const logs: Array<{ action: string; error: unknown; context?: Record<string, unknown> }> = [];
@@ -54,13 +56,13 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
     spawned.push({ executable, args, options });
     return spawn(process.execPath, ["-e", 'process.stdin.resume(); process.stdin.on("end", () => process.exit(0));'], options);
   }) as typeof spawn;
-  agent = new LocalAgent(stack, layout, "local-profile", "This computer", { platform, computerName: async () => computerName, spawn: launch, log: (action, error, context) => { logs.push({ action, error, ...(context ? { context } : {}) }); }, environment:{ ...process.env, TMUX:"private-fixture", PDMUX_TOKEN:"inherited-token", PDMUX_SERVER:"https://invalid.test", PDMUX_RESTART:"service", INVOCATION_ID:"inherited-service" } });
+  agent = new LocalAgent(stack, layout, "local-profile", { platform, legacyComputerName: async () => { computerNameReads += 1; return computerName; }, spawn: launch, log: (action, error, context) => { logs.push({ action, error, ...(context ? { context } : {}) }); }, environment:{ ...process.env, TMUX:"private-fixture", PDMUX_TOKEN:"inherited-token", PDMUX_SERVER:"https://invalid.test", PDMUX_RESTART:"service", INVOCATION_ID:"inherited-service" } });
   return { run: () => agent!.start(), payload:() => payload, setPayload:value => { payload = value; }, calls, spawned, directory,
-    label: () => label, setLabel: value => { label = value; }, setComputerName: value => { computerName = value; }, otherLabels,
-    legacyConfig: async () => {
+    label: () => label, setLabel: value => { label = value; }, setComputerName: value => { computerName = value; }, computerNameReads: () => computerNameReads, otherLabels,
+    legacyConfig: async (fields = {}) => {
       const profiles = join(root,"local-agent"); const path = join(profiles,(await readdir(profiles))[0]!,"agent.json");
-      const config = JSON.parse(await readFile(path,"utf8")); delete config.computerNameApplied;
-      await writeFile(path,JSON.stringify(config));
+      const config = JSON.parse(await readFile(path,"utf8")); delete config.computerNameApplied; delete config.defaultLabelVersion;
+      await writeFile(path,JSON.stringify({ ...config, ...fields }));
     },
     failures, logs,
     config: async () => { const profiles = join(root,"local-agent"); return JSON.parse(await readFile(join(profiles,(await readdir(profiles))[0]!,"agent.json"),"utf8")); },
@@ -68,12 +70,22 @@ async function fixture(platform: NodeJS.Platform = process.platform): Promise<{
 }
 
 for (const platform of ["darwin", "win32", "linux"] as const) {
-  it(`[TC-PDDESKTOP-017] names a new ${platform} host after the computer`, async () => {
+  it(`[TC-PDDESKTOP-017] names a new ${platform} host after the platform and profile, not the computer`, async () => {
     const state = await fixture(platform); await state.run();
     expect(agent?.status().phase).toBe("ready");
-    expect(state.label()).toBe("Design workstation");
+    expect(state.label()).toBe(defaultLabel(platform));
+    expect(state.label()).toMatch(/^(Mac|Windows|Linux) [0-9A-F]{4}$/);
+    expect(state.label()).not.toContain("Design workstation"); expect(state.label()).not.toContain(hostname());
+    expect(state.computerNameReads()).toBe(0);
+    expect((await state.config()).defaultLabelVersion).toBe(2);
   });
 }
+it("[TC-PDDESKTOP-017] avoids labels other hosts already use", async () => {
+  const state = await fixture(); state.otherLabels.push(defaultLabel(), `${defaultLabel()} (2)`);
+  await state.run();
+  expect(agent?.status().phase).toBe("ready");
+  expect(state.label()).toBe(`${defaultLabel()} (3)`);
+});
 for (const locale of ["en", "ko"]) {
   it(`[TC-PDDESKTOP-017] migrates the ${locale} default name without replacing its host or terminal`, async () => {
     const state = await fixture(); await state.run();
@@ -81,21 +93,41 @@ for (const locale of ["en", "ko"]) {
     state.setPayload({ slots: [], mode:"split4" });
     await state.run();
     expect(agent?.status()).toEqual({ phase:"ready", hostId });
-    expect(state.label()).toBe("Design workstation");
+    expect(state.label()).toBe(defaultLabel());
     expect(state.payload()).toEqual({ slots:[],mode:"split4" });
     expect(state.calls.filter(call => call.path === "/hosts" && call.body)).toHaveLength(1);
     expect(state.calls.filter(call => call.path.endsWith("/tokens"))).toHaveLength(1);
   });
 }
-it("[TC-PDDESKTOP-017] preserves custom names and applies the legacy name migration only once", async () => {
+for (const label of ["Design workstation", "Design workstation (2)"]) {
+  it(`[TC-PDDESKTOP-017] migrates the 0.17.5 computer name "${label}" once`, async () => {
+    const state = await fixture(); await state.run();
+    state.setLabel(label); await state.legacyConfig({ computerNameApplied: true }); await state.run();
+    expect(agent?.status()).toEqual({ phase:"ready", hostId });
+    expect(state.label()).toBe(defaultLabel());
+    expect((await state.config()).defaultLabelVersion).toBe(2);
+    expect(state.calls.filter(call => call.path === `/hosts/${hostId}` && call.body)).toEqual([{ path:`/hosts/${hostId}`, body:{ label:defaultLabel() } }]);
+  });
+}
+it("[TC-PDDESKTOP-017] recognizes a long 0.17.5 computer name cut to the host limit with its suffix", async () => {
   const state = await fixture(); await state.run();
-  state.setLabel("My development machine"); await state.legacyConfig(); await state.run();
-  expect(agent?.status().phase).toBe("ready");
-  expect(state.label()).toBe("My development machine");
-  state.setLabel(desktopMessages("en").localHost); await state.run();
-  expect(agent?.status().phase).toBe("ready");
-  expect(state.label()).toBe(desktopMessages("en").localHost);
+  const name = "W".repeat(80); state.setComputerName(` ${name} `);
+  state.setLabel(`${name.slice(0,60)} (3)`); await state.legacyConfig({ computerNameApplied: true }); await state.run();
+  expect(state.label()).toBe(defaultLabel());
 });
+for (const custom of ["My development machine", "Design workstation (1)", "Design workstation 2", "Design workstation laptop"]) {
+  it(`[TC-PDDESKTOP-017] preserves the custom name "${custom}" and checks names only once`, async () => {
+    const state = await fixture(); await state.run();
+    state.setLabel(custom); await state.legacyConfig({ computerNameApplied: true }); await state.run();
+    expect(agent?.status().phase).toBe("ready");
+    expect(state.label()).toBe(custom);
+    expect((await state.config()).defaultLabelVersion).toBe(2);
+    state.setLabel("Design workstation"); await state.run();
+    expect(agent?.status().phase).toBe("ready");
+    expect(state.label()).toBe("Design workstation");
+    expect(state.computerNameReads()).toBe(1);
+  });
+}
 for (const failure of ["rename", "list"] as const) {
   it(`[TC-PDDESKTOP-017] starts the agent and keeps the old name when ${failure === "rename" ? "renaming the host" : "listing hosts"} fails`, async () => {
     const state = await fixture(); await state.run();
@@ -106,18 +138,11 @@ for (const failure of ["rename", "list"] as const) {
     expect(state.logs).toHaveLength(1);
     expect(state.logs[0]?.action).toBe("Rename the local desktop host");
     expect(JSON.stringify(state.logs)).not.toContain("private-agent-token");
-    expect((await state.config()).computerNameApplied).not.toBe(true);
+    expect((await state.config()).defaultLabelVersion).not.toBe(2);
     state.failures.clear(); await state.run();
-    expect(state.label()).toBe("Design workstation");
+    expect(state.label()).toBe(defaultLabel());
   });
 }
-it("[TC-PDDESKTOP-017] fits long computer names within the host limit and avoids existing labels", async () => {
-  const state = await fixture(); const name = "W".repeat(80); state.setComputerName(` ${name} `);
-  state.otherLabels.push(name.slice(0,64), `${name.slice(0,60)} (2)`);
-  await state.run();
-  expect(agent?.status().phase).toBe("ready");
-  expect(state.label()).toBe(`${name.slice(0,60)} (3)`);
-});
 
 it("[TC-PDDESKTOP-017] prepares #1 once, reuses the host and preserves an intentionally cleared layout", async () => {
   const state = await fixture(); await state.run();

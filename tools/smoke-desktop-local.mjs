@@ -32,7 +32,7 @@ try {
     assert.equal(removed.status, 404, `[TC-PDDESKTOP-022] desktop excludes ${path}`);
   }
   const tmuxDirectory = join(root, "tmux"); await mkdir(tmuxDirectory);
-  agent = new LocalAgent(stack, layout, profile.profileId, "Local smoke", { environment: { ...process.env, TMUX_TMPDIR: tmuxDirectory } });
+  agent = new LocalAgent(stack, layout, profile.profileId, { environment: { ...process.env, TMUX_TMPDIR: tmuxDirectory } });
   await agent.start();
   assert.equal(agent.status().phase, "ready", "[TC-PDDESKTOP-017] native agent connects on first launch");
   const localHost = agent.status().hostId;

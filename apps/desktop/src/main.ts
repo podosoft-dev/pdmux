@@ -196,7 +196,7 @@ async function initialize(): Promise<void> {
     appUrl = (await stack.start()).webUrl;
     localProfileId = await authenticateLocal(appUrl, userData);
     if (localProfileId) {
-      localAgent = new LocalAgent(stack, layout, localProfileId, messages.localHost);
+      localAgent = new LocalAgent(stack, layout, localProfileId);
       await localAgent.start();
     }
   } else {
