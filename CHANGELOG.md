@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Rename the actual session from a terminal pane while preserving its running programs,
+## 0.17.8
+
+- Agent 0.1.33 lets you rename the actual session from a terminal pane while preserving its running programs,
   connection and history. Other windows learn the updated name through the session identity;
   personal display names and colored tags remain separate.
 - Manage sessions across all accessible hosts from the account or pane menu. Search and select
