@@ -18,6 +18,32 @@ import TerminalTargetPicker from '../src/components/TerminalTargetPicker.svelte'
 
 afterEach(cleanup);
 
+it('[TC-PDUI-236] editing display metadata preserves the mounted surface and open connection', async () => {
+	const surface = fakeSurface();
+	const adapter = new EchoTerminalAdapter();
+	const open = vi.spyOn(adapter, 'open');
+	const slot = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };
+	const layout = { ...defaultLayout(), mode: 'tab' as const, slots: [slot] };
+	const props = { layout, hosts: HOSTS, adapter, createSurface: surface.factory, sweepMs: 0 };
+	const { container, rerender } = render(TerminalGrid, { props });
+	await tick(); await Promise.resolve(); await tick();
+	const element = container.querySelector('[data-pdmux-surface]');
+	await rerender({ layout: { ...layout, slots: [{ ...slot, label: 'API work', tags: [{ name: 'production', color: '#123456' }] }] } });
+	await tick(); await Promise.resolve(); await tick();
+	expect(open).toHaveBeenCalledTimes(1);
+	expect(surface.disposed()).toBe(0);
+	expect(container.querySelector('[data-pdmux-surface]')).toBe(element);
+	expect(container.textContent).toContain('API work');
+	expect(container.textContent).toContain('production');
+	expect(container.textContent).toContain('alpha');
+	expect(container.textContent).toContain('main');
+	await rerender({ layout });
+	expect(container.textContent).not.toContain('API work');
+	expect(container.textContent).not.toContain('production');
+	expect(open).toHaveBeenCalledTimes(1);
+	expect(surface.disposed()).toBe(0);
+});
+
 const HOSTS: GridHost[] = [
 	{
 		id: 'h1',

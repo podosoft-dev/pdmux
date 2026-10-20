@@ -1404,5 +1404,16 @@
     "loadFailed": "설정을 불러오지 못했습니다. 다시 시도하세요.",
     "close": "설정 닫기",
     "browserScope": "이 브라우저의 내 계정에 저장됩니다."
+  },
+  "terminalPresentation": {
+    "title": "이름 및 태그",
+    "description": "이 창을 구분하는 개인 표시입니다. 기기, 세션과 실행 중인 프로그램은 유지됩니다.",
+    "label": "표시 이름",
+    "placeholder": "선택 사항 — 기기와 세션 이름 사용",
+    "tags": "태그",
+    "addTag": "태그 추가",
+    "tagName": "태그 이름",
+    "tagColor": "태그 색상",
+    "removeTag": "태그 삭제"
   }
 }

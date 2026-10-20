@@ -1404,5 +1404,16 @@
     "loadFailed": "Could not load settings. Try again.",
     "close": "Close settings",
     "browserScope": "Saved in this browser for your account."
+  },
+  "terminalPresentation": {
+    "title": "Name and tags",
+    "description": "Personal labels for this pane. The device, session and running programs stay the same.",
+    "label": "Display name",
+    "placeholder": "Optional — keep the device and session name",
+    "tags": "Tags",
+    "addTag": "Add tag",
+    "tagName": "Tag name",
+    "tagColor": "Tag color",
+    "removeTag": "Remove tag"
   }
 }

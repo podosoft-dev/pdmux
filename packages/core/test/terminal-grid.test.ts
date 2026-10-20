@@ -44,6 +44,10 @@ import {
 	setSidebarWidth,
 	shouldDetachAll,
 	slotLabel,
+	slotIdentityLabel,
+	setSlotPresentation,
+	normalizeTerminalPresentation,
+	terminalTagForeground,
 	stalePaneIds,
 	starterCells,
 	swapSlots,
@@ -742,6 +746,33 @@ describe('[TC-PDCORE-023] a backgrounded tab releases every terminal after the T
 });
 
 describe('[TC-PDCORE-024] a slot knows its label and whether it can be reached', () => {
+	it('persists Unicode display metadata without changing native or legacy targets', () => {
+		for (const backend of ['native', 'tmux'] as const) {
+			const original = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main', backend,
+				...(backend === 'native' ? { sessionId: '11111111-2222-4333-8444-555555555555' } : {}) };
+			const initial = { ...defaultLayout(), slots: [original, null] };
+			const edited = setSlotPresentation(initial, original.id, { label: '  \uacb0\uc81c API \uc791\uc5c5  ', tags: [{ name: '\uc6b4\uc601', color: '#AABBCC' }] });
+			const restored = normalizeLayout(JSON.parse(JSON.stringify(edited)), HOSTS);
+			const slot = restored.slots[0]!;
+			expect(slotLabel(slot, 'alpha')).toBe('\uacb0\uc81c API \uc791\uc5c5');
+			expect(slotIdentityLabel(slot, 'alpha')).toBe('alpha·main');
+			expect(slot.tags).toEqual([{ name: '\uc6b4\uc601', color: '#aabbcc' }]);
+			expect(toProtocolTarget(slot)).toEqual(toProtocolTarget(original));
+			expect(initial.slots[0]).toEqual(original);
+			expect(setSlotPresentation(edited, original.id, {}).slots).toEqual(initial.slots);
+			expect(setSlotPresentation(initial, 'missing', {}).slots).toEqual(initial.slots);
+		}
+	});
+
+	it('bounds personal metadata and rejects unsafe colors or malformed tags', () => {
+		expect(normalizeTerminalPresentation({ label: '\n\t', tags: [null, { name: 'bad', color: 'red;position:fixed' }] })).toEqual({});
+		const normalized = normalizeTerminalPresentation({ label: '😀'.repeat(80), tags: Array.from({ length: 10 }, (_, index) => ({ name: 'x'.repeat(40) + index, color: `#00000${index}` })) });
+		expect(Array.from(normalized.label!)).toHaveLength(64);
+		expect(normalized.tags).toHaveLength(6);
+		expect(normalized.tags![0]!.name).toHaveLength(32);
+		expect(terminalTagForeground('#ffffff')).toBe('#000000');
+		expect(terminalTagForeground('#000000')).toBe('#ffffff');
+	});
 	it('marks a non-persistent shell and an offline host', () => {
 		const attach = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };
 		const shell = { id: 's2', hostId: 'h3', kind: 'shell' as const, session: null };

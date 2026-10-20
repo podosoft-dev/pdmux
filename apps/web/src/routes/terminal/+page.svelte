@@ -16,8 +16,9 @@
   import type { TerminalPaneActionContext } from "@pdmux/ui";
   import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
   import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
+  import TerminalPresentationDialog from "#lib/dashboard/components/terminal-presentation-dialog.svelte";
   import { TerminalGrid } from "@pdmux/ui";
-  import { type SlotKind, type TerminalLayout, type TerminalSlot, defaultLayout, focusSlot } from "@pdmux/core";
+  import { type SlotKind, type TerminalLayout, type TerminalSlot, type TerminalPresentation, defaultLayout, focusSlot, setSlotPresentation, slotLabel } from "@pdmux/core";
   import { getI18n } from "#lib/i18n/index.js";
   import { TerminalRelay, defaultRelayUrl, type RelayStatus } from "#lib/dashboard/terminal-relay.js";
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
@@ -34,13 +35,14 @@
   let {
     data,
   }: {
-    data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string; host: HostView | null; backend?: "native"; sessionId?: string; canManage?: boolean };
+    data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string; host: HostView | null; backend?: "native"; sessionId?: string; canManage?: boolean; presentation?: TerminalPresentation };
   } = $props();
 
   const i18n = getI18n();
   const t = $derived(uiTranslate(i18n.t));
   let terminating = $state<TerminalSlot | null>(null);
   let terminateOpen = $state(false);
+  let presentationOpen = $state(false);
   let relayStatus = $state<RelayStatus>("idle");
 
   const relay = new TerminalRelay({
@@ -66,7 +68,7 @@
       dockOpen: false,
       focusId: "detached",
       slots: data.hostId
-        ? [{ id: "detached", hostId: data.hostId, kind: data.kind, session: data.session, ...(data.backend ? { backend: data.backend } : {}), ...(data.sessionId ? { sessionId: data.sessionId } : {}) }]
+        ? [{ id: "detached", hostId: data.hostId, kind: data.kind, session: data.session, ...data.presentation, ...(data.backend ? { backend: data.backend } : {}), ...(data.sessionId ? { sessionId: data.sessionId } : {}) }]
         : [],
     })),
   );
@@ -125,13 +127,20 @@
   });
 </script>
 
-{#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone host={host ?? undefined} {canManage} {now} />{/snippet}
+{#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone host={host ?? undefined} {canManage} {now} onEditPresentation={() => presentationOpen = true} />{/snippet}
 {#snippet paneVeil(_actions: TerminalPaneActionContext)}<VmPaneVeil host={host ?? undefined} {canManage} {now} />{/snippet}
 <SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
+<TerminalPresentationDialog bind:open={presentationOpen} value={layout.slots[0]} onSave={(value) => {
+  layout = setSlotPresentation(layout, "detached", value);
+  const url = new URL(window.location.href);
+  if (value.label) url.searchParams.set("label", value.label); else url.searchParams.delete("label");
+  if (value.tags?.length) url.searchParams.set("tags", JSON.stringify(value.tags)); else url.searchParams.delete("tags");
+  replaceState(url, {});
+}} />
 <VmPowerConfirm power={vmPower} panesOn={(hostId: string) => (hostId === data.hostId ? 1 : 0)} />
 <Toaster />
 
-<svelte:head><title>{data.hostLabel} · {i18n.t.dash.terminal.detached}</title></svelte:head>
+<svelte:head><title>{layout.slots[0] ? slotLabel(layout.slots[0], data.hostLabel) : data.hostLabel} · PDMux</title></svelte:head>
 
 <div class="pdmux pdmux-panel" style="height:100dvh" data-testid="detached-terminal">
   {#if !data.hostId}

@@ -21,6 +21,7 @@
 		type GridHost,
 		type TerminalLayout,
 		type TerminalSlot,
+		normalizeTerminalPresentation,
 		dropTargetIndex,
 		emptyCellKind,
 		isSlotReachable,
@@ -234,6 +235,12 @@
 	}
 
 	const hostName = (hostId: string): string => hosts.find((h) => h.id === hostId)?.name ?? hostId;
+	// Mounted targets keep their original creation intent; personal display metadata
+	// follows the current layout without recreating the PTY or its surface.
+	const presentedSlot = (slot: TerminalSlot): TerminalSlot => {
+		const { label: _label, tags: _tags, ...target } = slot;
+		return { ...target, ...normalizeTerminalPresentation(layout.slots.find(current => current?.id === slot.id)) };
+	};
 	/** Window position of a mounted slot, or -1 while it is off screen. */
 	const windowPosition = (slotId: string): number => cells.findIndex((cell) => cell?.id === slotId);
 	const cellIndexOf = (slotId: string): number => {
@@ -252,7 +259,7 @@
 >
 	{#each mounted as slot (slot.id)}
 		<TerminalPane
-			{slot}
+			slot={presentedSlot(slot)}
 			index={cellIndexOf(slot.id)}
 			hostName={hostName(slot.hostId)}
 			{adapter}

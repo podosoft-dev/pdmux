@@ -1557,6 +1557,38 @@
 	white-space: nowrap;
 }
 
+.pdmux-pane-caption {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+	flex: 1;
+}
+
+.pdmux-pane-presentation {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.pdmux-pane-alias,
+.pdmux-pane-tag {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.pdmux-pane-alias { font-weight: 600; }
+
+.pdmux-pane-tag {
+	padding: 1px 5px;
+	border-radius: 4px;
+	max-width: 110px;
+}
+
 .pdmux-pane-title-icon,
 .pdmux-pane-label .pdmux-pane-title-icon {
 	width: 14px;

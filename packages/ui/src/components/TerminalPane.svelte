@@ -13,7 +13,7 @@
 	 * classifier: a quick still press applies the configured pane click action,
 	 * anything longer or wider is a drag.
 	 */
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import {
 		type ClickAction,
 		type HelperKeyId,
@@ -23,6 +23,8 @@
 		guardIntent,
 		pressHelperKey,
 		slotLabel,
+		slotIdentityLabel,
+		terminalTagForeground,
 		toProtocolTarget,
 		type HistoryLine,
 	} from '@pdmux/core';
@@ -204,6 +206,9 @@
 
 	const tr = $derived(translator(t));
 	const label = $derived(slotLabel(slot, hostName));
+	const identityLabel = $derived(slotIdentityLabel(slot, hostName));
+	// A personal label/tag edit changes the slot object, never its PTY target.
+	const connectionKey = $derived(JSON.stringify({ slotId: slot.id, hostId: slot.hostId, ...toProtocolTarget(slot) }));
 	const targetName = $derived(
 		slot.kind === 'shell' ? tr('pdmux.pane.shell', 'shell') : (slot.session ?? ''),
 	);
@@ -260,7 +265,8 @@
 	$effect(() => {
 		const host = surfaceHost;
 		// Read the target synchronously so a retarget re-runs this effect.
-		const target = { slotId: slot.id, hostId: slot.hostId, ...toProtocolTarget(slot) };
+		void connectionKey;
+		const target = untrack(() => ({ slotId: slot.id, hostId: slot.hostId, ...toProtocolTarget(slot) }));
 		// …and the reopen ticket, so an ended pane whose host came back opens again.
 		void reopenTicket;
 		if (!host) return;
@@ -271,7 +277,7 @@
 		void (async () => {
 			let created: TerminalSurface;
 			try {
-				created = await createSurface(host);
+				created = await untrack(() => createSurface(host));
 			} catch {
 				// A surface that cannot render (no canvas, no WebGL) must not take the
 				// whole grid down with it — the rest of the panes keep working.
@@ -741,7 +747,8 @@
 		onpointerdown={headerDown}
 	>
 		<span class="pdmux-pane-heading">
-			<span class="pdmux-pane-label" title={label}>
+			<span class="pdmux-pane-caption">
+			<span class="pdmux-pane-label" title={identityLabel}>
 				<SquareTerminalIcon class="pdmux-pane-title-icon" aria-hidden="true" />
 				<span class="pdmux-pane-index">#{index + 1}</span>
 				<span class="pdmux-pane-host">{hostName}</span><span class="pdmux-pane-separator" aria-hidden="true"
@@ -754,6 +761,15 @@
 					aria-label={tr('pdmux.pane.ephemeral', 'Not persistent — ends with the connection')}
 					><TriangleAlertIcon aria-hidden="true" /></span
 				>{/if}
+			</span>
+			{#if slot.label || slot.tags?.length}
+				<span class="pdmux-pane-presentation">
+					{#if slot.label}<span class="pdmux-pane-alias" title={slot.label}>{slot.label}</span>{/if}
+					{#each slot.tags ?? [] as tag}
+						<span class="pdmux-pane-tag" title={tag.name} style:background-color={tag.color} style:color={terminalTagForeground(tag.color)}>{tag.name}</span>
+					{/each}
+				</span>
+			{/if}
 			</span>
 			{#if zoomed}
 				<span

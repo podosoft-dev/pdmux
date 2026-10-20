@@ -2,6 +2,7 @@ import { redirect } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
 import { requireBackendAvailable } from "#lib/server/guards.js";
 import type { FleetScopeView, HostView } from "#lib/dashboard/types.js";
+import { normalizeTerminalPresentation } from "@pdmux/core";
 
 /**
  * A pane in its own window.
@@ -21,6 +22,9 @@ export const load: PageServerLoad = async ({ locals, url, fetch }) => {
   const backend = url.searchParams.get("backend") === "native" ? "native" as const : undefined;
   const candidate = url.searchParams.get("sessionId");
   const sessionId = candidate && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate) ? candidate : undefined;
+  let tags: unknown;
+  try { tags = JSON.parse((url.searchParams.get("tags") ?? "").slice(0, 4096)); } catch { /* Invalid display metadata never prevents attaching. */ }
+  const presentation = normalizeTerminalPresentation({ label: url.searchParams.get("label"), tags });
 
   let hostLabel = hostId;
   let host: HostView | null = null;
@@ -41,5 +45,5 @@ export const load: PageServerLoad = async ({ locals, url, fetch }) => {
     // Without an answer the window offers what any member may do.
   }
 
-  return { hostId, kind, session, hostLabel, host, backend, sessionId, canManage };
+  return { hostId, kind, session, hostLabel, host, backend, sessionId, canManage, presentation };
 };

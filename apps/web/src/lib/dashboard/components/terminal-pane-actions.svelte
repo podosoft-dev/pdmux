@@ -15,6 +15,7 @@
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import FocusIcon from "@lucide/svelte/icons/focus";
   import SquareIcon from "@lucide/svelte/icons/square";
+  import TagsIcon from "@lucide/svelte/icons/tags";
   import { Button } from "#lib/components/ui/button/index.js";
   import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
   import * as Tooltip from "#lib/components/ui/tooltip/index.js";
@@ -29,6 +30,7 @@
     canManage = false,
     now = Date.now(),
     standalone = false,
+    onEditPresentation,
   }: {
     actions: TerminalPaneActionContext;
     compact?: boolean;
@@ -37,6 +39,7 @@
     canManage?: boolean;
     now?: number;
     standalone?: boolean;
+    onEditPresentation?: (slot: TerminalPaneActionContext["slot"]) => void;
   } = $props();
 
   const i18n = getI18n();
@@ -137,7 +140,7 @@
       </Tooltip.Root>
     {/if}
 
-    {#if !standalone || actions.viewport || actions.terminate}
+    {#if !standalone || actions.viewport || actions.terminate || onEditPresentation}
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
         {#snippet child({ props })}
@@ -155,6 +158,12 @@
         {/snippet}
       </DropdownMenu.Trigger>
       <DropdownMenu.Content align="end" class="w-52" data-testid="pane-actions-menu">
+        {#if onEditPresentation}
+          <DropdownMenu.Item onSelect={() => onEditPresentation?.(actions.slot)} data-pdmux-edit-presentation>
+            <TagsIcon class="mr-2 size-4" />{i18n.t.terminalPresentation.title}
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator />
+        {/if}
         {#if actions.viewport}
           <DropdownMenu.Item onSelect={() => actions.followCursor?.()} data-pdmux-follow>
             <FocusIcon class="mr-2 size-4" />{i18n.t.pdmux.pane.followCursor}

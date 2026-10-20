@@ -132,6 +132,20 @@ Names or UUIDs select sessions for history and termination; interactive attachme
 uses the listed name. Native CLI commands manage native sessions only. Existing tmux
 sessions keep their usual `tmux attach` command as well as the PDMux picker entry.
 
+## Personal pane names and tags
+
+Choose **More pane actions → Name and tags** to add an optional display name and
+up to six tags, each with a name and color. The device and original session name
+remain visible. Clear the display name or remove tags to restore the original
+header. Names support Unicode and spaces; display names are limited to 64
+characters and tag names to 32.
+
+This metadata belongs to the user's saved layout, on the local SQLite runtime or
+the connected server. It follows the pane when moved and survives reloads. A
+detached window carries a snapshot in its URL; edits there apply to that window.
+Display edits never rename a native UUID or a legacy tmux session and never
+restart the program or reconnect its terminal.
+
 ## Compatibility
 
 The agent advertises `terminal.nativeSessions` and `terminal.screenProtocol` in

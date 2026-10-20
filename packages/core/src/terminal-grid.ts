@@ -32,7 +32,48 @@ export const GRID_COLUMNS: Record<GridMode, number> = { tab: 1, split2: 2, split
  */
 export type SlotKind = 'attach' | 'new' | 'shell';
 
-export interface TerminalSlot {
+export interface TerminalTag {
+	name: string;
+	color: string;
+}
+
+export interface TerminalPresentation {
+	label?: string;
+	tags?: TerminalTag[];
+}
+
+export const TERMINAL_LABEL_MAX = 64;
+export const TERMINAL_TAG_NAME_MAX = 32;
+export const TERMINAL_TAGS_MAX = 6;
+
+/** Personal display metadata, never a process name or a wire target. */
+export function normalizeTerminalPresentation(raw: unknown): TerminalPresentation {
+	if (!raw || typeof raw !== 'object') return {};
+	const input = raw as Record<string, unknown>;
+	const text = (value: unknown, max: number): string => typeof value === 'string'
+		? Array.from(value.replace(/[\u0000-\u001f\u007f]/g, '').trim()).slice(0, max).join('') : '';
+	const label = text(input.label, TERMINAL_LABEL_MAX);
+	const tags: TerminalTag[] = [];
+	if (Array.isArray(input.tags)) for (const item of input.tags) {
+		if (!item || typeof item !== 'object') continue;
+		const tag = item as Record<string, unknown>;
+		const name = text(tag.name, TERMINAL_TAG_NAME_MAX);
+		if (!name || typeof tag.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(tag.color)) continue;
+		const color = tag.color.toLowerCase();
+		if (!tags.some(saved => saved.name === name && saved.color === color)) tags.push({ name, color });
+		if (tags.length === TERMINAL_TAGS_MAX) break;
+	}
+	return { ...(label ? { label } : {}), ...(tags.length ? { tags } : {}) };
+}
+
+/** A readable foreground for an already validated, opaque tag color. */
+export function terminalTagForeground(color: string): string {
+	const channels = [1, 3, 5].map(index => parseInt(color.slice(index, index + 2), 16) / 255)
+		.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+	return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722 > 0.179 ? '#000000' : '#ffffff';
+}
+
+export interface TerminalSlot extends TerminalPresentation {
 	/** Unique within a layout, and stable across reloads (see `nextSlotId`). */
 	id: string;
 	hostId: string;
@@ -216,7 +257,20 @@ export function nextSlotId(slots: readonly GridCell[]): string {
 
 /** Compose a display label. The consumer may replace it through its own i18n. */
 export function slotLabel(slot: TerminalSlot, hostName: string): string {
+	return slot.label || slotIdentityLabel(slot, hostName);
+}
+
+export function slotIdentityLabel(slot: TerminalSlot, hostName: string): string {
 	return `${hostName}·${slot.kind === 'shell' ? 'shell' : (slot.session ?? '')}`;
+}
+
+export function setSlotPresentation(layout: TerminalLayout, slotId: string, value: unknown): TerminalLayout {
+	const presentation = normalizeTerminalPresentation(value);
+	return { ...layout, slots: layout.slots.map(slot => {
+		if (!slot || slot.id !== slotId) return slot;
+		const { label: _label, tags: _tags, ...target } = slot;
+		return { ...target, ...presentation };
+	}) };
 }
 
 /** True when a slot's terminal can be reached right now. */
@@ -816,6 +870,7 @@ export function normalizeLayout(
 			...(slot.backend === 'native' || slot.backend === 'tmux' ? { backend: slot.backend } : {}),
 			...(typeof slot.sessionId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(slot.sessionId) ? { sessionId: slot.sessionId } : {}),
 			...(slot.intent === 'ensure' || slot.intent === 'create' || slot.intent === 'attach' ? { intent: slot.intent } : {}),
+			...normalizeTerminalPresentation(slot),
 		};
 	});
 	// Re-issue only after every stored id is known, so a replacement cannot collide

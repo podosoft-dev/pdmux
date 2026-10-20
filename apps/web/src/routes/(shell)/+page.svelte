@@ -37,6 +37,7 @@
     pickerApply,
     removeSlot,
     setDockTarget,
+    setSlotPresentation,
     setDockWidth,
     swapSlots,
     setDockDetailHeight,
@@ -61,6 +62,7 @@
   import TerminalToolbar from "#lib/dashboard/components/terminal-toolbar.svelte";
   import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
   import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
+  import TerminalPresentationDialog from "#lib/dashboard/components/terminal-presentation-dialog.svelte";
   import VmPaneVeil from "#lib/vm/vm-pane-veil.svelte";
   import { gridHosts, pickerHosts } from "#lib/dashboard/map.js";
   import { bannerStatus } from "#lib/dashboard/terminal-relay.js";
@@ -77,6 +79,9 @@
   const shell = useShellState();
 
   const layout = $derived(shell.layout);
+  let editingSlotId = $state<string | null>(null);
+  let presentationOpen = $state(false);
+  const editingSlot = $derived(layout.slots.find(slot => slot?.id === editingSlotId) ?? null);
   const grid = $derived(gridHosts(shell.feed.hosts));
   const hostById = $derived(new Map(shell.feed.hosts.map((host) => [host.id, host])));
   // A host that was away and is reachable again is dialled at once, not after the backoff
@@ -193,6 +198,8 @@
     if (slot.session) params.set("session", slot.session);
     if (slot.backend) params.set("backend", slot.backend);
     if (slot.sessionId) params.set("sessionId", slot.sessionId);
+    if (slot.label) params.set("label", slot.label);
+    if (slot.tags?.length) params.set("tags", JSON.stringify(slot.tags));
     window.open(`/terminal?${params.toString()}`, "_blank", "noopener");
   }
 
@@ -390,6 +397,7 @@
     host={hostById.get(actions.slot.hostId)}
     canManage={data.canManage}
     now={shell.feed.now}
+    onEditPresentation={(slot) => { editingSlotId = slot.id; presentationOpen = true; }}
   />
 {/snippet}
 
@@ -521,6 +529,7 @@
 </div>
 
 <SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
+<TerminalPresentationDialog bind:open={presentationOpen} value={editingSlot} onSave={(value) => { if (editingSlotId) shell.apply(setSlotPresentation(layout, editingSlotId, value)); }} />
 
 <ConfirmDialog
   bind:open={closeOpen}
