@@ -82,6 +82,7 @@ export interface TerminalSlot extends TerminalPresentation {
 	session: string | null;
 	backend?: 'native' | 'tmux';
 	sessionId?: string;
+	tmuxId?: string;
 	intent?: 'create' | 'attach' | 'ensure';
 }
 
@@ -174,6 +175,7 @@ export interface TerminalLayout {
 export interface GridSession {
 	backend?: 'native' | 'tmux';
 	sessionId?: string;
+	tmuxId?: string;
 	name: string;
 	attached?: number;
 	windows?: number;
@@ -187,6 +189,18 @@ export interface GridHost {
 	online: boolean;
 	nativeSessions?: boolean;
 	sessions?: readonly GridSession[];
+}
+
+/** Stable session identities are authoritative; saved names may be stale. */
+export function resolveSessionSlot(slot: TerminalSlot, hosts: readonly GridHost[]): TerminalSlot {
+	if (slot.kind === 'shell') return slot;
+	const sessions = hosts.find(host => host.id === slot.hostId)?.sessions ?? [];
+	const native = slot.backend === 'native';
+	const live = sessions.find(session => native
+		? session.backend === 'native' && Boolean(slot.sessionId) && session.sessionId === slot.sessionId
+		: session.backend !== 'native' && (slot.tmuxId ? session.tmuxId === slot.tmuxId : session.name === slot.session));
+	if (!live || live.name === slot.session && live.tmuxId === slot.tmuxId) return slot;
+	return { ...slot, session: live.name, ...(live.tmuxId ? { tmuxId: live.tmuxId } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -284,9 +298,13 @@ export function isSlotReachable(slot: TerminalSlot, hosts: readonly GridHost[]):
  * `attach` and `new` collapse into one protocol kind by design: creating and
  * joining are the same request (`new -A -s`), and only the picker's wording differs.
  */
-export function toProtocolTarget(slot: TerminalSlot): { kind: 'session' | 'shell'; session?: string; backend?: 'native' | 'tmux'; sessionId?: string; intent?: 'create' | 'attach' | 'ensure' } {
+export function toProtocolTarget(slot: TerminalSlot): { kind: 'session' | 'shell'; session?: string; backend?: 'native' | 'tmux'; sessionId?: string; tmuxId?: string; intent?: 'create' | 'attach' | 'ensure' } {
 	if (slot.kind === 'shell') return { kind: 'shell' };
-	return { kind: 'session', session: slot.session ?? 'main', ...(slot.backend ? { backend: slot.backend } : {}), ...(slot.sessionId ? { sessionId: slot.sessionId, intent: 'attach' as const } : slot.backend === 'native' ? { intent: slot.intent ?? (slot.kind === 'new' ? 'create' as const : 'attach' as const) } : {}) };
+	if (slot.tmuxId) return { kind: 'session', backend: 'tmux', tmuxId: slot.tmuxId };
+	const target = { kind: 'session' as const, session: slot.session ?? 'main', ...(slot.backend ? { backend: slot.backend } : {}) };
+	if (slot.sessionId) return { ...target, sessionId: slot.sessionId, intent: 'attach' };
+	if (slot.backend === 'native') return { ...target, intent: slot.intent ?? (slot.kind === 'new' ? 'create' : 'attach') };
+	return target;
 }
 
 const sessionNames = (hosts: readonly GridHost[], hostId: string): string[] =>
@@ -344,7 +362,7 @@ export function starterCells(hosts: readonly GridHost[], opts: StarterCellOption
 	const joined = host?.sessions?.find(s => s.name === prefer);
 	const joinable = Boolean(joined);
 	const first: GridCell =
-		host && joinable ? { id: nextSlotId([]), hostId: host.id, kind: 'attach', session: prefer, ...(joined?.backend ? { backend: joined.backend } : {}), ...(joined?.sessionId ? { sessionId: joined.sessionId } : {}) } : null;
+		host && joinable ? { id: nextSlotId([]), hostId: host.id, kind: 'attach', session: prefer, ...(joined?.backend ? { backend: joined.backend } : {}), ...(joined?.sessionId ? { sessionId: joined.sessionId } : {}), ...(joined?.tmuxId ? { tmuxId: joined.tmuxId } : {}) } : null;
 	return Array.from({ length: count }, (_, index) => (index === 0 ? first : null));
 }
 
@@ -360,7 +378,7 @@ export function buildDefaultSlots(hosts: readonly GridHost[], opts: DefaultSlotO
 		const live = (host.sessions ?? [])
 			.filter((s) => !(skip && s.name.startsWith(skip)))
 			.sort((a, b) => (a.name === 'main' ? -1 : b.name === 'main' ? 1 : a.name.localeCompare(b.name)));
-		for (const session of live) out.push({ id: mint(), hostId: host.id, kind: 'attach', session: session.name, ...(session.backend ? { backend: session.backend } : {}), ...(session.sessionId ? { sessionId: session.sessionId } : {}) });
+		for (const session of live) out.push({ id: mint(), hostId: host.id, kind: 'attach', session: session.name, ...(session.backend ? { backend: session.backend } : {}), ...(session.sessionId ? { sessionId: session.sessionId } : {}), ...(session.tmuxId ? { tmuxId: session.tmuxId } : {}) });
 		const taken: string[] = [];
 		for (let i = 0; i < pad; i++) {
 			const session = nextSessionName(hosts, host.id, taken);
@@ -554,7 +572,7 @@ export function focusSlot(layout: TerminalLayout, slotId: string | null): Termin
 export function assignSlot(
 	layout: TerminalLayout,
 	index: number,
-	target: { hostId: string; kind: SlotKind; session?: string | null; backend?: 'native' | 'tmux'; sessionId?: string; intent?: 'create' | 'attach' | 'ensure' },
+	target: { hostId: string; kind: SlotKind; session?: string | null; backend?: 'native' | 'tmux'; sessionId?: string; tmuxId?: string; intent?: 'create' | 'attach' | 'ensure' },
 ): TerminalLayout {
 	if (!Number.isInteger(index) || index < 0 || !target || typeof target.hostId !== 'string') return layout;
 	const list = [...cells(layout)];
@@ -566,6 +584,7 @@ export function assignSlot(
 		session: target.kind === 'shell' ? null : String(target.session ?? 'main'),
 		...(target.backend ? { backend: target.backend } : {}),
 		...(target.sessionId ? { sessionId: target.sessionId } : {}),
+		...(target.tmuxId ? { tmuxId: target.tmuxId } : {}),
 		...(target.intent ? { intent: target.intent } : {}),
 	};
 	return { ...layout, slots: list };
@@ -624,7 +643,7 @@ export function swapSlots(layout: TerminalLayout, i: number, j: number): Termina
 export function pickerApply(
 	layout: TerminalLayout,
 	index: number | null,
-	target: { hostId: string; kind: SlotKind; session?: string | null; backend?: 'native' | 'tmux'; sessionId?: string; intent?: 'create' | 'attach' | 'ensure' },
+	target: { hostId: string; kind: SlotKind; session?: string | null; backend?: 'native' | 'tmux'; sessionId?: string; tmuxId?: string; intent?: 'create' | 'attach' | 'ensure' },
 ): TerminalLayout {
 	return assignSlot(layout, Number.isInteger(index) ? (index as number) : firstEmptyIndex(layout), target);
 }
@@ -870,6 +889,7 @@ export function normalizeLayout(
 			...(slot.backend === 'native' || slot.backend === 'tmux' ? { backend: slot.backend } : {}),
 			...(typeof slot.sessionId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(slot.sessionId) ? { sessionId: slot.sessionId } : {}),
 			...(slot.intent === 'ensure' || slot.intent === 'create' || slot.intent === 'attach' ? { intent: slot.intent } : {}),
+			...(typeof slot.tmuxId === 'string' && /^\$[0-9]{1,16}$/.test(slot.tmuxId) ? { tmuxId: slot.tmuxId } : {}),
 			...normalizeTerminalPresentation(slot),
 		};
 	});

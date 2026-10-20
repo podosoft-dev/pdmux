@@ -527,6 +527,7 @@ func (f *DetailAckFrame) stampDownstream() DownstreamType {
 
 // TerminalReady says the PTY is up.
 type TerminalReady struct {
+	TmuxID    *string            `json:"tmuxId,omitempty"`
 	Backend   *string            `json:"backend,omitempty"`
 	SessionID *string            `json:"sessionId,omitempty"`
 	Type      TerminalServerType `json:"type"`
@@ -553,6 +554,7 @@ type TerminalScreen struct {
 func (f *TerminalScreen) stampTerminalServer() TerminalServerType { f.Type = TermScreen; return f.Type }
 
 type TerminalSessionResult struct {
+	Name       *string            `json:"name,omitempty"`
 	Type       TerminalServerType `json:"type"`
 	TermID     string             `json:"termId"`
 	Lines      []string           `json:"lines"`
@@ -580,6 +582,7 @@ func (f *TerminalViewport) stampTerminalClient() TerminalClientType {
 }
 
 type TerminalSessionControl struct {
+	Name      *string            `json:"name,omitempty"`
 	Type      TerminalClientType `json:"type"`
 	TermID    string             `json:"termId"`
 	Action    string             `json:"action"`

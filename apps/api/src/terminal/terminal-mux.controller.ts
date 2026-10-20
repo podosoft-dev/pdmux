@@ -3,7 +3,7 @@ import { AgentExecService } from "../agents/agent-exec.service";
 import type { AuthSession } from "../auth/auth.service";
 import { AppException } from "../common/app-exception";
 import { resolveScopeId } from "../fleet/session-scope";
-import { MuxCopyModeDto, MuxHistoryDto } from "./dto/terminal-mux.dto";
+import { MuxCopyModeDto, MuxHistoryDto, MuxRenameDto, MuxSessionDto } from "./dto/terminal-mux.dto";
 import { AgentRegistryService } from "../agents/agent-registry.service";
 import { HostsService } from "../hosts/hosts.service";
 import { randomUUID } from "node:crypto";
@@ -60,14 +60,39 @@ export class TerminalMuxController {
 
   constructor(private readonly exec: AgentExecService, private readonly registry?: AgentRegistryService, private readonly hosts?: HostsService) {}
 
-  async terminate(session: AuthSession, hostId: string, dto: MuxHistoryDto): Promise<{ ok: true }> {
-    await this.nativeAction(session, hostId, dto, "terminate");
+  async rename(session: AuthSession, hostId: string, dto: MuxRenameDto): Promise<{ name: string; sessionId?: string; tmuxId?: string }> {
+    if (dto.backend === "tmux") {
+      const id = this.tmuxId(dto.tmuxId);
+      const current = await this.run(session, hostId, ["list-sessions", "-F", "#{session_id}|#{session_name}"]);
+      if (current.stdout.split("\n").some(line => { const at = line.indexOf("|"); return at > 0 && line.slice(at + 1) === dto.name && line.slice(0, at) !== id; })) {
+        throw new AppException("SESSION_EXISTS", "A tmux session already has that name", 409);
+      }
+      await this.run(session, hostId, ["rename-session", "-t", id, "--", dto.name]);
+      this.registry?.sendToHost(hostId, { type: "collect", what: "heartbeat" });
+      return { name: dto.name, tmuxId: id };
+    }
+    const result = await this.nativeAction(session, hostId, dto, "rename", dto.name);
+    if (result.name !== dto.name) throw new AppException("SESSION_ENGINE_UPDATE_REQUIRED", "Update the session engine to rename sessions", 409);
+    // Refresh the shared session list through the ordinary heartbeat path.
+    this.registry?.sendToHost(hostId, { type: "collect", what: "heartbeat" });
+    return { name: result.name, sessionId: dto.sessionId };
+  }
+
+  async terminate(session: AuthSession, hostId: string, dto: MuxSessionDto): Promise<{ ok: true }> {
+    if (dto.backend === "tmux") await this.run(session, hostId, ["kill-session", "-t", this.tmuxId(dto.tmuxId)]);
+    else await this.nativeAction(session, hostId, dto, "terminate");
+    this.registry?.sendToHost(hostId, { type: "collect", what: "heartbeat" });
     return { ok: true };
   }
 
+  private tmuxId(id: string | undefined): string {
+    if (!id || !/^\$[0-9]{1,16}$/.test(id)) throw new AppException("SESSION_RENAME_UNSUPPORTED", "Update the host agent to manage tmux sessions by ID", 409);
+    return id;
+  }
+
   private async nativeAction(
-    session: AuthSession, hostId: string, dto: MuxHistoryDto, action: "history" | "terminate",
-  ): Promise<{ lines: string[]; screenOnly: boolean }> {
+    session: AuthSession, hostId: string, dto: Pick<MuxHistoryDto, "backend" | "sessionId">, action: "history" | "terminate" | "rename", name?: string,
+  ): Promise<{ lines: string[]; screenOnly: boolean; name?: string }> {
     if (!this.hosts || !this.registry || !dto.sessionId || dto.backend !== "native") {
       throw new AppException("NATIVE_SESSIONS_UNSUPPORTED", "Native sessions are unavailable", 409);
     }
@@ -77,6 +102,9 @@ export class TerminalMuxController {
     const ability = registry.terminalAbility(hostId);
     if (!ability.nativeSessions || ability.screenProtocol !== 1) {
       throw new AppException("NATIVE_SESSIONS_UNSUPPORTED", "Update the host agent to use native sessions", 409);
+    }
+    if (action === "rename" && !ability.renameSessions) {
+      throw new AppException("SESSION_RENAME_UNSUPPORTED", "Update the host agent to rename sessions", 409);
     }
     const sessionId = dto.sessionId;
     const termId = `control-${randomUUID()}`;
@@ -90,9 +118,9 @@ export class TerminalMuxController {
         clearTimeout(timer);
         off();
         if (frame.error) reject(new AppException(frame.error, "The session operation failed", 409));
-        else resolve({ lines: frame.lines, screenOnly: frame.screenOnly });
+        else resolve({ lines: frame.lines, screenOnly: frame.screenOnly, ...(frame.name ? { name: frame.name } : {}) });
       });
-      if (!registry.sendToHost(hostId, { type: "terminal", frame: { type: "session-control", termId, action, sessionId } })) {
+      if (!registry.sendToHost(hostId, { type: "terminal", frame: { type: "session-control", termId, action, sessionId, ...(name ? { name } : {}) } })) {
         clearTimeout(timer);
         off();
         reject(new AppException("HOST_OFFLINE", "The host is offline", 409));

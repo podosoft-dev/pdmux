@@ -27,6 +27,8 @@ export interface FleetFeedOptions {
   heartbeatSec?: number;
   /** Trend window in seconds; the sparklines draw the same span. */
   windowSec?: number;
+  /** Session-only screens do not request metric trends. */
+  includeHistory?: boolean;
 }
 
 export class FleetFeed {
@@ -39,6 +41,7 @@ export class FleetFeed {
 
   readonly windowSec: number;
   private readonly pollMs: number;
+  private readonly includeHistory: boolean;
   private hostTimer: ReturnType<typeof setInterval> | null = null;
   private historyTimer: ReturnType<typeof setInterval> | null = null;
   private historyBusy = false;
@@ -47,6 +50,7 @@ export class FleetFeed {
   private readonly events = new FleetEvents(() => this.refresh(), () => this.reload());
 
   constructor(options: FleetFeedOptions = {}) {
+    this.includeHistory = options.includeHistory !== false;
     this.hosts = options.initialHosts ?? [];
     this.windowSec = options.windowSec ?? 3600;
     this.pollMs = Math.max(MIN_POLL_MS, (options.heartbeatSec ?? 5) * 1000);
@@ -55,9 +59,9 @@ export class FleetFeed {
   start(): void {
     if (this.hostTimer) return;
     void this.refresh();
-    void this.refreshHistory();
+    if (this.includeHistory) void this.refreshHistory();
     this.hostTimer = setInterval(() => void this.refresh(), this.pollMs);
-    this.historyTimer = setInterval(() => void this.refreshHistory(), HISTORY_REFRESH_MS);
+    if (this.includeHistory) this.historyTimer = setInterval(() => void this.refreshHistory(), HISTORY_REFRESH_MS);
     this.events.start();
   }
 

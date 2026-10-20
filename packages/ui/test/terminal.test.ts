@@ -1341,3 +1341,18 @@ describe('[TC-PDUI-196] the scroll buttons follow the buffer, and outlive the pr
 		await vi.waitFor(() => expect(scrollButtons(container)).toBe(2));
 	});
 });
+
+it('[TC-PDUI-237] refreshing live session names preserves the mounted surface and connection', async () => {
+ const surface = fakeSurface(); const adapter = new EchoTerminalAdapter(); const open = vi.spyOn(adapter, 'open');
+ const slot = { id: 's1', hostId: 'h1', kind: 'new' as const, backend: 'native' as const, session: 'old', intent: 'create' as const };
+ const layout = { ...defaultLayout(), mode: 'tab' as const, slots: [slot] };
+ const { container, rerender } = render(TerminalGrid, { props: { layout, hosts: HOSTS, adapter, createSurface: surface.factory, sweepMs: 0 } });
+ await tick(); await Promise.resolve(); await tick();
+ const element = container.querySelector('[data-pdmux-surface]');
+ const resolved = { ...slot, sessionId: 'uuid', kind: 'attach' as const, intent: 'attach' as const };
+ await rerender({ layout: { ...layout, slots: [resolved] }, hosts: [{ ...HOSTS[0]!, sessions: [{ name: 'renamed', backend: 'native', sessionId: 'uuid', attached: 1, windows: 1 }] }] });
+ await tick(); await Promise.resolve(); await tick();
+ expect(container.querySelector('.pdmux-pane-caption')?.textContent).toContain('renamed');
+ expect(open).toHaveBeenCalledTimes(1); expect(surface.disposed()).toBe(0);
+ expect(container.querySelector('[data-pdmux-surface]')).toBe(element);
+});

@@ -1,5 +1,5 @@
 import { SESSION_NAME_PATTERN } from "@pdmux/protocol";
-import { IsIn, IsString, IsOptional, IsUUID, Matches } from "class-validator";
+import { IsIn, IsString, IsOptional, IsUUID, Matches, ValidateIf } from "class-validator";
 
 /**
  * ⚠ THE NAME BECOMES `tmux -t <name>`. `exec` runs the binary directly with no shell,
@@ -15,6 +15,27 @@ export class MuxCopyModeDto {
   /** `enter` puts the pane in copy-mode; `exit` takes it back out. */
   @IsIn(["enter", "exit"])
   action!: "enter" | "exit";
+}
+
+export class MuxSessionDto {
+  @IsIn(["native", "tmux"])
+  backend!: "native" | "tmux";
+  @ValidateIf((value: MuxSessionDto) => value.backend === "native" || value.sessionId !== undefined)
+  @IsUUID()
+  sessionId?: string;
+  @ValidateIf((value: MuxSessionDto) => value.backend === "tmux" || value.tmuxId !== undefined)
+  @IsString()
+  @Matches(/^\$[0-9]{1,16}$/)
+  tmuxId?: string;
+  @IsOptional()
+  @IsString()
+  session?: string;
+}
+
+export class MuxRenameDto extends MuxSessionDto {
+  @IsString()
+  @Matches(SESSION_NAME_PATTERN)
+  name!: string;
 }
 
 export class MuxHistoryDto {

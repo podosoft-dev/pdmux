@@ -730,6 +730,9 @@
           "default": false,
           "type": "boolean"
         },
+        "renameSessions": {
+          "type": "boolean"
+        },
         "screenProtocol": {
           "default": 0,
           "minimum": 0,
@@ -2308,6 +2311,10 @@
           "format": "uuid",
           "type": "string"
         },
+        "tmuxId": {
+          "pattern": "^\\$[0-9]{1,16}$",
+          "type": "string"
+        },
         "windows": {
           "default": 0,
           "minimum": 0,
@@ -2688,8 +2695,13 @@
             "action": {
               "enum": [
                 "history",
-                "terminate"
+                "terminate",
+                "rename"
               ],
+              "type": "string"
+            },
+            "name": {
+              "pattern": "^[A-Za-z0-9_-]{1,32}$",
               "type": "string"
             },
             "sessionId": {
@@ -2846,6 +2858,10 @@
             "termId": {
               "type": "string"
             },
+            "tmuxId": {
+              "pattern": "^\\$[0-9]{1,16}$",
+              "type": "string"
+            },
             "type": {
               "const": "ready",
               "type": "string"
@@ -2945,6 +2961,10 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "name": {
+              "pattern": "^[A-Za-z0-9_-]{1,32}$",
+              "type": "string"
             },
             "screenOnly": {
               "default": false,
@@ -3087,6 +3107,10 @@
         },
         "sessionId": {
           "format": "uuid",
+          "type": "string"
+        },
+        "tmuxId": {
+          "pattern": "^\\$[0-9]{1,16}$",
           "type": "string"
         }
       },

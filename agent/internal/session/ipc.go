@@ -209,6 +209,12 @@ func serveConnection(connection net.Conn, metadata endpoint, engine *Engine, shu
 		reply.Lines, reply.ScreenOnly, err = engine.History(r.ID)
 	case "terminate":
 		err = engine.Terminate(r.ID)
+	case "rename":
+		var info Info
+		info, err = engine.Rename(r.ID, r.Name)
+		if err == nil {
+			reply.Info = &info
+		}
 	default:
 		err = fmt.Errorf("INVALID_SESSION_ACTION")
 	}

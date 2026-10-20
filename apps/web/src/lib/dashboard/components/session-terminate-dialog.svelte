@@ -5,14 +5,17 @@
   import { terminalApi } from "../api.js";
   import ConfirmDialog from "./confirm-dialog.svelte";
 
-  let { open = $bindable(false), slot }: { open?: boolean; slot: TerminalSlot | null } = $props();
+  let { open = $bindable(false), slot, hostName, onTerminated }: { open?: boolean; slot: TerminalSlot | null; hostName?: string; onTerminated?: () => Promise<void> } = $props();
   const i18n = getI18n();
   async function terminate(): Promise<boolean> {
-    if (!slot?.sessionId || !slot.session) return false;
-    try { await terminalApi.terminate(slot.hostId, slot.session, slot.sessionId); }
+    if ((!slot?.sessionId && !slot?.tmuxId) || !slot?.session) return false;
+    try { await terminalApi.terminate(slot.hostId, slot.session, slot.sessionId, slot.tmuxId); }
     catch { toast.error(i18n.t.pdmux.pane.terminateFailed); return false; }
+    await onTerminated?.();
     return true;
   }
 </script>
 
-<ConfirmDialog bind:open title={i18n.t.pdmux.pane.terminateTitle} warning={i18n.t.pdmux.pane.terminateWarning} confirmLabel={i18n.t.pdmux.pane.terminate} testId="session-terminate-confirm" onConfirm={terminate} />
+<ConfirmDialog bind:open title={i18n.t.pdmux.pane.terminateTitle} warning={i18n.t.pdmux.pane.terminateWarning} confirmLabel={i18n.t.pdmux.pane.terminate} testId="session-terminate-confirm" onConfirm={terminate}>
+  {#snippet details()}<p class="break-all font-medium" data-testid="session-terminate-target">{hostName ? `${hostName} · ` : ""}{slot?.session}</p>{/snippet}
+</ConfirmDialog>

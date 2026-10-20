@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Rename the actual session from a terminal pane while preserving its running programs,
+  connection and history. Other windows learn the updated name through the session identity;
+  personal display names and colored tags remain separate.
+- Manage sessions across all accessible hosts from the account or pane menu. Search and select
+  native or existing tmux sessions to rename them, or confirm termination to clean up sessions
+  without an open pane. The same dialog works on the web and desktop, including narrow screens.
+- Address existing tmux sessions by their stable IDs when renaming, ending or reconnecting them,
+  so a session that reuses an old name is not selected in its place. Older agents and native
+  session helpers return an update notice without stopping running programs.
+
 ## 0.17.7
 
 - Agent 0.1.32 keeps Unicode application window titles out of native terminal screens. Coding clients'

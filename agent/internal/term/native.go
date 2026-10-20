@@ -127,18 +127,28 @@ func (m *Manager) nativeControl(frame *protocol.TerminalSessionControl) {
 		m.emit(result)
 		return
 	}
-	if frame.Action != "history" && frame.Action != "terminate" {
+	if frame.Action != "history" && frame.Action != "terminate" && frame.Action != "rename" {
 		result.Error = "INVALID_SESSION_ACTION"
 		m.emit(result)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	reply, err := m.nativeClient.Request(ctx, session.Request{Action: frame.Action, ID: frame.SessionID})
+	name := ""
+	if frame.Name != nil {
+		name = *frame.Name
+	}
+	reply, err := m.nativeClient.Request(ctx, session.Request{Action: frame.Action, ID: frame.SessionID, Name: name})
 	if err != nil {
 		result.Error = truncate(err.Error(), 512)
+		if frame.Action == "rename" && result.Error == "INVALID_SESSION_ACTION" {
+			result.Error = "SESSION_ENGINE_UPDATE_REQUIRED"
+		}
 	} else {
 		result.ScreenOnly = reply.ScreenOnly
+		if reply.Info != nil {
+			result.Name = &reply.Info.Name
+		}
 		if reply.Lines != nil {
 			result.Lines = reply.Lines
 		}

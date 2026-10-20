@@ -127,7 +127,7 @@
 			type="button"
 			data-pdmux-session={session.name}
 			data-pdmux-backend={session.backend ?? 'tmux'}
-			onclick={() => host && apply({ hostId: host.id, kind: 'attach', session: session.name, ...(session.backend ? { backend: session.backend } : {}), ...(session.sessionId ? { sessionId: session.sessionId } : {}) })}
+			onclick={() => host && apply({ hostId: host.id, kind: 'attach', session: session.name, ...(session.backend ? { backend: session.backend } : {}), ...(session.sessionId ? { sessionId: session.sessionId } : {}), ...(session.tmuxId ? { tmuxId: session.tmuxId } : {}) })}
 		>
 			<span>{session.name}{#if host?.nativeSessions}<small> · {session.backend === 'native' ? 'PDMux' : 'tmux'}</small>{/if}</span>
 			<span class="pdmux-meta"

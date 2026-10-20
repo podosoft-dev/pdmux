@@ -17,6 +17,8 @@ import (
 // frames are also the one union the agent does not schema-validate on arrival
 // (they arrive dozens per keystroke). One of the two layers is the one that
 // happens to be right on the day they disagree, so both exist.
+var tmuxSessionIDPattern = regexp.MustCompile(`^\$[0-9]{1,16}$`)
+
 var SessionNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 
 // DefaultSession is what an open with no session name attaches to.
@@ -93,6 +95,13 @@ func ResolveTarget(target protocol.TerminalTarget, getenv func(string) string) (
 	}
 	if target.Kind == protocol.TerminalShell {
 		return resolveShell(getenv), nil
+	}
+	if target.TmuxID != nil {
+		id := *target.TmuxID
+		if !tmuxSessionIDPattern.MatchString(id) {
+			return Resolved{}, &InvalidTargetError{Name: truncate(id, 64)}
+		}
+		return Resolved{File: sys.ResolveBinary(muxBinary, ""), Args: []string{"attach-session", "-t", id, ";", "set-window-option", "-t", id + ":", "window-size", "largest"}, Label: "session:" + id, Session: id}, nil
 	}
 	// Absent means `main`; present-but-empty is a name that fails the pattern, and
 	// is refused rather than quietly turned into the default. The distinction is

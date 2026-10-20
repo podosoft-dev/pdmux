@@ -46,8 +46,15 @@ func hostTmux(args ...string) (string, error) {
 // marker unless an earlier viewer already did. Failure only means there is
 // nothing to restore later: the session does not exist yet (the attach chain
 // marks a window it creates), or tmux predates window-size (2.9).
+func tmuxSessionTarget(session string) string {
+	if strings.HasPrefix(session, "$") {
+		return session
+	}
+	return "=" + session
+}
+
 func saveWindowSize(run tmuxRunner, session string) {
-	target := "=" + session + ":"
+	target := tmuxSessionTarget(session) + ":"
 	out, err := run("show-options", "-gwv", "window-size", ";", "show-options", "-w", "-t", target)
 	if err != nil {
 		return
@@ -69,7 +76,7 @@ func saveWindowSize(run tmuxRunner, session string) {
 // the marker. Windows are found by marker rather than by the current window
 // because the user may have switched windows since the attach.
 func restoreWindowSize(run tmuxRunner, session string) {
-	out, err := run("list-windows", "-t", "="+session, "-F", "#{window_id} #{"+windowSizeMarker+"}")
+	out, err := run("list-windows", "-t", tmuxSessionTarget(session), "-F", "#{window_id} #{"+windowSizeMarker+"}")
 	if err != nil {
 		return
 	}

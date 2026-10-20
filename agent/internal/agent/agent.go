@@ -330,7 +330,8 @@ func New(options Options) *Agent {
 	})
 	hello := BuildHello(options.Hostname, version, options.URL, ability())
 	if options.NativeSessions != nil {
-		hello.Terminal = protocol.AgentTerminalAbility{NativeSessions: true, ScreenProtocol: 1}
+		rename := true
+		hello.Terminal = protocol.AgentTerminalAbility{NativeSessions: true, ScreenProtocol: 1, RenameSessions: &rename}
 	}
 	a.client = net.New(net.Options{
 		URL:          options.URL,

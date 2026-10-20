@@ -15,6 +15,7 @@ import {
 	type GridHost,
 	type TerminalLayout,
 	assignSlot,
+	resolveSessionSlot,
 	buildDefaultSlots,
 	clearDockDetailHeight,
 	clearSlot,
@@ -819,4 +820,25 @@ describe('[TC-PDCORE-025] terminal targets preserve the selected session engine'
 			session: 'main',
 		});
 	});
+});
+
+it('[TC-PDUI-237] resolves renamed sessions by host and UUID without changing saved targets or aliases', () => {
+ const slot = { id: 's', hostId: 'h1', kind: 'attach' as const, backend: 'native' as const, sessionId: 'uuid', session: 'old', label: 'personal', tags: [{ name: 'prod', color: '#ff0000' }] };
+ const hosts: GridHost[] = [{ id: 'h1', name: 'one', online: true, sessions: [{ backend: 'native', sessionId: 'uuid', name: 'renamed', attached: 2, windows: 1 }, { backend: 'tmux', name: 'old', attached: 1, windows: 1 }] }];
+ expect(resolveSessionSlot(slot, hosts)).toEqual({ ...slot, session: 'renamed' });
+ expect(slot.session).toBe('old');
+ expect(resolveSessionSlot({ ...slot, hostId: 'other' }, hosts).session).toBe('old');
+ expect(resolveSessionSlot({ ...slot, backend: 'tmux' }, hosts).session).toBe('old');
+ expect(resolveSessionSlot(slot, [])).toBe(slot);
+});
+
+it('[TC-PDUI-237] captures legacy IDs and follows renames without joining another session that reused its old name', () => {
+ const slot = { id: 's', hostId: 'h', kind: 'attach' as const, session: 'old' };
+ const host = { id: 'h', name: 'host', online: true, sessions: [{ name: 'old', tmuxId: '$1' }] };
+ const captured = resolveSessionSlot(slot, [host]);
+ expect(captured.tmuxId).toBe('$1');
+ const renamed = resolveSessionSlot(captured, [{ ...host, sessions: [{ name: 'old', tmuxId: '$2' }, { name: 'new', tmuxId: '$1' }] }]);
+ expect(renamed.session).toBe('new');
+ expect(toProtocolTarget(renamed)).toMatchObject({ backend: 'tmux', tmuxId: '$1' });
+ expect(toProtocolTarget(renamed).session).toBeUndefined();
 });

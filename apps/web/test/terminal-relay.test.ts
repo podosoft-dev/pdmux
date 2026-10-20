@@ -581,3 +581,14 @@ describe("[TC-PDTERM-106] same-origin relay URL", () => {
     expect(defaultRelayUrl({ protocol: "http:", host: "localhost:5001" })).toBe("ws://localhost:5001/terminal/ws");
   });
 });
+
+it("[TC-PDUI-237] reconnects a renamed tmux session by its acknowledged ID", () => {
+  const h = harness();
+  h.relay.open({ slotId: "s1", hostId: "h1", kind: "session", session: "old-name", cols: 80, rows: 24 });
+  h.sockets[0]!.accept();
+  h.sockets[0]!.deliver({ type: "ready", termId: "s1", pid: 42, tmuxId: "$9" });
+  h.sockets[0]!.drop(); h.run(); h.sockets[1]!.accept();
+  expect(h.sockets[1]!.frames().find(frame => frame.type === "open")).toMatchObject({ target: { backend: "tmux", tmuxId: "$9" } });
+  expect((h.sockets[1]!.frames().find(frame => frame.type === "open")?.target as Record<string, unknown>).session).toBeUndefined();
+  h.relay.dispose();
+});

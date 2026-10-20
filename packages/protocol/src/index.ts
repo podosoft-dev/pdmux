@@ -12,6 +12,7 @@
  * breaking change bumps PROTOCOL_VERSION and the server keeps the old reader.
  */
 import { z } from 'zod';
+import { SESSION_NAME_PATTERN } from './terminal.js';
 import { fsTransferRequestSchema, fsTransferResultSchema } from './file-transfer.js';
 export * from './file-transfer.js';
 
@@ -52,6 +53,7 @@ export const muxSessionSchema = z.object({
 	name: z.string().min(1).max(128),
 	backend: z.enum(['native', 'tmux']).optional(),
 	sessionId: z.string().uuid().optional(),
+	tmuxId: z.string().regex(/^\$[0-9]{1,16}$/).optional(),
 	attached: z.number().int().nonnegative().default(0),
 	windows: z.number().int().nonnegative().default(0),
 });
@@ -669,7 +671,7 @@ export type RepoSnapshot = z.infer<typeof repoSnapshotSchema>;
  * binary has to narrow it the same way, and a second copy of the pattern is a second
  * copy that eventually disagrees with this one.
  */
-export const SESSION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+export { SESSION_NAME_PATTERN } from './terminal.js';
 
 /**
  * What a terminal attaches to.
@@ -681,6 +683,7 @@ export const terminalTargetSchema = z.object({
 	kind: z.enum(['session', 'shell']).default('session'),
 	backend: z.enum(['native', 'tmux']).optional(),
 	sessionId: z.string().uuid().optional(),
+	tmuxId: z.string().regex(/^\$[0-9]{1,16}$/).optional(),
 	intent: z.enum(['create', 'attach', 'ensure']).optional(),
 	/** Session name for `kind: 'session'`; ignored for `shell`. */
 	session: z.string().regex(SESSION_NAME_PATTERN).optional(),
@@ -692,7 +695,7 @@ export type TerminalTarget = z.infer<typeof terminalTargetSchema>;
 /** Browser -> server -> agent. */
 export const terminalClientFrameSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('viewport'), termId: z.string().min(1).max(64), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean().default(false), history: z.number().int().min(-5000).max(5000).default(0) }),
-	z.object({ type: z.literal('session-control'), termId: z.string().min(1).max(64), action: z.enum(['history', 'terminate']), sessionId: z.string().uuid() }),
+	z.object({ type: z.literal('session-control'), termId: z.string().min(1).max(64), action: z.enum(['history', 'terminate', 'rename']), sessionId: z.string().uuid(), name: z.string().regex(SESSION_NAME_PATTERN).optional() }),
 	z.object({ type: z.literal('open'), termId: z.string().min(1).max(64), target: terminalTargetSchema }),
 	z.object({ type: z.literal('input'), termId: z.string().min(1).max(64), data: z.string(), source: z.literal('wheel').optional() }),
 	z.object({
@@ -707,9 +710,9 @@ export type TerminalClientFrame = z.infer<typeof terminalClientFrameSchema>;
 
 /** Agent -> server -> browser. */
 export const terminalServerFrameSchema = z.discriminatedUnion('type', [
-	z.object({ type: z.literal('ready'), termId: z.string(), pid: z.number().int().nullable().default(null), backend: z.enum(['native', 'tmux']).optional(), sessionId: z.string().uuid().optional() }),
+	z.object({ type: z.literal('ready'), termId: z.string(), pid: z.number().int().nullable().default(null), backend: z.enum(['native', 'tmux']).optional(), sessionId: z.string().uuid().optional(), tmuxId: z.string().regex(/^\$[0-9]{1,16}$/).optional() }),
 	z.object({ type: z.literal('screen'), termId: z.string(), data: z.string().max(65536), sequence: z.number().int().nonnegative(), cols: z.number().int().positive().max(1000), rows: z.number().int().positive().max(500), canvasCols: z.number().int().positive().max(1000), canvasRows: z.number().int().positive().max(500), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean(), alternate: z.boolean().optional(), history: z.number().int().nonnegative().max(5000).optional() }),
-	z.object({ type: z.literal('session-result'), termId: z.string(), lines: z.array(z.string()), screenOnly: z.boolean().default(false), error: z.string().max(512).default('') }),
+	z.object({ type: z.literal('session-result'), termId: z.string(), lines: z.array(z.string()), screenOnly: z.boolean().default(false), error: z.string().max(512).default(''), name: z.string().regex(SESSION_NAME_PATTERN).optional() }),
 	z.object({
 		type: z.literal('output'), termId: z.string(), data: z.string(),
 		/**
@@ -785,7 +788,7 @@ export const agentConnectorAbilitySchema = z.object({
 export type AgentConnectorAbility = z.infer<typeof agentConnectorAbilitySchema>;
 
 /** Growable object: older servers strip it without rejecting the agent hello. */
-export const agentTerminalAbilitySchema = z.object({ nativeSessions: z.boolean().default(false), screenProtocol: z.number().int().nonnegative().default(0) });
+export const agentTerminalAbilitySchema = z.object({ nativeSessions: z.boolean().default(false), screenProtocol: z.number().int().nonnegative().default(0), renameSessions: z.boolean().optional() });
 export type AgentTerminalAbility = z.infer<typeof agentTerminalAbilitySchema>;
 
 export const agentHelloSchema = z.object({

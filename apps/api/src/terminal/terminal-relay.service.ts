@@ -184,6 +184,9 @@ export class TerminalRelayService {
       this.deliverOutput(connection, pane, frame.data, frame.dropped);
       return;
     }
+ if (frame.type === "ready" && frame.tmuxId) {
+  pane.open.target = { ...pane.open.target, backend: "tmux", tmuxId: frame.tmuxId, session: undefined };
+ }
 	if (frame.type === "ready" && frame.backend === "native" && frame.sessionId) {
 		pane.open.target = { ...pane.open.target, backend: "native", sessionId: frame.sessionId, intent: "attach" };
 	}

@@ -151,3 +151,66 @@ func TestLocalIPC(t *testing.T) {
 		}
 	})
 }
+
+func TestNativeRename(t *testing.T) {
+	t.Run("[TC-PDUI-237] renaming preserves UUID PTY history viewers and attachment", func(t *testing.T) {
+		engine := session.NewEngine(factory)
+		defer engine.Close()
+		view, original, err := engine.Open(session.Request{Action: "create", Name: "old", Cols: 80, Rows: 24})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer view.Close()
+		_ = view.Apply(session.Request{Action: "input", Data: "echo RENAME_PRESERVED\r"})
+		eventually(t, func() bool {
+			lines, _, _ := engine.History(original.ID)
+			return strings.Contains(ansi.Strip(strings.Join(lines, "\n")), "RENAME_PRESERVED")
+		})
+		renamed, err := engine.Rename(original.ID, "new-name")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if renamed.ID != original.ID || renamed.PID == nil || *renamed.PID != *original.PID || renamed.Attached != 1 {
+			t.Fatalf("rename changed program: %+v", renamed)
+		}
+		lines, _, err := engine.History(original.ID)
+		if err != nil || !strings.Contains(ansi.Strip(strings.Join(lines, "\n")), "RENAME_PRESERVED") {
+			t.Fatal("rename lost history")
+		}
+		second, again, err := engine.Open(session.Request{Action: "attach", Name: "new-name", Cols: 40, Rows: 12})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer second.Close()
+		if again.ID != original.ID || *again.PID != *original.PID {
+			t.Fatal("new name replaced shell")
+		}
+		if _, _, err := engine.Open(session.Request{Action: "attach", Name: "old"}); err == nil {
+			t.Fatal("old name still resolves")
+		}
+		other, otherInfo, err := engine.Open(session.Request{Action: "create", Name: "taken"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer other.Close()
+		for _, name := range []string{"taken", "", "bad name", strings.Repeat("x", 33), "x;kill-session"} {
+			if _, err := engine.Rename(original.ID, name); err == nil {
+				t.Fatalf("accepted invalid/duplicate name %q", name)
+			}
+		}
+		if _, err := engine.Rename("missing", "new-name"); err == nil {
+			t.Fatal("missing UUID renamed")
+		}
+		if _, err := engine.Rename(original.ID, "new-name"); err != nil {
+			t.Fatal("same name is not idempotent", err)
+		}
+		if len(engine.List()) != 2 || engine.List()[1].ID != otherInfo.ID {
+			t.Fatal("rename changed other sessions")
+		}
+		_ = second.Apply(session.Request{Action: "input", Data: "echo AFTER_RENAME\r"})
+		eventually(t, func() bool {
+			lines, _, _ := engine.History(original.ID)
+			return strings.Contains(ansi.Strip(strings.Join(lines, "\n")), "AFTER_RENAME")
+		})
+	})
+}

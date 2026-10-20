@@ -54,6 +54,9 @@
 
 	interface Props {
 		slot: TerminalSlot;
+		/** Live name, separate from the mounted connection target. */
+		sessionName?: string | null;
+		sessionTmuxId?: string;
 		index: number;
 		hostName: string;
 		adapter: TerminalAdapter;
@@ -168,6 +171,8 @@
 
 	let {
 		slot,
+		sessionName,
+		sessionTmuxId,
 		index,
 		hostName,
 		adapter,
@@ -205,12 +210,13 @@
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
-	const label = $derived(slotLabel(slot, hostName));
-	const identityLabel = $derived(slotIdentityLabel(slot, hostName));
+	const namedSlot = $derived({ ...slot, ...(sessionName ? { session: sessionName } : {}), ...(sessionTmuxId ? { tmuxId: sessionTmuxId } : {}) });
+	const label = $derived(slotLabel(namedSlot, hostName));
+	const identityLabel = $derived(slotIdentityLabel(namedSlot, hostName));
 	// A personal label/tag edit changes the slot object, never its PTY target.
 	const connectionKey = $derived(JSON.stringify({ slotId: slot.id, hostId: slot.hostId, ...toProtocolTarget(slot) }));
 	const targetName = $derived(
-		slot.kind === 'shell' ? tr('pdmux.pane.shell', 'shell') : (slot.session ?? ''),
+		slot.kind === 'shell' ? tr('pdmux.pane.shell', 'shell') : (namedSlot.session ?? ''),
 	);
 	// A bare shell dies with its connection, so the label warns before you rely on it.
 	const ephemeral = $derived(slot.kind === 'shell');
@@ -226,13 +232,14 @@
 
 	let surfaceHost = $state<HTMLDivElement | null>(null);
 	let surface: TerminalSurface | null = null;
-	let connection: TerminalConnection | null = null;
+	let connection = $state.raw<TerminalConnection | null>(null);
+	$effect(() => { if (sessionTmuxId) connection?.resolveTmuxSession?.(sessionTmuxId); });
 	let resolvedSessionId = $state<string | null>(null);
 	// A mounted grid entry can still carry the original `new` target. Controls
 	// must use the UUID returned by this connection without reopening its PTY.
 	const resolvedSlot = $derived<TerminalSlot>(resolvedSessionId && slot.backend === 'native'
-		? { ...slot, kind: 'attach', intent: 'attach', sessionId: resolvedSessionId }
-		: slot);
+		? { ...namedSlot, kind: 'attach', intent: 'attach', sessionId: resolvedSessionId }
+		: namedSlot);
 	let nativeViewport = $state<{ x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean; alternate?: boolean; history?: number } | null>(null);
 
 	/**
@@ -706,7 +713,7 @@
 		viewport: nativeViewport,
 		pan: (dx, dy) => { if (nativeViewport) connection?.viewport?.(Math.max(0, nativeViewport.x+dx), Math.max(0, nativeViewport.y+dy)); },
 		followCursor: () => connection?.viewport?.(0, 0, true),
-		...(resolvedSlot.backend === 'native' && resolvedSlot.sessionId && onTerminateSession ? { terminate: () => onTerminateSession?.(resolvedSlot) } : {}),
+		...((resolvedSlot.sessionId || resolvedSlot.tmuxId) && onTerminateSession ? { terminate: () => onTerminateSession?.(resolvedSlot) } : {}),
 		slot: resolvedSlot,
 		index,
 		zoomed,

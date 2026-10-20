@@ -100,3 +100,12 @@ func TestSessions(t *testing.T) {
 		}
 	})
 }
+
+func TestStableSessionID(t *testing.T) {
+	t.Run("[TC-PDUI-237] tmux identities survive renames and reject malformed IDs", func(t *testing.T) {
+		rows := parseSessions("old|0|1|$12\nunsafe|0|1|$1;kill-server\n")
+		if len(rows) != 2 || rows[0].TmuxID == nil || *rows[0].TmuxID != "$12" || rows[1].TmuxID != nil {
+			t.Fatalf("invalid IDs: %+v", rows)
+		}
+	})
+}

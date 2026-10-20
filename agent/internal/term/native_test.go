@@ -58,3 +58,41 @@ func TestNativeLateAttachment(t *testing.T) {
 		}
 	})
 }
+
+func TestNativeRenameControl(t *testing.T) {
+	t.Run("[TC-PDUI-237] rename crosses authenticated IPC and never restarts a process", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		root := t.TempDir()
+		go func() {
+			_ = session.Serve(ctx, root, "test", func(int, int, string) (session.Process, error) { return newFakePty(), nil })
+		}()
+		client := &session.Client{Root: root}
+		waitFor(t, time.Second, "engine ready", func() bool { _, err := client.Request(ctx, session.Request{Action: "ping"}); return err == nil })
+		viewer, err := client.Attach(ctx, session.Request{Action: "create", Name: "old", Cols: 80, Rows: 24})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer viewer.Close()
+		results := make(chan *protocol.TerminalSessionResult, 1)
+		manager := NewManager(Options{Native: client, Send: func(frame protocol.TerminalServerFrame) {
+			if result, ok := frame.(*protocol.TerminalSessionResult); ok {
+				results <- result
+			}
+		}})
+		name := "renamed"
+		manager.Handle(&protocol.TerminalSessionControl{Type: protocol.TermSessionControl, TermID: "rename", SessionID: viewer.Info.ID, Action: "rename", Name: &name})
+		select {
+		case result := <-results:
+			if result.Error != "" || result.Name == nil || *result.Name != name {
+				t.Fatalf("rename failed: %+v", result)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("no rename acknowledgement")
+		}
+		list, err := client.Request(ctx, session.Request{Action: "list"})
+		if err != nil || len(list.Sessions) != 1 || list.Sessions[0].Name != name || list.Sessions[0].ID != viewer.Info.ID || list.Sessions[0].Attached != 1 {
+			t.Fatalf("changed session identity: %+v %v", list, err)
+		}
+	})
+}

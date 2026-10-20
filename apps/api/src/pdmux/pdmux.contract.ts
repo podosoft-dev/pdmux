@@ -71,6 +71,7 @@ export const PDMUX_HTTP_ROUTES = [
   "POST /terminal/:hostId/copy-mode",
   "POST /terminal/:hostId/history",
   "POST /terminal/:hostId/sessions/terminate",
+  "POST /terminal/:hostId/sessions/rename",
   "GET /hosts/:hostId/mcp-keys",
   "POST /hosts/:hostId/mcp-keys",
   "DELETE /hosts/:hostId/mcp-keys/:id",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { terminalServerFrameSchema } from '../src/index.js';
+import { terminalClientFrameSchema, terminalServerFrameSchema, agentTerminalAbilitySchema } from '../src/index.js';
 import { parseTerminalServerFrame } from '../src/terminal.js';
 
 const validFrames: unknown[] = [
@@ -55,4 +55,22 @@ describe('terminal browser parser', () => {
 			expect(parseTerminalServerFrame(frame).ok).toBe(false);
 		},
 	);
+});
+
+it('[TC-PDUI-237] negotiates rename support without changing old controls or parsing', () => {
+ const sessionId = '11111111-2222-4333-8444-555555555555';
+ expect(agentTerminalAbilitySchema.parse({}).renameSessions).toBeUndefined();
+ expect(agentTerminalAbilitySchema.parse({ renameSessions: true }).renameSessions).toBe(true);
+ expect(terminalClientFrameSchema.parse({ type: 'session-control', termId: 'c', action: 'rename', sessionId, name: 'api-work' })).toMatchObject({ name: 'api-work' });
+ for (const name of ['bad name', '-'.repeat(33), 'x;kill-session', '']) expect(terminalClientFrameSchema.safeParse({ type: 'session-control', termId: 'c', action: 'rename', sessionId, name }).success).toBe(false);
+ const frame = { type: 'session-result', termId: 'c', lines: [], name: 'api-work' };
+ const canonical = terminalServerFrameSchema.parse(frame);
+ const browser = parseTerminalServerFrame(frame);
+ expect(browser).toEqual({ ok: true, data: canonical });
+});
+
+it('[TC-PDUI-237] validates stable tmux targets and ready identities independently of native UUIDs', () => {
+ const ready = { type: 'ready', termId: 't', tmuxId: '$12', pid: 42 };
+ expect(parseTerminalServerFrame(ready)).toEqual({ ok: true, data: terminalServerFrameSchema.parse(ready) });
+ for (const tmuxId of ['name', '-a', '$3;kill-server', '$']) expect(parseTerminalServerFrame({ ...ready, tmuxId }).ok).toBe(false);
 });

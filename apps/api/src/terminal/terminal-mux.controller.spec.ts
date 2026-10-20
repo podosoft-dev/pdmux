@@ -5,7 +5,7 @@ import { plainToInstance } from "class-transformer";
 import type { AuthSession } from "../auth/auth.service";
 import { AgentExecService } from "../agents/agent-exec.service";
 import { AppException } from "../common/app-exception";
-import { MuxCopyModeDto, MuxHistoryDto } from "./dto/terminal-mux.dto";
+import { MuxCopyModeDto, MuxHistoryDto, MuxRenameDto } from "./dto/terminal-mux.dto";
 import { TerminalMuxController } from "./terminal-mux.controller";
 import { AgentRegistryService } from "../agents/agent-registry.service";
 import type { HostsService } from "../hosts/hosts.service";
@@ -39,7 +39,7 @@ describe("[TC-PDTERM-136] native history and termination use the selected engine
     expect(await controller.terminate(SESSION, HOST, dto)).toEqual({ ok: true });
     expect(get).toHaveBeenCalledWith("org-a", HOST);
     expect(exec.run).not.toHaveBeenCalled();
-    expect(sent).toHaveLength(2);
+    expect(sent).toHaveLength(3);
     expect(sent[1]).toMatchObject({ type: "terminal", frame: { type: "session-control", action: "terminate", sessionId: NATIVE_ID } });
   });
 
@@ -295,5 +295,72 @@ describe("[TC-PDTERM-136] reaching a pane's scrollback without typing into it", 
     expect(await validate(plainToInstance(MuxCopyModeDto, { session: "main", action: "enter" }))).toHaveLength(0);
     expect(await validate(plainToInstance(MuxCopyModeDto, { session: "main", action: "nope" }))).not.toHaveLength(0);
     expect(await validate(plainToInstance(MuxHistoryDto, { session: "clude-1" }))).toHaveLength(0);
+  });
+});
+
+describe('[TC-PDUI-237] native session rename', () => {
+ it('authorizes the host, checks support and accepts only the acknowledged name', async () => {
+  const registry = new AgentRegistryService();
+  let error = ''; let name: string | undefined = 'new-name';
+  const sent: AgentDownstream[] = [];
+  registry.register(HOST, { send(data: string): void {
+   const envelope = JSON.parse(data) as AgentDownstream; sent.push(envelope);
+   if (envelope.type === 'terminal' && envelope.frame.type === 'session-control') {
+    expect(envelope.frame).toMatchObject({ action: 'rename', sessionId: NATIVE_ID, name: 'new-name' });
+    registry.emitTerminalFrame('other-host', { type: 'session-result', termId: envelope.frame.termId, lines: [], screenOnly: false, error: '', name: 'wrong' });
+    registry.emitTerminalFrame(HOST, { type: 'session-result', termId: envelope.frame.termId, lines: [], screenOnly: false, error, name });
+   }
+  }, close(): void {} }, 'token');
+  const get = mock(async () => ({ enabled: true }));
+  const exec = { run: mock(() => { throw new Error('Must not run tmux'); }) } as unknown as AgentExecService;
+  const controller = new TerminalMuxController(exec, registry, { get } as unknown as HostsService);
+  const input = { backend: 'native' as const, sessionId: NATIVE_ID, name: 'new-name' };
+  registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
+  await expect(controller.rename(SESSION, HOST, input)).rejects.toMatchObject({ code: 'SESSION_RENAME_UNSUPPORTED' });
+  expect(sent).toHaveLength(0);
+  registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1, renameSessions: true });
+  expect(await controller.rename(SESSION, HOST, input)).toEqual({ name: 'new-name', sessionId: NATIVE_ID });
+  expect(get).toHaveBeenCalledWith('org-a', HOST);
+  expect(sent.at(-1)).toEqual({ type: 'collect', what: 'heartbeat' });
+  expect(exec.run).not.toHaveBeenCalled();
+  error = 'SESSION_EXISTS';
+  await expect(controller.rename(SESSION, HOST, input)).rejects.toMatchObject({ code: 'SESSION_EXISTS' });
+  error = 'SESSION_ENGINE_UPDATE_REQUIRED';
+  await expect(controller.rename(SESSION, HOST, input)).rejects.toMatchObject({ code: 'SESSION_ENGINE_UPDATE_REQUIRED' });
+  error = ''; name = undefined;
+  await expect(controller.rename(SESSION, HOST, input)).rejects.toMatchObject({ code: 'SESSION_ENGINE_UPDATE_REQUIRED' });
+  const denied = new TerminalMuxController(exec, registry, { get: async () => { throw new AppException('HOST_NOT_FOUND', 'Host not found', 404); } } as unknown as HostsService);
+  const count = sent.length;
+  await expect(denied.rename(SESSION, HOST, input)).rejects.toThrow('Host not found');
+  expect(sent).toHaveLength(count);
+ });
+ it('validates UUIDs, names and the native backend at the HTTP boundary', async () => {
+  const valid = { backend: 'native', sessionId: NATIVE_ID, name: 'new-name' };
+  expect(await validate(plainToInstance(MuxRenameDto, valid))).toHaveLength(0);
+  for (const bad of [{ name: '' }, { name: 'bad name' }, { name: 'x'.repeat(33) }, { sessionId: 'not-uuid' }, { backend: 'tmux' }]) {
+   expect((await validate(plainToInstance(MuxRenameDto, { ...valid, ...bad }))).length).toBeGreaterThan(0);
+  }
+ });
+});
+
+describe("[TC-PDUI-237] tmux session management", () => {
+  it("renames and terminates the exact session ID without sending program input", async () => {
+    const ctx = build(ok("$3|old\n$4|other\n"), ok(), ok());
+    expect(await ctx.controller.rename(SESSION, HOST, { backend: "tmux", tmuxId: "$3", name: "new-name" })).toEqual({ name: "new-name", tmuxId: "$3" });
+    expect(await ctx.controller.terminate(SESSION, HOST, { backend: "tmux", tmuxId: "$3" })).toEqual({ ok: true });
+    expect(ctx.calls.map(call => call.args)).toEqual([
+      ["tmux", "list-sessions", "-F", "#{session_id}|#{session_name}"],
+      ["tmux", "rename-session", "-t", "$3", "--", "new-name"],
+      ["tmux", "kill-session", "-t", "$3"],
+    ]);
+    expect(ctx.calls.every(call => call.organizationId === "org-a")).toBe(true);
+  });
+  it("refuses duplicate names and missing or malicious IDs before mutating a session", async () => {
+    const ctx = build(ok("$3|old\n$4|taken\n"));
+    await expect(ctx.controller.rename(SESSION, HOST, { backend: "tmux", tmuxId: "$3", name: "taken" })).rejects.toMatchObject({ code: "SESSION_EXISTS" });
+    for (const tmuxId of [undefined, "main", "-a", "$3;kill-server"]) {
+      await expect(ctx.controller.terminate(SESSION, HOST, { backend: "tmux", tmuxId })).rejects.toMatchObject({ code: "SESSION_RENAME_UNSUPPORTED" });
+    }
+    expect(ctx.calls).toHaveLength(1);
   });
 });

@@ -13,6 +13,7 @@ package collect
 import (
 	"context"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -21,7 +22,7 @@ import (
 )
 
 // SessionFormat is the tmux format string the parser below expects.
-const SessionFormat = "#{session_name}|#{session_attached}|#{session_windows}"
+const SessionFormat = "#{session_name}|#{session_attached}|#{session_windows}|#{session_id}"
 
 // defaultSessionTimeoutMs bounds the tmux call. A wedged server must cost this
 // pass its session list and nothing else.
@@ -30,6 +31,8 @@ const defaultSessionTimeoutMs = 4_000
 // sessionNameMax is muxSession.name's maxLength in the contract. Truncating here
 // means an absurd session name costs its own tail rather than the whole frame.
 const sessionNameMax = 128
+
+var tmuxIDPattern = regexp.MustCompile(`^\$[0-9]{1,16}$`)
 
 // SessionReading is the session list plus the one extra fact the same command
 // already proves.
@@ -59,6 +62,9 @@ func parseSessions(text string) []protocol.MuxSession {
 		}
 		session := protocol.NewMuxSession()
 		session.Name = name
+		if id := partAt(parts, 3); tmuxIDPattern.MatchString(id) {
+			session.TmuxID = &id
+		}
 		session.Attached = toCount(partAt(parts, 1))
 		session.Windows = toCount(partAt(parts, 2))
 		out = append(out, session)

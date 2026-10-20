@@ -22,6 +22,7 @@
 		type TerminalLayout,
 		type TerminalSlot,
 		normalizeTerminalPresentation,
+		resolveSessionSlot,
 		dropTargetIndex,
 		emptyCellKind,
 		isSlotReachable,
@@ -260,6 +261,8 @@
 	{#each mounted as slot (slot.id)}
 		<TerminalPane
 			slot={presentedSlot(slot)}
+      sessionName={resolveSessionSlot(layout.slots.find(current => current?.id === slot.id) ?? slot, hosts).session}
+      sessionTmuxId={resolveSessionSlot(layout.slots.find(current => current?.id === slot.id) ?? slot, hosts).tmuxId}
 			index={cellIndexOf(slot.id)}
 			hostName={hostName(slot.hostId)}
 			{adapter}

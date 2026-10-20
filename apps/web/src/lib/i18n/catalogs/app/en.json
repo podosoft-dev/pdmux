@@ -1406,7 +1406,7 @@
     "browserScope": "Saved in this browser for your account."
   },
   "terminalPresentation": {
-    "title": "Name and tags",
+    "title": "Display name and tags",
     "description": "Personal labels for this pane. The device, session and running programs stay the same.",
     "label": "Display name",
     "placeholder": "Optional — keep the device and session name",
@@ -1415,5 +1415,36 @@
     "tagName": "Tag name",
     "tagColor": "Tag color",
     "removeTag": "Remove tag"
+  },
+  "sessionRename": {
+    "title": "Rename session",
+    "description": "Change the session name for everyone viewing this host. Running programs stay open.",
+    "name": "Session name",
+    "hint": "Use 1–32 letters (A–Z, a–z), numbers, underscores or hyphens.",
+    "saving": "Saving…",
+    "duplicate": "A session with this name already exists in the selected engine.",
+    "missing": "This session has ended. Select another session.",
+    "update": "Update the host agent to rename sessions.",
+    "engineUpdate": "This session uses an older engine. Finish its running programs before updating the engine.",
+    "failed": "Could not rename the session. Check the connection and try again."
+  },
+  "sessionManager": {
+    "title": "Manage sessions",
+    "description": "Sessions on all hosts, including those without an open pane. Ending a session stops its running programs.",
+    "host": "Host",
+    "backend": "Engine",
+    "attached": "Viewers",
+    "native": "PDMux",
+    "searchBy": "Host or session",
+    "searchPlaceholder": "Find a session",
+    "search": "Search",
+    "count": "{count} sessions",
+    "refresh": "Refresh",
+    "failed": "Could not refresh sessions. Check the connection before making changes.",
+    "empty": "No sessions found.",
+    "offline": "Host offline",
+    "select": "Select a session to rename or end it.",
+    "legacy": "Update the host agent to manage this tmux session by its stable ID.",
+    "close": "Close"
   }
 }

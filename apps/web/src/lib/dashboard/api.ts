@@ -298,7 +298,9 @@ export const gitApi = {
  * See `apps/api/src/terminal/terminal-mux.controller.ts` for why that matters.
  */
 export const terminalApi = {
-  terminate: (hostId: string, session: string, sessionId: string): Promise<{ ok: true }> => api.post<{ ok: true }>(`/terminal/${hostId}/sessions/terminate`, { session, sessionId, backend: "native" }),
+  rename: (hostId: string, sessionId: string | undefined, name: string, tmuxId?: string): Promise<{ name: string }> =>
+    api.post<{ name: string }>(`/terminal/${hostId}/sessions/rename`, { backend: tmuxId ? "tmux" : "native", ...(tmuxId ? { tmuxId } : { sessionId }), name }),
+  terminate: (hostId: string, session: string, sessionId?: string, tmuxId?: string): Promise<{ ok: true }> => api.post<{ ok: true }>(`/terminal/${hostId}/sessions/terminate`, { session, ...(tmuxId ? { tmuxId } : { sessionId }), backend: tmuxId ? "tmux" : "native" }),
   copyMode: (hostId: string, session: string, action: "enter" | "exit"): Promise<{ ok: true }> =>
     api.post<{ ok: true }>(`/terminal/${hostId}/copy-mode`, { session, action }),
   /**

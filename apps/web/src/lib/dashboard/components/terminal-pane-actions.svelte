@@ -15,6 +15,7 @@
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import FocusIcon from "@lucide/svelte/icons/focus";
   import SquareIcon from "@lucide/svelte/icons/square";
+  import PencilIcon from "@lucide/svelte/icons/pencil";
   import TagsIcon from "@lucide/svelte/icons/tags";
   import { Button } from "#lib/components/ui/button/index.js";
   import * as DropdownMenu from "#lib/components/ui/dropdown-menu/index.js";
@@ -31,6 +32,8 @@
     now = Date.now(),
     standalone = false,
     onEditPresentation,
+    onRenameSession,
+    onManageSessions,
   }: {
     actions: TerminalPaneActionContext;
     compact?: boolean;
@@ -39,6 +42,8 @@
     canManage?: boolean;
     now?: number;
     standalone?: boolean;
+    onManageSessions?: () => void;
+    onRenameSession?: (slot: TerminalPaneActionContext["slot"]) => void;
     onEditPresentation?: (slot: TerminalPaneActionContext["slot"]) => void;
   } = $props();
 
@@ -140,7 +145,7 @@
       </Tooltip.Root>
     {/if}
 
-    {#if !standalone || actions.viewport || actions.terminate || onEditPresentation}
+    {#if !standalone || actions.viewport || actions.terminate || onEditPresentation || onRenameSession || onManageSessions}
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>
         {#snippet child({ props })}
@@ -158,6 +163,16 @@
         {/snippet}
       </DropdownMenu.Trigger>
       <DropdownMenu.Content align="end" class="w-52" data-testid="pane-actions-menu">
+        {#if onRenameSession && (actions.slot.sessionId || actions.slot.tmuxId) && actions.slot.kind !== "shell"}
+          <DropdownMenu.Item onSelect={() => onRenameSession?.(actions.slot)} data-pdmux-rename-session>
+            <PencilIcon class="mr-2 size-4" />{i18n.t.sessionRename.title}
+          </DropdownMenu.Item>
+        {/if}
+        {#if onManageSessions}
+          <DropdownMenu.Item onSelect={onManageSessions} data-pdmux-manage-sessions>
+            <ScrollTextIcon class="mr-2 size-4" />{i18n.t.sessionManager.title}
+          </DropdownMenu.Item>
+        {/if}
         {#if onEditPresentation}
           <DropdownMenu.Item onSelect={() => onEditPresentation?.(actions.slot)} data-pdmux-edit-presentation>
             <TagsIcon class="mr-2 size-4" />{i18n.t.terminalPresentation.title}

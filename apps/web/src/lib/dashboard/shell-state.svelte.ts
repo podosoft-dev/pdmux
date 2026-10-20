@@ -22,6 +22,7 @@ import {
   type TerminalLayout,
   defaultLayout,
   normalizeLayout,
+  resolveSessionSlot,
   starterCells,
   toggleCardCollapsed,
   toggleCardWidget,
@@ -113,6 +114,7 @@ export class ShellState {
   /** Usage providers the fleet reports; the cards render a row per provider. */
   readonly providers: readonly string[];
 
+  sessionsOpen = $state(false);
   layout = $state<TerminalLayout>(defaultLayout());
   relayStatus = $state<RelayStatus>("idle");
   /** Each host's own transport state, for its panes — see `TerminalRelay.onHostStatus`. */
@@ -160,6 +162,12 @@ export class ShellState {
   apply(next: TerminalLayout): void {
     this.layout = next;
     this.saver.queue(next);
+  }
+
+  syncSessions(): void {
+    const hosts = gridHosts(this.feed.hosts);
+    const slots = this.layout.slots.map(slot => slot ? resolveSessionSlot(slot, hosts) : null);
+    if (slots.some((slot, index) => slot !== this.layout.slots[index])) this.apply({ ...this.layout, slots });
   }
 
   /**

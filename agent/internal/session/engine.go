@@ -102,6 +102,28 @@ func (e *Engine) List() []Info {
 	return result
 }
 
+// Rename changes only the name index. UUIDs, PTYs, viewers and history stay alive.
+func (e *Engine) Rename(id, name string) (Info, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	s := e.sessions[id]
+	if s == nil {
+		return Info{}, fmt.Errorf("SESSION_NOT_FOUND")
+	}
+	if !validName.MatchString(name) {
+		return Info{}, fmt.Errorf("INVALID_SESSION_NAME")
+	}
+	for _, other := range e.sessions {
+		if other != s && other.info.Name == name {
+			return Info{}, fmt.Errorf("SESSION_EXISTS")
+		}
+	}
+	s.info.Name = name
+	info := s.info
+	info.Cols, info.Rows, info.Attached = s.cols, s.rows, len(s.views)
+	return info, nil
+}
+
 func (e *Engine) Idle(now time.Time) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()

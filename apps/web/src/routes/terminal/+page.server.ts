@@ -20,6 +20,8 @@ export const load: PageServerLoad = async ({ locals, url, fetch }) => {
   const kind = kindParam === "shell" || kindParam === "new" ? kindParam : "attach";
   const session = url.searchParams.get("session");
   const backend = url.searchParams.get("backend") === "native" ? "native" as const : undefined;
+  const tmuxCandidate = url.searchParams.get("tmuxId");
+  const tmuxId = tmuxCandidate && /^\$[0-9]{1,16}$/.test(tmuxCandidate) ? tmuxCandidate : undefined;
   const candidate = url.searchParams.get("sessionId");
   const sessionId = candidate && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate) ? candidate : undefined;
   let tags: unknown;
@@ -45,5 +47,5 @@ export const load: PageServerLoad = async ({ locals, url, fetch }) => {
     // Without an answer the window offers what any member may do.
   }
 
-  return { hostId, kind, session, hostLabel, host, backend, sessionId, canManage, presentation };
+  return { hostId, kind, session, hostLabel, host, backend, sessionId, tmuxId, canManage, presentation };
 };

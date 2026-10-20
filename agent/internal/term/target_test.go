@@ -4,6 +4,7 @@ package term
 
 import (
 	"errors"
+	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -94,6 +95,24 @@ func TestResolveTarget(t *testing.T) {
 		_, err := ResolveTarget(sessionTarget(&long), env(nil))
 		if err == nil || len(err.Error()) > 128 {
 			t.Fatalf("refusal message is %d bytes: %v", len(err.Error()), err)
+		}
+	})
+}
+
+func TestTmuxStableTarget(t *testing.T) {
+	t.Run("[TC-PDUI-237] an ID attaches without creating a replacement named session", func(t *testing.T) {
+		id, old := "$12", "before"
+		resolved, err := ResolveTarget(protocol.TerminalTarget{Kind: protocol.TerminalSession, TmuxID: &id, Session: &old}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.Session != id || len(resolved.Args) < 3 || resolved.Args[0] != "attach-session" || resolved.Args[2] != id {
+			t.Fatalf("unstable attach: %+v", resolved)
+		}
+		for _, unsafe := range []string{"name", "-a", "$1;kill-server"} {
+			if _, err := ResolveTarget(protocol.TerminalTarget{Kind: protocol.TerminalSession, TmuxID: &unsafe}, nil); err == nil {
+				t.Fatalf("accepted %q", unsafe)
+			}
 		}
 	})
 }

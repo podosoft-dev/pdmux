@@ -24,6 +24,7 @@ package term
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -349,6 +350,22 @@ func (m *Manager) open(termID string, target protocol.TerminalTarget) {
 		m.mu.Unlock()
 	}()
 
+	// Resolve an existing legacy name once, before attachment, so rename and
+	// reconnect cannot select a new program that later reuses its old name.
+	if target.Kind != protocol.TerminalShell && target.TmuxID == nil && m.tmux != nil {
+		name := DefaultSession
+		if target.Session != nil {
+			name = *target.Session
+		}
+		if SessionNamePattern.MatchString(name) {
+			if value, err := m.tmux("display-message", "-p", "-t", "="+name+":", "#{session_id}"); err == nil {
+				id := strings.TrimSpace(value)
+				if tmuxSessionIDPattern.MatchString(id) {
+					target.TmuxID = &id
+				}
+			}
+		}
+	}
 	resolved, err := ResolveTarget(target, nil)
 	if err != nil {
 		m.fail(termID, err.Error())
@@ -390,7 +407,7 @@ func (m *Manager) open(termID string, target protocol.TerminalTarget) {
 	m.opened.Add(1)
 	go m.pump(termID, t)
 	m.logger.Info("Opened terminal", log.F("termId", termID), log.F("target", resolved.Label))
-	m.emit(&protocol.TerminalReady{Type: protocol.TermReady, TermID: termID, Pid: process.Pid()})
+	m.emit(&protocol.TerminalReady{Type: protocol.TermReady, TermID: termID, Pid: process.Pid(), TmuxID: target.TmuxID})
 }
 
 // Close tears one pane down. The pty's own exit still produces an `exit` frame,

@@ -45,7 +45,7 @@ import {
   PutCloudflareIntegrationDto,
   UpdateServiceExposureDto,
 } from "../integrations/dto/cloudflare.dto";
-import { MuxCopyModeDto, MuxHistoryDto } from "../terminal/dto/terminal-mux.dto";
+import { MuxCopyModeDto, MuxHistoryDto, MuxRenameDto, MuxSessionDto } from "../terminal/dto/terminal-mux.dto";
 import { PDMUX, type PdmuxServices } from "./pdmux.services";
 import { fleetEventResponse } from "./fleet-events";
 
@@ -775,12 +775,19 @@ export const pdmuxHttpPlugin: AppPlugin = (context) => {
       const session = await sessionFor(services, request);
       return services.terminalMux.copyMode(session, params.hostId, dto(MuxCopyModeDto, body));
     })
+    .post("/terminal/:hostId/sessions/rename", async ({ request, params, body }) => {
+      const session = await sessionFor(services, request);
+      const input = dto(MuxRenameDto, body);
+      return audit(services, request, session, "terminal.rename",
+        () => services.terminalMux.rename(session, params.hostId, input),
+        () => ({ type: "host", id: params.hostId, metadata: { backend: input.backend, sessionId: input.sessionId, tmuxId: input.tmuxId, name: input.name } }));
+    })
     .post("/terminal/:hostId/sessions/terminate", async ({ request, params, body }) => {
       const session = await sessionFor(services, request);
-      const input = dto(MuxHistoryDto, body);
+      const input = dto(MuxSessionDto, body);
       return audit(services, request, session, "terminal.terminate",
         () => services.terminalMux.terminate(session, params.hostId, input),
-        () => ({ type: "host", id: params.hostId, metadata: { backend: input.backend, sessionId: input.sessionId } }));
+        () => ({ type: "host", id: params.hostId, metadata: { backend: input.backend, sessionId: input.sessionId, tmuxId: input.tmuxId } }));
     })
     .post("/terminal/:hostId/history", async ({ request, params, body }) => {
       const session = await sessionFor(services, request);

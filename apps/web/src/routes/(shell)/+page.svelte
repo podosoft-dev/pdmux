@@ -62,6 +62,7 @@
   import TerminalToolbar from "#lib/dashboard/components/terminal-toolbar.svelte";
   import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
   import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
+  import SessionRenameDialog from "#lib/dashboard/components/session-rename-dialog.svelte";
   import TerminalPresentationDialog from "#lib/dashboard/components/terminal-presentation-dialog.svelte";
   import VmPaneVeil from "#lib/vm/vm-pane-veil.svelte";
   import { gridHosts, pickerHosts } from "#lib/dashboard/map.js";
@@ -81,6 +82,8 @@
   const layout = $derived(shell.layout);
   let editingSlotId = $state<string | null>(null);
   let presentationOpen = $state(false);
+  let renameOpen = $state(false);
+  let renaming = $state<TerminalSlot | null>(null);
   const editingSlot = $derived(layout.slots.find(slot => slot?.id === editingSlotId) ?? null);
   const grid = $derived(gridHosts(shell.feed.hosts));
   const hostById = $derived(new Map(shell.feed.hosts.map((host) => [host.id, host])));
@@ -188,7 +191,7 @@
 
   function applyPicker(target: PickerTarget, index: number | null): void {
     shell.apply(
-      pickerApply(layout, index, { hostId: target.hostId, kind: target.kind, session: target.session ?? null, ...(target.backend ? { backend: target.backend } : {}), ...(target.sessionId ? { sessionId: target.sessionId } : {}) }),
+      pickerApply(layout, index, { hostId: target.hostId, kind: target.kind, session: target.session ?? null, ...(target.backend ? { backend: target.backend } : {}), ...(target.sessionId ? { sessionId: target.sessionId } : {}), ...(target.tmuxId ? { tmuxId: target.tmuxId } : {}) }),
     );
     picker = null;
   }
@@ -198,6 +201,7 @@
     if (slot.session) params.set("session", slot.session);
     if (slot.backend) params.set("backend", slot.backend);
     if (slot.sessionId) params.set("sessionId", slot.sessionId);
+    if (slot.tmuxId) params.set("tmuxId", slot.tmuxId);
     if (slot.label) params.set("label", slot.label);
     if (slot.tags?.length) params.set("tags", JSON.stringify(slot.tags));
     window.open(`/terminal?${params.toString()}`, "_blank", "noopener");
@@ -397,6 +401,8 @@
     host={hostById.get(actions.slot.hostId)}
     canManage={data.canManage}
     now={shell.feed.now}
+    onManageSessions={() => shell.sessionsOpen = true}
+    onRenameSession={(slot) => { renaming = slot; renameOpen = true; }}
     onEditPresentation={(slot) => { editingSlotId = slot.id; presentationOpen = true; }}
   />
 {/snippet}
@@ -529,6 +535,7 @@
 </div>
 
 <SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
+<SessionRenameDialog bind:open={renameOpen} slot={renaming} onRenamed={() => shell.feed.refresh()} />
 <TerminalPresentationDialog bind:open={presentationOpen} value={editingSlot} onSave={(value) => { if (editingSlotId) shell.apply(setSlotPresentation(layout, editingSlotId, value)); }} />
 
 <ConfirmDialog

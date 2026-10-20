@@ -198,6 +198,7 @@ const (
 // shape is generic on purpose — `attached` and `windows` are what a target
 // picker needs to show).
 type MuxSession struct {
+	TmuxID    *string `json:"tmuxId,omitempty"`
 	Backend   *string `json:"backend,omitempty"`
 	SessionID *string `json:"sessionId,omitempty"`
 	Name      string  `json:"name"`
@@ -702,6 +703,7 @@ type RepoSnapshot struct {
 
 // TerminalTarget is what a terminal attaches to.
 type TerminalTarget struct {
+	TmuxID    *string      `json:"tmuxId,omitempty"`
 	Backend   *string      `json:"backend,omitempty"`
 	SessionID *string      `json:"sessionId,omitempty"`
 	Intent    *string      `json:"intent,omitempty"`
@@ -779,8 +781,9 @@ type AgentHello struct {
 }
 
 type AgentTerminalAbility struct {
-	NativeSessions bool `json:"nativeSessions"`
-	ScreenProtocol int  `json:"screenProtocol"`
+	RenameSessions *bool `json:"renameSessions,omitempty"`
+	NativeSessions bool  `json:"nativeSessions"`
+	ScreenProtocol int   `json:"screenProtocol"`
 }
 
 // UpdateStatus is progress AND outcome of a remote update, in one type.

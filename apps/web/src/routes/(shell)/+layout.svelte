@@ -56,6 +56,7 @@
   import { cardPowerKind, elapsedSeconds } from "#lib/vm/power.js";
   import type { HostPowerMark } from "@pdmux/ui";
   import type { LayoutData } from "./$types";
+  import SessionManagerDialog from "#lib/dashboard/components/session-manager-dialog.svelte";
   import SettingsDialog from "#lib/settings/settings-dialog.svelte";
   import { provideSettings, settingsLocation } from "#lib/settings/settings-state.svelte.js";
   import { desktopActions } from "#lib/desktop.js";
@@ -102,6 +103,7 @@
   });
   onMount(() => desktopActions()?.onSettings?.(() => settingsDialog.show()));
   const t = $derived(uiTranslate(i18n.t));
+  $effect(() => { void shell.feed.hosts; untrack(() => shell.syncSessions()); });
 
   /**
    * `untrack` because these are seeds, not reactive inputs: the feed owns the host list
@@ -411,6 +413,7 @@
 </div>
 
 <SettingsDialog data={data} />
+<SessionManagerDialog bind:open={shell.sessionsOpen} onChanged={() => shell.feed.refresh()} />
 
 <!-- The card's own way out of the fleet. Declared here and handed to the popover as a
      value, so a member is passed nothing at all rather than an empty section.

@@ -113,6 +113,7 @@ interface NativeViewport { x: number; y: number; cols: number; rows: number; can
 interface PaneEntry {
   backend?: "native" | "tmux";
   sessionId?: string;
+  tmuxId?: string;
   intent?: "create" | "attach" | "ensure";
   sessionListeners: Set<(id: string) => void>;
   viewListeners: Set<(viewport: NativeViewport) => void>;
@@ -207,6 +208,7 @@ export class TerminalRelay implements TerminalAdapter {
       hostId: target.hostId,
       kind: target.kind,
       ...(target.backend ? { backend: target.backend } : {}),
+      ...(target.tmuxId ? { tmuxId: target.tmuxId } : {}),
       ...(target.sessionId ? { sessionId: target.sessionId } : {}),
       ...(target.intent ? { intent: target.intent } : {}),
       sessionListeners: new Set(), viewListeners: new Set(),
@@ -226,6 +228,7 @@ export class TerminalRelay implements TerminalAdapter {
     this.sendOpen(connection, entry);
 
     return {
+      resolveTmuxSession: (id: string): void => { if (/^\$[0-9]{1,16}$/.test(id) && entry.backend !== "native") { entry.tmuxId = id; entry.backend = "tmux"; } },
       scrollHistory: (delta: number): void => { this.send(connection, { type: "viewport", termId: entry.termId, x: 0, y: 0, follow: false, history: delta }); },
       viewport: (x: number, y: number, follow = false): void => { this.send(connection, { type: "viewport", termId: entry.termId, x, y, follow }); },
       onViewport: (listener: (viewport: NativeViewport) => void): (() => void) => { entry.viewListeners.add(listener); if (entry.viewport) listener(entry.viewport); return () => entry.viewListeners.delete(listener); },
@@ -499,7 +502,7 @@ export class TerminalRelay implements TerminalAdapter {
       termId: pane.termId,
       target: {
         kind: pane.kind,
-        ...(pane.session ? { session: pane.session } : {}),
+        ...(pane.tmuxId ? { tmuxId: pane.tmuxId } : pane.session ? { session: pane.session } : {}),
         ...(pane.backend ? { backend: pane.backend } : {}),
         ...(pane.sessionId ? { sessionId: pane.sessionId } : {}),
         ...(pane.intent ? { intent: pane.intent } : {}),
@@ -540,6 +543,7 @@ export class TerminalRelay implements TerminalAdapter {
 
     switch (frame.type) {
       case "ready":
+        if (frame.tmuxId) { pane.tmuxId = frame.tmuxId; pane.backend = "tmux"; }
         if (frame.backend === "native" && frame.sessionId) {
           pane.backend = "native"; pane.sessionId = frame.sessionId; pane.intent = "attach";
           for (const listener of pane.sessionListeners) listener(frame.sessionId);

@@ -102,6 +102,17 @@ describe("TerminalRelayService", () => {
     expect(replacement.terminalFrames()).toEqual([{ type: "open", termId: `${id}:native`, target: { kind: "session", backend: "native", intent: "attach", session: "same", sessionId, cols: 80, rows: 24 } }]);
   });
 
+  it("[TC-PDUI-237] reopens a renamed legacy session by ID after the agent reconnects", () => {
+    const browser = new FakeBrowser();
+    const id = connect(browser);
+    relay.handleClientFrame(id, openFrame("legacy"));
+    relay.handleAgentFrame(HOST, { type: "ready", termId: `${id}:legacy`, pid: 42, tmuxId: "$9" });
+    registry.unregister(HOST, agent);
+    const replacement = new FakeAgent();
+    registry.register(HOST, replacement, "token-1");
+    expect(replacement.terminalFrames()).toEqual([{ type: "open", termId: `${id}:legacy`, target: { kind: "session", backend: "tmux", tmuxId: "$9", cols: 120, rows: 40 } }]);
+  });
+
   it("[TC-PDTERM-022] reconnects a slow native viewer instead of losing screen updates", () => {
     registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
     const browser = new FakeBrowser();

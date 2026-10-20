@@ -16,9 +16,11 @@
   import type { TerminalPaneActionContext } from "@pdmux/ui";
   import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
   import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
+  import SessionManagerDialog from "#lib/dashboard/components/session-manager-dialog.svelte";
+  import SessionRenameDialog from "#lib/dashboard/components/session-rename-dialog.svelte";
   import TerminalPresentationDialog from "#lib/dashboard/components/terminal-presentation-dialog.svelte";
   import { TerminalGrid } from "@pdmux/ui";
-  import { type SlotKind, type TerminalLayout, type TerminalSlot, type TerminalPresentation, defaultLayout, focusSlot, setSlotPresentation, slotLabel } from "@pdmux/core";
+  import { type SlotKind, type TerminalLayout, type TerminalSlot, type TerminalPresentation, defaultLayout, focusSlot, setSlotPresentation, slotLabel, resolveSessionSlot } from "@pdmux/core";
   import { getI18n } from "#lib/i18n/index.js";
   import { TerminalRelay, defaultRelayUrl, type RelayStatus } from "#lib/dashboard/terminal-relay.js";
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
@@ -35,7 +37,7 @@
   let {
     data,
   }: {
-    data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string; host: HostView | null; backend?: "native"; sessionId?: string; canManage?: boolean; presentation?: TerminalPresentation };
+    data: { hostId: string; kind: SlotKind; session: string | null; hostLabel: string; host: HostView | null; backend?: "native"; sessionId?: string; tmuxId?: string; canManage?: boolean; presentation?: TerminalPresentation };
   } = $props();
 
   const i18n = getI18n();
@@ -43,6 +45,9 @@
   let terminating = $state<TerminalSlot | null>(null);
   let terminateOpen = $state(false);
   let presentationOpen = $state(false);
+  let renameOpen = $state(false);
+  let sessionsOpen = $state(false);
+  let renaming = $state<TerminalSlot | null>(null);
   let relayStatus = $state<RelayStatus>("idle");
 
   const relay = new TerminalRelay({
@@ -68,7 +73,7 @@
       dockOpen: false,
       focusId: "detached",
       slots: data.hostId
-        ? [{ id: "detached", hostId: data.hostId, kind: data.kind, session: data.session, ...data.presentation, ...(data.backend ? { backend: data.backend } : {}), ...(data.sessionId ? { sessionId: data.sessionId } : {}) }]
+        ? [{ id: "detached", hostId: data.hostId, kind: data.kind, session: data.session, ...data.presentation, ...(data.backend ? { backend: data.backend } : {}), ...(data.sessionId ? { sessionId: data.sessionId } : {}), ...(data.tmuxId ? { tmuxId: data.tmuxId } : {}) }]
         : [],
     })),
   );
@@ -91,6 +96,23 @@
   );
   $effect(() => {
     relay.noteReachable(hosts.filter((entry) => entry.online).map((entry) => entry.id));
+  });
+
+  $effect(() => {
+    const currentHosts = hosts;
+    untrack(() => {
+      const slots = layout.slots.map(slot => slot ? resolveSessionSlot(slot, currentHosts) : null);
+      if (slots.some((slot, index) => slot !== layout.slots[index])) {
+        layout = { ...layout, slots };
+        const slot = slots[0];
+        if (slot?.tmuxId) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("tmuxId", slot.tmuxId);
+          if (slot.session) url.searchParams.set("session", slot.session);
+          replaceState(url, {});
+        }
+      }
+    });
   });
 
   async function readHost(): Promise<void> {
@@ -127,9 +149,11 @@
   });
 </script>
 
-{#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone host={host ?? undefined} {canManage} {now} onEditPresentation={() => presentationOpen = true} />{/snippet}
+{#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone host={host ?? undefined} {canManage} {now} onManageSessions={() => sessionsOpen = true} onRenameSession={(slot) => { renaming = slot; renameOpen = true; }} onEditPresentation={() => presentationOpen = true} />{/snippet}
 {#snippet paneVeil(_actions: TerminalPaneActionContext)}<VmPaneVeil host={host ?? undefined} {canManage} {now} />{/snippet}
 <SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
+<SessionManagerDialog bind:open={sessionsOpen} onChanged={readHost} />
+<SessionRenameDialog bind:open={renameOpen} slot={renaming} onRenamed={readHost} />
 <TerminalPresentationDialog bind:open={presentationOpen} value={layout.slots[0]} onSave={(value) => {
   layout = setSlotPresentation(layout, "detached", value);
   const url = new URL(window.location.href);

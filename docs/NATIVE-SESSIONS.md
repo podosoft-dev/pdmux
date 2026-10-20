@@ -154,3 +154,43 @@ These are additive protocol fields with legacy defaults. An older agent is offer
 its existing tmux/shell paths. Native targets are refused explicitly when the agent
 does not support them; they never fall back to a same-name tmux session. An existing
 local engine with an incompatible IPC protocol is reported rather than killed.
+
+
+## Rename and manage sessions
+
+The pane menu offers **Rename session** for the current persistent terminal. The
+profile menu and pane menu also open **Manage sessions**, a searchable, paginated
+list across all accessible hosts. The list includes sessions without an open pane,
+identifies the engine and attached viewer count, and disables changes for offline
+hosts. Select a row to rename it or end it. Ending requires confirmation showing
+the host and session name; it stops the programs running in that session.
+
+A real session name is shared by everyone viewing the host. It differs from the
+personal **Display name and tags** saved in a user's layout. Renaming preserves
+those personal fields, the PTY, its history and attached viewers. Names accept
+1–32 ASCII letters, digits, underscores or hyphens. Duplicate names are rejected
+within the selected engine; native and tmux sessions remain independent.
+
+Native control addresses the session UUID. The additive `renameSessions` terminal
+ability prevents requests to an older agent. An older running helper returns an
+update requirement rather than being stopped automatically: finish its programs
+before replacing that helper.
+
+Legacy tmux sessions report `tmuxId` (`$` followed by digits). Rename, termination,
+attachment and reconnect use this ID within the running tmux server rather than a
+mutable name. Old layouts learn IDs from the host's session list; ready frames also
+pin the server and browser relays to an acknowledged ID. Renaming does not send keys
+to the program or create a replacement session. Older agents without IDs require an
+agent update before these management operations are available. tmux IDs, as documented
+in the [tmux manual](https://man.openbsd.org/tmux), belong to the lifetime of that tmux server.
+
+The authenticated HTTP endpoints are:
+
+- `POST /terminal/:hostId/sessions/rename`: `{ backend: "native", sessionId, name }`
+  or `{ backend: "tmux", tmuxId, name }`.
+- `POST /terminal/:hostId/sessions/terminate`: the same engine and identity, without
+  `name`. The optional `session` field preserves compatibility with existing clients.
+
+Both operations authorize the current host scope, use the ordinary desktop bridge
+when the host belongs to another backend, record an audit event, and refresh the
+shared host list through the heartbeat path. No database migration is required.

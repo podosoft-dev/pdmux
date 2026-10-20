@@ -120,6 +120,7 @@ export interface PickerHost {
  * distinction is the user's intent, which the layout keeps so the label can say it.
  */
 export interface PickerTarget {
+ tmuxId?: string;
 	backend?: 'native' | 'tmux';
 	sessionId?: string;
 	hostId: string;
