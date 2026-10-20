@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Keep Unicode application window titles out of native terminal screens. Coding clients'
+  title updates no longer print unexpected text in the input row or move its cursor.
+- Add personal pane display names and up to six tags with custom names and colors. The
+  device and original session name stay visible, and editing the display preserves the
+  terminal connection and running program. Saved layouts and detached windows retain it.
+- Start desktop SQLite services without loading PostgreSQL's `pg` package or downloading
+  runtime dependencies. This fixes first-launch migration failures in installed apps.
+
 ## 0.17.6
 
 - Keep terminal programs running without tmux. Agent 0.1.30 adds native persistent sessions on
