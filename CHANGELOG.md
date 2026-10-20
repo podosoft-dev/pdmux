@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Keep Unicode application window titles out of native terminal screens. Coding clients'
+## 0.17.7
+
+- Agent 0.1.32 keeps Unicode application window titles out of native terminal screens. Coding clients'
   title updates no longer print unexpected text in the input row or move its cursor.
 - Add personal pane display names and up to six tags with custom names and colors. The
   device and original session name stay visible, and editing the display preserves the
