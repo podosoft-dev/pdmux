@@ -83,7 +83,7 @@ export const test = base.extend<object, { runtime: ReadinessRuntime }>({
         });
         // As on a real install, administrators must be bootstrapped after schema
         // migration and before the server starts; public sign-up cannot create them.
-        return args[0]?.endsWith(postgres ? "/migrate.js" : "/desktop-migrate.js")
+        return args.at(-1)?.endsWith(postgres ? "/migrate.js" : "/desktop-migrate.js")
           ? bootstrapAfterMigration(child, env, password) : child;
       },
     });

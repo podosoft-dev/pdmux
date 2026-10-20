@@ -85,7 +85,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
   const server = new StackManager(serverLayout, { spawn: (command, args, options) => {
     const env = { ...options.env, PDMUX_DESKTOP_RUNTIME: "0", CORS_ORIGIN: tlsOrigin, ADMIN_EMAILS: personalWorkspace ? "" : smokeAccount.email };
     const child = spawn(command, [...args], { ...options, env });
-    return !personalWorkspace && args[0] === serverLayout.migrateEntry ? bootstrapAfterMigration(child, env) : child;
+    return !personalWorkspace && args.at(-1) === serverLayout.migrateEntry ? bootstrapAfterMigration(child, env) : child;
   } });
   const local = new StackManager(layout("local"));
   let agent;

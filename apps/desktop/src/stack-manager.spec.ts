@@ -60,7 +60,7 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
       secretPath: join(root, "auth.secret"),
       agentReleaseDirectory: "/resources/web/client/agent",
     };
-    const calls: Array<{ entry: string; options: SpawnRuntimeOptions }> = [];
+    const calls: Array<{ entry: string; args: readonly string[]; options: SpawnRuntimeOptions }> = [];
     const killed: string[] = [];
     const ports = [51002, 51003, 51001];
     const manager = new StackManager(layout, {
@@ -72,8 +72,8 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
         return { url: `http://127.0.0.1:${port}`, close: async () => { killed.push("gateway"); } };
       },
       spawn: (_command, args, options) => {
-        const entry = args[0] ?? "";
-        calls.push({ entry, options });
+        const entry = args[args.length - 1] ?? "";
+        calls.push({ entry, args, options });
         return new FakeProcess(entry, killed, entry.endsWith("migrate.js") ? 0 : undefined);
       },
     });
@@ -88,6 +88,7 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
       layout.webEntry,
     ]);
     for (const call of calls) expect(call.options.windowsHide).toBe(true);
+    for (const call of calls) expect(call.args).toEqual(["--no-install", call.entry]);
     expect(calls[1]?.options.env.HOST).toBe("127.0.0.1");
     expect(calls[1]?.options.env).toMatchObject({
       DATABASE_PROVIDER: "sqlite",

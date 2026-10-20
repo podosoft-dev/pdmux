@@ -26,6 +26,11 @@ or PostgreSQL. A persistent random authentication secret is stored with user-onl
 On Windows, runtime processes and backup helpers run with hidden consoles, including automatic
 recovery after a child exits. The app's terminal sessions remain inside the dashboard.
 
+These three processes use Bun's `--no-install`: an installation never downloads npm
+packages during startup. The desktop API build replaces the server-only PostgreSQL
+authentication pool before module loading, so the SQLite migration and API can start
+offline without an ancestor `node_modules` directory or an installation cache.
+
 SQLite stores PodoKit authentication tables, module settings and audit entries alongside pdmux's
 TypeORM entities. PostgreSQL JSON, timestamp, and array entity metadata is translated by one SQLite
 driver adapter, keeping repository and service code shared. Raw SQL writes bind JSON strings and

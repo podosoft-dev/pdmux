@@ -173,7 +173,7 @@ export class StackManager {
 
     const migration = this.dependencies.spawn(
       this.layout.bunExecutable,
-      [this.layout.migrateEntry],
+      ["--no-install", this.layout.migrateEntry],
       { cwd: dirname(this.layout.apiEntry), env: common, stdio: "inherit", windowsHide: true },
     );
     const migrationCode = await exited(migration);
@@ -182,13 +182,13 @@ export class StackManager {
     this.capability = randomBytes(32).toString("base64url");
     const api = this.dependencies.spawn(
       this.layout.bunExecutable,
-      [this.layout.apiEntry],
+      ["--no-install", this.layout.apiEntry],
       { cwd: dirname(this.layout.apiEntry), env: { ...common, PORT: String(apiPort), PDMUX_DESKTOP_RUNTIME: "1" }, stdio: ["pipe", "inherit", "inherit"], windowsHide: true },
     );
     api.stdin?.end(JSON.stringify({ capability: this.capability }));
     const web = this.dependencies.spawn(
       this.layout.bunExecutable,
-      [this.layout.webEntry],
+      ["--no-install", this.layout.webEntry],
       {
         cwd: dirname(this.layout.webEntry),
         env: {
