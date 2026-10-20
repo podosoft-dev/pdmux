@@ -26,6 +26,7 @@ type Engine struct {
 }
 
 type running struct {
+	titles     windowTitleFilter
 	info       Info
 	process    Process
 	vt         *vt.Emulator
@@ -286,6 +287,10 @@ func (e *Engine) pump(s *running) {
 				_ = s.vt.Close()
 				close(s.inputDone)
 				return
+			}
+			data = s.titles.filter(data)
+			if len(data) == 0 {
+				continue
 			}
 			e.mu.Lock()
 			previous := s.vt.Scrollback().Lines()

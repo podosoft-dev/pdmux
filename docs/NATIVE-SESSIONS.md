@@ -99,6 +99,13 @@ same two columns as the engine, including when a program paints a different
 background immediately after them. Legacy tmux views keep their existing width
 provider.
 
+Application window titles (OSC 0/1/2) are discarded before screen emulation;
+the pane header uses session identity and personal display metadata instead.
+Title filtering tracks UTF-8 characters across output chunks so a continuation
+byte cannot terminate a title early and print its suffix in a coding client's
+input row. Other output, including colors, hyperlinks and terminal queries,
+continues to the emulator.
+
 A running helper retains its own executable and environment across desktop updates.
 Engine changes apply when that helper is restarted after its programs have exited;
 updates never kill those programs to replace the helper.

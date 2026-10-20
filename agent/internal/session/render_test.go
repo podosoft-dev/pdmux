@@ -24,6 +24,42 @@ func (p *screenProcess) Output() <-chan []byte   { return p.output }
 func (p *screenProcess) Exit() <-chan *int       { return p.exit }
 
 func TestNativeScreenState(t *testing.T) {
+	t.Run("[TC-PDTERM-022] Unicode OSC titles cannot write ghost input or move the cursor", func(t *testing.T) {
+		for _, fragmented := range []bool{false, true} {
+			p := &screenProcess{output: make(chan []byte, 8), exit: make(chan *int, 1), written: make(chan string, 64)}
+			e := NewEngine(func(int, int, string) (Process, error) { return p, nil })
+			view, info, err := e.Open(Request{Action: "create", Name: "title", Cols: 80, Rows: 24})
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := "draft\x1b]0;\u25d1 \uc911\ub2e8\ub41c \uc791\uc5c5 \ubcd1\ub82c \uc7ac\uac1c\x07READY"
+			if fragmented {
+				for _, b := range []byte(payload) {
+					p.output <- []byte{b}
+				}
+			} else {
+				p.output <- []byte(payload)
+			}
+			deadline := time.Now().Add(time.Second)
+			var row string
+			var x int
+			for time.Now().Before(deadline) {
+				e.mu.Lock()
+				s := e.sessions[info.ID]
+				row, x = renderRow(s.vt, 0, 0, 80), s.vt.CursorPosition().X
+				e.mu.Unlock()
+				if strings.Contains(row, "READY") {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			view.Close()
+			e.Close()
+			if !strings.Contains(row, "draftREADY") || x != 10 {
+				t.Fatalf("title changed the input row (fragmented=%v, cursor=%d): %q", fragmented, x, row)
+			}
+		}
+	})
 	t.Run("[TC-PDTERM-022] bounded viewer snapshots preserve Unicode, modes and cursor offsets", func(t *testing.T) {
 		p := &screenProcess{output: make(chan []byte, 8), exit: make(chan *int, 1), written: make(chan string, 64)}
 		e := NewEngine(func(int, int, string) (Process, error) { return p, nil })
