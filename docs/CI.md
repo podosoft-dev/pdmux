@@ -175,8 +175,9 @@ explicitly select the `pdmux-agent-artifacts` named build context instead.
 The committed unsigned hashes remain the source verification gate. Clean installer checks use the
 canonical distribution hashes and additionally verify the Darwin certificate, hardened runtime,
 secure timestamps and notarization tickets. Both web images, API manifests, all installers and
-GitHub downloads must describe identical distribution bytes. The 22-asset release layout and the
-publish dependency on every verify/build/desktop gate remain intact.
+GitHub downloads must describe identical distribution bytes. The current release has 23 assets,
+including the fifth agent binary for Windows; the earlier 22-asset measurements predate that target. The
+publish dependency on every verify/build/desktop gate remains intact.
 
 The 9.2-minute release and 8.2-minute validation measurements above predate notarization. Do not
 report them as timings for this path. Record the first protected workflow's per-step durations after
@@ -201,3 +202,28 @@ while signing, and retries exit codes 65 and 68, the `-1005` connection loss and
 times out. `tools/verify-macos-desktop.mjs` retries each `stapler validate` after 15 and 30 seconds,
 inside the published-release check's three full attempts, which keeps that job under its 20-minute
 timeout.
+
+### Signed release measurement on 2026-10-20
+
+The v0.17.7 release (run 39404744352) exposed a separate retry boundary: electron-builder's
+application notarization failed while stapling after a CloudKit connection loss (`-1005`, exit 68).
+The custom `staplerWithRetry` helper covers later DMG finalization and package verification; it
+does not wrap electron-builder's internal application stapling. Re-running failed jobs retained
+the same source tag and canonical signed agent archive and reused successful image/platform jobs.
+
+| Job or step | First attempt | Successful Intel retry |
+|---|---:|---:|
+| Canonical agent preparation | 178 s | reused |
+| Image build and verification, amd64 / arm64 | 214 / 243 s | reused |
+| Linux / Windows / Apple Silicon packaging | 220 / 207 / 330 s | reused |
+| Intel installer job | 218 s, failed | 616 s |
+| Intel shared packages / embedded services | | 38 / 93 s |
+| Intel desktop tests / update shutdown | | 19 / 26 s |
+| Intel signing, notarization and finalization | | 385 s |
+| Developer ID update fixture preparation | 358 s | reused |
+
+The retry's DMG submission took 81 seconds to be accepted. Ticket validation then recovered from
+two further connection losses after 20- and 30-second waits. Record external signing waits and
+reruns separately from compilation and clean installation checks. These signed measurements
+are not a like-for-like comparison with the earlier unsigned 9.2-minute baseline, and shortening
+them must preserve notarization, update installation and clean-runner verification.
