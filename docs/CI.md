@@ -227,3 +227,38 @@ two further connection losses after 20- and 30-second waits. Record external sig
 reruns separately from compilation and clean installation checks. These signed measurements
 are not a like-for-like comparison with the earlier unsigned 9.2-minute baseline, and shortening
 them must preserve notarization, update installation and clean-runner verification.
+
+### Signed release measurement for v0.17.8
+
+The v0.17.8 release ([run 39425601832](https://github.com/podosoft-dev/pdmux/actions/runs/39425601832))
+keeps canonical agent preparation shared across images and installers. Its completed build jobs
+measured as follows; installer verification and publication are separate gates.
+
+| Job or step | Duration |
+|---|---:|
+| Canonical agent preparation, including Developer ID signing | 165 s |
+| Image build and verification, amd64 / arm64 | 262 / 200 s |
+| Linux / Windows / Apple Silicon packaging | 142 / 214 / 290 s |
+| Intel installer job | 467 s |
+| Intel shared packages / embedded services | 23 / 52 s |
+| Intel desktop tests / update shutdown | 14 / 27 s |
+| Intel signing, notarization and finalization | 305 s |
+| Developer ID update fixture preparation / installation probe | 319 / 55 s |
+
+The Intel job took 149 seconds less than the successful v0.17.7 retry (616 seconds), while its
+signing step took 80 seconds less (385 seconds previously). These are observed timings, not a
+controlled comparison or a claim that the session changes accelerated signing. Intel packaging
+remained the build critical path. The existing single agent archive and parallel image/platform
+jobs avoid repeating their work; the release retains the clean installer checks and the update
+installation proof rather than publishing early to shorten the wait.
+
+The complete workflow finished in 16 minutes 42 seconds (12:51:50–13:08:32 UTC) without a rerun.
+Clean Linux / Windows / Apple Silicon / Intel installer verification took 72 / 149 / 116 / 279
+seconds; publication took 68 seconds. The Intel path, including its clean verification, remained
+critical. DMG notarization was accepted in 92 seconds during finalization. These figures include
+all signing and installation checks, unlike the historical unsigned baseline.
+
+Intel clean verification recovered from two CloudKit connection losses (`-1005`, exit 68), each
+on its next ticket validation after a 15-second wait. Keeping these retries inside verification
+preserved the successful 467-second package job and avoided re-running it, unlike the separate
+application-stapling failure in v0.17.7. The checks themselves were retained.
