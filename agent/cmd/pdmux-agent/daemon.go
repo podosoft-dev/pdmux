@@ -47,7 +47,7 @@ func runDaemon(ctx context.Context, cfg cli.DaemonConfig) error {
 	}
 
 	daemon := agent.New(agent.Options{
-		NativeSessions: session.LocalClient(cfg.ConfigPath, ""),
+		NativeSessions: session.LocalClient(cfg.ConfigPath, "", cfg.Version),
 		URL:            cfg.URL,
 		Token:          cfg.Token,
 		Hostname:       cfg.Hostname,

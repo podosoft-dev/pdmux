@@ -54,8 +54,10 @@ func executableSuffix() string     { return ".exe" }
 func detach(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x00000008 | windows.CREATE_NEW_PROCESS_GROUP}
 }
-func lockEngine(root string) (func(), error) {
-	path, err := windows.UTF16PtrFromString(filepath.Join(root, "engine.lock"))
+func lockEngine(root string) (func(), error) { return lockFile(root, "engine.lock") }
+
+func lockFile(root, name string) (func(), error) {
+	path, err := windows.UTF16PtrFromString(filepath.Join(root, name))
 	if err != nil {
 		return nil, err
 	}

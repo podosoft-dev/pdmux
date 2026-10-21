@@ -9,7 +9,7 @@ import (
 	"github.com/podosoft-dev/pdmux/agent/internal/state"
 )
 
-func LocalClient(configPath, executable string) *Client {
+func LocalClient(configPath, executable, version string) *Client {
 	root := state.ResolveDir(state.DirInput{Env: config.OSEnv()})
 	identity := "default"
 	if configPath != "" {
@@ -17,5 +17,5 @@ func LocalClient(configPath, executable string) *Client {
 		hash := sha256.Sum256([]byte(absolute))
 		identity = fmt.Sprintf("%x", hash[:12])
 	}
-	return &Client{Root: filepath.Join(root, "sessions", identity), Executable: executable}
+	return &Client{Root: filepath.Join(root, "sessions", identity), Executable: executable, Version: version}
 }

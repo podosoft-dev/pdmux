@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/podosoft-dev/pdmux/agent/internal/semver"
 )
 
 type endpoint struct {
@@ -31,6 +33,7 @@ type endpoint struct {
 type Client struct {
 	Root       string
 	Executable string
+	Version    string
 	startMu    sync.Mutex
 }
 
@@ -263,6 +266,17 @@ func (c *Client) connect(ctx context.Context, request Request) (net.Conn, *bufio
 }
 
 func (c *Client) Request(ctx context.Context, r Request) (Reply, error) {
+	reply, err := c.request(ctx, r)
+	if r.Action == "rename" && err != nil && err.Error() == "INVALID_SESSION_ACTION" {
+		return c.renameLegacy(ctx, r)
+	}
+	if err == nil {
+		err = c.applyNames(&reply)
+	}
+	return reply, err
+}
+
+func (c *Client) request(ctx context.Context, r Request) (Reply, error) {
 	connection, input, err := c.connect(ctx, r)
 	if err != nil {
 		return Reply{}, err
@@ -274,8 +288,41 @@ func (c *Client) Request(ctx context.Context, r Request) (Reply, error) {
 func (c *Client) Ensure(ctx context.Context) error {
 	c.startMu.Lock()
 	defer c.startMu.Unlock()
-	if _, err := c.Request(ctx, Request{Action: "ping"}); err == nil {
-		return nil
+	// Serialize upgrade/start across the network agent and local CLI processes.
+	unlockStart, err := c.lockClient(ctx, "engine-start.lock")
+	if err != nil {
+		return err
+	}
+	defer unlockStart()
+	if reply, err := c.request(ctx, Request{Action: "ping"}); err == nil {
+		newer, valid := semver.CompareStrings(c.Version, reply.Version)
+		if !valid || newer <= 0 {
+			return nil
+		}
+		// StopIdle is atomic with Open: a busy engine always keeps its PTYs.
+		if _, err := c.request(ctx, Request{Action: "shutdown"}); err != nil {
+			if err.Error() == "SESSION_ENGINE_BUSY" {
+				return nil
+			}
+			return err
+		}
+		// The engine removes its endpoint before releasing the lock. Do not let its
+		// deferred cleanup remove a replacement engine's endpoint.
+		for {
+			unlock, err := lockEngine(c.Root)
+			if err == nil {
+				unlock()
+				break
+			}
+			if err.Error() != "SESSION_ENGINE_ALREADY_RUNNING" {
+				return err
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
 	} else if err.Error() != "SESSION_ENGINE_NOT_RUNNING" {
 		return err
 	}
@@ -381,6 +428,10 @@ func (c *Client) Attach(ctx context.Context, request Request) (*Attachment, erro
 	if err := c.Ensure(ctx); err != nil {
 		return nil, err
 	}
+	return c.attachNamed(ctx, request)
+}
+
+func (c *Client) attach(ctx context.Context, request Request) (*Attachment, error) {
 	connection, input, err := c.connect(ctx, request)
 	if err != nil {
 		return nil, err

@@ -396,7 +396,7 @@ func commandDoctor(ctx context.Context, args Args, deps Deps) int {
 		NativeCheck: func() Check {
 			probe, cancel := context.WithTimeout(ctx, time.Second)
 			defer cancel()
-			client := session.LocalClient(resolved.ConfigPath, deps.Executable)
+			client := session.LocalClient(resolved.ConfigPath, deps.Executable, AgentVersion)
 			reply, err := client.Request(probe, session.Request{Action: "list"})
 			if err == nil {
 				return Check{Name: "native sessions", OK: true, Detail: fmt.Sprintf("engine %s, protocol %d, %d session(s)", reply.Version, reply.Protocol, len(reply.Sessions))}

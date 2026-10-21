@@ -35,10 +35,12 @@ func secureFile(path string) error {
 	}
 	return os.Chmod(path, 0o600|info.Mode()&0o100)
 }
-func executableSuffix() string { return "" }
-func detach(command *exec.Cmd) { command.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }
-func lockEngine(root string) (func(), error) {
-	file, err := os.OpenFile(filepath.Join(root, "engine.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+func executableSuffix() string               { return "" }
+func detach(command *exec.Cmd)               { command.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }
+func lockEngine(root string) (func(), error) { return lockFile(root, "engine.lock") }
+
+func lockFile(root, name string) (func(), error) {
+	file, err := os.OpenFile(filepath.Join(root, name), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}

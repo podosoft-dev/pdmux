@@ -50,7 +50,7 @@ func commandSessions(ctx context.Context, argv []string, deps Deps) int {
 		}
 	}
 	configuration = resolve(Args{Config: configuration}, deps).ConfigPath
-	client := session.LocalClient(configuration, deps.Executable)
+	client := session.LocalClient(configuration, deps.Executable, AgentVersion)
 	if root != "" {
 		client.Root = root
 	}
