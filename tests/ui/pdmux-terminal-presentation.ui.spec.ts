@@ -49,6 +49,32 @@ test("[TC-PDUI-237] [TC-PDUI-236] [TC-PDTERM-022] personal names and colored tag
     expect(result.documentWidth).toBeLessThanOrEqual(result.viewport.width + 1);
     return result;
   }
+  const editors: unknown[] = [];
+  async function editorGeometry(dialog: Locator): Promise<void> {
+    const result = await dialog.evaluate(element => ({
+      dialog: element.getBoundingClientRect().toJSON(),
+      scrollWidth: element.scrollWidth, clientWidth: element.clientWidth,
+      scrollHeight: element.scrollHeight, clientHeight: element.clientHeight,
+      controls: [...element.querySelectorAll("input, button")].map(control => ({
+        name: control.getAttribute("id") ?? control.getAttribute("aria-label") ?? control.textContent,
+        ...control.getBoundingClientRect().toJSON(),
+      })), viewport: { width: innerWidth, height: innerHeight },
+    }));
+    expect(result.dialog.x).toBeGreaterThanOrEqual(0);
+    expect(result.dialog.right).toBeLessThanOrEqual(result.viewport.width + 1);
+    expect(result.scrollWidth).toBeLessThanOrEqual(result.clientWidth + 1);
+    expect(result.scrollHeight).toBeLessThanOrEqual(result.clientHeight + 1);
+    for (const control of result.controls) {
+      expect(control.width).toBeGreaterThan(20);
+      expect(control.x).toBeGreaterThanOrEqual(result.dialog.x);
+      expect(control.right).toBeLessThanOrEqual(result.dialog.right);
+    }
+    const background = result.controls.find(control => control.name === "terminal-tag-background-0")!;
+    const foreground = result.controls.find(control => control.name === "terminal-tag-text-0")!;
+    expect(background.right).toBeLessThanOrEqual(foreground.x);
+    expect(background.y).toBe(foreground.y);
+    editors.push(result);
+  }
   try {
     if (process.platform !== "win32") {
       try { execFileSync("tmux", ["-V"], { stdio: "ignore" }); } catch { test.skip(true, "tmux is required to verify legacy session management"); }
@@ -125,7 +151,11 @@ finally:
     await dialog.locator("#terminal-display-name").fill("\uacb0\uc81c API \uc791\uc5c5");
     await dialog.getByTestId("terminal-tag-add").click();
     await dialog.getByRole("textbox", { name: "Tag name" }).fill("\uc6b4\uc601");
-    await dialog.locator('input[type="color"]').fill("#e11d48");
+    await dialog.getByLabel("Background", { exact: true }).fill("#e11d48");
+    await expect(dialog.getByTestId("terminal-tag-text-auto")).toBeDisabled();
+    await dialog.getByLabel("Text color", { exact: true }).fill("#fde047");
+    await expect(dialog.getByTestId("terminal-tag-text-auto")).toBeEnabled();
+    await editorGeometry(dialog);
     const bounds = await dialog.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     await page.screenshot({ path: test.info().outputPath("editor.png") });
@@ -133,11 +163,12 @@ finally:
     await expect(pane.locator(".pdmux-pane-alias")).toHaveText("\uacb0\uc81c API \uc791\uc5c5");
     await expect(pane.locator(".pdmux-pane-tag")).toHaveText("\uc6b4\uc601");
     await expect(pane.locator(".pdmux-pane-tag")).toHaveCSS("background-color", "rgb(225, 29, 72)");
+    await expect(pane.locator(".pdmux-pane-tag")).toHaveCSS("color", "rgb(253, 224, 71)");
     await expect(surface).toHaveAttribute("data-presentation-probe", "same-surface");
     expect(opens).toBe(count);
     expect(sessions()[0]!.pid).toBe(original.pid);
     const after = await geometry(pane);
-    await expect.poll(async () => (await readLayout(request))?.payload.slots).toMatchObject([{ label: "\uacb0\uc81c API \uc791\uc5c5", tags: [{ name: "\uc6b4\uc601", color: "#e11d48" }], sessionId: original.id }]);
+    await expect.poll(async () => (await readLayout(request))?.payload.slots).toMatchObject([{ label: "\uacb0\uc81c API \uc791\uc5c5", tags: [{ name: "\uc6b4\uc601", color: "#e11d48", textColor: "#fde047" }], sessionId: original.id }]);
     await page.screenshot({ path: test.info().outputPath("saved.png") });
     // A second window must learn the name through the host's UUID, not this layout.
     const observer = await context.newPage();
@@ -176,6 +207,7 @@ finally:
     await page.reload();
     await hydrated(page);
     await expect(pane.locator(".pdmux-pane-alias")).toHaveText("\uacb0\uc81c API \uc791\uc5c5");
+    await expect(pane.locator(".pdmux-pane-tag")).toHaveCSS("color", "rgb(253, 224, 71)");
     expect(sessions()[0]!.pid).toBe(original.pid);
     await page.bringToFront();
     await pane.locator("[data-pdmux-pane-more]").click();
@@ -184,6 +216,7 @@ finally:
     const popup = await popupPromise;
     try {
       await expect(popup.locator(".pdmux-pane-tag")).toHaveText("\uc6b4\uc601");
+      await expect(popup.locator(".pdmux-pane-tag")).toHaveCSS("color", "rgb(253, 224, 71)");
       await expect(popup).toHaveTitle("\uacb0\uc81c API \uc791\uc5c5 · PDMux");
       await expect(popup.locator(".pdmux-pane-caption")).toContainText("api-work");
       await popup.locator("[data-pdmux-pane-more]").click();
@@ -249,6 +282,7 @@ finally:
       await ready(phone, test.info().project.use.baseURL as string);
       await phone.getByTestId("shell-tab-terminal").click();
       await expect(phone.locator(".pdmux-pane-tag")).toHaveText("\uc6b4\uc601");
+      await expect(phone.locator(".pdmux-pane-tag")).toHaveCSS("color", "rgb(253, 224, 71)");
       const phonePane = phone.locator(`[data-pdmux-pane="${slot.id}"]`);
       await geometry(phonePane);
       await expect(phonePane.locator(".pdmux-pane-caption")).toContainText("manager-work");
@@ -270,10 +304,33 @@ finally:
       const mobileBounds = await mobileDialog.boundingBox();
       expect(mobileBounds!.x).toBeGreaterThanOrEqual(0);
       expect(mobileBounds!.x + mobileBounds!.width).toBeLessThanOrEqual(321);
+      await editorGeometry(mobileDialog);
       await phone.screenshot({ path: test.info().outputPath("mobile-editor.png") });
       await mobileDialog.locator("#terminal-display-name").fill("Unsaved draft");
+      await mobileDialog.getByLabel("Text color", { exact: true }).fill("#00ff00");
       await mobileDialog.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(phonePane.locator(".pdmux-pane-alias")).toHaveText("\uacb0\uc81c API \uc791\uc5c5");
+      await expect(phonePane.locator(".pdmux-pane-tag")).toHaveCSS("color", "rgb(253, 224, 71)");
+      await phonePane.locator("[data-pdmux-pane-more]").click();
+      await phone.locator("[data-pdmux-edit-presentation]").click();
+      await expect(mobileDialog.getByLabel("Text color", { exact: true })).toHaveValue("#fde047");
+      await mobileDialog.getByTestId("terminal-tag-text-auto").click();
+      await mobileDialog.getByLabel("Background", { exact: true }).fill("#ffffff");
+      await expect(mobileDialog.getByLabel("Text color", { exact: true })).toHaveValue("#000000");
+      await mobileDialog.getByTestId("terminal-presentation-save").click();
+      await expect.poll(async () => (await readLayout(request))?.payload.slots).toMatchObject([{ tags: [{ name: "\uc6b4\uc601", color: "#ffffff" }] }]);
+      expect(((await readLayout(request))?.payload.slots as { tags: { textColor?: string }[] }[])[0]!.tags[0]!.textColor).toBeUndefined();
+      await phone.reload(); await hydrated(phone);
+      await phone.getByTestId("shell-tab-terminal").click();
+      await expect(phonePane.locator(".pdmux-pane-tag")).toHaveCSS("color", "rgb(0, 0, 0)");
+      await phone.screenshot({ path: test.info().outputPath("mobile-automatic-text.png") });
+      await phonePane.locator("[data-pdmux-pane-more]").click();
+      await phone.locator("[data-pdmux-edit-presentation]").click();
+      await expect(mobileDialog.getByTestId("terminal-tag-text-auto")).toBeDisabled();
+      await mobileDialog.getByLabel("Background", { exact: true }).fill("#e11d48");
+      await mobileDialog.getByLabel("Text color", { exact: true }).fill("#fde047");
+      await mobileDialog.getByTestId("terminal-presentation-save").click();
+      await expect(phonePane.locator(".pdmux-pane-tag")).toHaveCSS("color", "rgb(253, 224, 71)");
       // Create a session and detach its only viewer; it has no dashboard pane.
       await phone.evaluate(async ({ hostId }) => {
         await new Promise<void>((resolve, reject) => {
@@ -330,7 +387,9 @@ finally:
     await expect(page.locator(".pdmux-pane-alias")).toHaveCount(9);
     for (const cell of await page.locator("[data-pdmux-pane]").all()) await geometry(cell);
     await page.screenshot({ path: test.info().outputPath("nine-panes.png") });
-    await test.info().attach("geometry", { body: JSON.stringify({ before, after, originalPid: original.pid, opensBeforeEdit: count }), contentType: "application/json" });
+    const evidence = JSON.stringify({ before, after, editors, originalPid: original.pid, opensBeforeEdit: count });
+    await writeFile(test.info().outputPath("geometry.json"), evidence);
+    await test.info().attach("geometry", { body: evidence, contentType: "application/json" });
   } finally {
     await page.goto("about:blank").catch(() => undefined);
     await writeLayout(request, saved).catch(() => undefined);

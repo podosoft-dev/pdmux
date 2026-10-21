@@ -773,7 +773,7 @@
 				<span class="pdmux-pane-presentation">
 					{#if slot.label}<span class="pdmux-pane-alias" title={slot.label}>{slot.label}</span>{/if}
 					{#each slot.tags ?? [] as tag}
-						<span class="pdmux-pane-tag" title={tag.name} style:background-color={tag.color} style:color={terminalTagForeground(tag.color)}>{tag.name}</span>
+						<span class="pdmux-pane-tag" title={tag.name} style:background-color={tag.color} style:color={terminalTagForeground(tag.color, tag.textColor)}>{tag.name}</span>
 					{/each}
 				</span>
 			{/if}

@@ -752,12 +752,12 @@ describe('[TC-PDCORE-024] a slot knows its label and whether it can be reached',
 			const original = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main', backend,
 				...(backend === 'native' ? { sessionId: '11111111-2222-4333-8444-555555555555' } : {}) };
 			const initial = { ...defaultLayout(), slots: [original, null] };
-			const edited = setSlotPresentation(initial, original.id, { label: '  \uacb0\uc81c API \uc791\uc5c5  ', tags: [{ name: '\uc6b4\uc601', color: '#AABBCC' }] });
+			const edited = setSlotPresentation(initial, original.id, { label: '  \uacb0\uc81c API \uc791\uc5c5  ', tags: [{ name: '\uc6b4\uc601', color: '#AABBCC', textColor: '#123ABC' }] });
 			const restored = normalizeLayout(JSON.parse(JSON.stringify(edited)), HOSTS);
 			const slot = restored.slots[0]!;
 			expect(slotLabel(slot, 'alpha')).toBe('\uacb0\uc81c API \uc791\uc5c5');
 			expect(slotIdentityLabel(slot, 'alpha')).toBe('alpha·main');
-			expect(slot.tags).toEqual([{ name: '\uc6b4\uc601', color: '#aabbcc' }]);
+			expect(slot.tags).toEqual([{ name: '\uc6b4\uc601', color: '#aabbcc', textColor: '#123abc' }]);
 			expect(toProtocolTarget(slot)).toEqual(toProtocolTarget(original));
 			expect(initial.slots[0]).toEqual(original);
 			expect(setSlotPresentation(edited, original.id, {}).slots).toEqual(initial.slots);
@@ -773,6 +773,16 @@ describe('[TC-PDCORE-024] a slot knows its label and whether it can be reached',
 		expect(normalized.tags![0]!.name).toHaveLength(32);
 		expect(terminalTagForeground('#ffffff')).toBe('#000000');
 		expect(terminalTagForeground('#000000')).toBe('#ffffff');
+	});
+	it('keeps automatic contrast for legacy tags and rejects unsafe custom text colors', () => {
+		const legacy = { name: 'legacy', color: '#ffffff' };
+		expect(normalizeTerminalPresentation({ tags: [legacy] }).tags).toEqual([legacy]);
+		for (const textColor of ['red;position:fixed', '#fff', '', null, 123]) {
+			expect(normalizeTerminalPresentation({ tags: [{ ...legacy, textColor }] }).tags).toEqual([legacy]);
+		}
+		expect(terminalTagForeground('#ffffff', '#Ab12CD')).toBe('#ab12cd');
+		expect(terminalTagForeground('#000000', '#fff;display:none')).toBe('#ffffff');
+		expect(terminalTagForeground('#ffffff')).toBe('#000000');
 	});
 	it('marks a non-persistent shell and an offline host', () => {
 		const attach = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' };

@@ -35,6 +35,8 @@ export type SlotKind = 'attach' | 'new' | 'shell';
 export interface TerminalTag {
 	name: string;
 	color: string;
+	/** Omit to choose a contrasting foreground from the background. */
+	textColor?: string;
 }
 
 export interface TerminalPresentation {
@@ -60,14 +62,19 @@ export function normalizeTerminalPresentation(raw: unknown): TerminalPresentatio
 		const name = text(tag.name, TERMINAL_TAG_NAME_MAX);
 		if (!name || typeof tag.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(tag.color)) continue;
 		const color = tag.color.toLowerCase();
-		if (!tags.some(saved => saved.name === name && saved.color === color)) tags.push({ name, color });
+		const textColor = typeof tag.textColor === 'string' && /^#[0-9a-f]{6}$/i.test(tag.textColor)
+			? tag.textColor.toLowerCase() : undefined;
+		if (!tags.some(saved => saved.name === name && saved.color === color)) {
+			tags.push({ name, color, ...(textColor ? { textColor } : {}) });
+		}
 		if (tags.length === TERMINAL_TAGS_MAX) break;
 	}
 	return { ...(label ? { label } : {}), ...(tags.length ? { tags } : {}) };
 }
 
-/** A readable foreground for an already validated, opaque tag color. */
-export function terminalTagForeground(color: string): string {
+/** Use a custom foreground or choose readable contrast for an opaque background. */
+export function terminalTagForeground(color: string, textColor?: string): string {
+	if (textColor && /^#[0-9a-f]{6}$/i.test(textColor)) return textColor.toLowerCase();
 	const channels = [1, 3, 5].map(index => parseInt(color.slice(index, index + 2), 16) / 255)
 		.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
 	return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722 > 0.179 ? '#000000' : '#ffffff';

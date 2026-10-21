@@ -1413,7 +1413,9 @@
     "tags": "Tags",
     "addTag": "Add tag",
     "tagName": "Tag name",
-    "tagColor": "Tag color",
+    "tagColor": "Background",
+    "tagTextColor": "Text color",
+    "automaticTextColor": "Auto text",
     "removeTag": "Remove tag"
   },
   "sessionRename": {

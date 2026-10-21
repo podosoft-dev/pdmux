@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { normalizeTerminalPresentation, TERMINAL_LABEL_MAX, TERMINAL_TAG_NAME_MAX, TERMINAL_TAGS_MAX, type TerminalPresentation, type TerminalTag } from "@pdmux/core";
+  import { normalizeTerminalPresentation, terminalTagForeground, TERMINAL_LABEL_MAX, TERMINAL_TAG_NAME_MAX, TERMINAL_TAGS_MAX, type TerminalPresentation, type TerminalTag } from "@pdmux/core";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
   import { Button } from "#lib/components/ui/button/index.js";
@@ -17,7 +17,8 @@
   const i18n = getI18n();
   let label = $state("");
   let tags = $state<TerminalTag[]>([]);
-  const valid = $derived(tags.every(tag => tag.name.trim() && /^#[0-9a-f]{6}$/i.test(tag.color)));
+  const valid = $derived(tags.every(tag => tag.name.trim() && /^#[0-9a-f]{6}$/i.test(tag.color)
+    && (tag.textColor === undefined || /^#[0-9a-f]{6}$/i.test(tag.textColor))));
   $effect(() => {
     if (!open) return;
     const initial = untrack(() => normalizeTerminalPresentation(value));
@@ -51,10 +52,22 @@
           </Button>
         </div>
         {#each tags as tag, index}
-          <div class="flex min-w-0 items-center gap-2" data-testid="terminal-tag-row">
-            <Input class="min-w-0 flex-1" bind:value={tag.name} maxlength={TERMINAL_TAG_NAME_MAX} aria-label={i18n.t.terminalPresentation.tagName} />
-            <Input type="color" class="size-10 shrink-0 cursor-pointer p-1" bind:value={tag.color} aria-label={i18n.t.terminalPresentation.tagColor} />
-            <Button type="button" variant="ghost" size="icon" aria-label={i18n.t.terminalPresentation.removeTag} onclick={() => tags = tags.filter((_, at) => at !== index)}><TrashIcon class="size-4" /></Button>
+          <div class="min-w-0 space-y-2 rounded-md border p-3" data-testid="terminal-tag-row">
+            <div class="flex min-w-0 items-center gap-2">
+              <Input class="min-w-0 flex-1" bind:value={tag.name} maxlength={TERMINAL_TAG_NAME_MAX} aria-label={i18n.t.terminalPresentation.tagName} />
+              <Button type="button" variant="ghost" size="icon" aria-label={i18n.t.terminalPresentation.removeTag} onclick={() => tags = tags.filter((_, at) => at !== index)}><TrashIcon class="size-4" /></Button>
+            </div>
+            <div class="flex flex-wrap items-end gap-3">
+              <div class="space-y-1">
+                <Label for={`terminal-tag-background-${index}`} class="text-xs">{i18n.t.terminalPresentation.tagColor}</Label>
+                <Input id={`terminal-tag-background-${index}`} type="color" class="size-10 cursor-pointer p-1" bind:value={tag.color} />
+              </div>
+              <div class="space-y-1">
+                <Label for={`terminal-tag-text-${index}`} class="text-xs">{i18n.t.terminalPresentation.tagTextColor}</Label>
+                <Input id={`terminal-tag-text-${index}`} type="color" class="size-10 cursor-pointer p-1" value={terminalTagForeground(tag.color, tag.textColor)} oninput={(event) => tag.textColor = event.currentTarget.value} />
+              </div>
+              <Button type="button" variant="outline" size="sm" class="mb-1" disabled={tag.textColor === undefined} onclick={() => delete tag.textColor} data-testid="terminal-tag-text-auto">{i18n.t.terminalPresentation.automaticTextColor}</Button>
+            </div>
           </div>
         {/each}
       </div>

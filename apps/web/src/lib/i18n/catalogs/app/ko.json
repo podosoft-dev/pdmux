@@ -1413,7 +1413,9 @@
     "tags": "태그",
     "addTag": "태그 추가",
     "tagName": "태그 이름",
-    "tagColor": "태그 색상",
+    "tagColor": "배경색",
+    "tagTextColor": "글자색",
+    "automaticTextColor": "자동 글자색",
     "removeTag": "태그 삭제"
   },
   "sessionRename": {
