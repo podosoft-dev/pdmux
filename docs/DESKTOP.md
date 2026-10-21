@@ -26,6 +26,12 @@ or PostgreSQL. A persistent random authentication secret is stored with user-onl
 On Windows, runtime processes and backup helpers run with hidden consoles, including automatic
 recovery after a child exits. The app's terminal sessions remain inside the dashboard.
 
+Quit checkpoints native downloads before stopping the local agent. The gateway then closes
+incoming connections and stops the web and API processes concurrently. The desktop web server
+aborts open responses immediately and exits after adapter shutdown; server deployments retain
+their normal request-drain policy. Repeated quit requests wait for the same cleanup. Detached
+native session helpers and their shell programs remain running for reconnection on the next launch.
+
 These three processes use Bun's `--no-install`: an installation never downloads npm
 packages during startup. The desktop API build replaces the server-only PostgreSQL
 authentication pool before module loading, so the SQLite migration and API can start
@@ -289,6 +295,19 @@ a GitHub Release remains a separate release action.
 
 ## Desktop development
 
+To check quit latency on a local Mac package with an isolated temporary profile:
+
+```bash
+PDMUX_LOCAL_DESKTOP_SMOKE=1 PDMUX_SMOKE_QUIT_BUDGET_MS=1000 \
+  node tools/smoke-desktop.mjs /Applications/PDMux.app /tmp/pdmux-quit.png
+```
+
+The probe records elapsed quit time, repeats the quit request during cleanup, verifies that
+embedded service processes have exited, and compares native session UUIDs and shell PIDs before
+and after quit. The default budget remains 15 seconds for general package checks; specify a
+stricter budget when measuring latency on a particular machine.
+
+
 ### Local product update lab on macOS
 
 The local lab packages the current product source twice, as fixture versions `0.0.1` and `0.0.2`.
@@ -544,5 +563,5 @@ and each platform's packaged smoke test checks the first local terminal and menu
 
 Agent catalogs retain every platform's checksums but installers bundle only their
 native agent. Additional remote-host binaries can be downloaded and verified later.
-Plain shells end when the desktop app or their connection closes; use tmux sessions
-on supported Unix hosts when work must survive a disconnect.
+PDMux native sessions keep their shell programs in a detached helper across app quits and
+connection loss. Existing tmux sessions on supported Unix hosts remain managed by tmux.

@@ -1,5 +1,12 @@
 import type { Handle } from "@sveltejs/kit/hooks";
 
+// The adapter emits this only after closing its listener and draining/aborting
+// requests. The desktop web process owns no persistent state; remaining fetch
+// handles must not keep app quit waiting for the supervisor's force-kill timer.
+if (process.env.PDMUX_DESKTOP_RUNTIME === "1") {
+  process.once("sveltekit:shutdown", () => process.exit(0));
+}
+
 /**
  * Application-owned request hook. The managed hooks.server.ts runs it for every
  * request after PodoKit has loaded the runtime context, so `event.locals` already

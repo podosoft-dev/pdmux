@@ -100,7 +100,7 @@ try {
  const engines=await fixtureNativeEngines(root);
  const nativeBefore=engines.map(engine=>({engine,sessions:fixtureNativeSessions(engine)}));
  assert.ok(nativeBefore.some(item=>item.sessions.length>0),'Capture the fixture native session before the update');
- children=rows.filter(row=>parentIds.has(row.pid)&&row.pid!==pid&&(/\/bun$|pdmux-agent$/.test(row.command))&&!row.command.includes('/sessions/')).map(row=>row.pid);
+ children=rows.filter(row=>parentIds.has(row.pid)&&row.pid!==pid&&(/(?:^|\/)bun$|pdmux-agent$/.test(row.command))&&!row.command.includes('/sessions/')).map(row=>row.pid);
  assert.ok(children.length>=2,'Capture this fixture API and web processes');
  const checks=await application.evaluate(()=>globalThis.__pdmuxFixture.checkCalls);
  await application.evaluate(()=>{globalThis.__pdmuxFixture.restartChoice=0;});

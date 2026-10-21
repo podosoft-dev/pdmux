@@ -19,6 +19,7 @@ export interface RuntimeLayout {
 
 export interface RuntimeProcess {
   readonly exitCode: number | null;
+  readonly signalCode?: NodeJS.Signals | null;
   readonly stdin?: { end(data: string): void } | null;
   kill(signal?: NodeJS.Signals): boolean;
   once(event: "exit", listener: (code: number | null) => void): this;
@@ -103,7 +104,7 @@ async function persistentSecret(path: string): Promise<string> {
 }
 
 function exited(child: RuntimeProcess): Promise<number | null> {
-  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
+  if (child.exitCode !== null || child.signalCode) return Promise.resolve(child.exitCode);
   return new Promise((resolve) => child.once("exit", resolve));
 }
 
@@ -116,6 +117,7 @@ export class StackManager {
   private readonly dependencies: StackDependencies;
   private children: NamedProcess[] = [];
   private stopping = false;
+  private stopTask?: Promise<void>;
   private addresses?: StackAddresses;
   private gateway?: DesktopGateway;
   private capability = "";
@@ -201,6 +203,9 @@ export class StackManager {
           // As in the web image: file transfers have no /api proxy deadline, so
           // the server may not close a silent request.
           CONNECTION_IDLE_TIMEOUT: "0",
+          // The gateway is already closed and native downloads checkpointed.
+          // Do not drain desktop event streams using the server's 30-second grace.
+          SHUTDOWN_TIMEOUT: "0",
         },
         stdio: "inherit",
         windowsHide: true,
@@ -261,23 +266,34 @@ export class StackManager {
     return this.start();
   }
 
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
+    if (this.stopTask) return this.stopTask;
     this.stopping = true;
     const children = [...this.children].reverse();
+    const gateway = this.gateway;
     this.children = [];
-    this.addresses = undefined;
-    await this.gateway?.close();
     this.gateway = undefined;
-    for (const child of children) await this.terminate(child.process);
+    this.addresses = undefined;
+    this.stopTask = (async () => {
+      try {
+        await gateway?.close();
+      } finally {
+        // Both services can drain independently once the gateway stops ingress.
+        const results = await Promise.allSettled(children.map(child => this.terminate(child.process)));
+        const failure = results.find(result => result.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
+      }
+    })().finally(() => { this.stopTask = undefined; });
+    return this.stopTask;
   }
 
   private async terminate(child: RuntimeProcess): Promise<void> {
-    if (child.exitCode !== null) return;
-    child.kill("SIGTERM");
-    await Promise.race([
-      exited(child),
-      new Promise<void>((resolve) => setTimeout(resolve, 3_000)),
-    ]);
-    if (child.exitCode === null) child.kill("SIGKILL");
+    if (child.exitCode !== null || child.signalCode) return;
+    await new Promise<void>((resolve) => {
+      // Listen before signalling, and wait for the actual exit even after force.
+      const deadline = setTimeout(() => child.kill("SIGKILL"), 3_000);
+      child.once("exit", () => { clearTimeout(deadline); resolve(); });
+      child.kill("SIGTERM");
+    });
   }
 }

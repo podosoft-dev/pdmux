@@ -39,8 +39,10 @@ let localAgent: LocalAgent | undefined;
 let pendingDeepLink: string | undefined;
 let quitting = false;
 let restartAttempts = 0;
+let runtimeStop: Promise<void> | undefined;
 
-async function stopRuntime(): Promise<void> {
+function stopRuntime(): Promise<void> {
+  if (runtimeStop) return runtimeStop;
   cloud?.close(); cloud = undefined;
   const running = stack;
   const transfers = fileTransfers;
@@ -48,7 +50,11 @@ async function stopRuntime(): Promise<void> {
   stack = undefined;
   fileTransfers = undefined;
   for (const name of ["pdmux:desktop:action", "pdmux:local-agent:status", "pdmux:local-agent:retry", "pdmux:preferences:read", "pdmux:preferences:save"]) ipcMain.removeHandler(name);
-  await Promise.resolve(transfers?.close()).finally(() => agent?.stop()).finally(() => running?.stop());
+  runtimeStop = Promise.resolve(transfers?.close())
+    .finally(() => agent?.stop())
+    .finally(() => running?.stop())
+    .finally(() => { runtimeStop = undefined; });
+  return runtimeStop;
 }
 
 function runtimeLayout(userData: string): RuntimeLayout {
@@ -306,7 +312,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("activate", () => mainWindow?.show());
   app.on("before-quit", (event) => {
     quitting = true;
-    if (!stack && !fileTransfers) return;
+    if (!stack && !fileTransfers && !localAgent && !runtimeStop) return;
     event.preventDefault();
     void stopRuntime()
       .catch((error: unknown) => logError("Stop desktop runtime", error))

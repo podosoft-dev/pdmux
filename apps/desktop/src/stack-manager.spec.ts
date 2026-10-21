@@ -11,6 +11,8 @@ import {
 
 class FakeProcess implements RuntimeProcess {
   exitCode: number | null = null;
+  signalCode: NodeJS.Signals | null = null;
+  onKill?: (signal: NodeJS.Signals) => void;
   private readonly listeners: Array<(code: number | null) => void> = [];
 
   constructor(
@@ -21,9 +23,10 @@ class FakeProcess implements RuntimeProcess {
     if (autoExit !== undefined) queueMicrotask(() => this.exit(autoExit));
   }
 
-  kill(): boolean {
+  kill(signal: NodeJS.Signals = "SIGTERM"): boolean {
     this.killed.push(this.name);
-    this.exit(0);
+    if (this.onKill) this.onKill(signal);
+    else this.exit(0);
     return true;
   }
 
@@ -33,8 +36,9 @@ class FakeProcess implements RuntimeProcess {
     return this;
   }
 
-  private exit(code: number | null): void {
+  exit(code: number | null, signal: NodeJS.Signals | null = null): void {
     this.exitCode = code;
+    this.signalCode = signal;
     for (const listener of this.listeners.splice(0)) listener(code);
   }
 }
@@ -103,6 +107,8 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
     // Unset, Bun closes a silent request after 10 seconds: a transfer commit or an
     // MCP call before its first keep-alive.
     expect(calls[2]?.options.env.CONNECTION_IDLE_TIMEOUT).toBe("0");
+    expect(calls[2]?.options.env.SHUTDOWN_TIMEOUT).toBe("0");
+    expect(calls[1]?.options.env.SHUTDOWN_TIMEOUT).toBe(process.env.SHUTDOWN_TIMEOUT);
     expect(calls[1]?.options.env.CORS_ORIGIN).toBe("http://127.0.0.1:51001");
     if (process.platform !== "win32") {
       expect((await stat(layout.secretPath)).mode & 0o777).toBe(0o600);
@@ -111,4 +117,76 @@ describe("[TC-PDDESKTOP-005] embedded stack lifecycle", () => {
     await manager.stop();
     expect(killed).toEqual(["gateway", layout.webEntry, layout.apiEntry]);
   });
+});
+
+async function runningStack(): Promise<{ manager: StackManager; children: FakeProcess[]; killed: string[] }> {
+  root = await mkdtemp(join(tmpdir(), "pdmux-stack-quit-"));
+  const children: FakeProcess[] = [];
+  const killed: string[] = [];
+  const manager = new StackManager({
+    bunExecutable: "/runtime/bun", apiEntry: "/api/main.js", migrateEntry: "/api/migrate.js",
+    webEntry: "/web/index.js", dataDirectory: root, filesDirectory: join(root, "files"),
+    databasePath: join(root, "pdmux.sqlite"), secretPath: join(root, "auth.secret"),
+    agentReleaseDirectory: "/agent",
+  }, {
+    allocatePort: async () => 0,
+    waitForUrl: async () => undefined,
+    startGateway: async () => ({ url: "http://127.0.0.1", close: async () => { killed.push("gateway"); } }),
+    spawn: (_command, args) => {
+      const entry = args.at(-1)!;
+      const child = new FakeProcess(entry, killed, entry.endsWith("migrate.js") ? 0 : undefined);
+      if (!entry.endsWith("migrate.js")) children.push(child);
+      return child;
+    },
+  });
+  await manager.start();
+  return { manager, children, killed };
+}
+
+describe("[TC-PDDESKTOP-005] prompt and complete shutdown", () => {
+  it("signals both services without serial waits and joins repeated stop requests", async () => {
+    const { manager, children, killed } = await runningStack();
+    for (const child of children) child.onKill = () => undefined;
+    let completed = false;
+    const first = manager.stop().then(() => { completed = true; });
+    const repeated = manager.stop().then(() => { completed = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    try {
+      expect(killed).toEqual(["gateway", "/web/index.js", "/api/main.js"]);
+      expect(completed).toBe(false);
+      children[0]!.exit(0);
+      await new Promise(resolve => setImmediate(resolve));
+      expect(completed).toBe(false);
+    } finally {
+      for (const child of children) child.exit(0);
+      await Promise.all([first, repeated]);
+    }
+    expect(completed).toBe(true);
+  });
+
+  it("does not wait for an exit event already delivered after signal termination", async () => {
+    const { manager, children, killed } = await runningStack();
+    children[1]!.exit(null, "SIGTERM");
+    await manager.stop();
+    expect(killed).toEqual(["gateway", "/api/main.js"]);
+  }, 1_000);
+
+  it("clears escalation after normal exit and awaits actual exit after force", async () => {
+    const { manager, children, killed } = await runningStack();
+    let forced!: () => void;
+    const escalated = new Promise<void>(resolve => { forced = resolve; });
+    children[1]!.onKill = signal => { if (signal === "SIGKILL") forced(); };
+    let completed = false;
+    const stopped = manager.stop().then(() => { completed = true; });
+    await escalated;
+    try {
+      expect(killed.filter(name => name === "/api/main.js")).toHaveLength(1);
+      expect(killed.filter(name => name === "/web/index.js")).toHaveLength(2);
+      expect(completed).toBe(false);
+    } finally {
+      children[1]!.exit(null, "SIGKILL");
+      await stopped;
+    }
+    expect(completed).toBe(true);
+  }, 10_000);
 });

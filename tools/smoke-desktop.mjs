@@ -8,7 +8,7 @@ import { verifyDesktopNavigation } from "./desktop-navigation.mjs";
 import { desktopPaths } from "./desktop-package-paths.mjs";
 import { join, relative, resolve, sep } from "node:path";
 import { _electron as electron } from "playwright";
-import { stopFixtureNativeSessions } from "./native-session-fixture.mjs";
+import { fixtureNativeEngines, fixtureNativeSessions, stopFixtureNativeSessions } from "./native-session-fixture.mjs";
 
 // Launch only a real package on a disposable verification VM, never a live desktop.
 const local = process.env.PDMUX_LOCAL_DESKTOP_SMOKE === "1";
@@ -143,24 +143,49 @@ try {
   }
   // A surviving child can retain a harness pipe after Electron exits on Linux.
   // Require a clean process exit before releasing only the fixture's streams.
+  // [TC-PDDESKTOP-005] Closing the UI must preserve the detached native PTYs.
+  const engines = await fixtureNativeEngines(configuration);
+  const nativeProcesses = () => engines.flatMap(engine => fixtureNativeSessions(engine))
+    .map(({ id, pid }) => ({ id, pid })).sort((a, b) => a.id.localeCompare(b.id));
+  const sessionsBefore = nativeProcesses();
+  const mainPid = await application.evaluate(() => process.pid);
+  const runtimePids = process.platform === "win32" ? windowsRuntimeChildren(mainPid)
+    : execFileSync("ps", ["-axo", "pid=,ppid=,comm="], { encoding: "utf8" }).trim().split("\n")
+      .map(line => line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/))
+      .filter(row => row && Number(row[2]) === mainPid && /(?:^|\/)(?:bun|pdmux-agent)$/.test(row[3]))
+      .map(row => Number(row[1]));
+  assert.ok(runtimePids.length >= 2, "Capture the fixture's embedded services before quitting");
+  const quitBudget = Number(process.env.PDMUX_SMOKE_QUIT_BUDGET_MS ?? 15_000);
+  assert.ok(Number.isFinite(quitBudget) && quitBudget > 0, "Require a positive quit budget");
   console.log(JSON.stringify({ stage: "desktop-quit-requested" }));
+  const quitStarted = performance.now();
   const closed = application.waitForEvent("close", { timeout: 15_000 });
   const exited = new Promise(resolve => electronProcess.once("exit", (code, signal) => resolve({ code, signal }))).then(result => {
     assert.deepEqual(result, { code: 0, signal: null }, "Require graceful desktop process shutdown");
     // Include Playwright's extra debugging pipes, not just stdin/out/err.
     for (const stream of electronProcess.stdio) stream?.destroy();
   });
-  await application.evaluate(({ app }) => { setTimeout(() => app.quit(), 50); });
+  await application.evaluate(({ app }) => {
+    // A second Cmd+Q must join cleanup instead of bypassing it.
+    setTimeout(() => { app.quit(); app.quit(); }, 50);
+  });
   try { await Promise.all([exited, closed]); }
   catch (error) {
     console.error(JSON.stringify({ stage: "desktop-quit-timeout", pid: electronProcess.pid, exitCode: electronProcess.exitCode, signalCode: electronProcess.signalCode }));
     console.error(electronErrors);
     electronProcess.kill("SIGKILL"); throw error;
   }
-  console.log(JSON.stringify({ stage: "desktop-quit-completed" }));
-  if (!process.env.PDMUX_SMOKE_CONFIG_ROOT) {
-    await stopFixtureNativeSessions(configuration);
-    await rm(configuration, { recursive: true, force: true });
+  try {
+    const quitElapsedMs = Math.round(performance.now() - quitStarted);
+    for (const pid of runtimePids) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, `Stop runtime process ${pid} before exiting`);
+    assert.deepEqual(nativeProcesses(), sessionsBefore, "Preserve native session UUIDs and shell PIDs on quit");
+    assert.ok(quitElapsedMs < quitBudget, `Desktop quit took ${quitElapsedMs}ms (budget ${quitBudget}ms)`);
+    console.log(JSON.stringify({ stage: "desktop-quit-completed", quitElapsedMs, runtimeProcessesStopped: runtimePids.length, preservedSessions: sessionsBefore.length }));
+  } finally {
+    if (!process.env.PDMUX_SMOKE_CONFIG_ROOT) {
+      await stopFixtureNativeSessions(configuration);
+      await rm(configuration, { recursive: true, force: true });
+    }
   }
 }
 

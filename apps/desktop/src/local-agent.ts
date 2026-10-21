@@ -230,7 +230,7 @@ export class LocalAgent {
 
   private async stopChild(): Promise<void> {
     const child = this.child; this.child = undefined;
-    if (!child || !child.pid || child.exitCode !== null) return;
+    if (!child || !child.pid || child.exitCode !== null || child.signalCode) return;
     await new Promise<void>(resolve => {
       const graceful = setTimeout(() => child.kill("SIGTERM"), 1_500);
       const forced = setTimeout(() => child.kill("SIGKILL"), 3_000);
