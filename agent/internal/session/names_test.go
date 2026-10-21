@@ -88,7 +88,8 @@ func legacyNamesFixture(t *testing.T) (*Client, *Engine) {
 	return &Client{Root: root, Version: "0.1.32"}, engine
 }
 
-func TestLegacyNames(t *testing.T) {
+// The native CI matrix selects TestNative* on all three operating systems.
+func TestNativeLegacyNames(t *testing.T) {
 	t.Run("[TC-PDUI-237] old engines rename without replacing programs and retain names across clients", func(t *testing.T) {
 		client, engine := legacyNamesFixture(t)
 		ctx := context.Background()
@@ -220,7 +221,7 @@ func TestLegacyNames(t *testing.T) {
 	})
 }
 
-func TestIdleEngineUpgrade(t *testing.T) {
+func TestNativeIdleEngineUpgrade(t *testing.T) {
 	t.Run("[TC-PDTERM-026] idle old engines stop before replacement while current and newer engines remain", func(t *testing.T) {
 		for _, version := range []string{"0.1.32", "0.1.33", "0.1.34"} {
 			t.Run(version, func(t *testing.T) {
