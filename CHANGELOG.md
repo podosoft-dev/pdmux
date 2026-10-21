@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.17.9
+
+- Choose each terminal tag's text color separately from its background, or restore automatic
+  black/white contrast. Saved layouts, detached windows and mobile retain the selected colors.
+- Quit the desktop without waiting for the web server's request-drain timeout. Local API and web
+  services stop concurrently, repeated quit requests wait for cleanup, and native sessions survive.
+- Agent 0.1.34 renames sessions owned by older compatible helpers without restarting their programs.
+  Updated agent and CLI clients share the names; an idle older helper upgrades automatically on
+  the next connection, while running sessions and newer helpers stay in place.
+
 ## 0.17.8
 
 - Agent 0.1.33 lets you rename the actual session from a terminal pane while preserving its running programs,
