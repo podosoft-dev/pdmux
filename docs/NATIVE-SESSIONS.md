@@ -107,8 +107,12 @@ input row. Other output, including colors, hyperlinks and terminal queries,
 continues to the emulator.
 
 A running helper retains its own executable and environment across desktop updates.
-Engine changes apply when that helper is restarted after its programs have exited;
-updates never kill those programs to replace the helper.
+The updated agent compares its version with the helper before opening a terminal. An
+older helper with no sessions is stopped through its atomic idle-only shutdown operation,
+and a helper from the installed agent is started automatically. Concurrent agent/CLI
+opens share a startup lock; equal or newer helpers are reused. A busy helper stays alive,
+so engine parser and rendering changes take effect after its programs have exited.
+Updates never kill those programs to replace the helper.
 
 ## Interactive CLI over SSH
 
@@ -166,15 +170,24 @@ hosts. Select a row to rename it or end it. Ending requires confirmation showing
 the host and session name; it stops the programs running in that session.
 
 A real session name is shared by everyone viewing the host. It differs from the
-personal **Display name and tags** saved in a user's layout. Renaming preserves
+personal **Display name and tags** saved in a user's layout. Each tag has a name,
+background color and optional text color. **Auto text** restores a contrasting black
+or white foreground that follows the background. Existing tags keep automatic contrast;
+custom colors persist across reloads and detached windows. Renaming preserves
 those personal fields, the PTY, its history and attached viewers. Names accept
 1–32 ASCII letters, digits, underscores or hyphens. Duplicate names are rejected
 within the selected engine; native and tmux sessions remain independent.
 
 Native control addresses the session UUID. The additive `renameSessions` terminal
-ability prevents requests to an older agent. An older running helper returns an
-update requirement rather than being stopped automatically: finish its programs
-before replacing that helper.
+ability prevents requests to an older agent. An updated agent can rename sessions on an
+older, protocol-compatible helper even when that helper lacks the rename operation.
+It stores shared names by UUID in an owner-only, generation-scoped local catalog.
+The updated CLI, host session list and new attachments resolve those names consistently;
+renames survive network-agent restarts. Name collisions are serialized across clients,
+and a freed name can create a distinct session without selecting the renamed program.
+The helper keeps its original PTYs, history and viewers. Replacing the helper itself
+still waits until its programs exit; renaming never forces that replacement. An
+incompatible IPC protocol remains an explicit error.
 
 Legacy tmux sessions report `tmuxId` (`$` followed by digits). Rename, termination,
 attachment and reconnect use this ID within the running tmux server rather than a

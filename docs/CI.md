@@ -38,6 +38,16 @@ workflow between normal CI and release packaging, so removing automatic installe
 remove Windows, macOS, or Linux terminal coverage. The timing tables below describe the earlier
 configuration, when pull requests still triggered packaging.
 
+### Remove branches after merging
+
+Once a temporary branch is integrated into `main`, remove both its local branch and its remote
+branch, then prune stale remote-tracking references. Fetch the latest remote state first and check
+worktrees, active work and open pull requests. Keep the default branch, protected branches and
+unmerged work. Ancestry checks alone miss rebased commits: compare patch IDs, and review the actual
+merged changes when a squash or conflict resolution changes those IDs. Verify the remote tip again
+and use a lease tied to the reviewed SHA when deleting it, so a concurrent push is preserved.
+Branch cleanup does not create a release or request installer packaging.
+
 ## 2. Measurements before the October 2026 speed-up
 
 Durations are minutes from run creation to completion, from successful runs up to 2026-10-16.
