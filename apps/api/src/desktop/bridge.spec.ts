@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { DesktopBridge } from "./bridge";
+import { DesktopBridge, safeHeaders } from "./bridge";
 import { hostRoute } from "./host-route";
 
 function pair(handler: ConstructorParameters<typeof DesktopBridge>[1]): [DesktopBridge, DesktopBridge] {
@@ -10,6 +10,15 @@ function pair(handler: ConstructorParameters<typeof DesktopBridge>[1]): [Desktop
 const request = { hostKey: "host:test", method: "POST" as const, path: "/hosts/00000000-0000-4000-8000-000000000001/files/upload", headers: {} };
 
 describe("[TC-PDDESKTOP-013] bounded desktop relay", () => {
+  it("[TC-PDTERM-144] keeps inline image safety headers without stale compressed lengths", () => {
+    const headers = new Headers({ "content-type": "image/png", "content-disposition": "inline; filename=preview.png",
+      "content-encoding": "gzip", "content-length": "123", "x-content-type-options": "nosniff", "set-cookie": "private=value" });
+    expect(safeHeaders(headers)).toEqual({ "content-type": "image/png", "content-disposition": "inline; filename=preview.png", "x-content-type-options": "nosniff" });
+  });
+  it("keeps uncompressed download lengths and byte-range metadata", () => {
+    const headers = { "content-type": "image/png", "content-length": "100", "content-range": "bytes 100-199/200", "accept-ranges": "bytes" };
+    expect(safeHeaders(new Headers(headers))).toEqual(headers);
+  });
   it("streams a body larger than the flow-control window in both directions", async () => {
     const bytes = new Uint8Array(2 * 1024 * 1024).fill(73);
     const [left, right] = pair(async (_request, body) => new Response(body, { headers: { "content-type": "application/octet-stream" } }));

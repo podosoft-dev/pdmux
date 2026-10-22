@@ -1,4 +1,5 @@
 import { afterEach, expect, it, mock, spyOn } from "bun:test";
+import { gzipSync } from "node:zlib";
 import type { Repository } from "typeorm";
 import { DesktopClient, type DesktopClientOptions } from "./desktop-client";
 import type { DesktopService } from "./desktop.service";
@@ -6,6 +7,45 @@ import { KeyedMutex } from "./keyed-mutex";
 import type { DesktopConnection } from "./desktop-connection.entity";
 const session = (id: string) => ({ user: { id }, session: {} });
 afterEach(() => mock.restore());
+
+it("[TC-PDDESKTOP-013][TC-PDTERM-144] relays a compressed inline image without decoding it twice", async () => {
+  const realFetch = globalThis.fetch;
+  const payload = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAADAQMAAACDJEzCAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGUExURWYzmf///129H+IAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gcVCSUTzXBDTwAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0wNy0yMVQwOTozNzoxOSswMDowMOuehLIAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMDctMjFUMDk6Mzc6MTkrMDA6MDCawzwOAAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTA3LTIxVDA5OjM3OjE5KzAwOjAwzdYd0QAAAAtJREFUCNdjYAABAAAGAAFm9MlsAAAAAElFTkSuQmCC", "base64");
+  const compressed = gzipSync(payload);
+  const hostId = "00000000-0000-4000-8000-000000000001";
+  const hostKey = "server:host:image";
+  let path = "";
+  const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => {
+    path = new URL(request.url).pathname + new URL(request.url).search;
+    return new Response(compressed, { headers: {
+      "content-type": "image/png", "content-encoding": "gzip", "content-length": String(compressed.length),
+      "content-disposition": "inline; filename=preview.png", "x-content-type-options": "nosniff",
+    } });
+  } });
+  const { client } = fixture({ syncIntervalMs: 60_000, createSocket: () => new BridgeSocket() as unknown as WebSocket });
+  spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+    if (url.pathname === "/api/desktop/context") return Response.json({ version: 1, userId: "remote", scopeId: "personal:remote", organizations: [] });
+    if (url.pathname === "/api/auth/get-session") return Response.json({ user: { id: "remote", name: "Remote user", email: "remote@example.test" } });
+    if (url.pathname === "/api/desktop/sync") return Response.json({ version: 1, userId: "remote", scopeId: "personal:remote", hostIds: { [hostKey]: hostId }, conflicts: [], records: [] });
+    return realFetch(new URL(url.pathname + url.search, upstream.url), init);
+  }, { preconnect: (): void => {} }));
+  const relay = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => client.cloudRequest({
+    hostKey, method: "GET", path: `/hosts/${hostId}/files/download?path=preview.png&inline=1`, headers: {},
+  }, null, request.signal) });
+  try {
+    await client.attach(session("image-preview"), "local-cookie");
+    await client.connect("https://server.example.test", "cloud-cookie");
+    // Real HTTP on both sides: fetch transparently decodes gzip, unlike a mocked Response.
+    const response = await realFetch(relay.url, { signal: AbortSignal.timeout(3_000) });
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array(payload));
+    expect(path).toBe(`/api/hosts/${hostId}/files/download?path=preview.png&inline=1`);
+    expect(response.headers.get("content-type")).toBe("image/png");
+    expect(response.headers.get("content-disposition")).toBe("inline; filename=preview.png");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("content-encoding")).toBeNull();
+  } finally { client.disconnect(); await relay.stop(true); await upstream.stop(true); }
+});
 function fixture(options?: DesktopClientOptions): { client: DesktopClient; service: DesktopService } {
   const service = { origin: "server", connectionKey: "", lock: new KeyedMutex(), syncKeys: () => ["hosts:test", "prefs:test"], snapshot: async () => [] } as unknown as DesktopService;
   const store = {

@@ -156,6 +156,8 @@ export class DesktopBridge {
 }
 
 export function safeHeaders(headers: Headers): Record<string, string> {
-  const allowed = new Set(["content-type", "content-disposition", "content-length", "content-range", "accept-ranges", "range", "etag", "retry-after"]);
-  return Object.fromEntries([...headers].filter(([key]) => allowed.has(key)));
+  const allowed = new Set(["content-type", "content-disposition", "content-length", "content-range", "accept-ranges", "range", "etag", "retry-after", "x-content-type-options"]);
+  // fetch decodes compressed bodies but retains their wire headers. Neither the
+  // encoding nor its compressed length describes the stream we relay now.
+  return Object.fromEntries([...headers].filter(([key]) => allowed.has(key) && (key !== "content-length" || !headers.has("content-encoding"))));
 }

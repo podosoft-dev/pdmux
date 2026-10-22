@@ -167,7 +167,7 @@ export class DesktopClient {
       body: input.method === "GET" ? undefined : body, signal: AbortSignal.any([signal, this.connectionAbort.signal]), redirect: "error",
     });
     if (response.status === 401 || response.status === 403) await this.checkSession();
-    return response;
+    return new Response(response.body, { status: response.status, headers: safeHeaders(response.headers) });
   }
   private async checkSession(): Promise<void> {
     const account = this.account();

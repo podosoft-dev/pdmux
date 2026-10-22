@@ -42,6 +42,13 @@ Native and agent scanners exclude symbolic links and special files and require r
 continuing. Browser selection is limited to entries its APIs expose; it cannot independently inspect
 native link metadata.
 
+Raster image previews use the authenticated single-file download endpoint with `inline=1`.
+The desktop cloud client and bridge preserve the image MIME type, inline disposition, and
+`X-Content-Type-Options: nosniff`. Fetch transparently decodes compressed responses, so relays
+remove the upstream encoding and compressed content length before forwarding the decoded stream.
+Uncompressed download lengths and byte-range metadata remain intact. SVG and HTML files remain
+attachments; requesting an inline preview does not make active content safe to render.
+
 ## Pause, restart, and integrity
 
 Uploads use at most **1 MiB** binary requests. Progress advances after the agent acknowledges
