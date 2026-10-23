@@ -28,7 +28,7 @@ export function designatedRequirement(output) {
 
 export function fixtureManifest(version, electronVersion, output, identity = "-") {
   return {
-    name: "pdmux-update-probe", version, main: "main.cjs", packageManager: "bun@1.4.0",
+    name: "pdmux-update-probe", version, main: "main.cjs", packageManager: "bun@1.4.4",
     description: "Disposable native update compatibility probe", author: "PDMUX", license: "Apache-2.0",
     build: {
       appId: "dev.podosoft.pdmux.updateprobe", productName: "PdmuxUpdateProbe",

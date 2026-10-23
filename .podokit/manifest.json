@@ -4,20 +4,20 @@
   "template": "fullstack",
   "toolchain": {
     "runtime": "bun",
-    "runtimeVersion": "1.4.0",
+    "runtimeVersion": "1.4.4",
     "packageManager": "bun"
   },
   "answers": {
     "projectName": "pdmux",
     "runtime": "bun",
-    "runtimeVersion": "1.4.0",
+    "runtimeVersion": "1.4.4",
     "runtimeCommand": "bun",
     "runtimeBinPrefix": "bunx --bun ",
     "packageManager": "bun",
     "packageExecutor": "bunx --bun",
     "packageExecutorCommand": "bunx",
     "packageExecutorArgs": "\"--bun\", ",
-    "ciSetup": "- uses: oven-sh/setup-bun@v2\n        with:\n          bun-version: 1.4.0",
+    "ciSetup": "- uses: oven-sh/setup-bun@v2\n        with:\n          bun-version: 1.4.4",
     "ciInstallCommand": "bun ci",
     "ciLintCommand": "bun run lint",
     "ciTestCommand": "bun run test",

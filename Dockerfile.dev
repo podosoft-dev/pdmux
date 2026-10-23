@@ -1,5 +1,5 @@
-# Development image for the Bun 1.4.0 PodoKit monorepo.
-FROM oven/bun:1.4.0-alpine AS manifests
+# Development image for the Bun 1.4.4 PodoKit monorepo.
+FROM oven/bun:1.4.4-alpine AS manifests
 WORKDIR /src
 COPY . .
 RUN mkdir -p /app \
@@ -7,7 +7,7 @@ RUN mkdir -p /app \
     && find . -name package.json -not -path "*/node_modules/*" \
          -exec sh -c 'mkdir -p "/app/$(dirname "$1")" && cp "$1" "/app/$1"' _ {} \;
 
-FROM oven/bun:1.4.0-alpine
+FROM oven/bun:1.4.4-alpine
 
 RUN apk add --no-cache git python3 make g++ ca-certificates
 

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 ARG AGENT_ARTIFACTS_BASE=agent-build
 
-FROM oven/bun:1.4.0-alpine AS manifests
+FROM oven/bun:1.4.4-alpine AS manifests
 WORKDIR /src
 COPY . .
 RUN mkdir -p /app \
@@ -9,12 +9,12 @@ RUN mkdir -p /app \
     && find . -name package.json -not -path "*/node_modules/*" \
          -exec sh -c 'mkdir -p "/app/$(dirname "$1")" && cp "$1" "/app/$1"' _ {} \;
 
-FROM oven/bun:1.4.0-alpine AS deps
+FROM oven/bun:1.4.4-alpine AS deps
 WORKDIR /app
 COPY --from=manifests /app ./
 RUN bun ci
 
-FROM oven/bun:1.4.0-alpine AS agent-build
+FROM oven/bun:1.4.4-alpine AS agent-build
 COPY --from=golang:1.26.5-alpine /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}" GOTOOLCHAIN=local
 WORKDIR /src
@@ -25,7 +25,7 @@ RUN bun tools/build-agent-binaries.mjs && mv apps/web/static/agent /agent
 # Both release architectures consume the exact same signed agent bytes.
 FROM ${AGENT_ARTIFACTS_BASE} AS agent
 
-FROM oven/bun:1.4.0-alpine AS build
+FROM oven/bun:1.4.4-alpine AS build
 WORKDIR /app
 ARG PODOKIT_BUILD_ORIGIN
 ENV PODOKIT_BUILD_ORIGIN=${PODOKIT_BUILD_ORIGIN}
@@ -44,7 +44,7 @@ RUN if [ -d packages ]; then \
 RUN bun run --cwd apps/web build
 RUN mkdir -p /app/packages
 
-FROM oven/bun:1.4.0-alpine AS runtime
+FROM oven/bun:1.4.4-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV BODY_SIZE_LIMIT=3M

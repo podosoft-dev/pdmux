@@ -79,7 +79,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
 
       - run: bun ci
 
@@ -178,7 +178,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
       - run: bun ci
       - name: Prepare Developer ID update fixtures
         run: bun tools/probe-macos-developer-id-update.mjs --prepare
@@ -214,7 +214,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
       - run: bun ci
       - uses: actions/download-artifact@v4
         with:
@@ -247,7 +247,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
       - run: bun ci
       - uses: actions/download-artifact@v4
         with:
@@ -294,7 +294,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
       - run: bun ci
       - uses: actions/download-artifact@v4
         with:

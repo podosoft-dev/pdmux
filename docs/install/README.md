@@ -25,7 +25,7 @@ directory; see [uninstalling](uninstall.md) before removing data.
 ## Build without publishing
 
 Use the operating system and CPU architecture you are building for. Install
-Git, Bun **1.4.0**, Node LTS (electron-builder tooling), and the Go version pinned
+Git, Bun **1.4.4**, Node LTS (electron-builder tooling), and the Go version pinned
 in `agent/go.mod`. macOS also needs Xcode Command Line Tools. Linux packaging uses
 Ubuntu 24.04 in CI. Windows build commands run from PowerShell.
 
