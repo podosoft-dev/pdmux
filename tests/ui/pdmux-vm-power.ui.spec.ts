@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "../helpers/pdmux-test";
 import { expectOnScreen } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
-import { ASLEEP, RUNNING, type Fleet, type SavedLayout, captureLayout, createHost, layoutOn, machine, restoreLayout, serveMachine } from "../helpers/vm-fleet";
+import { ASLEEP, RUNNING, type Fleet, type SavedLayout, captureLayout, createHost, layoutOn, machine, restoreLayout, serveMachine, stopServing } from "../helpers/vm-fleet";
 
 /**
  * Powering a host's machine from its terminal panes, and every pane agreeing about it.
@@ -17,6 +17,10 @@ import { ASLEEP, RUNNING, type Fleet, type SavedLayout, captureLayout, createHos
 const veils = (page: Page, phase: string) => page.locator(`[data-testid=vm-veil][data-pdmux-vm-phase=${phase}]`);
 
 test.describe.serial("pdmux VM power from terminals", () => {
+  test.afterEach(async ({ page }) => {
+    await stopServing(page.context());
+  });
+
   let hostId = "";
   let saved: SavedLayout | null = null;
 
@@ -103,6 +107,7 @@ test.describe.serial("pdmux VM power from terminals", () => {
     fleet.online = true;
     await expect(page.getByTestId("vm-veil")).toHaveCount(0, { timeout: 15_000 });
     await expect(second.getByTestId("vm-veil")).toHaveCount(0, { timeout: 15_000 });
+    await stopServing(other);
     await other.close();
   });
 

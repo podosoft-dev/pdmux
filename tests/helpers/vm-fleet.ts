@@ -61,6 +61,20 @@ export async function serveMachine(context: BrowserContext, fleet: Fleet): Promi
   });
 }
 
+/**
+ * Stop serving the machine before the context closes.
+ *
+ * ⚠ THE SHELL KEEPS POLLING `/api/hosts` AFTER THE LAST ASSERTION. A poll that arrives while the
+ * test's fixtures tear down reaches the handler above with the context closing under it, and
+ * `route.fetch()`'s body is disposed before `json()` reads it. Playwright then fails a test whose
+ * every assertion passed (measured: [TC-PDVM-026] failed 5 of 8 repeats with "Response has been
+ * disposed", all after its last expect). Dropping the routes and ignoring handlers still in flight
+ * is what Playwright provides for this.
+ */
+export async function stopServing(context: BrowserContext): Promise<void> {
+  await context.unrouteAll({ behavior: "ignoreErrors" });
+}
+
 export interface SavedLayout {
   name: string;
   payload: Record<string, unknown>;

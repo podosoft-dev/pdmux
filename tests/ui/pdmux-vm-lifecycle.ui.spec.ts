@@ -1,7 +1,7 @@
 import { expect, test } from "../helpers/pdmux-test";
 import { expectOnScreen } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
-import { NONE, RUNNING, type Fleet, createHost, machine, serveMachine } from "../helpers/vm-fleet";
+import { NONE, RUNNING, type Fleet, createHost, machine, serveMachine, stopServing } from "../helpers/vm-fleet";
 
 /**
  * Creating a machine from "Add host", and deleting or re-registering one pdmux created.
@@ -29,6 +29,10 @@ const PROVIDER = {
 };
 
 test.describe.serial("pdmux VM create and delete", () => {
+  test.afterEach(async ({ page }) => {
+    await stopServing(page.context());
+  });
+
   let hostId = "";
 
   test.beforeAll(async ({ request }) => {

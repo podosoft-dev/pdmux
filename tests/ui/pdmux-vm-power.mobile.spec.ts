@@ -1,7 +1,7 @@
 import { expect, test } from "../helpers/pdmux-test";
 import { expectOnScreen } from "../helpers/geometry";
 import { ready } from "../helpers/hydration";
-import { ASLEEP, type SavedLayout, captureLayout, createHost, layoutOn, machine, restoreLayout, serveMachine } from "../helpers/vm-fleet";
+import { ASLEEP, type SavedLayout, captureLayout, createHost, layoutOn, machine, restoreLayout, serveMachine, stopServing } from "../helpers/vm-fleet";
 
 /**
  * The same power controls on a phone: the pane is the whole screen, so the veil's button and
@@ -10,6 +10,10 @@ import { ASLEEP, type SavedLayout, captureLayout, createHost, layoutOn, machine,
  */
 
 test.describe.serial("pdmux VM power on a phone", () => {
+  test.afterEach(async ({ page }) => {
+    await stopServing(page.context());
+  });
+
   let hostId = "";
   let saved: SavedLayout | null = null;
 
