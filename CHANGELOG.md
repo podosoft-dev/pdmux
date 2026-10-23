@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Update server dependencies with published security fixes: nodemailer 10.2.1, the MCP SDK
+  1.32.0 and its HTTP stack (proxy-addr, qs, hono, ip-address, fast-uri), brace-expansion and
+  SvelteKit's devalue 5.9.3. Package test suites move to Vitest 4 and Vite 8.
+
 ## 0.17.12
 
 - Preview Markdown as rendered content or source, and open PDF, audio and more text formats.
