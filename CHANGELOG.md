@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.17.13
+
+- Organizations can have teams (PodoKit 1.7.3). An administrator turns them on in Settings
+  once Organizations is on; they start off, seeded by a migration. Better Auth moves to
+  1.7.12 across the API, web and desktop.
 - Update server dependencies with published security fixes: nodemailer 10.2.1, the MCP SDK
   1.32.0 and its HTTP stack (proxy-addr, qs, hono, ip-address, fast-uri), brace-expansion and
   SvelteKit's devalue 5.9.3. Package test suites move to Vitest 4 and Vite 8.
@@ -9,6 +14,10 @@
   dependencies that other workspaces resolve (Vitest, Svelte, SvelteKit, Electron), which
   put the web, UI and desktop toolchains in the image: its `node_modules` drops from 304 MB
   to 155 MB and the image from 625 MB to 426 MB.
+- The desktop app runs on Electron 44.9.3 (Chromium 152.0.7977.167, Node 24.22.0), picking up
+  the Chromium security fixes released on the 44 line since 44.2.0.
+- Bring the readiness and end-to-end specs in line with the settings dialog that replaced the
+  hosts and settings pages, and stop VM specs failing on a poll that lands during teardown.
 
 ## 0.17.12
 
