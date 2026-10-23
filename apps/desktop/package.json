@@ -23,7 +23,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "electron": "44.2.0",
+    "electron": "44.9.3",
     "electron-builder": "^26.15.3",
     "typescript": "^6.0.3",
     "better-auth": "1.7.9",

@@ -18,9 +18,9 @@ describe("[TC-PDDESKTOP-009] native ad-hoc update preflight", () => {
     expect(() => requireRejected({ ...result, stderr: "syntax error" }, "fixture")).toThrow();
   });
   it("uses a stable signing identity only for disposable same-key versions", () => {
-    const first = fixtureManifest("0.0.1", "44.2.0", "/tmp/a", "Pdmux Probe A");
-    const second = fixtureManifest("0.0.2", "44.2.0", "/tmp/b", "Pdmux Probe A");
-    const other = fixtureManifest("0.0.3", "44.2.0", "/tmp/c", "Pdmux Probe C");
+    const first = fixtureManifest("0.0.1", "44.9.3", "/tmp/a", "Pdmux Probe A");
+    const second = fixtureManifest("0.0.2", "44.9.3", "/tmp/b", "Pdmux Probe A");
+    const other = fixtureManifest("0.0.3", "44.9.3", "/tmp/c", "Pdmux Probe C");
     expect(first.build.mac.identity).toBe(second.build.mac.identity);
     expect(first.build.mac.identity).not.toBe(other.build.mac.identity);
     expect(first.build.appId).toBe(other.build.appId);
@@ -63,8 +63,8 @@ describe("[TC-PDDESKTOP-009] native ad-hoc update preflight", () => {
     expect(() => designatedRequirement("no requirement")).toThrow("Missing designated requirement");
   });
   it("creates different disposable packages without changing product identity", () => {
-    const first = fixtureManifest("0.0.1", "44.2.0", "/tmp/probe-a");
-    const second = fixtureManifest("0.0.2", "44.2.0", "/tmp/probe-b");
+    const first = fixtureManifest("0.0.1", "44.9.3", "/tmp/probe-a");
+    const second = fixtureManifest("0.0.2", "44.9.3", "/tmp/probe-b");
     expect(first.version).not.toBe(second.version);
     expect(first.build.appId).toBe(second.build.appId);
     expect(first.build.appId).not.toBe("dev.podosoft.pdmux");
