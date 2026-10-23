@@ -66,8 +66,13 @@ test.describe.serial("isolated fleet readiness", () => {
     await signIn(context, runtime.owner);
     await open(page, runtime, "/settings");
     await page.getByTestId("fleet-field-heartbeatSec").fill("2");
-    await page.getByTestId("fleet-save").click();
-    await expect(page.getByTestId("fleet-save")).toBeDisabled();
+    // Settings open in the shared dialog, whose footer owns Save; the fleet form
+    // renders its own button only outside that dialog.
+    const save = page.getByTestId("settings-save");
+    const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === "/api/fleet/settings");
+    await save.click();
+    expect((await saved).ok()).toBe(true);
+    await expect(save).toBeDisabled();
     expect((await json<{ heartbeatSec: number }>(await runtime.owner.get("/api/fleet/settings"))).heartbeatSec).toBe(2);
     // The real agent changes heartbeat cadence on config frames; observing two
     // distinct server timestamps proves the setting reached the running process.
