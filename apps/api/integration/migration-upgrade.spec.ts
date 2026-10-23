@@ -80,16 +80,18 @@ describe("[TC-PDHOST-030][TC-PDHOST-026] published migration upgrade path", () =
     }
     const legacyIdentity = { trigger: 1, issuerNullable: 0, issuerIndex: 1, providerIndex: 0 };
     const relaxedIdentity = { trigger: 0, issuerNullable: 1, issuerIndex: 0, providerIndex: 1 };
-    async function snapshot(): Promise<unknown> {
+    // `seeded` names settings that migrations newer than the legacy ledger insert, so
+    // the comparison still proves every existing row survived unchanged.
+    async function snapshot(seeded: string[] = []): Promise<unknown> {
       return source.query(`SELECT jsonb_build_object(
         'hosts', (SELECT jsonb_agg(to_jsonb(h) - 'connectorCapabilities' ORDER BY h.id) FROM hosts h),
         'services', (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM host_services s),
         'tokens', (SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM agent_tokens t),
         'layouts', (SELECT jsonb_agg(to_jsonb(l) ORDER BY l.id) FROM user_layouts l),
-        'settings', (SELECT jsonb_agg(to_jsonb(a) ORDER BY a.key) FROM app_setting a),
+        'settings', (SELECT jsonb_agg(to_jsonb(a) ORDER BY a.key) FROM app_setting a WHERE NOT (a.key = ANY($1::text[]))),
         'accounts', (SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM account a),
         'users', (SELECT jsonb_agg(to_jsonb(u) ORDER BY u.id) FROM "user" u)
-      ) AS data`);
+      ) AS data`, [seeded]);
     }
     try {
       // First install must work with the same bundle and without a source directory.
@@ -146,7 +148,8 @@ describe("[TC-PDHOST-030][TC-PDHOST-026] published migration upgrade path", () =
       await source.query("DROP TABLE integration_connections");
 
       expect(await migrate()).toEqual({ code: 0, stderr: "" });
-      expect(await snapshot()).toEqual(before);
+      expect(await snapshot(["teams"])).toEqual(before);
+      expect(await source.query(`SELECT value FROM app_setting WHERE key = 'teams'`)).toEqual([{ value: "false" }]);
       expect(await accountIdentity()).toEqual(relaxedIdentity);
       expect(await count("SELECT count(*) FROM migrations")).toBe(built);
       await initializeApplicationDataSource(runtime);
