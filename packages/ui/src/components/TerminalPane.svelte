@@ -96,6 +96,8 @@
 		clickAction?: ClickAction;
 		/** App-owned header controls. Absent keeps the package's compatible fallback actions. */
 		actions?: Snippet<[TerminalPaneActionContext]>;
+		/** App-owned explanation for a temporary shell; absent keeps a native title. */
+		warning?: Snippet;
 		/**
 		 * App-owned content for a pane whose host is unreachable — "this machine is asleep" with
 		 * a button to wake it. Absent keeps the plain message. The package knows nothing about
@@ -190,6 +192,7 @@
 		dropTarget = false,
 		clickAction = 'zoom',
 		actions,
+		warning,
 		veil,
 		t,
 		onAssign,
@@ -761,13 +764,14 @@
 				<span class="pdmux-pane-host">{hostName}</span><span class="pdmux-pane-separator" aria-hidden="true"
 					>·</span
 				><span class="pdmux-pane-target">{targetName}</span>
-				{#if ephemeral}<span
+				{#if ephemeral}
+				{#if warning}{@render warning()}{:else}<span
 					class="pdmux-pane-ephemeral"
 					role="img"
-					title={tr('pdmux.pane.ephemeral', 'Not persistent — ends with the connection')}
-					aria-label={tr('pdmux.pane.ephemeral', 'Not persistent — ends with the connection')}
+					title={tr('pdmux.pane.ephemeralDescription', 'This is a temporary terminal. Programs end when the connection closes. Open a new session to keep work running.')}
+					aria-label={tr('pdmux.pane.ephemeral', 'Temporary terminal')}
 					><TriangleAlertIcon aria-hidden="true" /></span
-				>{/if}
+				>{/if}{/if}
 			</span>
 			{#if slot.label || slot.tags?.length}
 				<span class="pdmux-pane-presentation">

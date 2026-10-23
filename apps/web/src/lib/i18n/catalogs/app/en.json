@@ -329,7 +329,8 @@
     "pane": {
       "close": "Close (this cell stays empty)",
       "detach": "Open in a new window",
-      "ephemeral": "Not persistent — ends with the connection",
+      "ephemeral": "Temporary terminal",
+      "ephemeralDescription": "This is a temporary terminal. Programs end when the connection closes. Open a new session to keep work running.",
       "focus": "Focus this pane",
       "headerHint": "Click to zoom · drag to move",
       "headerHintFocus": "Click to focus · drag to move",

@@ -15,8 +15,23 @@ import EmptyCell from '../src/components/EmptyCell.svelte';
 import TerminalGrid from '../src/components/TerminalGrid.svelte';
 import TerminalPane from '../src/components/TerminalPane.svelte';
 import TerminalTargetPicker from '../src/components/TerminalTargetPicker.svelte';
+import WarningHarness from './WarningHarness.svelte';
 
 afterEach(cleanup);
+
+it('[TC-PDUI-012][TC-PDUI-229] exposes temporary-terminal help without warning for persistent sessions or zooming on its button', async () => {
+	const surface = fakeSurface();
+	const onZoom = vi.fn();
+	const { container } = render(WarningHarness, { props: { adapter: new EchoTerminalAdapter(), createSurface: surface.factory, onZoom } });
+	await tick();
+	expect(container.querySelectorAll('[data-warning-help]')).toHaveLength(1);
+	expect(container.querySelector('[data-pdmux-pane="persistent"] [data-warning-help]')).toBeNull();
+	const button = container.querySelector<HTMLButtonElement>('[data-warning-help]')!;
+	button.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+	button.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0 }));
+	button.click();
+	expect(onZoom).not.toHaveBeenCalled();
+});
 
 it('[TC-PDUI-236] editing display metadata preserves the mounted surface and open connection', async () => {
 	const surface = fakeSurface();

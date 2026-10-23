@@ -15,6 +15,7 @@
   import { replaceState } from "$app/navigation";
   import type { TerminalPaneActionContext } from "@pdmux/ui";
   import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
+  import TerminalPaneWarning from "#lib/dashboard/components/terminal-pane-warning.svelte";
   import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
   import SessionManagerDialog from "#lib/dashboard/components/session-manager-dialog.svelte";
   import SessionRenameDialog from "#lib/dashboard/components/session-rename-dialog.svelte";
@@ -149,6 +150,8 @@
   });
 </script>
 
+{#snippet paneWarning()}<TerminalPaneWarning />{/snippet}
+
 {#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone host={host ?? undefined} {canManage} {now} onManageSessions={() => sessionsOpen = true} onRenameSession={(slot) => { renaming = slot; renameOpen = true; }} onEditPresentation={() => presentationOpen = true} />{/snippet}
 {#snippet paneVeil(_actions: TerminalPaneActionContext)}<VmPaneVeil host={host ?? undefined} {canManage} {now} />{/snippet}
 <SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
@@ -179,6 +182,7 @@
       {hosts}
       adapter={relay}
       {paneActions}
+      {paneWarning}
       {paneVeil}
       onReadHistory={readTerminalHistory}
       onSessionResolved={(slotId: string, sessionId: string) => {

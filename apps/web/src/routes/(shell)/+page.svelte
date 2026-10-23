@@ -62,6 +62,7 @@
   import TerminalToolbar from "#lib/dashboard/components/terminal-toolbar.svelte";
   import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
   import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
+  import TerminalPaneWarning from "#lib/dashboard/components/terminal-pane-warning.svelte";
   import SessionRenameDialog from "#lib/dashboard/components/session-rename-dialog.svelte";
   import TerminalPresentationDialog from "#lib/dashboard/components/terminal-presentation-dialog.svelte";
   import VmPaneVeil from "#lib/vm/vm-pane-veil.svelte";
@@ -394,6 +395,8 @@
 
 <svelte:head><title>{i18n.t.dash.title} · PDMux</title></svelte:head>
 
+{#snippet paneWarning()}<TerminalPaneWarning />{/snippet}
+
 {#snippet paneActions(actions: TerminalPaneActionContext)}
   <TerminalPaneActions
     {actions}
@@ -436,6 +439,7 @@
     {t}
     paneClickAction="focus"
     {paneActions}
+    {paneWarning}
     {paneVeil}
     onAssign={openPicker}
     onClose={askClose}
