@@ -267,7 +267,7 @@ export class GitDock {
   /** A POST accepts work; only subsequent GETs can show its result. */
   async collect(what: CollectionKind): Promise<void> {
     const hostId = this.hostId;
-    if (!hostId || this.collection) return;
+    if (!hostId || this.collection || (what === "remote" && !this.repo)) return;
     this.cancelRefreshTimer();
     this.collectionError = null;
     this.collecting = what;
@@ -284,6 +284,12 @@ export class GitDock {
     if (this.collection !== wait) return;
     if (!baseline) {
       this.finishCollection(this.refreshError ?? "NETWORK_ERROR");
+      this.scheduleRefresh();
+      return;
+    }
+    // A repository can disappear while the baseline is being read.
+    if (what === "remote" && !this.repo) {
+      this.finishCollection();
       this.scheduleRefresh();
       return;
     }
@@ -459,10 +465,12 @@ export class GitDock {
     const hostId = this.hostId;
     const repoId = this.repoId;
     const sha = this.selected;
-    if (!hostId || !repoId || !sha) return;
+    if (!hostId || !repoId || !sha || sha === UNCOMMITTED) return;
     if (this.filePath === path) {
+      this.fileGeneration += 1;
       this.filePath = null;
       this.fileBlob = null;
+      this.fileLoading = false;
       this.fileUnavailable = false;
       return;
     }
@@ -470,6 +478,7 @@ export class GitDock {
     const generation = ++this.fileGeneration;
     this.filePath = path;
     this.fileBlob = null;
+    this.fileLoading = false;
     this.fileUnavailable = false;
 
     const cached = this.files.getBlob(repoId, sha, path);

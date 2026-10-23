@@ -39,6 +39,75 @@ function apiFixture(graph: () => RepoGraphResponse): Mocked<typeof gitApi> {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
+describe("[TC-PDGIT-053] repository-only operations require a current repository", () => {
+  it("does not ask the remote when no repository exists, while keeping discovery available", async () => {
+    const { dock, api } = fixture();
+    api.repos.mockResolvedValue([]);
+    await dock.openHost("h1");
+    await dock.collect("remote");
+    expect(api.collect).not.toHaveBeenCalled();
+    expect(dock.collecting).toBeNull();
+    await dock.collect("repos");
+    expect(api.collect).toHaveBeenCalledWith("h1", "repos");
+  });
+
+  it("does not post a remote request if its baseline loses the repository", async () => {
+    const { dock, api } = fixture();
+    await dock.openHost("h1");
+    api.repos.mockResolvedValue([]);
+    await dock.collect("remote");
+    expect(api.collect).not.toHaveBeenCalled();
+    expect(dock.repo).toBeNull();
+    expect(dock.collecting).toBeNull();
+  });
+
+  it("discovers a repository after the initial empty response", async () => {
+    const { dock, api } = fixture();
+    api.repos.mockResolvedValueOnce([]);
+    await dock.openHost("h1");
+    await dock.refresh();
+    expect(dock.repo?.id).toBe(repository().id);
+    expect(dock.graph?.commits[0]?.sha).toBe(OLD_SHA);
+  });
+});
+
+describe("[TC-PDGIT-054] a file read belongs to the file still open", () => {
+  it("closing an in-flight file clears loading and ignores the late answer", async () => {
+    const { dock, api } = fixture();
+    await dock.openHost("h1"); await dock.select(OLD_SHA);
+    const gate = deferred<Awaited<ReturnType<typeof gitApi.commitBlob>>>();
+    api.commitBlob.mockReturnValueOnce(gate.promise);
+    const read = dock.openFile("a.ts");
+    await dock.openFile("a.ts");
+    expect(dock.fileLoading).toBe(false);
+    gate.resolve({ available: true, pending: 0, detail: gitBlobSchema.parse({ sha: OLD_SHA, path: "a.ts", lines: ["late"] }) });
+    await read;
+    expect(dock.filePath).toBeNull();
+    expect(dock.fileBlob).toBeNull();
+  });
+
+  it("opening a cached file clears the loading state of the previous file", async () => {
+    const { dock, api } = fixture();
+    await dock.openHost("h1"); await dock.select(OLD_SHA); await dock.openFile("a.ts");
+    const gate = deferred<Awaited<ReturnType<typeof gitApi.commitBlob>>>();
+    api.commitBlob.mockReturnValueOnce(gate.promise);
+    const read = dock.openFile("b.ts");
+    await dock.openFile("a.ts");
+    expect(dock.fileLoading).toBe(false);
+    gate.resolve({ available: true, pending: 0, detail: gitBlobSchema.parse({ sha: OLD_SHA, path: "b.ts", lines: ["late"] }) });
+    await read;
+    expect(dock.filePath).toBe("a.ts");
+    expect(dock.fileBlob?.path).toBe("a.ts");
+  });
+
+  it("never uses the committed-file API for the working-tree pseudo commit", async () => {
+    const { dock, api } = fixture();
+    await dock.openHost("h1"); await dock.select(UNCOMMITTED);
+    await dock.openFile("a.ts");
+    expect(api.commitBlob).not.toHaveBeenCalled();
+  });
+});
+
 describe("[TC-PDGIT-050] refresh reads snapshots without reopening the selection", () => {
   it("keeps the commit, tree and file while rows, refs and freshness change", async () => {
     const { dock, api, update } = fixture();

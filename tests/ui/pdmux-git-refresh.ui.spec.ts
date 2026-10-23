@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { devices, type Page } from "@playwright/test";
 import { expect, test } from "../helpers/pdmux-test";
 import { readLayout, writeLayout } from "../helpers/pdmux-layout";
 import { boxFacts, expectOnScreen } from "../helpers/geometry";
@@ -7,7 +7,7 @@ import { WebSocket } from "ws";
 import { UNCOMMITTED } from "@pdmux/core";
 import english from "../../apps/web/src/lib/i18n/catalogs/app/en.json";
 import { graphSnapshot, repository, NEW_SHA, OLD_SHA } from "../../apps/web/test/fixtures/git-snapshot";
-import type { RepoGraphResponse } from "../../apps/web/src/lib/dashboard/types";
+import type { RepoGraphResponse, RepoRow } from "../../apps/web/src/lib/dashboard/types";
 
 // The live-ingest case mints a one-time agent credential; never archive it in a trace.
 test.use({ trace: "off" });
@@ -21,12 +21,20 @@ interface Fixture {
   detailReads: number;
   failure: string | null;
   working: ReturnType<typeof workingDiffSchema.parse> | null;
+  repos: RepoRow[] | null;
+  listFailure: boolean;
+  listGate: Promise<void> | null;
 }
 
 async function mockGit(page: Page): Promise<Fixture> {
   const state: Fixture = { graph: graphSnapshot(), collects: 0, reads: 0,
-    treeReads: 0, blobReads: 0, detailReads: 0, failure: null, working: null };
-  await page.route("**/api/hosts/*/repos", (route) => route.fulfill({ json: [state.graph.repo] }));
+    treeReads: 0, blobReads: 0, detailReads: 0, failure: null, working: null,
+    repos: null, listFailure: false, listGate: null };
+  await page.route("**/api/hosts/*/repos", async (route) => {
+    await state.listGate;
+    return state.listFailure ? route.fulfill({ status: 503, json: { success: false, error: { code: "NETWORK_ERROR", message: "Unavailable" } } })
+      : route.fulfill({ json: state.repos ?? [state.graph.repo] });
+  });
   await page.route("**/api/hosts/*/repos/*", (route) => {
     state.reads += 1;
     return route.fulfill({ json: state.graph });
@@ -163,6 +171,7 @@ test("[TC-PDGIT-052] an open working diff refreshes and clears when the tree is 
   state.working = workingDiffSchema.parse({ unstaged: [{ path: "old.ts", status: "M", lines: ["+old"] }] });
   await page.goto(`/git/h1/${state.graph.repo.id}`);
   await page.locator(`[data-pdmux-sha='${UNCOMMITTED}']`).click();
+  await expect(page.getByTestId("detail-tab-tree")).toHaveCount(0);
   await expect(page.locator("[data-pdmux-tabpanel='changes']")).toContainText("old.ts");
   state.working = workingDiffSchema.parse({ unstaged: [{ path: "new.ts", status: "M", lines: ["+new"] }] });
   await expect(page.locator("[data-pdmux-tabpanel='changes']")).toContainText("new.ts", { timeout: 12_000 });
@@ -307,3 +316,74 @@ test.describe("real snapshot ingestion", () => {
     }
   });
 });
+
+for (const mobile of [false, true]) {
+  test.describe(`repository boundaries ${mobile ? "mobile" : "desktop"}`, () => {
+    test.use(mobile ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: devices["Pixel 7"].userAgent } : {});
+    test("[TC-PDGIT-055] loading and errors stay distinct from an empty repository", async ({ page }, info) => {
+      const state = await mockGit(page);
+      let release!: () => void;
+      state.listGate = new Promise<void>((done) => { release = done; });
+      try {
+        await page.goto(`/git/h1/${state.graph.repo.id}`);
+        await expect(page.getByTestId("dock-loading")).toBeVisible();
+        await expect(page.locator(".pdmux-graph-body")).toHaveCount(0);
+        await expect(page.getByTestId("dock-empty")).toHaveCount(0);
+        await page.screenshot({ path: info.outputPath("loading.png") });
+      } finally { state.listGate = null; release(); }
+      await expect(page.locator(`[data-pdmux-sha='${OLD_SHA}']`)).toBeVisible();
+      state.listFailure = true;
+      await page.reload();
+      await expect(page.getByTestId("dock-error")).toBeVisible();
+      await expect(page.getByTestId("dock-empty")).toHaveCount(0);
+      await expect(page.locator(".pdmux-graph-body")).toHaveCount(0);
+      state.listFailure = false;
+      state.graph = { ...graphSnapshot(repository({ headSha: null })), refs: [], commits: [] };
+      await page.getByTestId("dock-rescan").click();
+      await expect(page.locator('[data-pdmux-empty="graph"]')).toBeVisible();
+      await expect(page.getByTestId("dock-empty")).toHaveCount(0);
+      await expect(page.getByTestId("dock-error")).toHaveCount(0);
+      await expectOnScreen(page.locator(".pdmux-graph-list"));
+      await page.screenshot({ path: info.outputPath("empty-commit-history.png") });
+    });
+    for (const surface of ["docked", "detached"] as const) {
+      test(`[TC-PDGIT-055] ${surface} empty repositories hide repository-only panels and recover`, async ({ page }, info) => {
+        const state = await mockGit(page);
+        state.repos = [];
+        const verify = async (): Promise<void> => {
+          if (mobile && surface === "docked") await page.getByTestId("shell-tab-git").click();
+          const dock = page.getByTestId("commit-dock");
+          await expect(page.getByTestId("dock-empty")).toBeVisible();
+          const before = await boxFacts(dock);
+          await page.screenshot({ path: info.outputPath("empty-repositories.png") });
+          await info.attach("empty-geometry", { body: JSON.stringify(before), contentType: "application/json" });
+          await expect(dock.locator(".pdmux-graph-body, .pdmux-refs-column, [data-pdmux-detail]")).toHaveCount(0);
+          await expect(page.getByTestId("dock-remote-panel")).toHaveCount(0);
+          await expect(page.getByTestId("dock-freshness")).toHaveCount(0);
+          await expect(page.getByTestId("dock-repo")).toBeDisabled();
+          await expect(page.getByTestId("dock-rescan")).toBeEnabled();
+          state.repos = null;
+          await page.getByTestId("dock-rescan").click();
+          await expect(page.locator(`[data-pdmux-sha='${OLD_SHA}']`)).toBeVisible();
+          expect((await boxFacts(page.locator(".pdmux-graph-list"))).width).toBeGreaterThan(100);
+          await expect(page.getByTestId("dock-repo")).toBeEnabled();
+          state.graph = graphSnapshot({ ...state.graph.repo, lastSnapshotAt: new Date().toISOString() });
+          await expect(page.getByTestId("dock-remote")).toBeEnabled();
+          await expect(page.getByTestId("dock-rescan")).toBeEnabled();
+          await page.locator(`[data-pdmux-sha='${OLD_SHA}']`).click();
+          await expect(page.getByTestId("detail-tab-tree")).toBeVisible();
+          state.repos = [];
+          await page.getByTestId("dock-rescan").click();
+          await expect(page.getByTestId("dock-empty")).toBeVisible();
+          await expect(dock.locator(".pdmux-graph-body, [data-pdmux-detail], [role='separator']")).toHaveCount(0);
+          const after = await boxFacts(dock);
+          expect(after.width).toBe(before.width);
+          expect(after.height).toBe(before.height);
+          await expectOnScreen(dock);
+        };
+        if (surface === "docked") await inDock(page, state, verify);
+        else { await page.goto(`/git/h1/${state.graph.repo.id}`); await verify(); }
+      });
+    }
+  });
+}

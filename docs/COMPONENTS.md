@@ -384,6 +384,14 @@ more than the sheet does.
 
 ### `GitGraph` / `GitRefPanel` / `CommitDetail` / `DiffView`
 
+The consuming Git dock renders repository-only controls, refs, remote status, graph and detail
+splitters only for a selected repository. Before that it distinguishes host selection, loading,
+an empty repository list and a failed request. Discovery remains available for an empty list;
+remote checks require a repository, including after their baseline read. A repository with no
+commits still renders its empty graph. The working tree has changes but no committed file-tree
+tab. Closing an in-flight file read or choosing a cached file clears loading and invalidates the
+previous response, so it cannot reopen a closed file or replace the current file.
+
 | Component | Key props | Callbacks |
 |---|---|---|
 | `GitGraph` | `commits`, `refs`, `uncommitted` (core `uncommittedSummary()`), `uncommittedLabel`, `head`, `selectedSha`, `formatDate` | `onSelect(sha)` — the uncommitted row is `sha === 'uncommitted'` |

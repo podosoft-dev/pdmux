@@ -643,6 +643,7 @@
       "checkRemote": "Check the remote",
       "collecting": "collecting…",
       "refreshTimeout": "No new collection result arrived within one minute. Automatic refresh continues; you can try again.",
+      "loadingRepos": "Reading repositories…",
       "repoMissing": "The selected repository is no longer available. Choose another repository.",
       "neverCollected": "not collected yet",
       "agoNow": "collected just now",

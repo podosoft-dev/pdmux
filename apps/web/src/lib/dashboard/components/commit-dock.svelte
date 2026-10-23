@@ -247,7 +247,7 @@
    * whether or not it has been committed.
    */
   const selectedCommit = $derived.by(() => {
-    if (!dock.selected) return null;
+    if (!repo || !dock.selected) return null;
     if (dock.selected === UNCOMMITTED) {
       return { sha: UNCOMMITTED, subject: i18n.t.dash.git.workingTree, author: "", date: null };
     }
@@ -333,6 +333,7 @@
     <Select.Root
       type="single"
       value={dock.repoId ?? ""}
+      disabled={!dock.repos.length}
       onValueChange={(value: string) => onRepoChange?.(value)}
     >
       <Select.Trigger class="h-7 flex-1 text-xs" data-testid="dock-repo">{repoName}</Select.Trigger>
@@ -346,9 +347,11 @@
          took on a timer, and ARCHITECTURE §4 claimed for a long time that "the UI
          says so" while no such line existed anywhere. Without it there is no way to
          tell a quiet repository from a dead agent. -->
+    {#if repo}
     <span class="text-muted-foreground shrink-0" data-testid="dock-freshness" title={freshTitle}>
       {freshText}
     </span>
+    {/if}
     <Button
       variant="ghost"
       size="sm"
@@ -359,6 +362,7 @@
       data-testid="dock-rescan"
       onclick={() => void dock.collect("repos")}><RefreshCwIcon class="size-4" /></Button
     >
+    {#if repo}
     <!-- The only control here that reaches a network. It runs `ls-remote`, which
          reads the remote's refs and writes nothing to the checkout — pdmux never
          fetches, and the panel says so where the answer appears. -->
@@ -395,12 +399,19 @@
         onclick={() => onDetach?.()}><ExternalLinkIcon class="size-4" /></Button
       >
     {/if}
+    {/if}
   </header>
 
   {#if refreshMessage}
     <p role="status" class="text-destructive shrink-0 px-2 py-1 text-xs" data-testid="dock-refresh-error">
       {refreshMessage}
     </p>
+  {/if}
+
+  {#if !dock.hostId}
+    <p class="text-muted-foreground px-2 py-1 text-xs" data-testid="dock-pick-host">{i18n.t.dash.git.noHost}</p>
+  {:else if !dock.reposLoaded}
+    <p role="status" class="text-muted-foreground px-2 py-1 text-xs" data-testid="dock-loading">{i18n.t.dash.git.loadingRepos}</p>
   {/if}
 
   {#if dock.error}
@@ -431,6 +442,7 @@
     <p class="text-destructive px-2 py-1 text-xs">{fmt(i18n.t.dash.git.error, { message: repo.error })}</p>
   {/if}
 
+  {#if repo}
   <!-- Refs panel │ graph: a row, so each side scrolls itself (ARCHITECTURE §7). -->
   <div class="pdmux pdmux-graph-body">
     {#if refsOpen}
@@ -517,10 +529,12 @@
           <FileDiffIcon class="size-4" />
           {i18n.t.dash.git.tabChanges}{detail?.files?.length ? ` ${detail.files.length}` : ""}
         </Tabs.Trigger>
+        {#if dock.selected !== UNCOMMITTED}
         <Tabs.Trigger value="tree" data-testid="detail-tab-tree">
           <FolderTreeIcon class="size-4" />
           {i18n.t.dash.git.tabTree}
         </Tabs.Trigger>
+        {/if}
       </Tabs.List>
     </Tabs.Root>
   {/if}
@@ -548,4 +562,5 @@
     blobUnavailable={dock.fileUnavailable}
     {t}
   />
+  {/if}
 </div>
