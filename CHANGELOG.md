@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.17.12
+
+- Preview Markdown as rendered content or source, and open PDF, audio and more text formats.
+  Select multiple files and folders for deletion or download, and follow transfers in one
+  compact summary instead of accumulating notifications.
+- Hide repository-specific controls when Git discovery finds no repository, distinguish
+  loading and errors, and prevent stale file reads from replacing the selected file.
+- Agent 0.1.35 decodes Git's quoted Unicode paths and rename headers correctly. Existing
+  stored patches display readable paths while preserving file selection and change counts.
+
 ## 0.17.11
 
 - Run the server, CI and development images on Bun 1.4.4. It fixes a Brotli decoder
