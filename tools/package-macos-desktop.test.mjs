@@ -3,7 +3,7 @@ import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { macSigningConfiguration, macPackagingArguments } from "./package-macos-desktop.mjs";
+import { macSigningConfiguration, macPackagingArguments, NOTARIZE_APP_HOOK } from "./package-macos-desktop.mjs";
 import { certificateExtractionArguments, parseAgentChecksums, verifyAgentResources } from "./verify-macos-desktop.mjs";
 
 describe("[TC-PDDESKTOP-009] signed product package integrity", () => {
@@ -44,7 +44,11 @@ describe("[TC-PDDESKTOP-009] signed product package integrity", () => {
   it("requires app notarization and a signed DMG for the production overlay", () => {
     const base = { mac: { target: ["dmg", "zip"] }, dmg: { title: "fixture" } };
     const config = macSigningConfiguration(base, "A".repeat(40), true);
-    expect(config.mac.notarize).toBe(true);
+    // The builder's notarization is replaced by the afterSign hook, which staples
+    // with the release retry schedule.
+    expect(config.mac.notarize).toBe(false);
+    expect(config.afterSign).toBe(NOTARIZE_APP_HOOK);
+    expect(macSigningConfiguration(base, "A".repeat(40)).afterSign).toBeUndefined();
     expect(config.dmg).toEqual({ title: "fixture", sign: true });
     expect(config.forceCodeSigning).toBe(true);
     expect(base.dmg.sign).toBeUndefined();

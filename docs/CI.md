@@ -237,6 +237,23 @@ The custom `staplerWithRetry` helper covers later DMG finalization and package v
 does not wrap electron-builder's internal application stapling. Re-running failed jobs retained
 the same source tag and canonical signed agent archive and reused successful image/platform jobs.
 
+**App stapling now uses the same retries (2026-10-23).** The v0.17.10 release failed twice at that
+boundary on macOS Intel (stapler 68, `-1005`, about 2.5 minutes into packaging; re-running only the
+failed job hit it again). Two changes:
+
+- Release packaging sets `mac.notarize: false` and points electron-builder's `afterSign` hook at
+  `tools/notarize-macos-app.mjs`. The hook archives the signed app, submits it with `notarytool`,
+  then staples and validates it through `staplerWithRetry`, at the same point in the build, so the
+  DMG and ZIP are still made from the stapled app.
+- `macos-15-intel` loses stapler's HTTP/3 (UDP 443) connection to Apple's CloudKit ticket service
+  ([actions/runner-images#14924](https://github.com/actions/runner-images/issues/14924)). The signed
+  Intel packaging and verification jobs drop outbound UDP 443 with `pfctl` first, so the lookup
+  falls back to TCP. Both still end with `stapler validate`.
+
+⚠ A rebuild of an existing tag (`workflow_dispatch` with `releaseTag`) checks out that tag's tools,
+and production signing refuses any ref other than the tag. A tag made before these changes cannot
+pick them up; it needs a new version.
+
 | Job or step | First attempt | Successful Intel retry |
 |---|---:|---:|
 | Canonical agent preparation | 178 s | reused |

@@ -154,6 +154,19 @@ describe("release workflow", () => {
     expect(platformVerifier).not.toContain('tar -xf "$RUNNER_TEMP/agent-reference');
   });
 
+  test("[TC-PDDESKTOP-009] sends Intel macOS stapler lookups over TCP before stapling or validating", () => {
+    // macos-15-intel drops stapler's HTTP/3 connection to Apple's CloudKit ticket
+    // service; the 0.17.10 Intel package failed twice on it (stapler 68, -1005).
+    const block = "block drop out quick proto udp from any to any port 443";
+    const packageJob = desktopWorkflow.match(/\n  package:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:\n|$)/)?.[1] ?? "";
+    const verifyMac = desktopWorkflow.match(/\n  verify-macos:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:\n|$)/)?.[1] ?? "";
+    for (const [job, stapling] of [[packageJob, "Package macOS release with Developer ID and notarization"], [verifyMac, "Verify final macOS packages on a clean runner"]] as const) {
+      expect(job).toContain(block);
+      expect(job).toContain("runner.arch == 'X64'");
+      expect(job.indexOf(block)).toBeLessThan(job.indexOf(stapling));
+    }
+  });
+
   test("[TC-PDDESKTOP-009] restricts stable signing to macOS releases and independently verifies artifacts", () => {
     expect(workflow).toContain("signed: true");
     expect(desktopWorkflow).toContain("'desktop-signing' || 'desktop-build'");

@@ -21,13 +21,20 @@ export async function runMacPackaging(command, args, env) {
   });
 }
 
+export const NOTARIZE_APP_HOOK = join(repository, "tools/notarize-macos-app.mjs");
+
 export function macSigningConfiguration(base, identity, notarize = false) {
   assert.ok(typeof identity === "string" && identity.trim() && identity !== "-", "A stable certificate identity is required; ad-hoc signing cannot update safely");
   return {
     ...base,
     forceCodeSigning: true,
+    // ⚠ electron-builder's own notarization staples through `@electron/notarize`,
+    // which gives up within seconds when Apple's CloudKit ticket lookup drops the
+    // connection. The `afterSign` hook notarizes the app at the same point and
+    // staples with the release retry schedule (see tools/notarize-macos-app.mjs).
+    ...(notarize ? { afterSign: NOTARIZE_APP_HOOK } : {}),
     mac: {
-      ...base.mac, identity, notarize, hardenedRuntime: true, strictVerify: true,
+      ...base.mac, identity, notarize: false, hardenedRuntime: true, strictVerify: true,
       binaries: ["Contents/Resources/bin/bun"],
       // Downloadable agents have immutable checksums and are resources, not app helpers.
       signIgnore: ["/Contents/Resources/web/client/agent/[^/]+/pdmux-agent-(linux|darwin)-(amd64|arm64)$"],
