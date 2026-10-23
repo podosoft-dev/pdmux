@@ -9,7 +9,7 @@ import { defineConfig } from 'vitest/config';
  * three rounds of "fixes" in the product this package generalises.
  */
 export default defineConfig({
-	plugins: [svelte({ hot: false })],
+	plugins: [svelte()],
 	resolve: {
 		// Components are compiled from source here, so the browser condition must win
 		// over the default node one (which would give a server-rendering build).
