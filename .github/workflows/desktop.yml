@@ -131,6 +131,16 @@ jobs:
         if: ${{ runner.os == 'macOS' && !inputs.signed }}
         run: bun tools/package-macos-desktop.mjs --ci-probe
 
+      - name: Send Apple ticket lookups over TCP on Intel macOS
+        # macos-15-intel loses stapler's HTTP/3 (UDP 443) connection to Apple's
+        # CloudKit ticket service (actions/runner-images#14924): the 0.17.10 release
+        # failed twice with stapler 68 and NSURLErrorDomain -1005. Dropping outbound
+        # UDP 443 for this job makes the lookup fall back to TCP.
+        if: ${{ runner.os == 'macOS' && runner.arch == 'X64' && inputs.signed }}
+        shell: bash
+        run: |
+          echo "block drop out quick proto udp from any to any port 443" | sudo pfctl -a com.apple/pdmux-no-quic -f -
+          sudo pfctl -E
       - name: Package macOS release with Developer ID and notarization
         if: ${{ runner.os == 'macOS' && inputs.signed }}
         run: bun tools/release-macos-signing.mjs
@@ -260,6 +270,16 @@ jobs:
       - name: Restore canonical agent verification reference
         shell: bash
         run: tar -xf "$RUNNER_TEMP/agent-reference/agent-binaries.tar" -C "$RUNNER_TEMP/agent-reference"
+      - name: Send Apple ticket lookups over TCP on Intel macOS
+        # macos-15-intel loses stapler's HTTP/3 (UDP 443) connection to Apple's
+        # CloudKit ticket service (actions/runner-images#14924): the 0.17.10 release
+        # failed twice with stapler 68 and NSURLErrorDomain -1005. Dropping outbound
+        # UDP 443 for this job makes the lookup fall back to TCP.
+        if: ${{ runner.os == 'macOS' && runner.arch == 'X64' && inputs.signed }}
+        shell: bash
+        run: |
+          echo "block drop out quick proto udp from any to any port 443" | sudo pfctl -a com.apple/pdmux-no-quic -f -
+          sudo pfctl -E
       - name: Verify final macOS packages on a clean runner
         env:
           PACKAGE_DIRECTORY: ${{ runner.temp }}/desktop-verify

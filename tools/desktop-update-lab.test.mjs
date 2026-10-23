@@ -47,7 +47,7 @@ it("[TC-PDDESKTOP-009] packages isolated test versions without changing product 
   const base={appId:"production",protocols:[{schemes:["production"]}],files:["dist/**"],extraResources:[],mac:{},directories:{}};
   const config=labConfiguration(base,"stable-certificate","/tmp/output","/tmp/bootstrap","/tmp/agents/1.0.0");
   expect(config.appId).toBe("dev.podosoft.pdmux.update-lab"); expect(config.protocols).toEqual([]);
-  expect(config.mac.notarize).toBe(true); expect(config.mac.identity).toBe("stable-certificate");
+  expect(config.mac.notarize).toBe(false); expect(config.afterSign).toMatch(/tools\/notarize-macos-app\.mjs$/); expect(config.mac.identity).toBe("stable-certificate");
   expect(base.appId).toBe("production"); expect(base.protocols).toHaveLength(1);
   expect(labBootstrap()).toContain("--user-data-dir="); expect(labBootstrap()).toContain("setAsDefaultProtocolClient=()=>false");
 });
