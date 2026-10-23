@@ -27,7 +27,23 @@ jobs:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
       - run: bun ci
-      - run: bunx playwright install --with-deps chromium
+      # Playwright installs Chromium's system packages with apt on every run, from a runner
+      # mirror that is often slow or stalls. Keep the downloaded packages in the Actions cache,
+      # and bound the step so a stalled mirror fails in minutes instead of eating the job.
+      - name: Keep apt packages for the Playwright system dependencies
+        run: |
+          mkdir -p "$HOME/.cache/apt-archives/partial"
+          printf 'Dir::Cache::Archives "%s/.cache/apt-archives";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt::APT::Keep-Downloaded-Packages "true";\nAcquire::Retries "3";\nAcquire::http::Timeout "30";\n' "$HOME" \
+            | sudo tee /etc/apt/apt.conf.d/90pdmux-playwright-archives
+      - name: Cache apt packages for Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/apt-archives
+          key: playwright-apt-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: playwright-apt-${{ runner.os }}-
+      - name: Install Chromium and its system packages
+        timeout-minutes: 6
+        run: bunx playwright install --with-deps chromium
       - run: bun run build:agent
       - run: bun run build
       - name: Verify SQLite runtime and real agent
@@ -36,6 +52,9 @@ jobs:
         env:
           READINESS_DATABASE: postgres
         run: bun run test:readiness
+      - name: Let the cache step read the apt packages
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$HOME/.cache/apt-archives" 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
