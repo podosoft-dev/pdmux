@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.17.10
+
+- Run the server, CI and development images on Bun 1.4.4. It fixes a Brotli decoder
+  out-of-bounds write (oven-sh/bun#46352) reachable from `fetch()` responses with
+  `Content-Encoding: br`, `node:zlib` and `DecompressionStream`.
+- Show what a pane's temporary-terminal warning means on hover, keyboard focus or tap.
+- Delete a host synchronized from another desktop while that desktop is offline.
+- Relay image responses from server hosts to the desktop decoded, so previews render.
+
 ## 0.17.9
 
 - Choose each terminal tag's text color separately from its background, or restore automatic
