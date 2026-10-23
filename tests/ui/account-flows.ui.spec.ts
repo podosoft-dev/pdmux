@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { ADMIN, anonState } from "../helpers/accounts";
 import { ready } from "../helpers/hydration";
+import { serverTogglesRestorer } from "../helpers/server-toggles";
 import { smsSinkReachable, waitForSmsOtp } from "../helpers/sms";
 
 // Each test drives a fresh disposable account (via a real UI login) so the shared
@@ -49,6 +50,7 @@ test("account: change email address", async ({ page, playwright }) => {
 test("account: delete my own account", { tag: "@exclusive" }, async ({ page, playwright }) => {
   const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
   await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
+  const restoreToggles = await serverTogglesRestorer(admin, ["allowDelete"]);
   try {
     // Account deletion is a server toggle (off by default) — enable it, then poll
     // until the capability is live (config store has a short TTL).
@@ -77,7 +79,7 @@ test("account: delete my own account", { tag: "@exclusive" }, async ({ page, pla
       ]);
     }
   } finally {
-    await admin.put("/api/account/auth-config", { data: { server: { allowDelete: false } } });
+    await restoreToggles();
     await admin.dispose();
   }
 });

@@ -37,11 +37,11 @@ test("admin sees the user list and can search", async ({ page }) => {
   // Search by exact address — robust to pagination as the user count grows.
   await page.locator("#toolbar-search").fill(ADMIN.email);
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page.getByRole("cell", { name: ADMIN.email })).toBeVisible();
+  await expect(page.getByRole("cell", { name: ADMIN.email, exact: true })).toBeVisible();
   await page.locator("#toolbar-search").fill(USER.email);
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page.getByRole("cell", { name: USER.email })).toBeVisible();
-  await expect(page.getByRole("cell", { name: ADMIN.email })).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: USER.email, exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: ADMIN.email, exact: true })).toHaveCount(0);
 });
 
 test("the user list asks the server for one page at a time", async ({ page }) => {
@@ -64,7 +64,7 @@ test("the user list asks the server for one page at a time", async ({ page }) =>
   expect(query.get("search")).toBe("Admin@Example.com");
   expect(query.get("searchField")).toBe("email");
   expect(query.get("offset")).toBe("0");
-  await expect(page.getByRole("cell", { name: ADMIN.email })).toBeVisible();
+  await expect(page.getByRole("cell", { name: ADMIN.email, exact: true })).toBeVisible();
   expect(requested.filter((url) => url.includes("/api/auth/admin/list-users"))).toEqual([]);
 });
 

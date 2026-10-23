@@ -27,6 +27,7 @@ import { AuthService, createRequestIdentity } from "./auth.service";
 import { configureAuthQueryDatabase } from "./db";
 import { configEvents, publishConfigChanged } from "./config-events";
 import { setMailConfigStore } from "../mail/mailer";
+import { assertTeamsEnabled, listTeamMembersFor } from "./org-teams";
 
 export const AUTH = Symbol("auth") as ServiceKey<AuthService>;
 export const SETTINGS = Symbol("settings") as ServiceKey<SettingsService>;
@@ -52,11 +53,11 @@ const authConfigUpdateSchema = t.Object({
     from: t.Optional(t.String()),
   })),
   server: t.Optional(t.Object({
-    requireEmailVerification: t.Optional(t.Boolean()),
-    requireSignupApproval: t.Optional(t.Boolean()),
-    allowDelete: t.Optional(t.Boolean()),
-    hibp: t.Optional(t.Boolean()),
-    auditLog: t.Optional(t.Boolean()),
+    requireEmailVerification: t.Optional(t.Nullable(t.Boolean())),
+    requireSignupApproval: t.Optional(t.Nullable(t.Boolean())),
+    allowDelete: t.Optional(t.Nullable(t.Boolean())),
+    hibp: t.Optional(t.Nullable(t.Boolean())),
+    auditLog: t.Optional(t.Nullable(t.Boolean())),
     sessionIdleTimeoutMinutes: t.Optional(t.Nullable(t.Number())),
   })),
 });
@@ -65,6 +66,7 @@ const accountPlugin: AppPlugin = ({ services }) => {
   const authService = services.resolve(AUTH);
   const settings = services.resolve(SETTINGS);
   const authConfig = services.resolve(AUTH_CONFIG);
+  const database = services.resolve(DATABASE);
 
   return new Elysia({ name: "podokit.auth" })
     .mount(authRuntime.handler)
@@ -92,6 +94,7 @@ const accountPlugin: AppPlugin = ({ services }) => {
         apiKey: flags.apiKey,
         passkey: flags.passkey,
         organization: flags.organization,
+        teams: flags.organization && flags.teams,
         oidcProvider: flags.oidcProvider,
         require2fa: flags.require2fa,
         providers: snapshot.providers,
@@ -150,6 +153,17 @@ const accountPlugin: AppPlugin = ({ services }) => {
         role: t.String({ minLength: 1 }),
       }),
       detail: { tags: ["account"], summary: "Add an organization member" },
+    })
+    .get("/account/team-members", async ({ request, query }) => {
+      assertTeamsEnabled(await settings.flags());
+      const session = await authService.requireSession(request);
+      return listTeamMembersFor(database.sql, session.user.id, query.organizationId, query.teamId);
+    }, {
+      query: t.Object({
+        organizationId: t.String({ minLength: 1 }),
+        teamId: t.String({ minLength: 1 }),
+      }),
+      detail: { tags: ["account"], summary: "List the members of an organization team" },
     });
 };
 

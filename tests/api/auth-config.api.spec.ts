@@ -4,6 +4,7 @@ import {
   isUserCreationAllowed,
 } from "../../apps/api/src/auth/feature-gate";
 import { ADMIN } from "../helpers/accounts";
+import { serverTogglesRestorer } from "../helpers/server-toggles";
 
 const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
 const origin = { origin: base };
@@ -86,6 +87,30 @@ test("auth-config is admin-only and never leaks secrets @smoke", async ({ playwr
   await user.dispose();
 });
 
+test("a server toggle set to null follows the environment again", { tag: "@exclusive" }, async ({ playwright }) => {
+  const admin = await adminCtx(playwright);
+  const initial = await (await admin.get("/api/account/auth-config")).json();
+  const restoreToggles = await serverTogglesRestorer(admin, ["hibp"]);
+  try {
+    const stored = await admin.put("/api/account/auth-config", { data: { server: { hibp: true } } });
+    expect(stored.ok()).toBeTruthy();
+    const storedView = await stored.json();
+    expect(storedView.server.hibp).toBe(true);
+    expect(storedView.serverOverrides).toContain("hibp");
+
+    const cleared = await admin.put("/api/account/auth-config", { data: { server: { hibp: null } } });
+    expect(cleared.ok()).toBeTruthy();
+    const clearedView = await cleared.json();
+    expect(clearedView.serverOverrides).not.toContain("hibp");
+    if (!initial.serverOverrides.includes("hibp")) {
+      expect(clearedView.server.hibp, "the environment value").toBe(initial.server.hibp);
+    }
+  } finally {
+    await restoreToggles();
+    await admin.dispose();
+  }
+});
+
 test("automatic logout validates and applies a sliding session lifetime", { tag: "@exclusive" }, async ({ playwright }) => {
   const admin = await adminCtx(playwright);
   const freshAdmin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
@@ -134,6 +159,7 @@ test("new registrations require approval when the policy is enabled", { tag: "@e
   const adminCreatedEmail = `approval-admin-${Date.now()}@example.com`;
   let pendingId = "";
   let adminCreatedId = "";
+  const restoreToggles = await serverTogglesRestorer(admin, ["requireSignupApproval"]);
 
   try {
     const enabled = await admin.put("/api/account/auth-config", {
@@ -197,7 +223,7 @@ test("new registrations require approval when the policy is enabled", { tag: "@e
   } finally {
     if (pendingId) await admin.post("/api/auth/admin/remove-user", { data: { userId: pendingId } });
     if (adminCreatedId) await admin.post("/api/auth/admin/remove-user", { data: { userId: adminCreatedId } });
-    await admin.put("/api/account/auth-config", { data: { server: { requireSignupApproval: false } } });
+    await restoreToggles();
     await new Promise((resolve) => setTimeout(resolve, 3_200));
     await anon.get("/api/auth/get-session");
     await anon.dispose();

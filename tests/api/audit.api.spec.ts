@@ -1,5 +1,6 @@
 import type { APIRequestContext } from "@playwright/test";
 import { expect, test } from "../helpers/disposable-users";
+import { serverTogglesRestorer } from "../helpers/server-toggles";
 import { ADMIN, USER } from "../helpers/accounts";
 import { skipUnlessMailReachesMailpit, waitForOtp } from "../helpers/mailpit";
 import { totpCode } from "../helpers/totp";
@@ -259,6 +260,7 @@ test("audit logging honours the DB on/off toggle @smoke", { tag: "@exclusive" },
     });
     return disposableUsers.trackResponse(response);
   };
+  const restoreToggles = await serverTogglesRestorer(admin, ["auditLog"]);
 
   try {
     // OFF → the action is not recorded. The write refreshes this process's config
@@ -283,7 +285,7 @@ test("audit logging honours the DB on/off toggle @smoke", { tag: "@exclusive" },
     await admin.post("/api/auth/admin/remove-user", { data: { userId: onId } });
     disposableUsers.forget(onId);
   } finally {
-    await admin.put("/api/account/auth-config", { data: { server: { auditLog: true } } });
+    await restoreToggles();
     await admin.dispose();
   }
 });

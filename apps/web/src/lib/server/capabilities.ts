@@ -27,6 +27,7 @@ export const DEFAULT_CAPABILITIES: Capabilities = {
   apiKey: false,
   passkey: false,
   organization: false,
+  teams: false,
   oidcProvider: false,
   require2fa: false,
   roles: ["admin", "user"],

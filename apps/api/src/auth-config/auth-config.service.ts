@@ -49,7 +49,19 @@ export type AuthConfigView = {
     auditLog: boolean;
     sessionIdleTimeoutMinutes: number | null;
   };
+  /** The server toggles the database stores; the others follow the environment. */
+  serverOverrides: ServerToggle[];
 };
+
+/** Server-enforced switches an admin turns on or off. */
+export const SERVER_TOGGLES = [
+  "requireEmailVerification",
+  "requireSignupApproval",
+  "allowDelete",
+  "hibp",
+  "auditLog",
+] as const;
+export type ServerToggle = (typeof SERVER_TOGGLES)[number];
 
 export type ProviderUpdate = {
   enabled?: boolean;
@@ -70,12 +82,8 @@ export type AuthConfigUpdate = {
     pass?: string;
     from?: string;
   };
-  server?: {
-    requireEmailVerification?: boolean;
-    requireSignupApproval?: boolean;
-    allowDelete?: boolean;
-    hibp?: boolean;
-    auditLog?: boolean;
+  /** A toggle set to null drops the stored value, so the environment decides it again. */
+  server?: Partial<Record<ServerToggle, boolean | null>> & {
     sessionIdleTimeoutMinutes?: number | null;
   };
 };
@@ -185,6 +193,7 @@ export class AuthConfigService {
           environment.sessionIdleTimeoutMinutes,
         ),
       },
+      serverOverrides: SERVER_TOGGLES.filter((field) => typeof serverConfig[field] === "boolean"),
     };
   }
 
@@ -261,14 +270,9 @@ export class AuthConfigService {
       secret: null,
     };
     const config = object(current.config);
-    for (const field of [
-      "requireEmailVerification",
-      "requireSignupApproval",
-      "allowDelete",
-      "hibp",
-      "auditLog",
-    ] as const) {
-      if (update[field] !== undefined) config[field] = update[field];
+    for (const field of SERVER_TOGGLES) {
+      if (update[field] === null) delete config[field];
+      else if (update[field] !== undefined) config[field] = update[field];
     }
     if (update.sessionIdleTimeoutMinutes !== undefined) {
       config.sessionIdleTimeoutMinutes = update.sessionIdleTimeoutMinutes;
