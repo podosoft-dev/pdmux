@@ -38,6 +38,22 @@ workflow between normal CI and release packaging, so removing automatic installe
 remove Windows, macOS, or Linux terminal coverage. The timing tables below describe the earlier
 configuration, when pull requests still triggered packaging.
 
+### Complete issue work
+
+Read the issue's reproduction steps and acceptance criteria before changing code. When a fix fully
+resolves an issue, link it with `Fixes #<number>` in the commit body or pull request description
+using [GitHub's closing keywords](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue);
+use `owner/repo#<number>` for an issue in another repository. Do not use closing keywords for partial
+fixes or unrelated changes.
+
+After the fix reaches the default branch and its relevant tests and CI pass, read the issue state
+on GitHub. Do not assume a successful push or merge closed it. If it remains open and every acceptance
+criterion is satisfied, close it as completed and read back both its closed state and closing time.
+Do not rewrite published history just to add a closing keyword. Leave an issue open when a concrete
+acceptance check is still pending, and record that check. Report the issue link, actual state and
+verification evidence when handing off the work. Issue cleanup does not authorize a version change,
+release, installer build or deployment.
+
 ### Remove branches after merging
 
 Once a temporary branch is integrated into `main`, remove both its local branch and its remote
