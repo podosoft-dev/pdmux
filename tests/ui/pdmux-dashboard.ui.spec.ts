@@ -636,9 +636,13 @@ test.describe.serial("pdmux dashboard", () => {
       await expect(page.locator(`[data-testid='${gone}']`), `${gone} is still on the card panel`).toHaveCount(0);
     }
 
-    // One hop, and the host's own page carries all of it.
+    // One hop, and the host's own panel carries all of it. The link still names
+    // `/hosts/<id>`, and the shell opens that host in the settings dialog over the
+    // dashboard instead of leaving it.
     await page.locator("[data-testid='host-manage']").click();
-    await expect(page).toHaveURL(/\/hosts\/[0-9a-f-]+$/);
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
+    await expect(page.getByTestId("settings-hosts-back")).toBeVisible();
+    await expect(page).toHaveURL((url) => url.pathname === "/");
     for (const action of ["host-edit", "host-install", "host-toggle-enabled", "host-move-open", "host-remove"]) {
       await expect(page.locator(`[data-testid='${action}']`), `${action} is not on the host page`).toBeVisible();
     }
@@ -1143,7 +1147,7 @@ test.describe.serial("pdmux shell fleet controls", () => {
     const card = page.locator(`[data-pdmux-host='${hostId}']`);
     await clickUntil(page, `[data-pdmux-host='${hostId}'] .pdmux-cog`, page.locator("[data-testid='host-manage']"));
     await page.locator("[data-testid='host-manage']").click();
-    await expect(page).toHaveURL(new RegExp(`/hosts/${hostId}$`));
+    await expect(page.getByTestId("settings-hosts-back")).toBeVisible();
     await clickUntil(page, "[data-testid='host-remove']", page.locator("[data-testid='host-delete-input']"));
 
     // The typing gate the host list already uses: this cannot be undone and it takes
@@ -1155,9 +1159,10 @@ test.describe.serial("pdmux shell fleet controls", () => {
     await expect(confirm).toBeEnabled();
     await confirm.click();
 
-    // Deleting from the host's own page leaves a route named after a row that is gone,
-    // so it lands on the list.
-    await expect(page).toHaveURL((url) => url.pathname === "/hosts");
+    // Deleting from the host's own panel leaves it naming a row that is gone, so the
+    // dialog goes back to the host list.
+    await expect(page.getByTestId("settings-hosts-back")).toHaveCount(0);
+    await expect(page.getByTestId("settings-content-hosts")).toBeVisible();
 
     /**
      * ⚠ THE SAVE IS ASSERTED BEFORE ANY RELOAD, and the order is the point. Pruning the

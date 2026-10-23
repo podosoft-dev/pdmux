@@ -195,7 +195,9 @@ test.describe.serial("pdmux VM power from terminals", () => {
     await card.getByTestId("host-vm-unlink").click();
     await page.getByTestId("host-vm-unlink-confirm-confirm").click();
     await expect.poll(() => calls).toEqual(["DELETE"]);
-    await page.reload();
+    // The settings dialog consumes its deep link, so a reload would land on the bare
+    // dashboard; open the host again to read it afresh.
+    await ready(page, `/hosts/${hostId}`);
     await expect(page.getByTestId("host-vm-link")).toBeVisible({ timeout: 15_000 });
 
     // Link: the single provider and its single online node are chosen for you; the id is typed.
