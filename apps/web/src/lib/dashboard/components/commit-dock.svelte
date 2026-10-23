@@ -9,7 +9,7 @@
    */
   import { onDestroy, onMount, untrack } from "svelte";
   import { CommitDetail, GitGraph, GitRefPanel, SplitHandle, type Translate } from "@pdmux/ui";
-  import { UNCOMMITTED, feedAge, remoteComparison } from "@pdmux/core";
+  import { UNCOMMITTED, feedAge, remoteComparison, normalizeDiffFilePaths } from "@pdmux/core";
   import * as Select from "#lib/components/ui/select/index.js";
   import * as Tabs from "#lib/components/ui/tabs/index.js";
   import { Button } from "#lib/components/ui/button/index.js";
@@ -264,9 +264,10 @@
 
   const detail = $derived.by(() => {
     if (dock.selected === UNCOMMITTED) {
-      return dock.working ? { files: workingDiffFiles(dock.working), dropped: dock.working.dropped } : null;
+      return dock.working ? { files: workingDiffFiles(dock.working).map(normalizeDiffFilePaths), dropped: dock.working.dropped } : null;
     }
-    return dock.detail;
+    // Older servers can return immutable patches written by the old collector.
+    return dock.detail ? { ...dock.detail, files: dock.detail.files.map(normalizeDiffFilePaths) } : null;
   });
 
   /**

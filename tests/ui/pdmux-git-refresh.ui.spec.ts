@@ -5,6 +5,7 @@ import { boxFacts, expectOnScreen } from "../helpers/geometry";
 import { agentDownstreamSchema, agentUpstreamSchema, commitDetailSchema, gitTreeSchema, gitBlobSchema, workingDiffSchema } from "@pdmux/protocol";
 import { WebSocket } from "ws";
 import { UNCOMMITTED } from "@pdmux/core";
+import patchPaths from "../../agent/internal/git/testdata/diff-paths.json";
 import english from "../../apps/web/src/lib/i18n/catalogs/app/en.json";
 import { graphSnapshot, repository, NEW_SHA, OLD_SHA } from "../../apps/web/test/fixtures/git-snapshot";
 import type { RepoGraphResponse, RepoRow } from "../../apps/web/src/lib/dashboard/types";
@@ -320,6 +321,23 @@ test.describe("real snapshot ingestion", () => {
 for (const mobile of [false, true]) {
   test.describe(`repository boundaries ${mobile ? "mobile" : "desktop"}`, () => {
     test.use(mobile ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: devices["Pixel 7"].userAgent } : {});
+    test("[TC-PDGIT-056] displays legacy UTF-8 patch paths and keeps the selected patch", async ({ page }, info) => {
+      const state = await mockGit(page);
+      const fixture = patchPaths[0]!;
+      await page.route("**/api/hosts/*/repos/*/commits/*/detail", route => route.fulfill({ json: { available: true, pending: 0,
+        detail: commitDetailSchema.parse({ sha: OLD_SHA, files: [{ path: fixture.legacyPath, oldPath: fixture.legacyOldPath, status: "M", add: 4, del: 1, lines: ["@@ -1 +1 @@", "-old", "+new"] }] }) } }));
+      await page.goto(`/git/h1/${state.graph.repo.id}`);
+      await page.locator(`[data-pdmux-sha='${OLD_SHA}']`).click();
+      const file = page.locator(`[data-pdmux-file-row='${fixture.path}']`);
+      await expect(file).toBeVisible();
+      await expect(file).toContainText("+4");
+      await expect(file).toContainText("−1");
+      await expect(page.locator("[data-pdmux-filepane]")).not.toContainText("\\353");
+      await file.click();
+      await expect(page.locator("[data-pdmux-file-patch], .pdmux-filepane-diff").filter({ hasText: "new" }).first()).toBeVisible();
+      await page.screenshot({ path: info.outputPath("unicode-patch.png") });
+      await expectOnScreen(file);
+    });
     test("[TC-PDGIT-055] loading and errors stay distinct from an empty repository", async ({ page }, info) => {
       const state = await mockGit(page);
       let release!: () => void;

@@ -19,6 +19,7 @@ export * from './metrics.js';
 export * from './usage.js';
 export * from './services.js';
 export * from './commit-files.js';
+export * from './git-diff-paths.js';
 export * from './listeners.js';
 export * from './commit-graph.js';
 export * from './terminal-keys.js';

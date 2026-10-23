@@ -20,7 +20,7 @@ const UntrackedFileCap = 50
 // The beginning of a big change is still worth seeing.
 const minRoom = 4096
 
-const diffGitHeader = "diff --git a/"
+const diffGitHeader = "diff --git "
 
 // SplitPatch parses unified-diff text into per-file patches, applying the two
 // per-file caps as it goes.
@@ -35,24 +35,19 @@ const diffGitHeader = "diff --git a/"
 func SplitPatch(text string) []protocol.DiffFile {
 	files := []protocol.DiffFile{}
 	var current *protocol.DiffFile
+	inHunk := false
 
 	for _, line := range strings.Split(text, "\n") {
 		if strings.HasPrefix(line, "diff --git ") {
 			if current != nil {
 				files = append(files, *current)
 			}
-			// `diff --git a/<old> b/<new>` — the b-side is what the file is now. A
-			// path that itself contains " b/" splits into more than two pieces, and
-			// then the whole header is treated as one path rather than guessed at.
-			parts := strings.Split(line, " b/")
-			var path, old string
-			if len(parts) == 2 {
-				path = parts[1]
-				old = sliceFrom(parts[0], len(diffGitHeader))
-			} else {
-				path = sliceFrom(line, len(diffGitHeader))
+			old, path, ok := patchPathPair(strings.TrimPrefix(line, diffGitHeader))
+			if !ok {
+				path = strings.TrimPrefix(line, diffGitHeader)
 				old = path
 			}
+			inHunk = false
 			file := protocol.NewDiffFile()
 			file.Path = path
 			if old != path {
@@ -67,12 +62,36 @@ func SplitPatch(text string) []protocol.DiffFile {
 		}
 
 		switch {
+		case !inHunk && strings.HasPrefix(line, "--- "):
+			if old, ok := patchMarkerPath(strings.TrimPrefix(line, "--- "), "a/"); ok && old != "" && old != current.Path {
+				current.OldPath = &old
+			}
+		case !inHunk && strings.HasPrefix(line, "+++ "):
+			if path, ok := patchMarkerPath(strings.TrimPrefix(line, "+++ "), "b/"); ok {
+				if path != "" {
+					current.Path = path
+				} else if current.OldPath != nil {
+					current.Path = *current.OldPath
+					current.OldPath = nil
+				}
+				if current.OldPath != nil && *current.OldPath == current.Path {
+					current.OldPath = nil
+				}
+			}
+		case !inHunk && strings.HasPrefix(line, "rename from "):
+			current.Status = protocol.DiffRenamed
+			if old, ok := patchPathValue(strings.TrimPrefix(line, "rename from ")); ok {
+				current.OldPath = &old
+			}
+		case !inHunk && strings.HasPrefix(line, "rename to "):
+			current.Status = protocol.DiffRenamed
+			if path, ok := patchPathValue(strings.TrimPrefix(line, "rename to ")); ok {
+				current.Path = path
+			}
 		case strings.HasPrefix(line, "new file"):
 			current.Status = protocol.DiffAdded
 		case strings.HasPrefix(line, "deleted file"):
 			current.Status = protocol.DiffDeleted
-		case strings.HasPrefix(line, "rename from"), strings.HasPrefix(line, "rename to"):
-			current.Status = protocol.DiffRenamed
 		case strings.HasPrefix(line, "Binary files"):
 			// Marked, never carried: the bytes are useless in a browser and would
 			// be the largest thing in the frame.
@@ -81,9 +100,8 @@ func SplitPatch(text string) []protocol.DiffFile {
 			strings.HasPrefix(line, "+"),
 			strings.HasPrefix(line, "-"),
 			strings.HasPrefix(line, " "):
-			// `+++ b/x` and `--- a/x` are file headers, not content.
-			if strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
-				continue
+			if strings.HasPrefix(line, "@@") {
+				inHunk = true
 			}
 			// Counted before the caps, so add/del stay TRUE for the whole file even
 			// when only the first 800 lines travel.

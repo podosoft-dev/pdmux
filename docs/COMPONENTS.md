@@ -392,6 +392,14 @@ commits still renders its empty graph. The working tree has changes but no commi
 tab. Closing an in-flight file read or choosing a cached file clears loading and invalidates the
 previous response, so it cannot reopen a closed file or replace the current file.
 
+The agent decodes Git's C-quoted patch paths, including octal UTF-8 bytes, before emitting
+per-file patches. It handles rename headers and preserves literal backslashes in actual names
+without changing the host's Git configuration. For previously stored collector output,
+`normalizeDiffFilePaths` in core repairs recognizable joined quoted headers at API read time
+and in the dock, so an older server can still supply readable files to a newer desktop.
+This compatibility pass does not rewrite stored objects or decode ordinary relative names.
+Ambiguous legacy fragments are left unchanged rather than guessing a different filename.
+
 | Component | Key props | Callbacks |
 |---|---|---|
 | `GitGraph` | `commits`, `refs`, `uncommitted` (core `uncommittedSummary()`), `uncommittedLabel`, `head`, `selectedSha`, `formatDate` | `onSelect(sha)` — the uncommitted row is `sha === 'uncommitted'` |

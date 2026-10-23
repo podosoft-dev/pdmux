@@ -1,4 +1,5 @@
 import { ProductLogger } from "../logging/product-logger";
+import { normalizeDiffFilePaths } from "@pdmux/core";
 import type { CommitDetail, GitTree, WorkingDiff } from "@pdmux/protocol";
 import type { ObjectStore } from "@podosoft/podokit-runtime";
 import { commitDetailKey, fileTreeKey, workingDiffKey } from "./git-storage";
@@ -24,7 +25,8 @@ export class GitDetailService {
   }
 
   async getCommitDetail(hostId: string, repoId: string, sha: string): Promise<CommitDetail | null> {
-    return this.readJson<CommitDetail>(commitDetailKey(hostId, repoId, sha));
+    const detail = await this.readJson<CommitDetail>(commitDetailKey(hostId, repoId, sha));
+    return detail ? { ...detail, files: detail.files.map(normalizeDiffFilePaths) } : null;
   }
 
   /**
@@ -64,7 +66,13 @@ export class GitDetailService {
   }
 
   async getWorkingDiff(hostId: string, repoId: string): Promise<WorkingDiff | null> {
-    return this.readJson<WorkingDiff>(workingDiffKey(hostId, repoId));
+    const diff = await this.readJson<WorkingDiff>(workingDiffKey(hostId, repoId));
+    return diff ? {
+      ...diff,
+      staged: diff.staged.map(normalizeDiffFilePaths),
+      unstaged: diff.unstaged.map(normalizeDiffFilePaths),
+      untracked: diff.untracked.map(normalizeDiffFilePaths),
+    } : null;
   }
 
   async deleteWorkingDiff(hostId: string, repoId: string): Promise<void> {

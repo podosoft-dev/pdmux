@@ -234,6 +234,11 @@ const PATTERN_ALLOW = [
 	// boundary and check the halves; replacing the text deletes what they measure.
 	{ file: 'agent/internal/term/pty_test.go', ids: ['korean'] },
 	{ file: 'agent/internal/term/manager_test.go', ids: ['korean'] },
+	// Quoted patch tests use Korean filenames to verify octal UTF-8 decoding and
+	// compatibility with stored paths. Translating these names removes the regression.
+	{ file: 'agent/internal/git/diff_paths_test.go', ids: ['korean'] },
+	{ file: 'agent/internal/git/testdata/diff-paths.json', ids: ['korean'] },
+	{ file: 'packages/core/test/git-diff-paths.test.ts', ids: ['korean'] },
 	// ⚠ Korean as a NON-ASCII PATH. `ls-tree -z` exists so git does not C-quote a
 	// path like this one; an ASCII fixture cannot fail the way the bug did, so
 	// translating it would delete what the spec measures.

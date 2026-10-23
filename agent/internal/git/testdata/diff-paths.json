@@ -1,0 +1,74 @@
+[
+  {
+    "name": "reported UTF-8 path",
+    "header": "diff --git \"a/docs/requirements/\\353\\263\\264\\354\\225\\210-\\353\\262\\240\\354\\235\\264\\354\\212\\244\\353\\235\\274\\354\\235\\270/1\\354\\260\\250-\\353\\237\\254\\353\\204\\210-\\352\\262\\200\\354\\246\\235.md\" \"b/docs/requirements/\\353\\263\\264\\354\\225\\210-\\353\\262\\240\\354\\235\\264\\354\\212\\244\\353\\235\\274\\354\\235\\270/1\\354\\260\\250-\\353\\237\\254\\353\\204\\210-\\352\\262\\200\\354\\246\\235.md\"",
+    "path": "docs/requirements/보안-베이스라인/1차-러너-검증.md",
+    "oldPath": "docs/requirements/보안-베이스라인/1차-러너-검증.md",
+    "legacyPath": "/docs/requirements/\\353\\263\\264\\354\\225\\210-\\353\\262\\240\\354\\235\\264\\354\\212\\244\\353\\235\\274\\354\\235\\270/1\\354\\260\\250-\\353\\237\\254\\353\\204\\210-\\352\\262\\200\\354\\246\\235.md\" \"b/docs/requirements/\\353\\263\\264\\354\\225\\210-\\353\\262\\240\\354\\235\\264\\354\\212\\244\\353\\235\\274\\354\\235\\270/1\\354\\260\\250-\\353\\237\\254\\353\\204\\210-\\352\\262\\200\\354\\246\\235.md\"",
+    "legacyOldPath": null,
+    "repair": true
+  },
+  {
+    "name": "renamed UTF-8 path",
+    "header": "diff --git \"a/docs/\\354\\264\\210\\354\\225\\210.md\" \"b/docs/\\353\\262\\240\\354\\235\\264\\354\\212\\244\\353\\235\\274\\354\\235\\270.md\"",
+    "path": "docs/베이스라인.md",
+    "oldPath": "docs/초안.md",
+    "legacyPath": "/docs/\\354\\264\\210\\354\\225\\210.md\" \"b/docs/\\353\\262\\240\\354\\235\\264\\354\\212\\244\\353\\235\\274\\354\\235\\270.md\"",
+    "legacyOldPath": null,
+    "repair": true
+  },
+  {
+    "name": "quoted old path",
+    "header": "diff --git \"a/docs/\\354\\264\\210\\354\\225\\210.md\" b/docs/new.md",
+    "path": "docs/new.md",
+    "oldPath": "docs/초안.md",
+    "legacyPath": "docs/new.md",
+    "legacyOldPath": "/docs/\\354\\264\\210\\354\\225\\210.md\"",
+    "repair": true
+  },
+  {
+    "name": "quoted new path",
+    "header": "diff --git a/docs/old.md \"b/docs/\\354\\213\\240\\352\\267\\234.md\"",
+    "path": "docs/신규.md",
+    "oldPath": "docs/old.md",
+    "legacyPath": "docs/old.md \"b/docs/\\354\\213\\240\\352\\267\\234.md\"",
+    "legacyOldPath": null,
+    "repair": false
+  },
+  {
+    "name": "controls and quotes",
+    "header": "diff --git \"a/docs/tab\\tline\\n\\\"old\\\".md\" \"b/docs/tab\\tline\\n\\\"new\\\".md\"",
+    "path": "docs/tab\tline\n\"new\".md",
+    "oldPath": "docs/tab\tline\n\"old\".md",
+    "legacyPath": "/docs/tab\\tline\\n\\\"old\\\".md\" \"b/docs/tab\\tline\\n\\\"new\\\".md\"",
+    "legacyOldPath": null,
+    "repair": true
+  },
+  {
+    "name": "literal backslash",
+    "header": "diff --git \"a/docs/literal-\\\\353.md\" \"b/docs/literal-\\\\353.md\"",
+    "path": "docs/literal-\\353.md",
+    "oldPath": "docs/literal-\\353.md",
+    "legacyPath": "/docs/literal-\\\\353.md\" \"b/docs/literal-\\\\353.md\"",
+    "legacyOldPath": null,
+    "repair": true
+  },
+  {
+    "name": "ordinary spaces",
+    "header": "diff --git a/docs/old file.md b/docs/new file.md",
+    "path": "docs/new file.md",
+    "oldPath": "docs/old file.md",
+    "legacyPath": "docs/new file.md",
+    "legacyOldPath": "docs/old file.md",
+    "repair": false
+  },
+  {
+    "name": "space before b directory",
+    "header": "diff --git a/docs b/sub/file.md b/docs b/sub/file.md",
+    "path": "docs b/sub/file.md",
+    "oldPath": "docs b/sub/file.md",
+    "legacyPath": "docs b/sub/file.md b/docs b/sub/file.md",
+    "legacyOldPath": null,
+    "repair": false
+  }
+]
