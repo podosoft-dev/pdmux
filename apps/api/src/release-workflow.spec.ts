@@ -50,7 +50,7 @@ describe("release workflow", () => {
   });
   test("[TC-PDHOST-024] preserves multi-architecture images and agent assets", () => {
     for (const fragment of [
-      "bun-version: 1.4.0",
+      "bun-version: 1.4.4",
       "workflow_dispatch:",
       "releaseTag:",
       "ref: ${{ inputs.releaseTag || github.ref }}",

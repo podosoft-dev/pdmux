@@ -24,7 +24,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
 
       - run: bun ci
 
@@ -133,7 +133,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
 
       - name: Verify native runner architecture
         env:
@@ -266,7 +266,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
 
       # `go-version-file` keeps the toolchain pinned by agent/go.mod, which is also
       # what apps/web/Dockerfile's agent stage pins — a different Go patch produces a

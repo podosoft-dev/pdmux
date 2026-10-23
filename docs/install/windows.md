@@ -36,7 +36,7 @@ machine as a terminal host.
 
 ## Build locally
 
-Install Git for Windows, Bun 1.4.0, Node LTS, and the Go version in `agent/go.mod`.
+Install Git for Windows, Bun 1.4.4, Node LTS, and the Go version in `agent/go.mod`.
 Run the [native build commands](README.md#build-without-publishing) in PowerShell.
 The native Windows CI job produces the x64 EXE. Installer downloads and native
 runtime verification are separate checks; see [troubleshooting](troubleshooting.md).

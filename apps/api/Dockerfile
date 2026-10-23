@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 ARG AGENT_ARTIFACTS_BASE=agent-build
 
-FROM oven/bun:1.4.0-alpine AS manifests
+FROM oven/bun:1.4.4-alpine AS manifests
 WORKDIR /src
 COPY . .
 RUN mkdir -p /app \
@@ -9,17 +9,17 @@ RUN mkdir -p /app \
     && find . -name package.json -not -path "*/node_modules/*" \
          -exec sh -c 'mkdir -p "/app/$(dirname "$1")" && cp "$1" "/app/$1"' _ {} \;
 
-FROM oven/bun:1.4.0-alpine AS deps
+FROM oven/bun:1.4.4-alpine AS deps
 WORKDIR /app
 COPY --from=manifests /app ./
 RUN bun ci
 
-FROM oven/bun:1.4.0-alpine AS prod-deps
+FROM oven/bun:1.4.4-alpine AS prod-deps
 WORKDIR /app
 COPY --from=manifests /app ./
 RUN bun install --production --frozen-lockfile --filter './apps/api'
 
-FROM oven/bun:1.4.0-alpine AS build
+FROM oven/bun:1.4.4-alpine AS build
 WORKDIR /app
 COPY --from=deps /app ./
 COPY . .
@@ -32,7 +32,7 @@ RUN if [ -d packages ]; then \
 RUN bun run --cwd apps/api build
 RUN mkdir -p /app/packages
 
-FROM oven/bun:1.4.0-alpine AS agent-build
+FROM oven/bun:1.4.4-alpine AS agent-build
 COPY --from=golang:1.26.5-alpine /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}" GOTOOLCHAIN=local
 WORKDIR /src
@@ -43,11 +43,11 @@ RUN bun tools/build-agent-binaries.mjs && mv apps/web/static/agent /agent
 # Releases override this stage with the shared, already signed artifact context.
 FROM ${AGENT_ARTIFACTS_BASE} AS agent
 
-FROM oven/bun:1.4.0-alpine AS agent-manifests
+FROM oven/bun:1.4.4-alpine AS agent-manifests
 COPY --from=agent /agent /agent
 RUN find /agent -type f ! -name manifest.json -delete && chmod -R a+rX /agent
 
-FROM oven/bun:1.4.0-alpine AS runtime
+FROM oven/bun:1.4.4-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=prod-deps /app/node_modules ./node_modules

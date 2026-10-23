@@ -5,7 +5,7 @@ creates temporary accounts and a SQLite database, and installs the real agent in
 container. It covers MCP onboarding and command execution, fleet configuration delivery, audit UI,
 organization isolation, folder transfers and ZIP resume, and SSE updates with polling recovery.
 
-Run on Linux with Node, Bun 1.4.0, Docker, and the Playwright Chromium browser installed. Build the
+Run on Linux with Node, Bun 1.4.4, Docker, and the Playwright Chromium browser installed. Build the
 workspace and agent artifacts first as described in [desktop development](DESKTOP.md#desktop-development).
 The suite invokes Playwright with Node; the application processes still use Bun.
 
