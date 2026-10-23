@@ -166,44 +166,43 @@ test.describe.serial("pdmux hosts", () => {
     await expect(page.getByRole("row").filter({ hasText: label })).toHaveCount(0);
   });
 
-  test("[TC-PDUI-134] the host list renders beside the cards, and the page still does not scroll", async ({
+  test("[TC-PDUI-134] the host list opens over the dashboard, on screen, and the page still does not scroll", async ({
     page,
   }) => {
-    // The sidebar's collapse toggle lives in the dashboard's toolbar, so the
-    // precondition has to be established there — on `/hosts` there is no switch to
-    // reopen the column with, and a persisted collapse would fail this for the wrong
-    // reason.
+    /**
+     * ⚠ THE LIST NO LONGER SITS BESIDE THE CARDS. `/hosts` used to be a page whose list
+     * took the terminal grid's track; since the settings dialog it opens the Hosts tab
+     * of that dialog over the dashboard, which stays mounted underneath. So the old
+     * "a pointer at the sidebar's centre reaches it" is now false by design — the modal
+     * covers it. What still has to hold: the list is on screen inside the dialog, it
+     * scrolls itself, and the page behind it does not.
+     */
     await ready(page, "/");
     await openSidebar(page);
     await ready(page, "/hosts");
-    const sidebar = page.locator("[data-pdmux-sidebar]");
-    const panel = page.locator("[data-testid='hosts-panel']");
-    await expect(page.locator("[data-testid='dashboard-shell']")).toBeVisible();
-    await expectOnScreen(sidebar, "host sidebar on /hosts");
+    const dialog = page.getByTestId("settings-dialog");
+    const panel = page.getByTestId("settings-content-hosts").locator("[data-testid='hosts-panel']");
+    await expect(dialog).toBeVisible();
+    await expect(page.getByTestId("settings-hosts-back")).toHaveCount(0);
+    await expect(page.locator("[data-testid='dashboard-shell']")).toBeAttached();
+    await expect(page).toHaveURL((url) => url.pathname === "/" && !url.searchParams.has("preferences"));
     await expectOnScreen(panel, "host list panel");
 
-    // The list occupies the terminal grid's track: to the RIGHT of the cards, not
-    // below them and not under them. Reading both boxes in one evaluate keeps the
-    // comparison atomic if a splitter animation were ever added.
     const edges = await page.evaluate(() => {
-      const left = document.querySelector("[data-pdmux-sidebar]")?.getBoundingClientRect();
-      const right = document.querySelector("[data-testid='hosts-panel']")?.getBoundingClientRect();
-      return { sidebarRight: Math.round(left?.right ?? -1), panelLeft: Math.round(right?.left ?? -1) };
+      const outer = document.querySelector("[data-testid='settings-dialog']")?.getBoundingClientRect();
+      const inner = document.querySelector("[data-testid='settings-content-hosts'] [data-testid='hosts-panel']")?.getBoundingClientRect();
+      return outer && inner
+        ? { left: inner.left - outer.left, right: outer.right - inner.right, top: inner.top - outer.top, bottom: outer.bottom - inner.bottom }
+        : null;
     });
-    expect(edges.sidebarRight).toBeGreaterThan(0);
-    expect(edges.panelLeft, "the host list must start right of the sidebar").toBeGreaterThanOrEqual(
-      edges.sidebarRight,
-    );
+    expect(edges, "the list or the dialog is missing").not.toBeNull();
+    for (const [side, gap] of Object.entries(edges ?? {})) {
+      expect(gap, `the host list overflows the dialog's ${side} edge`).toBeGreaterThanOrEqual(-1);
+    }
 
-    // Each column scrolls itself. The fixture cannot guarantee enough cards to
-    // overflow here (TC-PDUI-121 does that on the dashboard), so this asserts the
-    // contract rather than the symptom.
-    const overflow = await page.evaluate(() => ({
-      sidebar: getComputedStyle(document.querySelector("[data-pdmux-sidebar]") as Element).overflowY,
-      panel: getComputedStyle(document.querySelector("[data-testid='hosts-panel']") as Element).overflowY,
-    }));
-    expect(overflow.sidebar).toBe("auto");
-    expect(overflow.panel).toBe("auto");
+    // The list scrolls inside the dialog; the document never does.
+    const overflow = await panel.evaluate((el) => getComputedStyle(el).overflowY);
+    expect(overflow).toBe("auto");
     await expectViewportBound(page);
   });
 
@@ -690,7 +689,9 @@ test.describe.serial("pdmux hosts", () => {
     await page.route("**/api/hosts", (route) =>
       route.fulfill({ json: [mockHost("mock-old-a", { agentVersion: "1.4.0" }), mockHost("mock-canary", { agentVersion: "1.5.0", agentVersionState: "current" })] }),
     );
-    await page.reload();
+    // Not a reload: the dialog drops `?preferences=hosts` from the URL once it opens, so
+    // a reload reopened the list only when it beat that rewrite.
+    await ready(page, "/hosts");
     await expect(page.getByRole("row").filter({ hasText: "mock-canary" })).toBeVisible();
     await page.locator("[data-testid='host-select-all']").click();
     await page.locator("[data-testid='bulk-update']").click();
@@ -985,7 +986,8 @@ test.describe.serial("pdmux hosts", () => {
       // be marked. Without this the assertions above pass against a column that
       // warns unconditionally.
       await request.put("/api/fleet/settings", { data: { staleHostRetentionDays: 0 } });
-      await page.reload();
+      // The dialog consumes its deep link, so a reload would land on the bare dashboard.
+      await ready(page, "/hosts");
       await expect(page.getByRole("row").filter({ hasText: "mock-seen-40d" })).toBeVisible();
       await expect(page.locator("[data-testid^='host-removal-']")).toHaveCount(0);
     } finally {

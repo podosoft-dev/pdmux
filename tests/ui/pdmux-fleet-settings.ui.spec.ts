@@ -352,7 +352,9 @@ test.describe.serial("pdmux fleet settings", () => {
        */
       await request.put("/api/fleet/settings", { data: { staleHostRetentionDays: 3650 } });
       bodies.length = 0;
-      await page.reload();
+      // The dialog consumes its deep link, so a reload would land on the bare dashboard;
+      // open the sweep settings again to read the server's value afresh.
+      await ready(page, "/settings?tab=sweep");
       await expect(page.locator("[data-testid='fleet-field-staleHostRetentionDays']")).toHaveValue("3650");
       await page.locator("[data-testid='fleet-field-staleHostRetentionDays']").fill("0");
       await page.locator("[data-testid='settings-save']").click();
