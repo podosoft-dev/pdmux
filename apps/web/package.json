@@ -26,6 +26,8 @@
     "better-auth": "1.7.9",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
+    "dompurify": "3.4.17",
+    "marked": "18.1.1",
     "mode-watcher": "^1.1.0",
     "qrcode": "^1.5.4",
     "svelte-sonner": "^1.1.1",

@@ -14,6 +14,9 @@
       { name: "notes.md", dir: false, symlink: false, size: 12, mode: 0o600, modified: 1 },
     ], dropped: 0, truncated: false, error: null,
   };
+  if (new URLSearchParams(location.search).has("previews")) {
+    files.dir.entries = ["notes.md", "app.log", "paper.pdf", "sound.wav", "clip.webm", "bundle.zip"].map(name => ({ name, dir: false, symlink: false, size: 100, modified: 1, mode: 0o600 }));
+  }
   // `?legacy` is a host whose agent predates folder transfers.
   const legacy = new URLSearchParams(location.search).has("legacy");
   const capabilities = legacy ? ["files"] : ["files", "files-transfer-v1"];

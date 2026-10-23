@@ -44,6 +44,39 @@ function application(overrides: Partial<PdmuxServices>): TestApplication {
 }
 
 describe("PDMUX HTTP boundary", () => {
+  it("[TC-PDFILE-017] serves exact closed, open and suffix byte ranges including byte zero", async (): Promise<void> => {
+    const bytes = Buffer.from("0123456789");
+    const chunk = mock(async (_scope: string, _host: string, _path: string, offset: number, length: number) => ({
+      data: bytes.subarray(offset, offset + length).toString("base64"), size: bytes.length,
+      eof: offset + length >= bytes.length, error: null,
+    }));
+    const app = application({ agentFiles: { chunk } as unknown as PdmuxServices["agentFiles"] });
+    for (const [range, expected, contentRange] of [["bytes=0-2", "012", "bytes 0-2/10"], ["bytes=3-5", "345", "bytes 3-5/10"], ["bytes=8-", "89", "bytes 8-9/10"], ["bytes=-3", "789", "bytes 7-9/10"], ["bytes=7-99", "789", "bytes 7-9/10"]]) {
+      const response = await app.handle(new Request("http://localhost/hosts/host-1/files/download?path=clip.mp4&inline=1", { headers: { range: range ?? "" } }));
+      expect(response.status).toBe(206);
+      expect(response.headers.get("content-range")).toBe(contentRange ?? "");
+      expect(response.headers.get("content-length")).toBe(String(expected?.length));
+      expect(await response.text()).toBe(expected ?? "");
+    }
+    const invalid = await app.handle(new Request("http://localhost/hosts/host-1/files/download?path=clip.mp4", { headers: { range: "bytes=99-" } }));
+    expect(invalid.status).toBe(416);
+    expect(invalid.headers.get("content-range")).toBe("bytes */10");
+  });
+  it("[TC-PDFILE-017] stops requesting chunks when a streamed preview is cancelled", async (): Promise<void> => {
+    const chunk = mock(async (_scope: string, _host: string, _path: string, offset: number) => ({ data: Buffer.from("ab").toString("base64"), size: 10, offset, eof: false, error: null }));
+    const response = await application({ agentFiles: { chunk } as unknown as PdmuxServices["agentFiles"] })
+      .handle(new Request("http://localhost/hosts/host-1/files/download?path=clip.webm&inline=1"));
+    const reader = response.body!.getReader();
+    expect((await reader.read()).value).toEqual(new Uint8Array([97, 98]));
+    await reader.cancel();
+    expect(chunk).toHaveBeenCalledTimes(1);
+    for (const path of ["paper.pdf", "sound.wav", "clip.webm", "icon.ico"]) {
+      const preview = await application({ agentFiles: { chunk } as unknown as PdmuxServices["agentFiles"] })
+        .handle(new Request(`http://localhost/hosts/host-1/files/download?path=${path}&inline=1`));
+      expect(preview.headers.get("content-disposition")).toStartWith("inline;");
+      await preview.body?.cancel();
+    }
+  });
   it("[TC-PDFILE-004] scopes a transfer history removal to the authenticated owner", async (): Promise<void> => {
     const remove = mock(async (): Promise<{ id: string }> => ({ id: "job" }));
     const url = "http://localhost/hosts/host-1/file-transfers/job";

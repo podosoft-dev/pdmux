@@ -1,4 +1,4 @@
-# Folder transfers
+# File explorer and transfers
 
 The file explorer transfers folder trees, including empty directories, with a shared web/desktop
 controller. The destination is captured at upload start; navigating to another directory or host
@@ -16,24 +16,31 @@ smoke test imports the emitted transfer controller as well as the terminal relay
   original format and uses the existing streaming download endpoint.
 - Tick the checkbox in front of each folder or file to download, then press **Download** (its
   tooltip counts the items). A checkbox only selects; clicking a name still opens the folder or
-  selects and previews the file. Shift-click a checkbox to tick (or untick) everything back to the
+  selects and previews the file. Cmd/Ctrl-click a name toggles its selection; Shift-click selects a
+  range, including folders, without opening them. Shift-click a checkbox ticks (or unticks) everything back to the
   last one clicked, in the order on screen. The header checkbox selects every entry shown, or
   clears them all; it shows a dash while only some are selected.
 - The toolbar shows how many items are selected (only the number when the explorer is
   narrow), with a clear button, while something is selected. Escape clears the selection too, while focus is in the explorer (except in the path
   field). The selection belongs to the directory shown: opening another directory or host clears
   it, and the count disappears with it.
-- On a host whose agent predates folder transfers, folder checkboxes are disabled (dashed and
-  faded) and say why in their tooltip; files stay selectable and download one by one in their
-  original format.
+- Cmd/Ctrl+A selects every listed entry while focus is in the listing. Delete acts on the captured
+  selection after one confirmation, including an explicit recursive option for nonempty folders.
+  Successful deletions leave the selection; failed entries stay selected with their individual
+  errors. A lost connection or permission to the host stops the remaining batch.
+- On a host whose agent predates folder transfers, folders remain selectable for deletion. Download
+  is disabled with an upgrade explanation when folders are selected; files download one by one in
+  their original format.
 - Existing directories merge. Files prompt for **Overwrite**, **Skip**, or **Cancel transfer**,
   optionally for all subsequent conflicts. Files cannot replace directories or vice versa.
   Skipping a conflicting directory skips its children too.
-- **Transfers** shows scanning, fingerprint calculation, acknowledged upload bytes, ZIP preparation,
-  item counts, and the current path. Collapse the panel without stopping work; pause/resume/cancel
-  are separate controls. The history scrolls within the panel. Use **Clear** on a finished transfer
-  or **Clear finished** to remove all completed, cancelled, and expired transfers. Active and
-  resumable transfers remain available.
+- **Transfers** is a fixed-height status row with active, attention and history counts. Open it to
+  see one details dialog with **In progress / needs attention** and **History** tabs. New jobs and
+  completed jobs do not open the dialog. Scanning, fingerprint calculation, acknowledged bytes,
+  ZIP preparation, item counts and the current path are shown there. Closing it does not stop work;
+  pause/resume/cancel are separate controls. The history scrolls inside the dialog. Use **Clear**
+  on an eligible finished transfer or **Clear finished** to remove completed, cancelled and expired
+  transfers. Active and resumable jobs, and ready archives awaiting a save, remain available.
 
 Web folder picking requires a secure context and `showDirectoryPicker` support. Otherwise use
 folder drag-and-drop where the browser exposes directory entries. The app does not use a file-only
@@ -42,12 +49,30 @@ Native and agent scanners exclude symbolic links and special files and require r
 continuing. Browser selection is limited to entries its APIs expose; it cannot independently inspect
 native link metadata.
 
-Raster image previews use the authenticated single-file download endpoint with `inline=1`.
+## Previews
+
+Text, source, configuration, logs and unknown extensions use the agent's bounded text read
+(256,000 bytes / 4,000 lines), including its binary check. Known archives, executables and office
+documents offer download instead. Markdown (`.md`, `.markdown`) has **Preview** and **Source** tabs;
+`.mdx` is source only. The renderer loads on demand, supports GFM tables/tasks/code, rejects raw HTML
+and sanitizes the result. Relative links open another remote file within the same host's home;
+relative raster images use authenticated downloads. External HTTP(S) links open a separate tab and
+images omit the referrer. Scripts, application navigation and local paths are not Markdown links.
+
+Raster images, PDF, audio (`mp3`, `wav`, `ogg`, `oga`, `m4a`, `aac`, `flac`) and video (`mp4`, `m4v`,
+`webm`, `ogv`, `mov`) use browser-native viewers and controls. Support depends on that runtime's
+viewer and codecs; unavailable formats offer download. Media does not autoplay and stops when its
+preview is closed or replaced. No document conversion engine or codec bundle is included.
+
+These previews use the authenticated single-file download endpoint with `inline=1`.
 The desktop cloud client and bridge preserve the image MIME type, inline disposition, and
 `X-Content-Type-Options: nosniff`. Fetch transparently decodes compressed responses, so relays
 remove the upstream encoding and compressed content length before forwarding the decoded stream.
 Uncompressed download lengths and byte-range metadata remain intact. SVG and HTML files remain
 attachments; requesting an inline preview does not make active content safe to render.
+Single-file streams honor closed, open-ended and suffix byte ranges with exact `206` boundaries;
+unsatisfiable ranges return `416`. Cancelling a preview stops subsequent agent reads. File bodies
+are streamed in bounded chunks, rather than buffered in the renderer or API.
 
 ## Pause, restart, and integrity
 
@@ -81,6 +106,9 @@ before closing the window, because Chromium removes its own incomplete download 
 restores the preserved bytes; completion, cancellation, and expiry clean up the sidecar. On filesystems
 without hard links, shutdown may require additional free space for the copy.
 Desktop reports completion only after archive verification and publication to the selected output.
+Cancelling the native save dialog keeps the archive awaiting a save. The browser's handoff moves
+the job to history, without claiming that the browser finished saving it. Neither handoff nor closing
+the details dialog automatically removes server history or a ready archive; retention still applies.
 
 Partial ZIP responses use an explicitly bounded file stream. This preserves the requested byte
 interval when API middleware merges response headers; the regression test compares actual HTTP

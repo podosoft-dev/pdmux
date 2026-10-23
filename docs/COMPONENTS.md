@@ -437,7 +437,7 @@ thing and the levels are what somebody came to walk.
 
 | Component | Key props | Callbacks |
 |---|---|---|
-| `FileExplorer` | `dir: FsDirView`, `path`, `loading`, `unavailable`, `idle`, `selected`, `file`, `image`, `sort: FsSort`, `columns: FsColumns`, `scheme`, `formatDate`, `selectable`, `checkDisabledReason(entry)` | `onOpenDir(path)`, `onSelect(name, mode)`, `onCheck(name, mode: CheckMode)`, `onCheckAll(names)`, `onClosePreview()`, `onSort(key)`, `onColumnResize(key, delta, commit, panelWidth)` |
+| `FileExplorer` | `dir: FsDirView`, `path`, `loading`, `unavailable`, `idle`, `selected`, `file`, `image`, `previewPath`, `previewHeader?: Snippet`, `previewContent?: Snippet`, `sort: FsSort`, `columns: FsColumns`, `scheme`, `formatDate`, `selectable`, `checkDisabledReason(entry)` | `onOpenDir(path)`, `onSelect(name, mode)`, `onCheck(name, mode: CheckMode)`, `onCheckAll(names)`, `onClosePreview()`, `onSort(key)`, `onColumnResize(key, delta, commit, panelWidth)` |
 | `FileIcon` | `name`, `dir`, `open`, `root`, `scheme` | — |
 
 **The listing arrives sorted.** `onSort` reports the **key** that was clicked and nothing else; the
@@ -449,8 +449,9 @@ dragged between.
 **Checkboxes are opt-in, and a checkbox never navigates.** `selectable` draws a checkbox in front of
 every row and a select-all box in the header. A click on a box reports `onCheck(name, 'toggle')`, or
 `'range'` with Shift; the consumer owns the selection and the anchor a range starts from, exactly as
-it does for `onSelect`. A click on the name keeps its meaning (a folder opens, a file is selected),
-so choosing several folders never requires a mode in which a folder cannot be opened.
+it does for `onSelect`. A plain click on the name keeps its meaning (a folder opens, a file is
+selected). Cmd/Ctrl-click toggles and Shift-click selects a range for either kind, without navigating.
+Choosing several folders never requires a mode in which a folder cannot be opened.
 `checkDisabledReason(entry)` returns why an entry cannot be checked (or `null`): its box is disabled,
 the reason becomes the tooltip and accessible description, and select-all skips it. `onCheckAll`
 reports the selection the header asks for: every checkable entry shown, in screen order, or `[]`
@@ -472,6 +473,13 @@ must clear 3:1 against the row (WCAG 1.4.11). Measured in headless Chromium: `--
 on the app's light row and 1.57:1 in its dark theme; `--pdmux-muted` gives 4.83:1 and 6.75:1. A
 disabled box is dashed, filled with `--pdmux-hover` and faded, so it never reads as an empty
 enabled one (TC-PDUI-232).
+
+**The app owns extended previews.** `previewPath` gives the panel its title and visibility;
+`previewHeader` and `previewContent` let the consuming app provide tabs, download controls and native
+viewers without importing its design system into this package. Omitting them keeps the existing
+`file`/`image` preview. The dashboard uses core's `previewableAs` classification and keys its content
+by host and file, so switching a file stops media and discards stale text responses. See
+[file previews](FILE-TRANSFERS.md#previews) for supported formats and boundaries.
 
 **Column widths are pixels the consumer holds, and the clamp is core's.** `onColumnResize` reports a
 delta measured **from where the gesture started** (add it to the width the gesture started from — a

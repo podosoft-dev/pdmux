@@ -21,6 +21,7 @@ import {
   isDefaultFsSort,
   nextFsSort,
   previewableAs,
+  type FilePreviewKind,
   setFsColumnWidth,
   sortFsEntries,
 } from "@pdmux/core";
@@ -33,6 +34,10 @@ export interface FilesDockOptions {
   /** Overrides for the API calls, so a test needs no HTTP client. */
   api?: Partial<typeof filesApi>;
 }
+
+export interface FilePreview { path: string; url: string; kind: FilePreviewKind | null }
+export interface FileDeleteTarget { hostId: string; basePath: string; entries: { name: string; dir: boolean }[] }
+export interface FileDeleteResult { removed: string[]; failed: { name: string; error: string }[]; pending: string[] }
 
 /** How a click asked for the selection to change. */
 export type SelectMode = "single" | "toggle" | "range";
@@ -52,6 +57,7 @@ export class FilesDock {
   selected = $state<string[]>([]);
   file = $state<FsFileView | null>(null);
   fileLoading = $state(false);
+  preview = $state<FilePreview | null>(null);
   /**
    * The image being previewed — a URL the browser fetches itself.
    *
@@ -86,6 +92,7 @@ export class FilesDock {
   readonly #api: typeof filesApi;
   /** Guards against a slow answer landing after the user moved on. */
   #request = 0;
+  #previewRequest = 0;
   /**
    * Where a Shift range starts: the last entry clicked by its name or its checkbox.
    *
@@ -131,6 +138,16 @@ export class FilesDock {
     return (this.shown?.entries ?? []).filter((entry) => names.has(entry.name));
   }
 
+  async openFile(path: string): Promise<void> {
+    const host = this.hostId;
+    const parts = path.split("/");
+    const name = parts.pop();
+    if (!name) return;
+    const parent = parts.join("/");
+    if (parent !== this.path) await this.openDir(parent);
+    if (this.hostId === host && this.path === parent) this.select(name, "single");
+  }
+
   /** A click on a column header. The direction rule is `@pdmux/core`'s. */
   sortBy(key: FsSortKey): void {
     this.sort = nextFsSort(this.sort, key);
@@ -170,9 +187,7 @@ export class FilesDock {
     this.path = path;
     this.selected = [];
     this.#anchor = null;
-    this.file = null;
-    this.fileLoading = false;
-    this.image = null;
+    this.closePreview();
     this.loading = true;
     this.dir = null;
     try {
@@ -197,12 +212,14 @@ export class FilesDock {
   async refresh(): Promise<void> {
     const keep = this.selected;
     const anchor = this.#anchor;
-    const openFile = this.file?.path ?? null;
+    const openFile = this.preview?.path ?? this.file?.path ?? this.image?.path ?? null;
+    const ticket = this.#request + 1;
     await this.openDir(this.path);
+    if (!this.#current(ticket)) return;
     const names = new Set((this.dir?.entries ?? []).map((entry) => entry.name));
     this.selected = keep.filter((name) => names.has(name));
     this.#anchor = anchor !== null && names.has(anchor) ? anchor : null;
-    if (openFile && this.selected.length === 1) await this.#preview(openFile);
+    if (openFile && this.selected.length === 1) this.#openPreview(openFile);
   }
 
   /**
@@ -230,11 +247,8 @@ export class FilesDock {
     if (!span) this.#anchor = name;
 
     const only = this.selected.length === 1 && this.selected[0] === name && !this.shown?.entries.find((entry) => entry.name === name)?.dir;
-    const shape = only ? previewableAs(name) : null;
-    this.file = null;
-    this.fileLoading = false;
-    this.image = shape === "image" && this.hostId ? { path: this.join(name), url: this.#api.url(this.hostId, this.join(name), true) } : null;
-    if (shape === "text") void this.#preview(this.join(name));
+    this.closePreview();
+    if (only) this.#openPreview(this.join(name));
   }
 
   /**
@@ -277,6 +291,8 @@ export class FilesDock {
   }
 
   closePreview(): void {
+    this.#previewRequest += 1;
+    this.preview = null;
     this.file = null;
     this.fileLoading = false;
     this.image = null;
@@ -351,30 +367,58 @@ export class FilesDock {
    * silently; keeping the question in the dialog that names what will go keeps
    * the two impossible to separate.
    */
-  async removeSelected(recursive: boolean): Promise<string | null> {
-    const hostId = this.hostId;
-    if (!hostId) return null;
-    for (const entry of this.selectedEntries) {
-      const answer = await this.#api.remove(hostId, this.join(entry.name), recursive && entry.dir);
-      if (answer.error) return answer.error;
+  selectionTarget(): FileDeleteTarget | null {
+    return this.hostId ? { hostId: this.hostId, basePath: this.path, entries: this.selectedEntries.map(({ name, dir }) => ({ name, dir })) } : null;
+  }
+
+  async removeSelected(recursive: boolean, target = this.selectionTarget()): Promise<FileDeleteResult> {
+    const result: FileDeleteResult = { removed: [], failed: [], pending: [] };
+    if (!target) return result;
+    for (const [index, entry] of target.entries.entries()) {
+      try {
+        const path = target.basePath ? `${target.basePath}/${entry.name}` : entry.name;
+        const answer = await this.#api.remove(target.hostId, path, recursive && entry.dir);
+        if (answer.error) result.failed.push({ name: entry.name, error: answer.error });
+        else result.removed.push(entry.name);
+      } catch (cause) {
+        result.failed.push({ name: entry.name, error: messageOf(cause) });
+        const status = cause && typeof cause === "object" && "statusCode" in cause ? cause.statusCode : null;
+        if (cause instanceof TypeError || status === 401 || status === 403 || (typeof status === "number" && status >= 500) || /^(HOST_|AUTH_|BACKEND_|DESKTOP_)/.test(errorCode(cause) ?? "")) {
+          result.pending = target.entries.slice(index + 1).map((value) => value.name);
+          break;
+        }
+      }
     }
-    return null;
+    if (this.hostId === target.hostId && this.path === target.basePath) {
+      this.selected = this.selected.filter((name) => !result.removed.includes(name));
+      this.#keepPreviewOnlyForSelection();
+    }
+    return result;
+  }
+
+  #openPreview(path: string): void {
+    if (!this.hostId) return;
+    this.closePreview();
+    const kind = previewableAs(path.split("/").pop() ?? path);
+    this.preview = { path, kind, url: this.#api.url(this.hostId, path, true) };
+    this.image = kind === "image" ? { path, url: this.preview.url } : null;
+    if (kind === "text" || kind === "markdown") void this.#preview(path);
   }
 
   async #preview(path: string): Promise<void> {
     const hostId = this.hostId;
     if (!hostId) return;
-    const ticket = this.#request;
+    const ticket = ++this.#previewRequest;
     this.fileLoading = true;
     this.file = null;
     try {
       const file = await this.#api.read(hostId, path);
-      if (this.#current(ticket)) {
+      if (ticket === this.#previewRequest) {
         this.file = file;
         this.fileLoading = false;
       }
     } catch (cause) {
-      if (!this.#current(ticket)) return;
+      if (ticket !== this.#previewRequest) return;
       this.fileLoading = false;
       this.file = { path, lines: [], binary: false, truncated: false, bytes: 0, error: messageOf(cause) };
     }
@@ -391,7 +435,7 @@ export class FilesDock {
   }
 
   #keepPreviewOnlyForSelection(): void {
-    const shown = this.image?.path ?? this.file?.path ?? null;
+    const shown = this.preview?.path ?? this.image?.path ?? this.file?.path ?? null;
     const only = this.selected.length === 1 ? this.join(this.selected[0] ?? "") : null;
     if (shown !== null && shown !== only) this.closePreview();
   }

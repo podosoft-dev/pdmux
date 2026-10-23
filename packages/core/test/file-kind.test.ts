@@ -59,7 +59,7 @@ describe('[TC-PDCORE-098] file kinds are read from the name alone', () => {
 			expect(mimeOf('LICENSE')).toBe('application/octet-stream');
 		});
 
-		it('lets only raster images be rendered from this origin', () => {
+		it('lets only explicit preview media be rendered from this origin', () => {
 			expect(inlineSafe(mimeOf('shot.png'))).toBe(true);
 			expect(inlineSafe(mimeOf('photo.jpeg'))).toBe(true);
 			// ⚠ SVG IS A DOCUMENT. It can carry script, and served inline from the
@@ -67,7 +67,7 @@ describe('[TC-PDCORE-098] file kinds are read from the name alone', () => {
 			// that is stored XSS. HTML is the same thing without the disguise.
 			expect(inlineSafe(mimeOf('icon.svg'))).toBe(false);
 			expect(inlineSafe(mimeOf('page.html'))).toBe(false);
-			expect(inlineSafe(mimeOf('paper.pdf'))).toBe(false);
+			expect(inlineSafe(mimeOf('paper.pdf'))).toBe(true);
 			expect(inlineSafe(mimeOf('anything.unknown'))).toBe(false);
 		});
 	});
@@ -79,9 +79,9 @@ describe('[TC-PDCORE-098] file kinds are read from the name alone', () => {
 			expect(previewableAs('shot.png')).toBe('image');
 			// SVG is markup: showing the source is honest and needs no byte transfer.
 			expect(previewableAs('icon.svg')).toBe('text');
-			expect(previewableAs('clip.mp4')).toBeNull();
+			expect(previewableAs('clip.mp4')).toBe('video');
 			expect(previewableAs('bundle.zip')).toBeNull();
-			expect(previewableAs('paper.pdf')).toBeNull();
+			expect(previewableAs('paper.pdf')).toBe('pdf');
 		});
 
 		it('gives an extensionless file the benefit of the doubt', () => {
@@ -91,4 +91,16 @@ describe('[TC-PDCORE-098] file kinds are read from the name alone', () => {
 			expect(previewableAs('LICENSE')).toBe('text');
 		});
 	});
+});
+
+it('[TC-PDFILE-016] classifies lightweight previews without executing markup or guessing unknown binary formats', () => {
+	for (const name of ['app.log', 'config.properties', '.env.local', 'unknown.custom']) expect(previewableAs(name)).toBe('text');
+	for (const name of ['README.MD', 'notes.markdown']) expect(previewableAs(name)).toBe('markdown');
+	expect(previewableAs('component.mdx')).toBe('text');
+	for (const name of ['sound.mp3', 'sound.flac', 'sound.m4a', 'sound.oga']) expect(previewableAs(name)).toBe('audio');
+	for (const name of ['clip.webm', 'clip.mov', 'clip.ogv']) expect(previewableAs(name)).toBe('video');
+	for (const name of ['a.zip', 'a.exe', 'a.docx', 'a.xlsx', 'a.mkv']) expect(previewableAs(name)).toBeNull();
+	expect(inlineSafe(mimeOf('icon.ico'))).toBe(true);
+	expect(mimeOf('sound.m4a')).toBe('audio/mp4');
+	expect(inlineSafe('video/arbitrary')).toBe(false);
 });

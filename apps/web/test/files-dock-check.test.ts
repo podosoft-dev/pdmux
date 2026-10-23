@@ -137,3 +137,49 @@ describe("[TC-PDWEB-036] a checkbox adds to the selection and never reads the ho
     expect(dock.selected).toEqual(["a.ts", "b.ts", "c.ts"]);
   });
 });
+
+describe("[TC-PDFILE-016] preview responses belong only to the file still open", () => {
+  it("ignores a late response after switching files or closing the preview", async () => {
+    const { dock, read } = dockWith(files());
+    const finish = new Map<string, (value: Awaited<ReturnType<typeof read>>) => void>();
+    read.mockImplementation(async (_host, path) => new Promise((resolve) => finish.set(path, resolve)));
+    dock.select("a.ts", "single"); dock.select("b.ts", "single");
+    const answer = (path: string): Awaited<ReturnType<typeof read>> => ({ path, lines: [path], bytes: 1, binary: false, truncated: false, error: null });
+    finish.get("b.ts")?.(answer("b.ts"));
+    await vi.waitFor(() => expect(dock.file?.path).toBe("b.ts"));
+    finish.get("a.ts")?.(answer("a.ts")); await Promise.resolve();
+    expect(dock.file?.path).toBe("b.ts");
+    dock.select("c.ts", "single"); dock.check("a.ts", "toggle");
+    finish.get("c.ts")?.(answer("c.ts")); await Promise.resolve();
+    expect(dock.preview).toBeNull(); expect(dock.file).toBeNull();
+  });
+  it("does not read a media file as text, and refreshes its preview without losing selection", async () => {
+    const { dock, read } = dockWith([entry("clip.mp4")]);
+    dock.select("clip.mp4", "single");
+    expect(dock.preview?.kind).toBe("video"); expect(read).not.toHaveBeenCalled();
+    await dock.refresh();
+    expect(dock.preview?.path).toBe("clip.mp4"); expect(dock.selected).toEqual(["clip.mp4"]);
+  });
+});
+
+describe("[TC-PDFILE-019] batch deletion preserves unsuccessful targets", () => {
+  it("continues after a file refusal and keeps only the failed entry selected", async () => {
+    const remove = vi.fn(async (_host: string, path: string) => ({ removed: path === "b.ts" ? 0 : 1, error: path === "b.ts" ? "Permission denied" : null }));
+    const dock = new FilesDock({ api: { remove } }); docks.push(dock);
+    dock.hostId = "host"; dock.dir = listingOf(files()); dock.setSelection(["src", "a.ts", "b.ts"]);
+    const result = await dock.removeSelected(true);
+    expect(result.removed).toEqual(["src", "a.ts"]);
+    expect(result.failed).toEqual([{ name: "b.ts", error: "Permission denied" }]);
+    expect(dock.selected).toEqual(["b.ts"]);
+    expect(remove.mock.calls.map((call) => call.slice(0, 2))).toEqual([["host", "src"], ["host", "a.ts"], ["host", "b.ts"]]);
+  });
+  it("uses the confirmed host and directory and leaves unattempted entries after a connection loss", async () => {
+    const remove = vi.fn(async () => { throw new TypeError("Connection lost"); });
+    const dock = new FilesDock({ api: { remove } }); docks.push(dock);
+    dock.hostId = "original"; dock.path = "confirmed"; dock.dir = listingOf(files()); dock.setSelection(["a.ts", "b.ts"]);
+    const target = dock.selectionTarget(); dock.hostId = "other"; dock.path = "other"; dock.setSelection(["c.ts"]);
+    const result = await dock.removeSelected(true, target);
+    expect(remove).toHaveBeenCalledExactlyOnceWith("original", "confirmed/a.ts", false);
+    expect(result.pending).toEqual(["b.ts"]); expect(dock.selected).toEqual(["c.ts"]);
+  });
+});

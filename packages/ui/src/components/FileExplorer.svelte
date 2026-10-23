@@ -40,7 +40,8 @@
 	 *
 	 * ⚠ THE CHECKBOX COLUMN IS OPT-IN (`selectable`) AND IT IS NOT A MODE. A checkbox
 	 * toggles its entry and never navigates; the name keeps doing what it always did —
-	 * a folder opens, a file is selected and previewed. The selection-mode toggle this
+	 * a plain click opens a folder or selects and previews a file. Modifier clicks select
+	 * either kind without navigating. The selection-mode toggle this
 	 * replaced made the same click mean two things depending on a button elsewhere, so
 	 * a folder could not be opened while choosing, and Shift could not reach a range.
 	 *
@@ -66,7 +67,7 @@
 		UNKNOWN_VALUE,
 		visibleFsColumns,
 	} from '@pdmux/core';
-	import { tick } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import type { CheckMode, FsDirView, FsEntryView, FsFileView, SelectMode } from '../types.js';
 	import { type Translate, translator } from '../i18n.js';
 	import BlobView from './BlobView.svelte';
@@ -88,6 +89,10 @@
 		/** The file being previewed, if any. */
 		file?: FsFileView | null;
 		fileLoading?: boolean;
+		/** Optional app-owned preview controls and content; existing image/blob props stay compatible. */
+		previewPath?: string | null;
+		previewHeader?: Snippet;
+		previewContent?: Snippet;
 		/** An image being previewed — a URL the browser loads itself. */
 		image?: { path: string; url: string } | null;
 		/** Which column the listing is ordered by. The store applies it, not this. */
@@ -161,6 +166,9 @@
 		selected = [],
 		file = null,
 		fileLoading = false,
+		previewPath = null,
+		previewHeader,
+		previewContent,
 		image = null,
 		sort = DEFAULT_FS_SORT,
 		columns = FS_COLUMN_DEFAULTS,
@@ -461,7 +469,7 @@
 								type="button"
 								aria-current={isChosen ? 'true' : undefined}
 								onclick={(event) =>
-									entry.dir ? onOpenDir?.(join(entry.name)) : onSelect?.(entry.name, modeOf(event))}
+									entry.dir && modeOf(event) === 'single' ? onOpenDir?.(join(entry.name)) : onSelect?.(entry.name, modeOf(event))}
 							>
 								<FileIcon name={entry.name} dir={entry.dir} {scheme} />
 								<span class="pdmux-files-name">{entry.name}{entry.dir ? '/' : ''}</span>
@@ -511,15 +519,16 @@
 			{/if}
 		</div>
 
-		{#if file || fileLoading || image}
+		{#if previewPath || file || fileLoading || image}
 			<!-- A face of its own: a header that says WHICH file, and a body that is
 			     the only thing that scrolls. A title that scrolls away mid-file leaves
 			     the reader with no way back to "which file is this". -->
 			<section class="pdmux-files-preview" data-pdmux-files-preview>
 				<div class="pdmux-files-preview-head">
 					<span class="pdmux-files-preview-name" data-pdmux-preview-name
-						>{(image?.path ?? file?.path ?? '').split('/').pop()}</span
+						>{(previewPath ?? image?.path ?? file?.path ?? '').split('/').pop()}</span
 					>
+					{#if previewHeader}{@render previewHeader()}{/if}
 					<button
 						class="pdmux-ico"
 						type="button"
@@ -529,8 +538,9 @@
 						onclick={() => onClosePreview?.()}>✕</button
 					>
 				</div>
-				<div class="pdmux-files-preview-body" data-pdmux-preview-kind={image ? 'image' : 'text'}>
-					{#if image}
+				<div class="pdmux-files-preview-body" data-pdmux-preview-kind={previewContent ? 'custom' : image ? 'image' : 'text'}>
+					{#if previewContent}{@render previewContent()}
+					{:else if image}
 						<!--
 							⚠ THE BROWSER FETCHES THIS, NOT US. A picture routed through the app
 							would be held in memory to become a blob URL; an `img` streams,

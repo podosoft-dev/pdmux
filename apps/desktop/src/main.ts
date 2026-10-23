@@ -102,6 +102,7 @@ function secureWindow(appUrl: string): BrowserWindow {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      plugins: true,
       webSecurity: true,
     },
   });

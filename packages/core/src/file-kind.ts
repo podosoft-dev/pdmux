@@ -86,6 +86,7 @@ const BY_EXT: Readonly<Record<string, FileKind>> = {
 	lock: 'data',
 	// prose
 	md: 'doc',
+	markdown: 'doc',
 	mdx: 'doc',
 	txt: 'doc',
 	rst: 'doc',
@@ -129,7 +130,33 @@ const BY_EXT: Readonly<Record<string, FileKind>> = {
 	o: 'binary',
 	a: 'binary',
 	wasm: 'binary',
+	doc: 'binary',
+	docx: 'binary',
+	xls: 'binary',
+	xlsx: 'binary',
+	ppt: 'binary',
+	pptx: 'binary',
+	odt: 'binary',
+	ods: 'binary',
+	odp: 'binary',
 };
+
+const MEDIA: Readonly<Record<string, { kind: 'audio' | 'video'; mime: string }>> = {
+	mp3: { kind: 'audio', mime: 'audio/mpeg' },
+	wav: { kind: 'audio', mime: 'audio/wav' },
+	ogg: { kind: 'audio', mime: 'audio/ogg' },
+	oga: { kind: 'audio', mime: 'audio/ogg' },
+	m4a: { kind: 'audio', mime: 'audio/mp4' },
+	aac: { kind: 'audio', mime: 'audio/aac' },
+	flac: { kind: 'audio', mime: 'audio/flac' },
+	mp4: { kind: 'video', mime: 'video/mp4' },
+	m4v: { kind: 'video', mime: 'video/mp4' },
+	webm: { kind: 'video', mime: 'video/webm' },
+	ogv: { kind: 'video', mime: 'video/ogg' },
+	mov: { kind: 'video', mime: 'video/quicktime' },
+};
+
+export type FilePreviewKind = 'text' | 'markdown' | 'image' | 'pdf' | 'audio' | 'video';
 
 /**
  * The extension, lowercased, or `''`.
@@ -151,6 +178,7 @@ export function fileKindOf(name: string, isDir = false): FileKind {
 	if (!trimmed) return 'plain';
 	const lower = trimmed.toLowerCase();
 	const ext = extensionOf(trimmed);
+	if (MEDIA[ext]) return 'media';
 	// The extension wins when there is one (`README.md` is prose either way), and the
 	// stem is the fallback so `Dockerfile.dev` is still a Dockerfile.
 	if (ext) return BY_EXT[ext] ?? BY_NAME[lower.slice(0, lower.indexOf('.'))] ?? 'plain';
@@ -165,14 +193,18 @@ export function fileKindOf(name: string, isDir = false): FileKind {
  * sniffs for NUL) and the blob view already has a state for that. What this decides
  * is only whether asking is worth a round trip.
  */
-export function previewableAs(name: string): 'text' | 'image' | null {
+export function previewableAs(name: string): FilePreviewKind | null {
+	const ext = extensionOf(name);
+	if (ext === 'md' || ext === 'markdown') return 'markdown';
+	if (ext === 'pdf') return 'pdf';
+	if (MEDIA[ext]) return MEDIA[ext].kind;
 	const kind = fileKindOf(name);
 	if (kind === 'image') return extensionOf(name) === 'svg' ? 'text' : 'image';
 	if (kind === 'code' || kind === 'data') return 'text';
 	if (kind === 'doc') return extensionOf(name) === 'pdf' ? null : 'text';
-	// An extensionless file is usually a script or a note; the agent's own binary
-	// sniff is the backstop, so guessing "text" here costs at most one refusal.
-	return kind === 'plain' && extensionOf(name) === '' ? 'text' : null;
+	// Unknown extensions can still be logs or configuration. The agent's bounded
+	// read and binary sniff prevent this guess from becoming an unbounded download.
+	return kind === 'plain' ? 'text' : null;
 }
 
 /**
@@ -211,7 +243,8 @@ const MIME_BY_EXT: Readonly<Record<string, string>> = {
 };
 
 export function mimeOf(name: string): string {
-	return MIME_BY_EXT[extensionOf(name)] ?? 'application/octet-stream';
+	const ext = extensionOf(name);
+	return MEDIA[ext]?.mime ?? MIME_BY_EXT[ext] ?? 'application/octet-stream';
 }
 
 /**
@@ -220,9 +253,9 @@ export function mimeOf(name: string): string {
  * ⚠ AN ALLOWLIST, AND DELIBERATELY NOT "ANY `image/*`". `image/svg+xml` is a
  * document: it can carry script, and served inline from the app's own origin that
  * is stored XSS with the file explorer as the upload path. HTML is the same
- * argument without the disguise. So the list is raster images, and everything
- * else — including anything added to the map above — is an attachment until
- * somebody adds it here on purpose.
+ * argument without the disguise. Native PDF/media viewers have their own parsing
+ * boundaries; only their explicit MIME types join raster images here. Adding an
+ * extension to the name map alone never enables inline rendering.
  */
 export const INLINE_SAFE: readonly string[] = [
 	'image/png',
@@ -231,6 +264,9 @@ export const INLINE_SAFE: readonly string[] = [
 	'image/webp',
 	'image/avif',
 	'image/bmp',
+	'image/x-icon',
+	'application/pdf',
+	...new Set(Object.values(MEDIA).map((entry) => entry.mime)),
 ];
 
 export function inlineSafe(mime: string): boolean {

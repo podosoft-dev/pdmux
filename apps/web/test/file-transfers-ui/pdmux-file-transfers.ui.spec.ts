@@ -1,5 +1,6 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { devices, expect, test, type Locator, type Page } from "@playwright/test";
 import type { FileTransferEntryView, FileTransferView } from "@pdmux/protocol";
+import { MARKDOWN_SAMPLE } from "./preview-assets";
 
 interface Refusal { status: 429 | 503; retryAfter?: string }
 interface Fixture {
@@ -33,6 +34,12 @@ async function fixture(page: Page, refusals: Refusal[] = []): Promise<Fixture> {
     const url = new URL(request.url());
     const suffix = url.pathname.split("/file-transfers")[1];
     if (suffix === undefined) {
+      if (url.pathname.endsWith("/files/content")) {
+        const path = url.searchParams.get("path") ?? "";
+        const content = path.endsWith(".md") ? MARKDOWN_SAMPLE : "INFO ready\n<literal>";
+        await route.fulfill({ json: { path, lines: content.split("\n"), bytes: content.length, binary: false, truncated: false, error: null } }); return;
+      }
+      if (url.pathname.endsWith("/files/download")) { await route.fallback(); return; }
       await route.fulfill({ json: { path: url.searchParams.get("path") ?? "", home: "/home/example", entries: [], dropped: 0, truncated: false, error: null } });
       return;
     }
@@ -106,7 +113,16 @@ async function fixture(page: Page, refusals: Refusal[] = []): Promise<Fixture> {
   return { jobs, entries, chunks, chunkRequests, controls, release };
 }
 
-test("[TC-PDFILE-008] scrolls transfer history and clears finished jobs across reloads", async ({ page }, testInfo): Promise<void> => {
+async function details(page: Page, group: "current" | "history" = "current"): Promise<void> {
+  if (!await page.getByTestId("transfers-dialog").isVisible()) await page.getByTestId("transfers-summary").click();
+  await page.getByRole("tab", { name: group === "history" ? /^History/ : /^In progress/ }).click();
+}
+
+async function closeDetails(page: Page): Promise<void> {
+  await page.getByTestId("transfers-dialog").getByRole("button", { name: "Close", exact: true }).first().click();
+}
+
+test("[TC-PDFILE-008][TC-PDFILE-020] keeps history in one dialog without shrinking the explorer", async ({ page }, testInfo): Promise<void> => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await fixture(page);
   for (let index = 0; index < 8; index++) state.jobs.push({
@@ -117,31 +133,32 @@ test("[TC-PDFILE-008] scrolls transfer history and clears finished jobs across r
   });
   await page.goto("/");
   const panel = page.getByTestId("file-transfer-panel");
-  const list = page.getByTestId("transfer-list");
-  await expect(page.getByTestId("transfer-job")).toHaveCount(8);
+  await expect(panel).toBeVisible();
+  await expect(page.getByTestId("transfers-dialog")).toHaveCount(0);
   const explorerBefore = await page.getByTestId("file-explorer").boundingBox();
-  await expect(panel.locator('[aria-label="pagination"]')).toHaveCount(0);
+  expect((await panel.boundingBox())?.height).toBeLessThanOrEqual(40);
+  await details(page, "history");
+  const list = page.getByTestId("transfer-list");
+  await expect(page.getByTestId("transfer-job")).toHaveCount(7);
   const before = await list.evaluate((element) => ({ height: element.clientHeight, scrollHeight: element.scrollHeight }));
   expect(before.scrollHeight).toBeGreaterThan(before.height);
-  expect((await panel.boundingBox())?.height).toBeLessThanOrEqual(844 * 0.45 + 1);
   await page.getByTestId("transfer-job").last().scrollIntoViewIfNeeded();
   expect(await list.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-  await expect(panel.getByRole("button", { name: "Transfers 8" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("transfer-history-scroll.png"), fullPage: true });
-
   const one = state.jobs[0]!;
   await page.locator(`[data-transfer-id="${one.id}"]`).getByRole("button", { name: `Clear transfer ${one.basePath}` }).click();
-  await expect(page.locator(`[data-transfer-id="${one.id}"]`)).toHaveCount(0);
-  await page.reload();
-  await expect(page.getByTestId("transfer-job")).toHaveCount(7);
-  await panel.getByRole("button", { name: "Clear finished" }).click();
-  await expect(page.getByTestId("transfer-job")).toHaveCount(1);
+  await expect(page.getByTestId("transfer-job")).toHaveCount(6);
+  await closeDetails(page); await page.reload();
+  await expect(page.getByTestId("transfers-dialog")).toHaveCount(0);
+  await details(page, "history");
+  await page.getByRole("button", { name: "Clear finished" }).click();
+  await expect(page.getByTestId("transfer-job")).toHaveCount(0);
+  await details(page);
   await expect(page.getByTestId("transfer-job")).toHaveAttribute("data-transfer-state", "paused");
+  await closeDetails(page);
   const explorerAfter = await page.getByTestId("file-explorer").boundingBox();
-  expect(explorerAfter?.height).toBeGreaterThan(explorerBefore?.height ?? 0);
+  expect(explorerAfter?.height).toBe(explorerBefore?.height);
   await testInfo.attach("transfer-history-geometry", { body: JSON.stringify({ list: before, explorerBefore, explorerAfter }), contentType: "application/json" });
-  await page.reload();
-  await expect(page.getByTestId("transfer-job")).toHaveCount(1);
   expect(state.jobs).toHaveLength(1);
 });
 
@@ -171,6 +188,8 @@ test("[TC-PDFILE-008] reviews native source exclusions before uploading an empty
   expect(state.jobs).toHaveLength(0);
   await page.getByTestId("files-upload-folder").click();
   await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect.poll(() => state.jobs[0]?.state).toBe("completed");
+  await details(page, "history");
   await expect(page.getByTestId("transfer-job")).toHaveAttribute("data-transfer-state", "completed");
   expect(state.entries.map((entry) => entry.path)).toEqual(["folder", "folder/empty"]);
   expect(state.chunks).toEqual([]);
@@ -271,7 +290,7 @@ for (const width of [1280, 390]) {
   // pointer, which is what gives the rows their 32px, and every action below is a tap.
   test.describe(`checkbox selection at ${width}px`, (): void => {
     const touch = width === 390;
-    test.use({ viewport: { width, height: 844 }, ...(touch ? { hasTouch: true, isMobile: true } : {}) });
+    test.use({ viewport: { width, height: 844 }, ...(touch ? { hasTouch: true, isMobile: true, userAgent: devices["Pixel 7"].userAgent } : {}) });
     const press = (target: Locator): Promise<void> => (touch ? target.tap() : target.click());
 
     test(`[TC-PDFILE-008] select folders and download mixed entries at ${width}px`, async ({ page }, testInfo): Promise<void> => {
@@ -290,6 +309,7 @@ for (const width of [1280, 390]) {
       await expect.poll(() => state.jobs[0]?.state).toBe("running");
       const job = state.jobs[0]!;
       Object.assign(job, { state: "ready", totalBytes: 7, bytes: 7, completedEntries: 3, totalEntries: 3 });
+      await details(page);
       await expect(page.getByTestId("transfer-job")).toHaveAttribute("data-transfer-state", "ready");
       await page.screenshot({ path: testInfo.outputPath("folder-download-ready.png"), fullPage: true });
       const panel = await page.getByTestId("file-transfer-panel").boundingBox();
@@ -417,24 +437,21 @@ for (const width of [1280, 390]) {
       expect((await created).postDataJSON()).toMatchObject({ direction: "download", basePath: "destination", selection: ["folder", "file.txt", "notes.md"] });
     });
 
-    test(`[TC-PDFILE-011] an agent without folder transfers disables folder boxes and says why at ${width}px`, async ({ page }, testInfo): Promise<void> => {
+    test(`[TC-PDFILE-011] an older agent allows folder selection for deletion but explains unsupported downloads at ${width}px`, async ({ page }, testInfo): Promise<void> => {
       await fixture(page);
       const posts: string[] = [];
       page.on("request", (request): void => {
         if (request.method() === "POST" && request.url().includes("/file-transfers")) posts.push(request.url());
       });
       await page.goto("/?legacy");
-      await expect(box(page, "folder")).toBeDisabled();
-      await expect(box(page, "folder")).toHaveAttribute("title", UPGRADE);
-      await expect(row(page, "folder").locator(".pdmux-files-check")).toHaveAttribute("title", UPGRADE);
-      await expect(box(page, "file.txt")).toBeEnabled();
-
-      // Select-all counts only what can be checked, and is "all" once that is checked.
+      await expect(box(page, "folder")).toBeEnabled();
       await press(selectAll(page));
-      await expect(box(page, "file.txt")).toBeChecked();
-      await expect(box(page, "notes.md")).toBeChecked();
-      await expect(box(page, "folder")).not.toBeChecked();
-      await expect(selectAll(page)).toBeChecked();
+      for (const name of ["folder", "file.txt", "notes.md"]) await expect(box(page, name)).toBeChecked();
+      await expectSelected(page, 3);
+      await expect(page.getByTestId("files-delete")).toBeEnabled();
+      await expect(page.getByTestId("files-download")).toBeDisabled();
+      await expect(page.getByTestId("files-download")).toHaveAttribute("title", UPGRADE);
+      await press(box(page, "folder"));
       await expectSelected(page, 2);
       await page.screenshot({ path: testInfo.outputPath(`files-checkbox-legacy-${width}.png`), fullPage: true, animations: "disabled" });
 
@@ -445,7 +462,7 @@ for (const width of [1280, 390]) {
       await expect.poll(() => saved.length).toBe(2);
       expect(saved.sort()).toEqual(["file.txt", "notes.md"]);
       expect(posts).toEqual([]);
-      // The folder still opens by its name — only its box is refused.
+      // The folder still opens by its name — selection and navigation are separate.
       await press(row(page, "folder").locator(".pdmux-files-row"));
       await expect(page.locator('[data-pdmux-crumb="destination/folder"]')).toHaveAttribute("aria-current", "location");
     });
@@ -475,8 +492,10 @@ for (const width of [1280, 390]) {
     await conflict.getByRole("button", { name: "Overwrite", exact: true }).click();
     await expect.poll(() => state.chunks.length).toBe(2);
     expect(state.entries.some((entry) => entry.path === "folder/empty" && entry.kind === "directory")).toBe(true);
+    await details(page);
     const progress = page.getByTestId("transfer-job").getByRole("progressbar");
     await expect(progress).toHaveAttribute("aria-valuenow", /49\./);
+    await closeDetails(page);
     await page.getByTestId("files-path-edit").click();
     await page.getByTestId("files-path-input").fill("another-directory");
     await page.getByTestId("files-path-input").press("Enter");
@@ -489,17 +508,22 @@ for (const width of [1280, 390]) {
     expect(overflow).toBe(false);
     await testInfo.attach("geometry", { body: JSON.stringify({ before, after, panel }), contentType: "application/json" });
     await page.screenshot({ path: testInfo.outputPath("folder-transfer-progress.png"), fullPage: true });
+    await details(page);
     await page.getByTestId("transfer-job").getByRole("button", { name: "Pause", exact: true }).click();
     await expect(page.getByTestId("transfer-job")).toHaveAttribute("data-transfer-state", "paused");
     state.release();
     await expect.poll(() => state.entries.find((entry) => entry.kind === "file")?.offset).toBe(2 * 1_048_576);
     await page.reload();
+    await details(page);
     await expect(page.getByTestId("transfer-job")).toHaveAttribute("data-transfer-state", "paused");
     await page.getByTestId("transfer-job").getByRole("button", { name: "Resume", exact: true }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Upload folder", exact: true }).click();
+    await page.getByTestId("transfer-reselect").getByRole("button", { name: "Upload folder", exact: true }).click();
+    await expect.poll(() => state.jobs[0]?.state).toBe("completed");
+    await details(page, "history");
     await expect(page.getByTestId("transfer-job")).toHaveAttribute("data-transfer-state", "completed");
     expect(state.chunks).toEqual([1_048_576, 1_048_576, 7]);
     await page.reload();
+    await details(page, "history");
     await expect(page.getByTestId("transfer-job")).toHaveAttribute("data-transfer-state", "completed");
   });
 }
@@ -510,12 +534,15 @@ test("[TC-PDFILE-014] an upload waits out 429 and 503 answers and finishes witho
   await page.goto("/");
   await page.getByTestId("files-upload-folder").click();
   await page.getByTestId("transfer-conflict").getByRole("button", { name: "Overwrite", exact: true }).click();
+  await details(page);
   const job = page.getByTestId("transfer-job");
   await expect.poll(() => state.chunkRequests.length).toBeGreaterThanOrEqual(1);
   // While it waits, the transfer still reads as running, not paused or failed.
   await expect(job).toHaveAttribute("data-transfer-state", "running");
   await expect(page.getByTestId("file-transfer-panel").getByRole("alert")).toHaveCount(0);
-  await expect(job).toHaveAttribute("data-transfer-state", "completed", { timeout: 15_000 });
+  await expect.poll(() => state.jobs[0]?.state, { timeout: 15_000 }).toBe("completed");
+  await details(page, "history");
+  await expect(job).toHaveAttribute("data-transfer-state", "completed");
   expect(state.chunks).toEqual([1_048_576, 1_048_576, 7]);
   expect(state.controls).toEqual(["start"]);
   const [refused, unavailable, accepted] = state.chunkRequests;
@@ -535,6 +562,7 @@ for (const width of [1280, 390]) {
     await page.goto("/");
     await page.getByTestId("files-upload-folder").click();
     await page.getByTestId("transfer-conflict").getByRole("button", { name: "Overwrite", exact: true }).click();
+    await details(page);
     const job = page.getByTestId("transfer-job");
     const waiting = job.getByTestId("transfer-retry");
     await expect(waiting).toBeVisible();
@@ -569,6 +597,8 @@ for (const width of [1280, 390]) {
 
     // The retry starts: the line goes and the transfer finishes without pausing.
     await expect(waiting).toHaveCount(0, { timeout: 6_000 });
+    await expect.poll(() => state.jobs[0]?.state).toBe("completed");
+    await details(page, "history");
     await expect(job).toHaveAttribute("data-transfer-state", "completed");
     expect(state.controls).toEqual(["start"]);
     await page.screenshot({ path: testInfo.outputPath(`transfer-retry-${width}-done.png`), fullPage: true, animations: "disabled" });
@@ -576,10 +606,10 @@ for (const width of [1280, 390]) {
 }
 
 test.describe("checkbox contrast at 390px", (): void => {
-  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, userAgent: devices["Pixel 7"].userAgent });
 
   for (const theme of ["light", "dark"] as const) {
-    test(`[TC-PDUI-232] an unchecked box clears 3:1 and a disabled box looks disabled, ${theme}`, async ({ page }, testInfo): Promise<void> => {
+    test(`[TC-PDUI-232] unchecked file and folder boxes remain visible and selectable, ${theme}`, async ({ page }, testInfo): Promise<void> => {
       await fixture(page);
       await page.goto("/?legacy");
       // The app switches theme with a class on the document (mode-watcher); the package's code
@@ -592,10 +622,10 @@ test.describe("checkbox contrast at 390px", (): void => {
       await expect(box(page, "file.txt")).toBeChecked();
 
       const unchecked = await boxContrast(page, "notes.md");
-      const disabled = await boxContrast(page, "folder");
+      const folder = await boxContrast(page, "folder");
       const checked = await boxContrast(page, "file.txt");
-      console.log(`TC-PDUI-232 ${theme} ${JSON.stringify({ unchecked, disabled, checked })}`);
-      await testInfo.attach(`checkbox-contrast-${theme}`, { body: JSON.stringify({ unchecked, disabled, checked }, null, 2), contentType: "application/json" });
+      console.log(`TC-PDUI-232 ${theme} ${JSON.stringify({ unchecked, folder, checked })}`);
+      await testInfo.attach(`checkbox-contrast-${theme}`, { body: JSON.stringify({ unchecked, folder, checked }, null, 2), contentType: "application/json" });
       await page.screenshot({ path: testInfo.outputPath(`files-checkbox-${theme}-390.png`), fullPage: true, animations: "disabled" });
 
       // WCAG 1.4.11: a control's boundary needs 3:1 against what is next to it — the row,
@@ -604,14 +634,9 @@ test.describe("checkbox contrast at 390px", (): void => {
       expect(unchecked.hoverRatio).toBeGreaterThanOrEqual(3);
       expect(unchecked.borderStyle).toBe("solid");
       expect(unchecked.opacity).toBe(1);
-      // A disabled box must not read as an empty enabled one: dashed, faded, and it says
-      // "not allowed" to a pointer. The reason stays its tooltip.
-      expect(disabled.borderStyle).toBe("dashed");
-      expect(disabled.opacity).toBeLessThan(1);
-      expect(disabled.cursor).toBe("not-allowed");
-      expect(disabled.labelCursor).toBe("not-allowed");
-      expect(disabled.title).toBe(UPGRADE);
-      expect(disabled.fill).not.toBe(unchecked.fill);
+      expect(folder.borderStyle).toBe("solid");
+      expect(folder.opacity).toBe(1);
+      expect(folder.cursor).toBe("pointer");
       // Checked is untouched: filled with the primary colour, solid, opaque.
       expect(checked.borderStyle).toBe("solid");
       expect(checked.opacity).toBe(1);
@@ -676,7 +701,7 @@ async function nameContrast(page: Page): Promise<{ card: number; names: { kind: 
 
 for (const width of [1280, 390]) {
   test.describe(`the app's theme class at ${width}px`, (): void => {
-    test.use({ viewport: { width, height: 844 }, ...(width === 390 ? { hasTouch: true, isMobile: true } : {}) });
+    test.use({ viewport: { width, height: 844 }, ...(width === 390 ? { hasTouch: true, isMobile: true, userAgent: devices["Pixel 7"].userAgent } : {}) });
 
     for (const theme of [{ html: "dark", os: "light" }, { html: "light", os: "dark" }] as const) {
       // The light-class case is the mirror image and needs no second screenshot width.
@@ -707,5 +732,69 @@ for (const width of [1280, 390]) {
         expect(checked.ratio).toBeGreaterThanOrEqual(3);
       });
     }
+  });
+}
+
+
+for (const width of [1280, 390]) {
+  test.describe(`preview and batch operations at ${width}px`, () => {
+    test.use({ viewport: { width, height: 844 }, ...(width === 390 ? { isMobile: true, hasTouch: true, userAgent: devices["Pixel 7"].userAgent } : {}) });
+    test("[TC-PDFILE-018] renders Markdown and source without rereading, text fallback, PDF and media", async ({ page }, info) => {
+      await fixture(page);
+      const reads: string[] = [];
+      page.on("request", request => { if (request.url().includes("/files/content")) reads.push(request.url()); });
+      await page.goto("/?previews");
+      await row(page, "notes.md").locator("button").click();
+      await expect(page.getByTestId("markdown-preview").getByRole("heading", { name: "Preview guide" })).toBeVisible();
+      await expect(page.getByTestId("markdown-preview").locator("table")).toBeVisible();
+      expect(await page.evaluate(() => "previewExecuted" in window)).toBe(false);
+      await page.getByRole("tab", { name: "Source", exact: true }).click();
+      await expect(page.locator("[data-pdmux-files-preview] pre.pdmux-blob-code")).toContainText("# Preview guide");
+      await page.getByRole("tab", { name: "Preview", exact: true }).click();
+      expect(reads).toHaveLength(1);
+      await page.screenshot({ path: info.outputPath("markdown.png"), fullPage: true });
+      await row(page, "app.log").locator("button").click();
+      await expect(page.locator("[data-pdmux-files-preview] pre.pdmux-blob-code")).toContainText("INFO ready");
+      await row(page, "sound.wav").locator("button").click();
+      const audio = page.getByTestId("file-preview-audio");
+      await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.duration)).toBe(2);
+      await audio.evaluate(async (element: HTMLAudioElement) => { await element.play(); element.currentTime = 1; });
+      await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeGreaterThanOrEqual(1);
+      await audio.evaluate((element: HTMLAudioElement) => element.pause());
+      await row(page, "clip.webm").locator("button").click();
+      const video = page.getByTestId("file-preview-video");
+      await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThanOrEqual(1);
+      await video.evaluate(async (element: HTMLVideoElement) => { await element.play(); element.currentTime = .5; });
+      await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThanOrEqual(.5);
+      await video.evaluate((element: HTMLVideoElement) => element.pause());
+      await page.screenshot({ path: info.outputPath("video.png"), fullPage: true });
+      await row(page, "paper.pdf").locator("button").click();
+      if (await page.evaluate(() => navigator.pdfViewerEnabled)) await expect(page.getByTestId("file-preview-pdf")).toBeVisible();
+      else await expect(page.getByTestId("file-preview-fallback")).toBeVisible();
+      await page.screenshot({ path: info.outputPath("pdf.png"), fullPage: true });
+      await row(page, "bundle.zip").locator("button").click();
+      await expect(page.getByTestId("file-preview-fallback").getByRole("link", { name: "Download" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    });
+    test("[TC-PDFILE-019] deletes a mixed selection once and retains failed targets", async ({ page }) => {
+      await fixture(page);
+      let remaining = ["folder", "file.txt", "notes.md"];
+      const deleted: string[] = [];
+      await page.route("**/api/hosts/**/files?**", async route => {
+        const request = route.request(); const path = new URL(request.url()).searchParams.get("path") ?? "";
+        if (request.method() === "DELETE") {
+          deleted.push(path);
+          if (path.endsWith("notes.md")) await route.fulfill({ json: { removed: 0, error: "Permission denied" } });
+          else { remaining = remaining.filter(name => !path.endsWith("/" + name)); await route.fulfill({ json: { removed: 1, error: null } }); }
+        } else await route.fulfill({ json: { path, home: "/home/example", entries: remaining.map(name => ({ name, dir: name === "folder", symlink: false, size: 7, mode: 0o600, modified: 1 })), dropped: 0, truncated: false, error: null } });
+      });
+      await page.goto("/"); await selectAll(page).click();
+      await page.getByTestId("files-delete").click();
+      await page.getByTestId("files-delete-confirm-confirm").click();
+      await expect(page.getByTestId("files-delete-confirm")).toContainText("2 deleted · 1 failed");
+      expect(deleted).toEqual(["destination/folder", "destination/file.txt", "destination/notes.md"]);
+      await page.getByTestId("files-delete-confirm").getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(box(page, "notes.md")).toBeChecked(); await expectSelected(page, 1);
+    });
   });
 }

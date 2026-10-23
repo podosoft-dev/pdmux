@@ -85,11 +85,17 @@ function requireFilePath(path: string): string {
   return clean;
 }
 
-function rangeStart(header: string | null): number {
-  const match = /^bytes=(\d+)-\d*$/.exec((header ?? "").trim());
-  if (!match) return 0;
-  const start = Number(match[1]);
-  return Number.isSafeInteger(start) && start >= 0 ? start : 0;
+/** A malformed or multipart range is ignored; valid unsatisfiable ranges return 416. */
+function fileRange(header: string | null, size: number): { start: number; end: number; partial: boolean } | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec((header ?? "").trim());
+  if (!match || (!match[1] && !match[2])) return { start: 0, end: size - 1, partial: false };
+  const first = match[1] ? Number(match[1]) : null;
+  const last = match[2] ? Number(match[2]) : null;
+  if ((first !== null && !Number.isSafeInteger(first)) || (last !== null && !Number.isSafeInteger(last))) return null;
+  const start = first ?? Math.max(0, size - (last ?? 0));
+  const end = first === null || last === null ? size - 1 : Math.min(last, size - 1);
+  if (size === 0 || start >= size || start > end || (first === null && last === 0)) return null;
+  return { start, end, partial: true };
 }
 
 export async function audit<T>(
@@ -131,45 +137,49 @@ function fileDownload(
     const clean = requireFilePath(path);
     const name = clean.split("/").pop() ?? "download";
     const mime = mimeOf(name);
-    const from = rangeStart(request.headers.get("range"));
-    const first = await services.agentFiles.chunk(scope, hostId, clean, from, FS_CHUNK_BYTES);
+    const requested = /^bytes=(\d+)-(\d*)$/.exec((request.headers.get("range") ?? "").trim());
+    const candidate = Number(requested?.[1] ?? 0);
+    const from = Number.isSafeInteger(candidate) && candidate >= 0 ? candidate : 0;
+    const requestedEnd = requested?.[2] ? Number(requested[2]) : null;
+    const firstLength = requestedEnd !== null && Number.isSafeInteger(requestedEnd) && requestedEnd >= from
+      ? Math.min(FS_CHUNK_BYTES, requestedEnd - from + 1) : FS_CHUNK_BYTES;
+    const first = await services.agentFiles.chunk(scope, hostId, clean, from, firstLength);
     if (first.error) throw new AppException("FILE_READ_FAILED", first.error, 502);
-    if (from > 0 && from >= first.size) {
-      return new Response(null, {
-        status: 416,
-        headers: { "content-range": `bytes */${first.size}` },
-      });
-    }
+    const range = fileRange(request.headers.get("range"), first.size);
+    if (!range) return new Response(null, { status: 416, headers: { "content-range": `bytes */${first.size}`, "accept-ranges": "bytes" } });
 
-    let offset = from;
-    let slice = first;
+    let offset = range.start;
+    let slice: typeof first | null = range.start === from ? first : null;
+    let stopped = request.signal.aborted;
+    const stop = (): void => { stopped = true; request.signal.removeEventListener("abort", stop); };
+    request.signal.addEventListener("abort", stop, { once: true });
     const stream = new ReadableStream<Uint8Array>({
       async pull(controller): Promise<void> {
-        const raw = Buffer.from(slice.data, "base64");
-        if (raw.length > 0) controller.enqueue(raw);
-        offset += raw.length;
-        if (slice.eof || raw.length === 0) {
-          controller.close();
-          return;
-        }
+        if (stopped || offset > range.end) { stop(); controller.close(); return; }
         try {
-          slice = await services.agentFiles.chunk(scope, hostId, clean, offset, FS_CHUNK_BYTES);
-          if (slice.error) controller.error(new Error(slice.error));
-        } catch (error) {
-          controller.error(error);
-        }
+          const current = slice ?? await services.agentFiles.chunk(scope, hostId, clean, offset, Math.min(FS_CHUNK_BYTES, range.end - offset + 1));
+          slice = null;
+          if (stopped) { controller.close(); return; }
+          if (current.error) throw new Error(current.error);
+          const raw = Buffer.from(current.data, "base64").subarray(0, range.end - offset + 1);
+          if (raw.length === 0) throw new Error("File changed during download");
+          controller.enqueue(raw);
+          offset += raw.length;
+          if (offset > range.end) { stop(); controller.close(); }
+        } catch (error) { stop(); controller.error(error); }
       },
-    });
+      cancel(): void { stop(); },
+    }, { highWaterMark: 0 });
     const asInline = inline && inlineSafe(mime);
     const headers = new Headers({
       "accept-ranges": "bytes",
       "x-content-type-options": "nosniff",
       "content-type": mime,
       "content-disposition": `${asInline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(name)}`,
-      "content-length": String(Math.max(first.size - from, 0)),
+      "content-length": String(Math.max(range.end - range.start + 1, 0)),
     });
-    if (from > 0) headers.set("content-range", `bytes ${from}-${Math.max(first.size - 1, from)}/${first.size}`);
-    return new Response(stream, { status: from > 0 ? 206 : 200, headers });
+    if (range.partial) headers.set("content-range", `bytes ${range.start}-${range.end}/${first.size}`);
+    return new Response(stream, { status: range.partial ? 206 : 200, headers });
   })();
 }
 

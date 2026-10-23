@@ -42,7 +42,9 @@ export class FileTransferController {
   conflict = $state<TransferConflict | null>(null);
   exclusions = $state<string[] | null>(null);
   error = $state("");
-  expanded = $state(true);
+  expanded = $state(false);
+  saving = $state<string[]>([]);
+  startingDownload = $state(false);
   handedOff = $state<string[]>([]);
   nativeDownloads = $state<Record<string, NativeDownload>>({});
   removing = $state<string[]>([]);
@@ -124,7 +126,6 @@ export class FileTransferController {
   ): Promise<void> {
     if (this.preparing) return;
     this.error = "";
-    this.expanded = true;
     this.cancelledPreparation = false;
     this.preparing = { phase: "scanning", hostId, basePath, path: "", count: 0, bytes: 0, totalBytes: 0 };
     let source: UploadSource | null = null;
@@ -185,13 +186,22 @@ export class FileTransferController {
     }
   }
   async download(hostId: string, basePath: string, selection: string[]): Promise<void> {
+    if (this.startingDownload) return;
+    this.startingDownload = true;
     this.error = "";
-    this.expanded = true;
     try {
       const job = await this.api.create(hostId, { id: crypto.randomUUID(), direction: "download", basePath, selection });
       this.remember(await this.api.control(hostId, job.id, "start"));
       this.poll();
     } catch (error: unknown) { this.error = transferErrorCode(error); }
+    finally { this.startingDownload = false; }
+  }
+  group(job: FileTransferView): "active" | "attention" | "history" {
+    const native = this.nativeDownloads[job.id];
+    if (native?.state === "progressing") return "active";
+    if (native?.state === "interrupted") return "attention";
+    if (["completed", "cancelled", "expired"].includes(job.state) || native?.state === "completed" || native?.state === "cancelled" || (job.state === "ready" && !native && this.handedOff.includes(job.id))) return "history";
+    return ["queued", "running"].includes(job.state) ? "active" : "attention";
   }
   hasSource(id: string): boolean { return this.sources.has(id); }
   async needsFolder(job: FileTransferView): Promise<boolean> {
@@ -375,9 +385,18 @@ export class FileTransferController {
     }
   }
   async save(job: FileTransferView): Promise<void> {
+    if (this.saving.includes(job.id)) return;
+    this.saving = [...this.saving, job.id];
+    this.error = "";
     try {
       const desktop = desktopTransfers();
-      if (desktop) await desktop.download(job.hostId, job.id);
+      if (desktop) {
+        await desktop.download(job.hostId, job.id);
+        const status = await desktop.status(job.id);
+        if (status) this.nativeDownloads = { ...this.nativeDownloads, [job.id]: status };
+        // Cancelling the OS save dialog does not hand anything to a download manager.
+        if (!status || status.state === "cancelled") return;
+      }
       else {
         const anchor = document.createElement("a");
         anchor.href = this.api.url(job.hostId, job.id);
@@ -386,9 +405,10 @@ export class FileTransferController {
         anchor.click();
         anchor.remove();
       }
-      this.handedOff = [...new Set([...this.handedOff, job.id])];
+      if (!desktop) this.handedOff = [...new Set([...this.handedOff, job.id])];
       await this.load(job.hostId);
     } catch (error: unknown) { this.error = transferErrorCode(error); }
+    finally { this.saving = this.saving.filter((id) => id !== job.id); }
   }
 
   async pauseDownload(job: FileTransferView): Promise<void> {

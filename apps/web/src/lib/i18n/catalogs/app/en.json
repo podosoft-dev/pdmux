@@ -1241,7 +1241,12 @@
           "failed": "Stopped",
           "cancelled": "Cancelled",
           "expired": "Expired"
-        }
+        },
+        "current": "In progress / needs attention",
+        "history": "History",
+        "summary": "{active} in progress · {attention} need attention",
+        "historySummary": "{count} in history",
+        "close": "Close"
       },
       "pickHost": "Choose a host",
       "refresh": "Re-read this directory",
@@ -1259,7 +1264,15 @@
       "deleteWarning": "{count} item(s) will be deleted on this host: {names}. This cannot be undone.",
       "deleteFolderWarning": "{count} item(s) will be deleted on this host: {names}. A folder takes everything inside it. This cannot be undone.",
       "deleteConfirm": "Delete",
-      "queued": " · {count} waiting"
+      "queued": " · {count} waiting",
+      "preview": {
+        "rendered": "Preview",
+        "source": "Source",
+        "loading": "Loading preview…",
+        "unavailable": "This file cannot be previewed here. Download it to open it.",
+        "truncated": "Only the beginning of this file is shown."
+      },
+      "deleteResult": "{done} deleted · {failed} failed · {pending} not attempted"
     },
     "backToDashboard": "Back to dashboard",
     "helpFor": "Help: {topic}"

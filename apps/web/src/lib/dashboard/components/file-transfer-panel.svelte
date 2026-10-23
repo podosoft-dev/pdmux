@@ -12,12 +12,22 @@
   import { fmt, getI18n } from "#lib/i18n/index.js";
   import type { FileTransferController } from "../file-transfers/controller.svelte";
   import { captureDrop, pickFolder, sourceFromDroppedEntries, sourceFromFiles } from "../file-transfers/source";
+  import * as Tabs from "#lib/components/ui/tabs/index.js";
+  import ArrowDownUpIcon from "@lucide/svelte/icons/arrow-down-up";
+  import type { FilesDock } from "../files-dock.svelte";
   import TimerIcon from "@lucide/svelte/icons/timer";
 
-  let { transfers, hostLabel }: { transfers: FileTransferController; hostLabel: (id: string) => string } = $props();
+  let { transfers, hostLabel, legacyUpload = null }: { transfers: FileTransferController; hostLabel: (id: string) => string; legacyUpload?: FilesDock["upload"] } = $props();
   const i18n = getI18n();
   const messages = $derived(i18n.t.dash.files.transfers);
   let all = $state(false);
+  let view = $state("current");
+  const panelId = $props.id();
+  const active = $derived(transfers.jobs.filter((job) => transfers.group(job) === "active").length + (transfers.preparing ? 1 : 0) + (legacyUpload && !legacyUpload.error ? 1 : 0));
+  const attention = $derived(transfers.jobs.filter((job) => transfers.group(job) === "attention").length + (transfers.error ? 1 : 0) + (legacyUpload?.error ? 1 : 0));
+  const history = $derived(transfers.jobs.filter((job) => transfers.group(job) === "history"));
+  const visible = $derived(transfers.jobs.filter((job) => view === "history" ? transfers.group(job) === "history" : transfers.group(job) !== "history"));
+  function openDetails(): void { view = active || attention ? "current" : "history"; transfers.expanded = true; }
   let reselect = $state<FileTransferView | null>(null);
   let picker = $state<HTMLInputElement | null>(null);
   const conflict = $derived(transfers.conflict);
@@ -81,18 +91,22 @@
   }
 </script>
 
-{#if transfers.jobs.length || transfers.preparing || transfers.error}
-  <section class="flex max-h-[45%] min-h-0 shrink-0 flex-col border-t text-xs" data-testid="file-transfer-panel" aria-label={messages.title}>
-    <div class="flex shrink-0 items-center">
-      <Button variant="ghost" size="sm" class="h-7 min-w-0 flex-1 justify-between px-2 text-xs" aria-expanded={transfers.expanded} onclick={() => (transfers.expanded = !transfers.expanded)}>
-        <span>{messages.title}</span><span>{transfers.jobs.length}</span>
-      </Button>
-      {#if finished.length}
-        <Button variant="ghost" size="sm" class="h-7 shrink-0 px-2 text-xs" disabled={transfers.removing.length > 0} onclick={() => void transfers.removeFinished()}>{messages.clearAll}</Button>
-      {/if}
-    </div>
-    {#if transfers.expanded}
-      <div class="min-h-0 overflow-y-auto" data-testid="transfer-list">
+{#if transfers.jobs.length || transfers.preparing || transfers.error || legacyUpload}
+  <section class="h-9 shrink-0 border-t text-xs" data-testid="file-transfer-panel" aria-label={messages.title}>
+    <Button variant="ghost" class="h-9 w-full min-w-0 justify-between gap-2 rounded-none px-2 text-xs" onclick={openDetails} data-testid="transfers-summary" aria-haspopup="dialog">
+      <span class="flex shrink-0 items-center gap-1"><ArrowDownUpIcon class="size-3.5" />{messages.title}</span>
+      <span class="truncate" class:text-destructive={attention > 0} role="status">{active || attention ? fmt(messages.summary, { active: String(active), attention: String(attention) }) : fmt(messages.historySummary, { count: String(history.length) })}</span>
+    </Button>
+  </section>
+{/if}
+
+<Dialog.Root bind:open={transfers.expanded}>
+  <Dialog.Content class="flex max-h-[85dvh] w-[calc(100vw-2rem)] sm:w-[min(48rem,calc(100vw-2rem))] max-w-3xl sm:max-w-3xl min-h-0 flex-col gap-3 overflow-hidden" data-testid="transfers-dialog">
+    <Dialog.Header class="shrink-0 pr-6"><Dialog.Title>{messages.title}</Dialog.Title><Dialog.Description>{messages.retention}</Dialog.Description></Dialog.Header>
+    <Tabs.Root bind:value={view} class="min-h-0 flex-1 flex flex-col">
+      <Tabs.List class="shrink-0 grid w-full grid-cols-2"><Tabs.Trigger id={`${panelId}-current`} aria-controls={panelId} value="current" class="min-w-0 px-1 text-xs sm:text-sm"><span class="truncate" title={messages.current}>{messages.current}</span><span class="shrink-0">({active + attention})</span></Tabs.Trigger><Tabs.Trigger id={`${panelId}-history`} aria-controls={panelId} value="history" class="min-w-0 px-1 text-xs sm:text-sm">{messages.history} ({history.length})</Tabs.Trigger></Tabs.List>
+      <div class="min-h-0 flex-1 overflow-y-auto" id={panelId} role="tabpanel" tabindex="0" aria-labelledby={`${panelId}-${view}`} data-testid="transfer-list">
+        {#if view === "current"}
         {#if transfers.error}<p class="text-destructive break-words px-2 py-1" role="alert">{reason(transfers.error)}</p>{/if}
         {#if transfers.preparing}
           {@const preparation = transfers.preparing}
@@ -103,8 +117,17 @@
             <Button size="sm" variant="outline" onclick={() => transfers.cancelPreparation()}>{messages.cancelPreparation}</Button>
           </div>
         {/if}
-        {#if transfers.jobs.length}
-          <DataTable rows={transfers.jobs} {columns} getKey={(job) => job.id} empty={messages.empty} ariaLabel={messages.title}>
+        {#if legacyUpload}
+          <div class="space-y-1 px-2 py-2" data-testid="files-progress">
+            <p class="truncate">{legacyUpload.name}</p>
+            <Progress value={legacyUpload.total ? legacyUpload.sent / legacyUpload.total * 100 : null} aria-label={messages.uploading} />
+            {#if legacyUpload.error}<p class="text-destructive break-words" data-testid="files-upload-error">{legacyUpload.error}</p>{/if}
+          </div>
+        {/if}
+        {/if}
+        {#if view === "history" && finished.length}<Button variant="outline" size="sm" class="my-2" disabled={transfers.removing.length > 0} onclick={() => void transfers.removeFinished()}>{messages.clearAll}</Button>{/if}
+        {#if visible.length}
+          <DataTable rows={visible} {columns} getKey={(job) => job.id} empty={messages.empty} ariaLabel={messages.title}>
             {#snippet row(job)}
               <Table.Cell class="max-w-0 whitespace-normal px-2 py-2">
                 <div class="space-y-1" data-testid="transfer-job" data-transfer-id={job.id} data-transfer-state={job.state}>
@@ -138,7 +161,7 @@
                       <Button variant="outline" size="sm" class="h-7 text-xs" onclick={() => resume(job)}>{messages.resume}</Button>
                     {/if}
                     {#if job.state === "ready"}
-                      <Button size="sm" class="h-7 text-xs" onclick={() => void transfers.save(job)}>{messages.save}</Button>
+                      <Button size="sm" class="h-7 text-xs" disabled={transfers.saving.includes(job.id)} onclick={() => void transfers.save(job)}>{messages.save}</Button>
                     {/if}
                     {#if !["completed", "cancelled", "expired"].includes(job.state)}
                       <Button variant="ghost" size="sm" class="h-7 text-xs" onclick={() => void transfers.cancel(job)}>{messages.cancel}</Button>
@@ -168,11 +191,12 @@
             {/snippet}
           </DataTable>
         {/if}
-        <p class="text-muted-foreground px-2 py-1">{messages.retention}</p>
+        {#if !visible.length && !(view === "current" && (transfers.preparing || transfers.error || legacyUpload))}<p class="p-3 text-sm text-muted-foreground">{messages.empty}</p>{/if}
       </div>
-    {/if}
-  </section>
-{/if}
+    </Tabs.Root>
+    <Dialog.Footer class="shrink-0"><Button variant="outline" onclick={() => transfers.expanded = false}>{messages.close}</Button></Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root open={conflict !== null} onOpenChange={(open) => { if (!open) transfers.choose("cancel"); }}>
   <Dialog.Content class="max-h-[85vh] overflow-y-auto" data-testid="transfer-conflict">
@@ -200,7 +224,7 @@
   </Dialog.Content>
 </Dialog.Root>
 <Dialog.Root open={reselect !== null} onOpenChange={(open) => { if (!open) reselect = null; }}>
-  <Dialog.Content ondragover={(event) => event.preventDefault()} ondrop={reselectDrop}>
+  <Dialog.Content data-testid="transfer-reselect" ondragover={(event) => event.preventDefault()} ondrop={reselectDrop}>
     <Dialog.Header class="pr-6"><Dialog.Title>{messages.reselect}</Dialog.Title><Dialog.Description>{messages.retention}</Dialog.Description></Dialog.Header>
     <p>{messages.reselectDrop}</p>
     <Dialog.Footer>

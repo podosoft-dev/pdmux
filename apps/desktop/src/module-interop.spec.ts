@@ -8,7 +8,7 @@ import ts from "typescript";
 describe("[TC-PDDESKTOP-009] desktop Node module interoperability", () => {
   // Compiling a full TypeScript program has taken up to 5.3 s on the Intel macOS runner,
   // past the 5 s default, and failed the whole installer job.
-  it("emits a sandbox-compatible preload that exposes only the desktop bridge", () => {
+  it("[TC-PDFILE-018] emits a sandbox-compatible preload with the built-in PDF viewer", () => {
     const main = readFileSync(new URL("./main.ts", import.meta.url), "utf8");
     const extension = main.includes('"preload.cjs"') ? "cts" : "ts";
     const source = fileURLToPath(new URL(`./preload.${extension}`, import.meta.url));
@@ -33,6 +33,8 @@ describe("[TC-PDDESKTOP-009] desktop Node module interoperability", () => {
     expect(Object.values(bridge.transfers).every((value) => typeof value === "function")).toBe(true);
     expect(main).toContain("sandbox: true");
     expect(main).toContain("contextIsolation: true");
+    expect(main).toContain("plugins: true");
+    expect(main).toContain("nodeIntegration: false");
   }, 30_000);
   it("loads the actual updater import through Node ESM, not Bun's permissive loader", () => {
     const main = readFileSync(new URL("./main.ts", import.meta.url), "utf8");

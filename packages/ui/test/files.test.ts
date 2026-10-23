@@ -419,6 +419,16 @@ describe('[TC-PDUI-230] a checkbox column selects without navigating', () => {
 		expect(onCheck).not.toHaveBeenCalled();
 	});
 
+	it('[TC-PDFILE-019] selects folders with modifiers instead of navigating', () => {
+		const onOpenDir = vi.fn(); const onSelect = vi.fn();
+		const { container } = render(FileExplorer, { props: { dir: mixed(), selectable: true, onOpenDir, onSelect } });
+		nameOf(container, 'src').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }));
+		expect(onSelect).toHaveBeenLastCalledWith('src', 'toggle');
+		nameOf(container, 'src').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+		expect(onSelect).toHaveBeenLastCalledWith('src', 'range');
+		expect(onOpenDir).not.toHaveBeenCalled();
+	});
+
 	it('draws the box from `selected`, and puts it back when the caller declines', async () => {
 		const { container, rerender } = render(FileExplorer, {
 			props: { dir: mixed(), selectable: true, selected: ['a.ts'], onCheck: vi.fn() },

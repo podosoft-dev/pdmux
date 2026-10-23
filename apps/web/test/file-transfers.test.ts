@@ -258,3 +258,32 @@ describe("[TC-PDFILE-015] the controller reports a retry wait while it lasts", (
     } finally { controller.dispose(); }
   });
 });
+
+describe("[TC-PDFILE-020] transfer presentation does not change the server lifecycle", () => {
+  const job = (): FileTransferView => ({ id: "job", hostId: "host", basePath: "folder", direction: "download", state: "ready", bytes: 10, totalBytes: 10, completedEntries: 1, totalEntries: 1, currentPath: "file", errorCode: "", exclusions: [], archiveBytes: 10, updated: 0, created: 0 });
+  it("separates active, attention and history without pretending a browser download completed", () => {
+    const controller = new FileTransferController(); const value = job();
+    try {
+      expect(controller.expanded).toBe(false); expect(controller.group(value)).toBe("attention");
+      controller.handedOff = [value.id]; expect(controller.group(value)).toBe("history");
+      expect(value.state).toBe("ready");
+      controller.nativeDownloads = { job: { id: "job", received: 1, total: 10, state: "progressing" } };
+      expect(controller.group(value)).toBe("active");
+      controller.nativeDownloads.job = { id: "job", received: 10, total: 10, state: "completed" };
+      expect(controller.group(value)).toBe("history");
+    } finally { controller.dispose(); }
+  });
+  it("leaves a cancelled save dialog in attention and coalesces repeated save clicks", async () => {
+    let release: () => void = (): void => {};
+    const picked = new Promise<void>((resolve) => release = resolve);
+    const download = vi.fn(async () => picked);
+    vi.stubGlobal("window", { pdmuxDesktop: { isDesktop: true, transfers: { download, status: async () => null } } });
+    const controller = new FileTransferController(); const value = job();
+    try {
+      const first = controller.save(value); const duplicate = controller.save(value);
+      expect(download).toHaveBeenCalledTimes(1); release(); await Promise.all([first, duplicate]);
+      expect(controller.handedOff).toEqual([]); expect(controller.group(value)).toBe("attention");
+      expect(controller.saving).toEqual([]);
+    } finally { controller.dispose(); vi.unstubAllGlobals(); }
+  });
+});

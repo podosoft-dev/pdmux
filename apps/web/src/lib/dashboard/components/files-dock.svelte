@@ -7,7 +7,7 @@
    * toolbar built inside it comes out as a look-alike beside real ones; and the
    * package may not fetch (`[TC-PDUI-030]`), so the network belongs here too.
    */
-  import { type CheckMode, FileExplorer, type FsEntryView, type SelectMode, type Translate } from "@pdmux/ui";
+  import { type CheckMode, FileExplorer, type SelectMode, type Translate } from "@pdmux/ui";
   import type { FsColumnKey, FsSortKey } from "@pdmux/core";
   import { mode as colourScheme } from "mode-watcher";
   import CheckIcon from "@lucide/svelte/icons/check";
@@ -23,11 +23,14 @@
   import { Input } from "#lib/components/ui/input/index.js";
   import * as Select from "#lib/components/ui/select/index.js";
   import { toast } from "svelte-sonner";
+  import { filesApi } from "../api";
   import { fmt, getI18n } from "#lib/i18n/index.js";
-  import type { FilesDock } from "../files-dock.svelte";
+  import type { FilesDock, FileDeleteTarget, FileDeleteResult } from "../files-dock.svelte";
   import type { HostView } from "../types";
   import ConfirmDialog from "./confirm-dialog.svelte";
   import FileTransferPanel from "./file-transfer-panel.svelte";
+  import FilePreviewPane from "./file-preview.svelte";
+  import * as Tabs from "#lib/components/ui/tabs/index.js";
   import { canPickFolder, captureDrop, pickFolder, sourceFromDroppedEntries, sourceFromFiles } from "../file-transfers/source";
 
   interface Props {
@@ -49,23 +52,9 @@
   const selectedDirs = $derived(files.selectedEntries.filter((entry) => entry.dir).length);
   const selectedCount = $derived(files.selectedEntries.length);
   const uploading = $derived(files.upload);
-  const percent = $derived(
-    uploading && uploading.total > 0 ? Math.min(100, Math.round((uploading.sent / uploading.total) * 100)) : 0,
-  );
   $effect(() => {
     if (files.hostId && folderTransfers) void files.transfers.load(files.hostId);
   });
-
-  /**
-   * Why a row's checkbox is disabled.
-   *
-   * ⚠ A FOLDER ON AN AGENT WITHOUT FOLDER TRANSFERS CANNOT BE DOWNLOADED, so its box says
-   * so instead of letting it into a selection the Download button would then refuse as a
-   * whole. Files stay checkable: the per-file download works on every agent.
-   */
-  const checkDisabledReason = (entry: FsEntryView): string | null =>
-    entry.dir && !folderTransfers ? i18n.t.dash.files.transfers.upgrade : null;
-  const checkable = (entry: FsEntryView): boolean => checkDisabledReason(entry) === null;
 
   /**
    * A column edge being dragged.
@@ -85,13 +74,16 @@
   let picker = $state<HTMLInputElement | null>(null);
   let dragging = $state(false);
   let confirmOpen = $state(false);
+  let deleteTarget = $state<FileDeleteTarget | null>(null);
+  let deleteResult = $state<FileDeleteResult | null>(null);
+  let previewMode = $state("preview");
+  $effect(() => { files.preview?.path; previewMode = "preview"; });
   let panel = $state<HTMLDivElement | null>(null);
-  const names = $derived(
-    files.selectedEntries
-      .slice(0, 5)
-      .map((entry) => entry.name + (entry.dir ? "/" : ""))
-      .join(", ") + (selectedCount > 5 ? ` +${selectedCount - 5}` : ""),
-  );
+  const names = $derived.by(() => {
+    const entries = deleteTarget?.entries ?? files.selectedEntries;
+    return entries.slice(0, 5).map((entry) => entry.name + (entry.dir ? "/" : "")).join(", ")
+      + (entries.length > 5 ? ` +${entries.length - 5}` : "");
+  });
 
   function send(list: FileList | null): void {
     const chosen = [...(list ?? [])];
@@ -114,7 +106,13 @@
    * controls inside it.
    */
   function onPanelKey(event: KeyboardEvent): void {
-    if (event.key !== "Escape" || event.defaultPrevented || files.selected.length === 0) return;
+    if (event.defaultPrevented) return;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a" && event.target instanceof Element && event.target.closest("[data-pdmux-files-body]")) {
+      event.preventDefault();
+      files.setSelection((files.shown?.entries ?? []).map((entry) => entry.name));
+      return;
+    }
+    if (event.key !== "Escape" || files.selected.length === 0) return;
     const target = event.target;
     if (target instanceof HTMLTextAreaElement) return;
     if (target instanceof HTMLInputElement && target.type !== "checkbox") return;
@@ -157,11 +155,20 @@
     }
   }
 
-  function confirmDelete(): void {
-    void files.removeSelected(true).then((error) => {
-      if (error) toast.error(error);
-      onOpenDir(files.path);
-    });
+  function askDelete(): void {
+    deleteTarget = files.selectionTarget();
+    deleteResult = null;
+    confirmOpen = deleteTarget !== null && deleteTarget.entries.length > 0;
+  }
+  async function confirmDelete(): Promise<boolean> {
+    const target = deleteTarget;
+    if (!target) return true;
+    const result = await files.removeSelected(true, target);
+    deleteResult = result;
+    const remaining = new Set([...result.failed.map((value) => value.name), ...result.pending]);
+    deleteTarget = { ...target, entries: target.entries.filter((entry) => remaining.has(entry.name)) };
+    if (files.hostId === target.hostId && files.path === target.basePath) await files.refresh();
+    return remaining.size === 0;
   }
 
   const i18n = getI18n();
@@ -346,8 +353,8 @@
       variant="ghost"
       size="sm"
       class="h-7 px-2"
-      disabled={downloadable === 0 || (!folderTransfers && selectedDirs > 0)}
-      title={fmt(i18n.t.dash.files.download, { count: String(downloadable) })}
+      disabled={downloadable === 0 || (!folderTransfers && selectedDirs > 0) || files.transfers.startingDownload}
+      title={!folderTransfers && selectedDirs > 0 ? i18n.t.dash.files.transfers.upgrade : fmt(i18n.t.dash.files.download, { count: String(downloadable) })}
       aria-label={i18n.t.dash.files.downloadLabel}
       data-testid="files-download"
       onclick={downloadSelected}><DownloadIcon class="size-4" /></Button
@@ -372,7 +379,7 @@
       title={i18n.t.dash.files.delete}
       aria-label={i18n.t.dash.files.delete}
       data-testid="files-delete"
-      onclick={() => (confirmOpen = true)}><Trash2Icon class="size-4" /></Button
+      onclick={askDelete}><Trash2Icon class="size-4" /></Button
     >
     <Input
       bind:ref={picker}
@@ -449,6 +456,25 @@
       {!folderTransfers ? i18n.t.dash.files.transfers.upgrade : i18n.t.dash.files.transfers.folderUnavailable}
     </p>
   {/if}
+  {#snippet previewHeader()}
+    {#if files.preview?.kind === "markdown"}
+      <Tabs.List class="h-7"><Tabs.Trigger value="preview" class="px-2 text-xs">{i18n.t.dash.files.preview.rendered}</Tabs.Trigger><Tabs.Trigger value="source" class="px-2 text-xs">{i18n.t.dash.files.preview.source}</Tabs.Trigger></Tabs.List>
+    {/if}
+    {#if files.preview && files.hostId}<Button variant="ghost" size="icon" class="size-7 shrink-0" href={filesApi.url(files.hostId, files.preview.path)} aria-label={i18n.t.dash.files.downloadLabel}><DownloadIcon class="size-4" /></Button>{/if}
+  {/snippet}
+  {#snippet previewContent()}
+    {#if files.preview && files.hostId}
+      {#key `${files.hostId}:${files.preview.path}`}
+        {#if files.preview.kind === "markdown"}
+          <Tabs.Content value="preview" class="m-0"><FilePreviewPane preview={files.preview} file={files.file} loading={files.fileLoading} mode="preview" hostId={files.hostId} {t} onOpenFile={(path) => void files.openFile(path)} /></Tabs.Content>
+          <Tabs.Content value="source" class="m-0"><FilePreviewPane preview={files.preview} file={files.file} loading={files.fileLoading} mode="source" hostId={files.hostId} {t} onOpenFile={(path) => void files.openFile(path)} /></Tabs.Content>
+        {:else}
+          <FilePreviewPane preview={files.preview} file={files.file} loading={files.fileLoading} mode={previewMode} hostId={files.hostId} {t} onOpenFile={(path) => void files.openFile(path)} />
+        {/if}
+      {/key}
+    {/if}
+  {/snippet}
+  <Tabs.Root bind:value={previewMode} class="contents">
   <FileExplorer
     dir={files.shown}
     path={files.path}
@@ -459,41 +485,26 @@
     file={files.file}
     fileLoading={files.fileLoading}
     image={files.image}
+    previewPath={files.preview?.path ?? null}
+    {previewHeader}
+    {previewContent}
     sort={files.sort}
     columns={files.columns}
     scheme={colourScheme.current === "dark" ? "dark" : "light"}
     formatDate={listingDate}
     {t}
     selectable
-    {checkDisabledReason}
     {onOpenDir}
     onSelect={(name: string, mode: SelectMode) => files.select(name, mode)}
-    onCheck={(name: string, mode: CheckMode) => files.check(name, mode, checkable)}
+    onCheck={(name: string, mode: CheckMode) => files.check(name, mode)}
     onCheckAll={(names: string[]) => files.setSelection(names)}
     onClosePreview={() => files.closePreview()}
     onSort={(key: FsSortKey) => files.sortBy(key)}
     onColumnResize={dragColumn}
   />
+  </Tabs.Root>
 
-  {#if uploading}
-    <!-- Progress belongs where the file is going, not in a corner toast: the
-         percentage and the name answer "is this still moving" at a glance. -->
-    <div class="pdmux-files-upload" data-testid="files-progress" data-pdmux-upload-error={uploading.error ? "true" : undefined}>
-      <div class="flex items-center gap-2">
-        <span class="truncate">{uploading.name}</span>
-        <span class="text-muted-foreground ml-auto shrink-0 tabular-nums">
-          {uploading.error ? "" : `${percent}%`}
-          {#if uploading.queued > 0}{fmt(i18n.t.dash.files.queued, { count: String(uploading.queued) })}{/if}
-        </span>
-      </div>
-      {#if uploading.error}
-        <p class="text-destructive" data-testid="files-upload-error">{uploading.error}</p>
-      {:else}
-        <div class="pdmux-files-bar"><div class="pdmux-files-bar-fill" style:width={`${percent}%`}></div></div>
-      {/if}
-    </div>
-  {/if}
-  <FileTransferPanel transfers={files.transfers} hostLabel={(id) => hosts.find((host) => host.id === id)?.label ?? id} />
+  <FileTransferPanel transfers={files.transfers} legacyUpload={uploading} hostLabel={(id) => hosts.find((host) => host.id === id)?.label ?? id} />
 </div>
 
 <!--
@@ -505,13 +516,21 @@
 <ConfirmDialog
   bind:open={confirmOpen}
   title={i18n.t.dash.files.deleteTitle}
-  warning={selectedDirs > 0
-    ? fmt(i18n.t.dash.files.deleteFolderWarning, { names: names, count: String(selectedCount) })
-    : fmt(i18n.t.dash.files.deleteWarning, { names: names, count: String(selectedCount) })}
+  warning={(deleteTarget?.entries.some((entry) => entry.dir) ?? selectedDirs > 0)
+    ? fmt(i18n.t.dash.files.deleteFolderWarning, { names: names, count: String(deleteTarget?.entries.length ?? selectedCount) })
+    : fmt(i18n.t.dash.files.deleteWarning, { names: names, count: String(deleteTarget?.entries.length ?? selectedCount) })}
   confirmLabel={i18n.t.dash.files.deleteConfirm}
   testId="files-delete-confirm"
   onConfirm={confirmDelete}
-/>
+>
+  {#snippet details()}
+    {#if deleteResult}
+      <p role="status">{fmt(i18n.t.dash.files.deleteResult, { done: String(deleteResult.removed.length), failed: String(deleteResult.failed.length), pending: String(deleteResult.pending.length) })}</p>
+      {#each deleteResult.failed as entry}<p class="break-all text-destructive">{entry.name}: {entry.error}</p>{/each}
+    {/if}
+    {#each deleteTarget?.entries ?? [] as entry}<p class="break-all">{entry.name}{entry.dir ? "/" : ""}</p>{/each}
+  {/snippet}
+</ConfirmDialog>
 
 <style>
   /* The panel fills its half of the dock column; the listing inside it scrolls.
