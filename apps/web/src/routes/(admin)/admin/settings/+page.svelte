@@ -23,7 +23,7 @@
   const caps = $derived(data.capabilities);
   const ac = $derived(data.authConfig);
 
-  type EditableFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "oidcProvider";
+  type EditableFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "teams" | "oidcProvider";
   // require2fa is an enrolment policy rather than a feature, so its card reads
   // `data.require2fa` instead of the feature flags in `caps`.
   type ToggleFlag = EditableFlag | "require2fa";
@@ -167,12 +167,12 @@
   }
 
   // ── Card builders (uniform Item shape) ──
-  const flagCard = (flag: EditableFlag, name: string, desc: string): Item => ({
+  const flagCard = (flag: EditableFlag, name: string, desc: string, locked = false): Item => ({
     key: `flag-${flag}`,
     name,
     desc,
     status: { on: caps[flag], label: caps[flag] ? i18n.t.settings.enabled : i18n.t.settings.disabled },
-    toggle: { checked: caps[flag], disabled: saving, onChange: (v) => toggleFlag(flag, v) },
+    toggle: { checked: caps[flag], disabled: saving || locked, onChange: (v) => toggleFlag(flag, v) },
   });
   const serverCard = (key: ServerKey, name: string, desc: string, on: boolean): Item => ({
     key: `srv-${key}`,
@@ -251,6 +251,8 @@
   const advanced = $derived<Item[]>([
     flagCard("apiKey", i18n.t.settings.apiKey, i18n.t.settings.apiKeyDesc),
     flagCard("organization", i18n.t.settings.organization, i18n.t.settings.organizationDesc),
+    // Teams live inside organizations, so the switch waits for Organizations.
+    flagCard("teams", i18n.t.settings.teams, i18n.t.settings.teamsDesc, !caps.organization),
     flagCard("oidcProvider", i18n.t.settings.oidcProvider, i18n.t.settings.oidcProviderDesc),
   ]);
   const sections = $derived([

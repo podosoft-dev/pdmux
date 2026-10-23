@@ -17,6 +17,18 @@ const FEATURE_PATHS: Array<{ flag: FeatureFlag; prefixes: string[] }> = [
   { flag: "phoneNumber", prefixes: ["/phone-number/", "/sign-in/phone-number"] },
   { flag: "apiKey", prefixes: ["/api-key/"] },
   { flag: "passkey", prefixes: ["/passkey/", "/sign-in/passkey"] },
+  {
+    flag: "teams",
+    prefixes: [
+      "/organization/create-team",
+      "/organization/update-team",
+      "/organization/remove-team",
+      "/organization/list-team",
+      "/organization/list-user-teams",
+      "/organization/set-active-team",
+      "/organization/add-team-member",
+    ],
+  },
   { flag: "organization", prefixes: ["/organization"] },
   {
     flag: "oidcProvider",
@@ -32,9 +44,21 @@ const FEATURE_PATHS: Array<{ flag: FeatureFlag; prefixes: string[] }> = [
   },
 ];
 
-/** The admin-toggleable feature that owns an auth-relative path, if any. */
+/** Every admin-toggleable feature an auth-relative path belongs to, most
+ *  specific first. A team endpoint belongs to both teams and organization, so it
+ *  is open only while both are on. */
+export function featuresForPath(path: string): FeatureFlag[] {
+  return FEATURE_PATHS.filter((f) => f.prefixes.some((p) => path.startsWith(p))).map((f) => f.flag);
+}
+
+/** The most specific admin-toggleable feature that owns an auth-relative path, if any. */
 export function featureForPath(path: string): FeatureFlag | undefined {
-  return FEATURE_PATHS.find((f) => f.prefixes.some((p) => path.startsWith(p)))?.flag;
+  return featuresForPath(path)[0];
+}
+
+/** Whether a path belongs to a feature that is switched off. */
+function pathDisabled(path: string, flags: FeatureFlags): boolean {
+  return featuresForPath(path).some((flag) => !flags[flag]);
 }
 
 /** A request's path relative to Better Auth's base URL. A path outside the base
@@ -106,9 +130,8 @@ export async function enforceFeatureGate(path: string, settings: FeatureGateSett
     assertUserCreationAllowed(await readSignupOpen(settings.signupOpen), path);
     return;
   }
-  const feature = featureForPath(path);
-  if (!feature) return;
-  if (!(await readFeatureFlags(settings.flags))[feature]) throw featureDisabled();
+  if (featuresForPath(path).length === 0) return;
+  if (pathDisabled(path, await readFeatureFlags(settings.flags))) throw featureDisabled();
 }
 
 /** Better Auth middleware over {@link enforceFeatureGate}. The settings come from
@@ -128,8 +151,9 @@ export function featureGatePlugin(settings: FeatureGateSettings): BetterAuthPlug
   return {
     id: "podokit-feature-gate",
     onRequest: async (request, ctx) => {
-      const feature = featureForPath(authRequestPath(request.url, ctx.baseURL));
-      if (!feature || (await readFeatureFlags(settings.flags))[feature]) return undefined;
+      const path = authRequestPath(request.url, ctx.baseURL);
+      if (featuresForPath(path).length === 0) return undefined;
+      if (!pathDisabled(path, await readFeatureFlags(settings.flags))) return undefined;
       const error = featureDisabled();
       return { response: Response.json(error.body, { status: error.statusCode }) };
     },

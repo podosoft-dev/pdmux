@@ -91,7 +91,7 @@ describe("PoolGuard", () => {
       await sql`CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT)`;
       await sql`INSERT INTO item ${sql([{ id: 1, name: "a" }, { id: 2, name: "b" }], "id", "name")}`;
       const filter = sql`WHERE "name" = ${"b"}`;
-      expect(await sql<Array<{ id: number }>>`SELECT "id" FROM item ${filter}`).toEqual([{ id: 2 }]);
+      expect([...(await sql<Array<{ id: number }>>`SELECT "id" FROM item ${filter}`)]).toEqual([{ id: 2 }]);
       expect(await sql`SELECT count(*) AS n FROM item`.values()).toEqual([[2]]);
       const names = await sql.begin(async (tx) => {
         await tx`UPDATE item SET "name" = 'c' WHERE "id" = 1`;
@@ -119,7 +119,7 @@ describe("PoolGuard", () => {
     expect(server.pools.map((pool) => pool.closed())).toEqual([true, false]);
 
     server.stalled = false;
-    expect(await guard.sql<Array<{ ok: number }>>`SELECT 1`).toEqual([{ ok: 1 }]);
+    expect([...(await guard.sql<Array<{ ok: number }>>`SELECT 1`)]).toEqual([{ ok: 1 }]);
   });
 
   it("keeps a slow query running while the server answers", async () => {

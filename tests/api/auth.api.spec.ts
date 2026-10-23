@@ -474,24 +474,54 @@ test("ADMIN_EMAILS account has the admin role @smoke", async ({ playwright }) =>
 // never replaced: a sign-up with it must not create an account, let alone an
 // approved administrator.
 test("a sign-up cannot claim an ADMIN_EMAILS address", async ({ playwright }) => {
-  const email = process.env.E2E_UNCLAIMED_ADMIN_EMAIL;
+  const email = process.env.E2E_UNCLAIMED_ADMIN_EMAIL?.trim().toLowerCase();
   test.skip(!email, "set E2E_UNCLAIMED_ADMIN_EMAIL to an ADMIN_EMAILS address that has no account");
-  const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-  const password = "Podokit3e-Str0ng!pw";
-  const signUp = await ctx.post("/api/auth/sign-up/email", { data: { email, password, name: "Claim" } });
-  // Refused, or answered like any sign-up while approval or email verification
-  // hides whether an address can register.
-  expect([200, 403], await signUp.text()).toContain(signUp.status());
-  expect((await ctx.post("/api/auth/sign-in/email", { data: { email, password } })).ok()).toBe(false);
-  expect((await (await ctx.get("/api/auth/get-session")).json())?.user ?? null).toBeNull();
-  await ctx.dispose();
-
+  if (!email) return;
   const admin = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
-  await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
-  const found = await admin.get(`/api/auth/admin/list-users?searchField=email&searchOperator=contains&searchValue=${encodeURIComponent(email ?? "")}`);
-  expect(found.ok()).toBeTruthy();
-  expect(((await found.json()) as { users: unknown[] }).users).toEqual([]);
-  await admin.dispose();
+  const ctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: origin });
+  // Accounts with exactly this address. A search on the address alone would
+  // also match longer addresses that contain it.
+  const accountsWithEmail = async (): Promise<string[]> => {
+    const found = await admin.get(
+      `/api/auth/admin/list-users?searchField=email&searchOperator=contains&searchValue=${encodeURIComponent(email)}`,
+    );
+    expect(found.ok(), await found.text()).toBeTruthy();
+    const { users } = (await found.json()) as { users: { id: string; email: string }[] };
+    return users.filter((user) => user.email.toLowerCase() === email).map((user) => user.id);
+  };
+  const misconfigured =
+    `${email} is not reserved: list it in the stack's ADMIN_EMAILS (and restart the API), ` +
+    "or unset E2E_UNCLAIMED_ADMIN_EMAIL";
+  let created: string[] = [];
+  try {
+    const signIn = await admin.post("/api/auth/sign-in/email", { data: { email: ADMIN.email, password: ADMIN.password } });
+    expect(signIn.ok(), "sign in as the administrator").toBeTruthy();
+    // Sign-up is the only way to ask whether an address is reserved, so an
+    // address that already has an account cannot be checked at all.
+    expect(
+      await accountsWithEmail(),
+      `${email} already has an account; delete it, or name an ADMIN_EMAILS address that has none (${misconfigured})`,
+    ).toEqual([]);
+
+    const password = "Podokit3e-Str0ng!pw";
+    const signUp = await ctx.post("/api/auth/sign-up/email", { data: { email, password, name: "Claim" } });
+    // An account under this address means the stack does not reserve it. The
+    // finally block removes it so it cannot leak into later tests.
+    created = await accountsWithEmail();
+    expect(created, misconfigured).toEqual([]);
+    // Refused, or answered like any sign-up while approval or email verification
+    // hides whether an address can register.
+    expect([200, 403], await signUp.text()).toContain(signUp.status());
+    expect((await ctx.post("/api/auth/sign-in/email", { data: { email, password } })).ok()).toBe(false);
+    expect((await (await ctx.get("/api/auth/get-session")).json())?.user ?? null).toBeNull();
+  } finally {
+    for (const userId of created) {
+      const removed = await admin.post("/api/auth/admin/remove-user", { data: { userId } });
+      expect(removed.ok(), `remove the account the sign-up created for ${email}`).toBeTruthy();
+    }
+    await ctx.dispose();
+    await admin.dispose();
+  }
 });
 
 test("admin can list users, a normal user cannot (403)", async ({ playwright }) => {

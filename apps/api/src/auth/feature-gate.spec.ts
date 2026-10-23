@@ -8,6 +8,7 @@ import {
   authRequestPath,
   enforceFeatureGate,
   featureForPath,
+  featuresForPath,
   featureGatePlugin,
   PUBLIC_SIGNUP_DISABLED,
   signupOpenFrom,
@@ -61,6 +62,46 @@ describe("feature gate", () => {
     expect(flagsFrom(new Map())).toEqual(FLAG_DEFAULTS);
     expect(signupOpenFrom(stored)).toBe(false);
     expect(signupOpenFrom(new Map())).toBe(true);
+  });
+});
+
+describe("teams gate", () => {
+  const teamPaths = [
+    "/organization/create-team",
+    "/organization/update-team",
+    "/organization/remove-team",
+    "/organization/remove-team-member",
+    "/organization/list-teams",
+    "/organization/list-team-members",
+    "/organization/list-user-teams",
+    "/organization/set-active-team",
+    "/organization/add-team-member",
+  ];
+
+  test("assigns team endpoints to teams and the rest of organizations to organization", () => {
+    for (const path of teamPaths) {
+      expect(featureForPath(path)).toBe("teams");
+      expect(featuresForPath(path)).toEqual(["teams", "organization"]);
+    }
+    expect(featureForPath("/organization/create")).toBe("organization");
+    expect(featureForPath("/organization/get-full-organization")).toBe("organization");
+  });
+
+  test("keeps team endpoints closed unless both teams and organizations are on", async () => {
+    for (const path of teamPaths) {
+      await expect(enforceFeatureGate(path, settings({ teams: false, organization: true })))
+        .rejects.toMatchObject({ statusCode: 404 });
+      await expect(enforceFeatureGate(path, settings({ teams: true, organization: false })))
+        .rejects.toMatchObject({ statusCode: 404 });
+      await expect(enforceFeatureGate(path, settings({ teams: true, organization: true })))
+        .resolves.toBeUndefined();
+    }
+    await expect(enforceFeatureGate("/organization/create", settings({ teams: false, organization: true })))
+      .resolves.toBeUndefined();
+  });
+
+  test("ships teams off", () => {
+    expect(FLAG_DEFAULTS.teams).toBe(false);
   });
 });
 

@@ -7,11 +7,21 @@
   import * as Dialog from "#lib/components/ui/dialog/index.js";
   import * as Select from "#lib/components/ui/select/index.js";
   import DataTable, { type DataTableColumn, type SortState, DEFAULT_PAGE_SIZE } from "#lib/components/data-table.svelte";
+  import OrganizationTeamsDialog from "#lib/components/organization-teams-dialog.svelte";
+  import { page } from "$app/state";
   import { toast } from "svelte-sonner";
   import { api } from "#lib/api.js";
   import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
 
   const i18n = getI18n();
+  // Teams follow the admin Settings switch, read from the admin layout's capabilities.
+  const teamsEnabled = $derived(Boolean((page.data as { capabilities?: { teams?: boolean } }).capabilities?.teams));
+  let teamsOpen = $state(false);
+  let teamsOrg = $state<Org | null>(null);
+  function openTeams(org: Org): void {
+    teamsOrg = org;
+    teamsOpen = true;
+  }
 
   type Org = { id: string; name: string; slug: string; parentOrganizationId?: string | null; createdAt: string | Date };
   let orgs = $state<Org[]>([]);
@@ -175,11 +185,18 @@
       <Table.Cell class="text-muted-foreground">{formatDateTime(org.createdAt)}</Table.Cell>
       <Table.Cell class="flex justify-end gap-1">
         <Button variant="ghost" size="sm" onclick={() => openManage(org)}>{i18n.t.organizations.manage}</Button>
+        {#if teamsEnabled}
+          <Button variant="ghost" size="sm" onclick={() => openTeams(org)}>{i18n.t.organizations.teams}</Button>
+        {/if}
         <Button variant="ghost" size="sm" disabled={busy} onclick={() => deleteOrg(org.id)}>{i18n.t.organizations.delete}</Button>
       </Table.Cell>
     {/snippet}
   </DataTable>
 </div>
+
+{#if teamsEnabled}
+  <OrganizationTeamsDialog bind:open={teamsOpen} organization={teamsOrg} />
+{/if}
 
 <Dialog.Root bind:open={manageOpen}>
   <Dialog.Content class="max-w-lg">

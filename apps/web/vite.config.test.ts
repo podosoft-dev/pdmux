@@ -48,17 +48,6 @@ describe("dev-server WebSocket proxy", () => {
   });
 });
 
-function watcherEvent(server: ViteDevServer, event: "add" | "unlink", file: string): Promise<void> {
-  return new Promise((resolve) => {
-    const listener = (path: string): void => {
-      if (path !== file) return;
-      server.watcher.off(event, listener);
-      resolve();
-    };
-    server.watcher.on(event, listener);
-  });
-}
-
 async function servedCode(server: ViteDevServer, url: string, expected: string): Promise<string> {
   const deadline = Date.now() + 5_000;
   let code = "";
@@ -81,17 +70,17 @@ describe("dev server after a file is deleted and created again", () => {
       configFile: false,
       logLevel: "silent",
       plugins: [refreshRecreatedFiles(), svelte()],
-      server: { middlewareMode: true, ws: false },
+      // No file watcher: the test sends the events itself, so it does not depend
+      // on how the platform reports a delete and create (macOS may merge them).
+      server: { middlewareMode: true, ws: false, watch: null },
     });
     try {
       expect(await servedCode(server, "/Probe.svelte", "first version")).toContain("first version");
 
-      const unlinked = watcherEvent(server, "unlink", file);
       unlinkSync(file);
-      await unlinked;
-      const added = watcherEvent(server, "add", file);
+      server.watcher.emit("unlink", file);
       writeFileSync(file, "<p>second version</p>\n");
-      await added;
+      server.watcher.emit("add", file);
 
       expect(await servedCode(server, "/Probe.svelte", "second version")).toContain("second version");
     } finally {

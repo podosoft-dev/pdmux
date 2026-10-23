@@ -53,8 +53,11 @@ export const authDatabaseReachable: DatabaseProbe = sharedProbe(async () => {
 
 let queryDatabase: SQL | undefined;
 
-export function configureAuthQueryDatabase(sql: SQL): void {
+/** Sets the database the auth runtime reads its settings from, and returns the previous one. */
+export function configureAuthQueryDatabase(sql: SQL | undefined): SQL | undefined {
+  const previous = queryDatabase;
   queryDatabase = sql;
+  return previous;
 }
 
 function queries(): SQL {

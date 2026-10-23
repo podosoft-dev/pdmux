@@ -26,6 +26,7 @@ const MODULE_ROUTES: Record<string, string[]> = {
     "GET /account/auth-config",
     "PUT /account/auth-config",
     "POST /account/org-member",
+    "GET /account/team-members",
     "GET /api/auth/get-session",
     "POST /api/auth/sign-in/email",
   ],

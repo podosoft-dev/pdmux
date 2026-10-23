@@ -8,9 +8,9 @@ import { APP_FLAG_DEFAULTS } from "./app-flags";
  *  the better-auth CLI evaluates auth.ts for migrations) can import it safely.
  *
  *  The PodoKit defaults must match the rows seeded by the InitAppSettings
- *  migration. phoneNumber is off by default because real delivery needs an SMS
+ *  migrations (InitAppSettings, SeedTeamsSetting). phoneNumber is off by default because real delivery needs an SMS
  *  provider. */
-export type PodokitFeatureFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "oidcProvider" | "require2fa";
+export type PodokitFeatureFlag = "twoFactor" | "magicLink" | "emailOtp" | "username" | "multiSession" | "phoneNumber" | "apiKey" | "passkey" | "organization" | "teams" | "oidcProvider" | "require2fa";
 
 export type AppFlag = keyof typeof APP_FLAG_DEFAULTS;
 
@@ -26,6 +26,8 @@ const PODOKIT_FLAG_DEFAULTS: Record<PodokitFeatureFlag, boolean> = {
   apiKey: true,
   passkey: true,
   organization: true,
+  // Teams inside organizations. Needs organizations on as well; off by default.
+  teams: false,
   // Acting as an OIDC identity provider is an enterprise opt-in; off by default.
   oidcProvider: false,
   // Policy (not a feature endpoint): when on, every signed-in user must enrol in

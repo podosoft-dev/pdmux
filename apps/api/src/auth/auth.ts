@@ -152,13 +152,17 @@ export function buildAuth(config: AuthConfig) {
     // origin, so expected origins are the CORS origins and rpID is their host.
     // rpName is the name the browser shows in the passkey prompt.
     passkey({ rpName: config.appName, rpID: new URL(webOrigins[0]).hostname, origin: webOrigins }),
-    // Multi-tenant organizations: teams with members, roles, and email invitations.
+    // Multi-tenant organizations with members, roles, email invitations, and teams.
     organization({
       // Custom member roles (adds "manager") and a parent-organization link so orgs
       // can form a hierarchy. See org-permissions.ts.
       ac: orgAc,
       roles: orgRoles,
       schema: { organization: { additionalFields: { parentOrganizationId: { type: "string", required: false, input: true } } } },
+      // Teams inside an organization. Always mounted so the schema is stable; the
+      // admin `teams` setting gates the endpoints (feature-gate.ts). Organizations
+      // start without a team, and the last team can be removed.
+      teams: { enabled: true, defaultTeam: { enabled: false }, allowRemovingAllTeams: true },
       sendInvitationEmail: async (data: { email: string; id: string; organization: { name: string }; inviter: { user: { name: string; email: string } } }) => {
         const url = `${webOrigins[0]}/accept-invitation/${data.id}`;
         await sendMail({

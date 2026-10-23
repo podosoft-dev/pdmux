@@ -25,7 +25,7 @@ describe("session expiry reset on SQLite", () => {
     const rows = await sql<Array<{ id: string; expiresAt: string; updatedAt: string }>>`
       SELECT "id", "expiresAt", "updatedAt" FROM "session" ORDER BY "id"
     `;
-    expect(rows).toEqual([
+    expect([...rows]).toEqual([
       { id: "active", expiresAt: "2026-10-15T10:30:00.000Z", updatedAt: now.toISOString() },
       { id: "expired", expiresAt: expired, updatedAt: expired },
     ]);
