@@ -246,8 +246,13 @@ test.describe.serial("isolated fleet readiness", () => {
           await expect(page.getByText(own.label, { exact: true }).first()).toBeVisible();
           await expect(page.getByText(foreign.label, { exact: true })).toHaveCount(0);
           expect((await account.get(`/api/hosts/${foreign.id}`)).status()).toBe(404);
-          const response = await page.goto(`${runtime.webUrl}/hosts/${foreign.id}`);
-          expect(response?.status()).toBe(404);
+          // A direct host URL opens that host in the settings dialog; the dialog's
+          // read of a foreign host must be refused and show nothing of it.
+          const refused = page.waitForResponse(response => new URL(response.url()).pathname === `/api/hosts/${foreign.id}`);
+          await open(page, runtime, `/hosts/${foreign.id}`);
+          expect((await refused).status()).toBe(404);
+          await expect(page.getByTestId("settings-hosts-back")).toBeVisible();
+          await expect(page.getByTestId("settings-dialog").getByRole("alert")).toBeVisible();
           await expect(page.getByText(foreign.label, { exact: true })).toHaveCount(0);
           await page.screenshot({ path: test.info().outputPath(`organization-${index}.png`) });
         } finally { await context.close(); }
