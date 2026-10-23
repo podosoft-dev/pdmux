@@ -17,7 +17,14 @@ RUN bun ci
 FROM oven/bun:1.4.4-alpine AS prod-deps
 WORKDIR /app
 COPY --from=manifests /app ./
-RUN bun install --production --frozen-lockfile --filter './apps/api'
+# --production alone still installs peer dependencies, and Bun satisfies an
+# optional peer whenever the lockfile already resolves it for another workspace.
+# Better Auth's optional peers (vitest, svelte, @sveltejs/kit) and
+# @better-auth/electron's (electron) then pulled the web, ui and desktop
+# toolchains into this image. The API is bundled; only the modules the bundles
+# and compiled migrations load at runtime need to be here, and those are all
+# regular dependencies of apps/api.
+RUN bun install --production --omit=peer --frozen-lockfile --filter './apps/api'
 
 FROM oven/bun:1.4.4-alpine AS build
 WORKDIR /app

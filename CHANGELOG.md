@@ -5,6 +5,10 @@
 - Update server dependencies with published security fixes: nodemailer 10.2.1, the MCP SDK
   1.32.0 and its HTTP stack (proxy-addr, qs, hono, ip-address, fast-uri), brace-expansion and
   SvelteKit's devalue 5.9.3. Package test suites move to Vitest 4 and Vite 8.
+- Ship only the API's runtime dependencies in the API image. Bun installed optional peer
+  dependencies that other workspaces resolve (Vitest, Svelte, SvelteKit, Electron), which
+  put the web, UI and desktop toolchains in the image: its `node_modules` drops from 304 MB
+  to 155 MB and the image from 625 MB to 426 MB.
 
 ## 0.17.12
 
