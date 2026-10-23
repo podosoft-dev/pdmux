@@ -30,6 +30,18 @@ async function settled(promise: Promise<unknown>): Promise<boolean> {
 }
 
 describe("[TC-PDDESKTOP-015] metadata writes lock only what they change", () => {
+  it("[TC-PDDESKTOP-013] removes a mirrored host on the server without contacting its offline desktop", async () => {
+    const pdmux = { auth: { requireSession: async () => session("owner", "") }, hosts: { get: async () => ({ id: HOST }) } } as unknown as PdmuxServices;
+    const record = { kind: "host", hostId: HOST, origin: "offline-desktop", value: { label: "Offline desktop" }, connectionKey: "" };
+    const records = { find: async () => [record] } as unknown as Repository<DesktopRecord>;
+    const service = new DesktopService(pdmux, records), router = new DesktopRouter(service, null);
+    const request = write("DELETE", `/hosts/${HOST}`, "owner", "");
+    try {
+      expect(await router.forward(request)).toBeUndefined();
+      expect(service.lock.size).toBe(1);
+    } finally { router.release(request); }
+    expect(service.lock.size).toBe(0);
+  });
   it("[TC-PDDESKTOP-015] a slow layout save delays the same user's next write, not another user's", async () => {
     const { router, service } = fixture();
     const slowA = write("PUT", "/prefs/layouts/main", "user-a", "org-1");

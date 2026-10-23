@@ -285,6 +285,24 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
     await json(localUrl, `/hosts/${localHost.id}`, localCookie, "PATCH", { description: "still-local" });
     const unavailable = await fetch(`${serverUrl}/hosts/${mirror.id}/collect`, { method: "POST", headers: { cookie: cloudCookie } });
     assert.equal(unavailable.status, 503);
+
+    // The owner never connects. Removing its synchronized host must not require a bridge.
+    const offlineDevice = crypto.randomUUID(), offlineKey = `host:${offlineDevice}:${crypto.randomUUID()}`;
+    const offlineValue = { label: "offline-desktop", address: null, description: "", tags: [], sortOrder: 0, enabled: true, services: [], roots: [] };
+    const published = await json(serverUrl, "/desktop/sync", cloudCookie, "POST", { version: 1, deviceId: offlineDevice, name: "Offline fixture", changes: [{ key: offlineKey, kind: "host", origin: offlineDevice, value: offlineValue, base: null }] });
+    const offlineBase = published.records.find(row => row.key === offlineKey).hash;
+    await local.control("connect", { url: tlsOrigin, cookie: cloudCookie });
+    const offlineMirror = (await json(localUrl, "/hosts", localCookie)).find(host => host.label === offlineValue.label);
+    assert.ok(offlineMirror, "[TC-PDDESKTOP-012] synchronize the offline host before deletion");
+    const removed = await json(localUrl, `/hosts/${offlineMirror.id}`, localCookie, "DELETE");
+    assert.equal(removed.id, offlineMirror.id, "[TC-PDDESKTOP-013] return the local mirror ID after removing the remote mapping");
+    assert.ok(!(await json(localUrl, "/hosts", localCookie)).some(host => host.id === offlineMirror.id));
+    assert.ok(!(await json(serverUrl, "/hosts", cloudCookie)).some(host => host.id === published.hostIds[offlineKey]));
+    assert.ok((await json(serverUrl, "/hosts", cloudCookie)).some(host => host.id === remoteHost.id), "Keep unrelated hosts");
+    const resumed = await json(serverUrl, "/desktop/sync", cloudCookie, "POST", { version: 1, deviceId: offlineDevice, name: "Offline fixture", changes: [{ key: offlineKey, kind: "host", origin: offlineDevice, value: offlineValue, base: offlineBase }] });
+    assert.equal(resumed.records.find(row => row.key === offlineKey).value, null, "[TC-PDDESKTOP-012] a returning desktop receives the tombstone instead of resurrecting its host");
+    await local.control("disconnect");
+    assert.equal((await json(serverUrl, `/hosts/${mirror.id}`, cloudCookie, "DELETE")).id, mirror.id, "[TC-PDDESKTOP-013] server-side deletion also works while the desktop is disconnected");
     if (process.env.PDMUX_NATIVE_AUTH_BUNDLE) {
       await new Promise((accept, reject) => {
         const child = spawn("node", [join(repository, "tools/smoke-desktop-auth.mjs")], { stdio: ["pipe", "inherit", "inherit"], env: process.env, timeout: 120_000 });

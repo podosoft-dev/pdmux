@@ -39,7 +39,11 @@ export class DesktopRouter {
     const session = hostId || route || metadataWrite(request.method, url.pathname) ? await this.service.pdmux.auth.requireSession(request) : null;
     if (!session) return undefined;
     const binding = hostId ? await this.service.binding(session, hostId) : undefined;
-    if (binding && binding.origin !== this.service.origin) {
+    // Server mirrors can be removed from the fleet even when their desktop is
+    // offline. The next sync carries the tombstone back to the original owner.
+    const removeMirror = binding && binding.origin !== this.service.origin && !this.client && request.method === "DELETE" && url.pathname === `/hosts/${hostId}`;
+    if (removeMirror) await requireCurrentScope(session);
+    if (binding && binding.origin !== this.service.origin && !removeMirror) {
       if (!route) throw new AppException("DESKTOP_OPERATION_DENIED", "Manage host credentials on its original backend", 403);
       await this.service.pdmux.hosts.get(resolveScopeId(session), route.hostId);
       await requireCurrentScope(session);

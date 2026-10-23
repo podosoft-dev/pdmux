@@ -87,6 +87,12 @@ original workspace. Agent credentials, global server authentication/provider sec
 terminal output and running sessions are not automatically replicated. Explicit file transfers
 stream on demand. Cloud session and workspace access are checked again while relaying.
 
+Deleting a synchronized host is a metadata operation: it does not require the original desktop
+to be online. The desktop submits the deletion through authenticated synchronization and removes
+its local mirror only after the server confirms it. Permission failures, outages, and conflicts
+preserve the local entry. An offline owner receives the deletion when it next synchronizes, so
+reconnecting does not restore the old host. The web server can also remove its mirror directly.
+
 A sync waits for host writes in its workspace and for the same user's preference writes, and those
 writes wait for it, so none lands between its comparison and its update unseen. Other users and
 workspaces never wait for it. This lock lives in the API process, so a server must run one API

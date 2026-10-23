@@ -162,6 +162,13 @@ export class DesktopClient {
     if (input.method === "WS") return terminalStream(`${account.url.replace(/^https/, "wss")}/terminal/ws?hostId=${encodeURIComponent(id)}`, this.cloudCookie, body ?? new ReadableStream({ start(c) { c.close(); } }), signal);
     const route = hostRoute(input.method, input.path);
     if (!route) throw new AppException("DESKTOP_OPERATION_DENIED", "Unsupported host operation", 403);
+    if (input.method === "DELETE" && new URL(input.path, "http://localhost").pathname === `/hosts/${route.hostId}`) {
+      const label = account.bases[input.hostKey]?.record.value?.label;
+      // A host is synchronized metadata. Its original desktop need not be online
+      // to remove it; commit the tombstone before dropping the local mirror.
+      await this.sync(undefined, { removeHost: input.hostKey, signal, epoch: this.epoch });
+      return Response.json({ id: route.hostId, label: typeof label === "string" ? label : "" });
+    }
     const response = await fetch(`${account.url}/api${route.rewrite(id)}`, {
       method: input.method, headers: { ...input.headers, cookie: this.cloudCookie, origin: account.url },
       body: input.method === "GET" ? undefined : body, signal: AbortSignal.any([signal, this.connectionAbort.signal]), redirect: "error",
@@ -198,15 +205,23 @@ export class DesktopClient {
       } catch (error) { if (this.stopped) throw error; /* A profile lookup outage does not erase a valid connection. */ }
     }
   }
-  async sync(resolution?: { key: string; choice: "local" | "server" }): Promise<void> {
-    if (this.running) { if (resolution) throw new AppException("DESKTOP_SYNC_BUSY", "Synchronization is in progress", 409); return; }
+  async sync(resolution?: { key: string; choice: "local" | "server" }, operation?: { removeHost: string; signal: AbortSignal; epoch: number }): Promise<void> {
+    while (this.running) {
+      if (resolution) throw new AppException("DESKTOP_SYNC_BUSY", "Synchronization is in progress", 409);
+      if (operation) await this.idle(); else return;
+    }
+    operation?.signal.throwIfAborted();
+    if (operation && (operation.epoch !== this.epoch || this.stopped || !this.session)) throw new AppException("DESKTOP_CONNECTION_CANCELLED", "Connection was cancelled", 409);
     if (this.stopped || !this.session) return;
     const epoch = this.epoch;
     this.running = true;
     const account = this.account();
     try {
       await this.checkSession();
-      if (epoch !== this.epoch) return;
+      if (epoch !== this.epoch) {
+        if (operation) throw new AppException("DESKTOP_CONNECTION_CANCELLED", "Connection was cancelled", 409);
+        return;
+      }
       const release = await this.service.lock.acquire(this.service.syncKeys(this.session));
       try {
         const records = await this.service.snapshot(this.session);
@@ -215,6 +230,11 @@ export class DesktopClient {
         for (const [key, base] of Object.entries(account.bases)) {
           if (!current.has(key)) changes.push({ ...base.record, value: null, base: base.hash });
         }
+        if (operation) {
+          const change = changes.find(record => record.kind === "host" && record.key === operation.removeHost);
+          if (!change || !account.hostIds[change.key]) throw new AppException("HOST_NOT_FOUND", "Unknown server host", 404);
+          change.value = null;
+        }
         if (resolution) {
           const conflict = account.conflicts.find(item => item.key === resolution.key);
           const change = changes.find(item => item.key === resolution.key);
@@ -222,11 +242,14 @@ export class DesktopClient {
         }
         const response = await fetch(`${account.url}/api/desktop/sync`, {
           method: "POST", headers: { cookie: this.cloudCookie, origin: account.url, "content-type": "application/json" }, redirect: "error",
-          body: JSON.stringify({ version: DESKTOP_PROTOCOL_VERSION, deviceId: this.state.deviceId, name: "PDMux Desktop", changes }), signal: AbortSignal.any([AbortSignal.timeout(30_000), this.connectionAbort.signal]),
+          body: JSON.stringify({ version: DESKTOP_PROTOCOL_VERSION, deviceId: this.state.deviceId, name: "PDMux Desktop", changes }), signal: AbortSignal.any([AbortSignal.timeout(30_000), this.connectionAbort.signal, ...(operation ? [operation.signal] : [])]),
         });
         if (!response.ok) throw new AppException("DESKTOP_SYNC_FAILED", "Synchronization failed", response.status);
         const result = await response.json() as SyncResult;
-        if (epoch !== this.epoch) return;
+        if (epoch !== this.epoch) {
+          if (operation) throw new AppException("DESKTOP_CONNECTION_CANCELLED", "Connection was cancelled", 409);
+          return;
+        }
         if (result.version !== DESKTOP_PROTOCOL_VERSION || result.userId !== account.userId || result.scopeId !== account.scopeId || !Array.isArray(result.records)) throw new Error("Invalid sync response");
         account.hostIds = result.hostIds;
         for (const record of [...result.records].sort((a, b) => Number(b.kind === "host") - Number(a.kind === "host"))) {
@@ -238,6 +261,10 @@ export class DesktopClient {
         account.conflicts = result.conflicts;
         this.lastSync = new Date().toISOString(); this.error = null;
         await this.save();
+        if (operation && (result.conflicts.some(conflict => conflict.key === operation.removeHost)
+          || !result.records.some(record => record.kind === "host" && record.key === operation.removeHost && record.value === null))) {
+          throw new AppException("DESKTOP_SYNC_FAILED", "The host changed on the server; resolve the synchronization conflict and retry", 409);
+        }
       } finally { release(); }
     } catch (error) {
       this.error = error instanceof AppException ? error.code : "DESKTOP_SYNC_FAILED";

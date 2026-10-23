@@ -1,8 +1,9 @@
 import { afterEach, expect, it, mock, spyOn } from "bun:test";
 import { gzipSync } from "node:zlib";
+import type { SyncChange, SyncRecord } from "@pdmux/desktop-protocol";
 import type { Repository } from "typeorm";
 import { DesktopClient, type DesktopClientOptions } from "./desktop-client";
-import type { DesktopService } from "./desktop.service";
+import { recordHash, type DesktopService } from "./desktop.service";
 import { KeyedMutex } from "./keyed-mutex";
 import type { DesktopConnection } from "./desktop-connection.entity";
 const session = (id: string) => ({ user: { id }, session: {} });
@@ -62,6 +63,100 @@ class BridgeSocket extends EventTarget {
   close(): void { this.readyState = WebSocket.CLOSED; this.dispatchEvent(new Event("close")); }
   accept(): void { this.readyState = WebSocket.OPEN; this.dispatchEvent(new Event("open")); }
 }
+
+function hostDeletionFixture(): {
+  client: DesktopClient; service: DesktopService; key: string; hostId: string; removed: () => boolean;
+  rejectSync: (status: number) => void; conflict: () => void; changes: () => SyncChange[]; directDeletes: () => number;
+} {
+  const { client, service } = fixture({ syncIntervalMs: 60_000, createSocket: () => new BridgeSocket() as unknown as WebSocket });
+  const hostId = "00000000-0000-4000-8000-000000000001", key = `host:other-desktop:${hostId}`;
+  const record: SyncRecord = { key, kind: "host", origin: "other-desktop", value: { label: "Offline desktop" } };
+  let local = record, remote = record, status = 200, conflicting = false, deletes = 0;
+  let sent: SyncChange[] = [];
+  service.snapshot = async () => [local];
+  service.apply = async (_session, value) => { local = value; };
+  spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url).pathname;
+    if (path === "/api/desktop/context") return Response.json({ version: 1, userId: "remote", scopeId: "personal:remote", organizations: [] });
+    if (path === "/api/auth/get-session") return Response.json({ user: { id: "remote", name: "Remote user", email: "remote@example.test" } });
+    if (path === "/api/desktop/sync") {
+      sent = (JSON.parse(String(init?.body)) as { changes: SyncChange[] }).changes;
+      if (status !== 200) return new Response(null, { status });
+      const change = sent.find(value => value.key === key)!;
+      if (!conflicting) remote = change;
+      return Response.json({ version: 1, userId: "remote", scopeId: "personal:remote", hostIds: remote.value ? { [key]: hostId } : {},
+        records: [{ ...remote, hash: recordHash(remote.value) }], conflicts: conflicting ? [{ key, local: change, server: remote, serverHash: recordHash(remote.value) }] : [] });
+    }
+    if (init?.method === "DELETE") { deletes += 1; return Response.json({ error: { code: "DESKTOP_OFFLINE" } }, { status: 503 }); }
+    throw new Error(`Unexpected host deletion request ${path}`);
+  }, { preconnect: (): void => {} }));
+  return { client, service, key, hostId, removed: () => local.value === null, rejectSync: value => { status = value; }, conflict: () => { conflicting = true; }, changes: () => sent, directDeletes: () => deletes };
+}
+
+it("[TC-PDDESKTOP-012][TC-PDDESKTOP-013] deletes an offline desktop host through its synchronized metadata", async () => {
+  const f = hostDeletionFixture();
+  try {
+    await f.client.attach(session("local"), "local-cookie");
+    await f.client.connect("https://server.example.test", "cloud-cookie");
+    const response = await f.client.cloudRequest({ hostKey: f.key, method: "DELETE", path: `/hosts/${f.hostId}`, headers: {} }, null, new AbortController().signal);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ id: f.hostId, label: "Offline desktop" });
+    expect(f.directDeletes()).toBe(0);
+    expect(f.changes()).toMatchObject([{ key: f.key, kind: "host", value: null, base: recordHash({ label: "Offline desktop" }) }]);
+    expect(f.removed()).toBe(true);
+    await f.client.sync();
+    expect(f.changes()[0]?.value).toBeNull();
+  } finally { f.client.disconnect(); }
+});
+
+it.each([403, 503])("[TC-PDDESKTOP-012] preserves a host when its server refuses deletion (%s)", async status => {
+  const f = hostDeletionFixture();
+  try {
+    await f.client.attach(session("local"), "local-cookie");
+    await f.client.connect("https://server.example.test", "cloud-cookie");
+    f.rejectSync(status);
+    await expect(f.client.cloudRequest({ hostKey: f.key, method: "DELETE", path: `/hosts/${f.hostId}`, headers: {} }, null, new AbortController().signal)).rejects.toMatchObject({ statusCode: status });
+    expect(f.removed()).toBe(false);
+    f.rejectSync(200);
+    await f.client.sync();
+    expect(f.changes()[0]?.value).toEqual({ label: "Offline desktop" });
+  } finally { f.client.disconnect(); }
+});
+
+it("[TC-PDDESKTOP-012] reports a deletion conflict instead of silently removing a changed host", async () => {
+  const f = hostDeletionFixture();
+  try {
+    await f.client.attach(session("local"), "local-cookie");
+    await f.client.connect("https://server.example.test", "cloud-cookie");
+    f.conflict();
+    await expect(f.client.cloudRequest({ hostKey: f.key, method: "DELETE", path: `/hosts/${f.hostId}`, headers: {} }, null, new AbortController().signal)).rejects.toMatchObject({ statusCode: 409 });
+    expect(f.removed()).toBe(false);
+    expect(f.client.status()).toMatchObject({ conflicts: [{ key: f.key }] });
+  } finally { f.client.disconnect(); }
+});
+
+it.each([false, true])("[TC-PDDESKTOP-012] waits for a running sync before deletion and checks cancellation (disconnect=%s)", async disconnect => {
+  const f = hostDeletionFixture();
+  let unlock: (() => void) | undefined;
+  try {
+    await f.client.attach(session("local"), "local-cookie");
+    await f.client.connect("https://server.example.test", "cloud-cookie");
+    unlock = await f.service.lock.acquire(f.service.syncKeys(session("local")));
+    const syncing = f.client.sync();
+    await new Promise(resolve => setImmediate(resolve));
+    let done = false;
+    const removal = f.client.cloudRequest({ hostKey: f.key, method: "DELETE", path: `/hosts/${f.hostId}`, headers: {} }, null, new AbortController().signal);
+    void removal.then(() => { done = true; }, () => { done = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(done).toBe(false);
+    if (disconnect) f.client.disconnect();
+    unlock(); unlock = undefined;
+    await syncing;
+    if (disconnect) await expect(removal).rejects.toMatchObject({ code: "DESKTOP_CONNECTION_CANCELLED" });
+    else expect((await removal).status).toBe(200);
+    expect(f.removed()).toBe(!disconnect);
+  } finally { unlock?.(); f.client.disconnect(); }
+});
 
 function reconnectFixture(acceptBridge = true): { client: DesktopClient; sockets: BridgeSocket[]; contextStatus: (status: number) => void; syncs: () => number } {
   const sockets: BridgeSocket[] = [];
