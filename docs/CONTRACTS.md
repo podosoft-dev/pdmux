@@ -228,7 +228,12 @@ viewport dimensions, canonical dimensions, offsets and cursor-follow state. They
 `viewport` frames to pan, follow or move through history. Host-scoped `session-control`
 requests retrieve history or explicitly terminate a UUID and receive `session-result`.
 These additive variants are sent only to peers that negotiated screen protocol 1.
-Reattachment uses the UUID and attach intent; a lost session is an error, not creation.
+Reattachment uses the UUID and attach intent; a lost session is an error, not creation —
+except a session recorded in an earlier boot, which the helper reopens under the same UUID.
+A tmux target carries `tmuxId` together with its `session` name, so the agent can tell a
+reused id after a restart from the saved session. A session reopened after a restart
+answers `ready.restored: { reason: "reboot" }` (optional; older agents never send it and
+older servers strip it). `hello.bootId` (optional) is the host's boot identity.
 See [Native sessions](NATIVE-SESSIONS.md) for lifecycle, limits and the local CLI.
 
 ---

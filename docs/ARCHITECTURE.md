@@ -227,7 +227,9 @@ three problems disappear **structurally**.
 - A machine that powers off or reboots ends its terminals for real, so the relay does report `exit`.
   A pane that ended this way — its host became unreachable after the ending — opens again with the
   same target when the host is reachable again. An exit on a host that stays reachable is the
-  program's own ending and is left alone.
+  program's own ending and is left alone. After a reboot the saved session is gone; the agent
+  reopens it as a new native shell under the same identity and the pane says so
+  (`NATIVE-SESSIONS.md`, "After the host restarts").
 - A `shell` target is warned about in the UI as non-persistent (it dies with the connection).
 - Session names are limited by the contract to `A-Za-z0-9_-`, 1–32 characters — this value ends up
   as a command argument on the host.

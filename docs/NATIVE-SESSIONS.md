@@ -14,8 +14,10 @@ replacement of the installed agent binary leave the helper and its programs runn
 
 Only explicit session termination, a program's own exit, OS shutdown or helper failure
 ends a native session. This is process persistence, not checkpointing: programs cannot
-be restored after the computer reboots or the helper crashes. A missing UUID produces
-an error; reattachment never silently substitutes a new empty shell.
+be restored after the computer reboots or the helper crashes. Within one boot, a
+missing UUID produces an error; reattachment never substitutes a new empty shell.
+After a confirmed reboot a saved pane reopens a new shell under the same identity and
+says so — see "After the host restarts".
 
 Each agent configuration path selects a separate engine under its state directory.
 The IPC endpoint requires a random local secret. Unix directories are owner-only,
@@ -24,6 +26,36 @@ current user and SYSTEM. No server token is passed to the helper. An empty engin
 exits after one minute; an engine with running sessions remains alive without viewers.
 Linux service units need `KillMode=process`, as they already do for agent-created
 tmux servers. Existing units with `KillMode=control-group` need the same correction.
+
+## After the host restarts
+
+A reboot ends every program, so a saved layout would otherwise come back as a grid of
+dead panes. The helper therefore keeps `restore.json` in its state directory (owner-only,
+replaced atomically, not tied to the helper's secret) with the UUID, name, working
+directory and size of each live session and the boot it was recorded in. The boot is
+Linux `/proc/sys/kernel/random/boot_id` or macOS `kern.bootsessionuuid`; where neither
+is available, restore is off. On Linux the working directory is refreshed from
+`/proc/<pid>/cwd` every 30 seconds; elsewhere it stays the directory the shell started in.
+
+- A session that exits by itself, or that a person terminates, is removed from the
+  record. Only sessions that were alive when the machine went down can come back.
+- An attach for a UUID the helper does not have succeeds only when the record holds it
+  from an **earlier** boot. The helper then starts a new shell with the same UUID and
+  name in the recorded directory (or the home directory when it is gone), once, however
+  many panes ask at the same time. In the same boot the attach fails as before.
+- A saved tmux pane carries its tmux id and name. When the tmux server is gone, or the
+  id now names a different session, the agent does not start tmux: it opens a native
+  session of that name instead (attaching one that already exists). A live id with its
+  own name attaches tmux as before; a pane opened by name only still uses `new -A`.
+- Either way the ready frame carries `restored: { reason: "reboot" }`, the pane shows a
+  one-line notice that the session was reopened and that earlier programs were not
+  restored, and the layout saves the pane as the native session from then on.
+
+The previous programs, their output and their scrollback are not recovered. The notice
+is what keeps a fresh shell under an old name from being mistaken for the old session.
+A tmux session renamed outside PDMux is no longer followed by id: the same id after a
+restart is a different session, so a saved pane only matches its id together with the
+name it was saved with. Renames made through PDMux update the saved panes.
 
 ## Existing tmux sessions
 
