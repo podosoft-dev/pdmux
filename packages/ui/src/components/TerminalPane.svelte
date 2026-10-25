@@ -238,6 +238,11 @@
 	let connection = $state.raw<TerminalConnection | null>(null);
 	$effect(() => { if (sessionTmuxId) connection?.resolveTmuxSession?.(sessionTmuxId); });
 	let resolvedSessionId = $state<string | null>(null);
+	/**
+	 * The host reopened this pane as a new shell because it restarted. Shown until the
+	 * person dismisses it or the pane reconnects to something else.
+	 */
+	let restoredNotice = $state(false);
 	// A mounted grid entry can still carry the original `new` target. Controls
 	// must use the UUID returned by this connection without reopening its PTY.
 	const resolvedSlot = $derived<TerminalSlot>(resolvedSessionId && slot.backend === 'native'
@@ -281,6 +286,7 @@
 		void reopenTicket;
 		if (!host) return;
 		resolvedSessionId = null;
+		restoredNotice = false;
 		let disposed = false;
 		const cleanups: Array<() => void> = [];
 
@@ -310,6 +316,7 @@
 				resolvedSessionId = id;
 				onSessionResolved?.(slot.id, id);
 			}));
+			if (opened.onRestored) cleanups.push(opened.onRestored(() => { restoredNotice = true; }));
 			if (opened.onViewport) cleanups.push(opened.onViewport(value => { nativeViewport = value; created.setRemoteScrollback?.({ alternate: value.alternate ?? false, history: value.history ?? 0 }); }));
 			// Ask once now and then after every write: a pane that attaches to a multiplexer is
 			// already in the alternate buffer before its first byte arrives.
@@ -892,6 +899,19 @@
 	{#if scrollMode}
 		<p class="pdmux-pane-hint" data-pdmux-scroll-hint>
 			{tr('pdmux.pane.scrollbackHint', 'Scrolling this session — wheel to move, Esc to leave')}
+		</p>
+	{/if}
+	<!--
+		⚠ A REOPENED SESSION MUST NOT LOOK LIKE THE OLD ONE. After a host restart the pane
+		comes back under the same name with a fresh shell: same title, empty screen, and
+		nothing that was running. Without this line the person reads "my agent stopped"
+		instead of "the machine restarted". Above the terminal like the scroll hint, so it
+		covers no rows, and it stays until dismissed.
+	-->
+	{#if restoredNotice}
+		<p class="pdmux-pane-restored" data-pdmux-restored role="status">
+			<span>{tr('pdmux.pane.restoredReboot', "The host restarted, so session '{name}' was reopened. Programs that were running before were not restored.").replace('{name}', targetName)}</span>
+			<button type="button" class="pdmux-pane-restored-dismiss" aria-label={tr('pdmux.pane.restoredDismiss', 'Dismiss')} data-pdmux-restored-dismiss onclick={() => (restoredNotice = false)}>×</button>
 		</p>
 	{/if}
 	<!-- The pane body classifies the press; see `paneDown`. It listens rather than covers,

@@ -31,6 +31,11 @@ export interface TerminalConnection {
 	viewport?(x: number, y: number, follow?: boolean): void;
 	onViewport?(listener: (viewport: TerminalViewport) => void): () => void;
 	onSession?(listener: (sessionId: string) => void): () => void;
+	/**
+	 * The host reopened this terminal as a NEW shell under its saved identity because
+	 * the machine restarted. The programs that were running are gone; the pane says so.
+	 */
+	onRestored?(listener: (restored: { reason: 'reboot' }) => void): () => void;
 	send(data: string, source?: 'wheel'): void;
 	resize(cols: number, rows: number): void;
 	onData(listener: (data: string) => void): () => void;

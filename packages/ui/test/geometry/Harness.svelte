@@ -28,7 +28,7 @@
 		type FsSort,
 		setFsColumnWidth,
 	} from '@pdmux/core';
-	import { EchoTerminalAdapter } from '../../src/adapters/terminal-adapter.js';
+	import { EchoTerminalAdapter, type TerminalAdapter, type TerminalOpenTarget } from '../../src/adapters/terminal-adapter.js';
 	import CommitDetail from '../../src/components/CommitDetail.svelte';
 	import FileExplorer from '../../src/components/FileExplorer.svelte';
 	import GitGraph from '../../src/components/GitGraph.svelte';
@@ -66,7 +66,7 @@
 	 * pane, and switching buffers for all of them would change what they are measuring.
 	 */
 	const altScreen = new URLSearchParams(globalThis.location?.search ?? '').has('history');
-	const adapter = new EchoTerminalAdapter(
+	const echoAdapter = new EchoTerminalAdapter(
 		altScreen
 			? {
 					// A screenful, so the sheet has a body worth measuring in every state — a one-line
@@ -78,6 +78,22 @@
 				}
 			: {},
 	);
+	/**
+	 * `?restored` makes every pane report that the host reopened it after a restart, so
+	 * the notice can be measured in the narrowest cell of a 3x3 split.
+	 */
+	const restored = query.has('restored');
+	const adapter: TerminalAdapter = restored
+		? {
+				open: (target: TerminalOpenTarget) => ({
+					...echoAdapter.open(target),
+					onRestored: (listener: (value: { reason: 'reboot' }) => void) => {
+						listener({ reason: 'reboot' });
+						return () => undefined;
+					},
+				}),
+			}
+		: echoAdapter;
 
 	const seconds = Math.floor(NOW / 1000);
 	const history = historySeries(

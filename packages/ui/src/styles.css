@@ -1509,6 +1509,41 @@
 	text-overflow: ellipsis;
 }
 
+/*
+ * The reopened-after-restart notice. Same place as the scroll hint (above the
+ * terminal, outside its height) but it WRAPS: it is a sentence the person has to
+ * read once, and an ellipsis would cut off the half that says the programs are gone.
+ */
+.pdmux-pane-restored {
+	flex: none;
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	margin: 0;
+	padding: 3px 8px;
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--pdmux-fg);
+	background: color-mix(in srgb, var(--pdmux-accent) 12%, var(--pdmux-bg));
+	border-block-end: 1px solid var(--pdmux-line);
+}
+
+.pdmux-pane-restored > span {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.pdmux-pane-restored-dismiss {
+	flex: none;
+	padding: 0 4px;
+	border: 0;
+	background: transparent;
+	color: var(--pdmux-muted);
+	font: inherit;
+	cursor: pointer;
+}
+
 .pdmux-pane.pdmux-dragging {
 	opacity: 0.45;
 }

@@ -177,6 +177,37 @@ it('[TC-PDTERM-130] reads a newly resolved native session by UUID without reopen
 	expect(open).toHaveBeenCalledTimes(1);
 });
 
+it('[TC-PDTERM-171] a pane the host reopened after a restart says so in one line until dismissed', async () => {
+	const surface = fakeSurface();
+	const echo = new EchoTerminalAdapter();
+	let announce: ((restored: { reason: 'reboot' }) => void) | null = null;
+	const open = vi.fn((target: TerminalOpenTarget) => ({
+		...echo.open(target),
+		onRestored: (listener: (restored: { reason: 'reboot' }) => void): (() => void) => {
+			announce = listener;
+			return () => { announce = null; };
+		},
+	}));
+	const t = (key: string, fallback: string): string => key === 'pdmux.pane.restoredReboot' ? "REOPENED '{name}'" : fallback;
+	const { container } = render(TerminalPane, { props: {
+		slot: { id: 's12', hostId: 'h1', kind: 'attach', session: 'claude-1', backend: 'native', sessionId: 'd5ac0000-0000-4000-8000-000000000001' },
+		index: 0, hostName: 'alpha', adapter: { open }, createSurface: surface.factory, t,
+	} });
+	await vi.waitFor(() => expect(announce).not.toBeNull());
+	// Nothing is claimed before the host says so.
+	expect(container.querySelector('[data-pdmux-restored]')).toBeNull();
+	announce!({ reason: 'reboot' });
+	await tick();
+	const notice = container.querySelector('[data-pdmux-restored]');
+	expect(notice?.textContent).toContain("REOPENED 'claude-1'");
+	// Above the terminal, never over it.
+	expect(notice?.nextElementSibling?.classList.contains('pdmux-pane-body')).toBe(true);
+	(container.querySelector('[data-pdmux-restored-dismiss]') as HTMLButtonElement).click();
+	await tick();
+	expect(container.querySelector('[data-pdmux-restored]')).toBeNull();
+	expect(open).toHaveBeenCalledTimes(1);
+});
+
 describe('[TC-PDUI-010] the grid renders exactly one window of cells', () => {
 	it('fills the window with panes and empty cells, and sets the column count', async () => {
 		const surface = fakeSurface();
