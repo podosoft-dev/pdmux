@@ -1477,5 +1477,15 @@
     "select": "Select a session to rename or end it.",
     "legacy": "Update the host agent to manage this tmux session by its stable ID.",
     "close": "Close"
+  },
+  "errorPage": {
+    "title": "Something went wrong",
+    "unavailable": "The service is temporarily unavailable. Please try again in a moment.",
+    "notFound": "This page does not exist.",
+    "forbidden": "You do not have access to this page.",
+    "generic": "An unexpected error occurred.",
+    "status": "Error {status}",
+    "retry": "Try again",
+    "home": "Go to the dashboard"
   }
 }
