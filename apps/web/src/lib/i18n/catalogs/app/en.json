@@ -282,7 +282,12 @@
       "notArrived": "The changes have not arrived yet",
       "showMore": "Show more",
       "showLess": "Show less",
-      "retry": "Try again"
+      "retry": "Try again",
+      "authored": "Authored",
+      "committed": "Committed",
+      "sha": "SHA",
+      "parents": "Parents",
+      "refs": "In"
     },
     "diff": {
       "binary": "binary",
@@ -495,6 +500,9 @@
       "sortedSubset": "Sorted within the entries listed, not the whole directory",
       "selectEntry": "Select {name}",
       "selectAll": "Select all"
+    },
+    "tabs": {
+      "label": "Views"
     }
   },
   "dash": {

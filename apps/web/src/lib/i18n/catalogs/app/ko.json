@@ -282,7 +282,12 @@
       "notArrived": "변경 내용이 아직 도착하지 않았습니다",
       "showMore": "더 보기",
       "showLess": "접기",
-      "retry": "다시 시도"
+      "retry": "다시 시도",
+      "authored": "작성자",
+      "committed": "커밋한 사람",
+      "sha": "SHA",
+      "parents": "부모",
+      "refs": "포함"
     },
     "diff": {
       "binary": "바이너리",
@@ -495,6 +500,9 @@
       "sortedSubset": "목록에 있는 항목 안에서만 정렬했습니다",
       "selectEntry": "{name} 선택",
       "selectAll": "모두 선택"
+    },
+    "tabs": {
+      "label": "화면"
     }
   },
   "dash": {
