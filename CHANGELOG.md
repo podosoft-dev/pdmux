@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.17.16
+
+- Fix "Open a new session with the same name" failing with "terminal already open": the relay
+  kept a pane the agent had refused (an agent error is always a refused open), so reopening the
+  same slot was rejected. An agent error now releases the pane like an exit.
+
 ## 0.17.15
 
 - A native pane whose session is gone and cannot be restored (for example the host restarted
