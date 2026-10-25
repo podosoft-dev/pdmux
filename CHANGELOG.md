@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.17.15
+
+- A native pane whose session is gone and cannot be restored (for example the host restarted
+  while it ran an agent older than 0.1.36, so no restore record exists) now offers "Open a new
+  session with the same name" instead of only asking to close the panel. Nothing reopens until
+  the button is pressed; the pane keeps its place and tags and saves the new session. The
+  reconnecting note no longer lingers on such a pane.
+
 ## 0.17.14
 
 - A pane whose session vanished because its host restarted now comes back on its own: the
