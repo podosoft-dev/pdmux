@@ -362,7 +362,8 @@
       "terminate": "Terminate session",
       "terminateTitle": "Terminate this session?",
       "terminateWarning": "This ends the session and every program running in it. Closing a panel only disconnects its viewer.",
-      "terminateFailed": "Could not terminate the session. Check the host connection and try again."
+      "terminateFailed": "Could not terminate the session. Check the host connection and try again.",
+      "connectionLost": "Lost connection to the server · reconnecting…"
     },
     "picker": {
       "addTitle": "Add a terminal",
@@ -400,7 +401,8 @@
     "sidebar": {
       "add": "Add host",
       "empty": "No hosts registered yet.",
-      "label": "hosts"
+      "label": "hosts",
+      "connectionLost": "Server connection lost — status unknown"
     },
     "usage": {
       "age": "snapshot age",

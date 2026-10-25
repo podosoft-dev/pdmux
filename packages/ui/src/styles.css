@@ -567,6 +567,27 @@
 	border-top: 1px solid var(--pdmux-line);
 }
 
+/* The server cannot be reached: the cards are the last answer, not a current one. The notice
+   says so where the column starts, and the cards step back so none of them reads as up.
+   `--pdmux-down`, not `--pdmux-idle`: this is a fault the user should notice, unlike a host
+   that is merely switched off. */
+.pdmux-sidebar-notice {
+	margin: 0;
+	padding: 6px 10px;
+	border: 1px solid var(--pdmux-down);
+	border-radius: var(--pdmux-radius-sm);
+	color: var(--pdmux-down);
+	background: var(--pdmux-card);
+	font-size: 0.75rem;
+	line-height: 1.4;
+}
+
+.pdmux-sidebar[data-pdmux-connection='reconnecting'] .pdmux-card,
+.pdmux-sidebar[data-pdmux-connection='offline'] .pdmux-card {
+	opacity: 0.55;
+	filter: grayscale(1);
+}
+
 .pdmux-handle {
 	cursor: col-resize;
 	background: var(--pdmux-line);
@@ -1974,6 +1995,55 @@
 
 .pdmux-pane-veil :is(button, a, [role='button']) {
 	pointer-events: auto;
+}
+
+/* Cut off from the server: dimmed, one centred line, and the box TAKES the pointer — a click on
+   a pane that cannot send is as silent a loss as a keystroke. A short fade-in keeps a reconnect
+   that wins the race from flashing. */
+.pdmux-pane-lost {
+	position: absolute;
+	inset: 0;
+	z-index: 4;
+	display: grid;
+	place-items: center;
+	padding: 12px;
+	background: color-mix(in srgb, var(--pdmux-card) 72%, transparent);
+	animation: pdmux-pane-lost-in 0.2s ease-out both;
+	cursor: not-allowed;
+}
+
+.pdmux-pane-lost-text {
+	margin: 0;
+	padding: 6px 12px;
+	border-radius: var(--pdmux-radius-sm);
+	background: var(--pdmux-idle);
+	color: var(--pdmux-card);
+	font-size: 0.75rem;
+	line-height: 1.4;
+	text-align: center;
+}
+
+/* A key pressed while cut off restarts this, so the refusal is seen. */
+.pdmux-pane-lost-text[data-pdmux-refused='true'] {
+	animation: pdmux-pane-lost-refused 0.35s ease-out;
+}
+
+@keyframes pdmux-pane-lost-in {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+@keyframes pdmux-pane-lost-refused {
+	0%, 100% { transform: translateX(0); }
+	25% { transform: translateX(-4px); }
+	75% { transform: translateX(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pdmux-pane-lost,
+	.pdmux-pane-lost-text[data-pdmux-refused='true'] {
+		animation: none;
+	}
 }
 
 /* --- commit graph --------------------------------------------------------- */

@@ -92,6 +92,10 @@
 		 * own host's state; `transport` remains the answer for adapters that cannot.
 		 */
 		transportFor?: (hostId: string) => 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
+		/** Every pane is cut off from the server; see `TerminalPane`'s `connectionLost`. */
+		connectionLost?: boolean;
+		/** The same per host, when the app can tell hosts apart; it wins over `connectionLost`. */
+		connectionLostFor?: (hostId: string) => boolean;
 		/** Passed straight to the pane — `null` means the ask failed. See `TerminalPane`. */
 		onReadHistory?: (
 			slot: TerminalSlot,
@@ -128,6 +132,8 @@
 		diagnostics = false,
 		transport = 'open',
 		transportFor,
+		connectionLost = false,
+		connectionLostFor,
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -298,6 +304,7 @@
 			{onReadHistory}
 			{diagnostics}
 			transport={transportFor ? transportFor(slot.hostId) : transport}
+			connectionLost={connectionLostFor ? connectionLostFor(slot.hostId) : connectionLost}
 			onDragStart={(index) => {
 				dragFrom = index;
 				rects = measure();

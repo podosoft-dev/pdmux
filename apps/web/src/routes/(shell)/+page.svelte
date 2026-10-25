@@ -466,6 +466,7 @@
     {diagnostics}
     transport={shell.relayStatus}
     transportFor={(hostId: string) => shell.hostTransports[hostId] ?? "idle"}
+    connectionLostFor={(hostId: string) => shell.paneCutOff(hostId)}
   />
 </div>
 

@@ -50,6 +50,13 @@
 		 * to a 403 is worse than no placeholder.
 		 */
 		onAddHost?: () => void;
+		/**
+		 * Whether the consumer can reach its server. Anything but `online` puts a notice at the
+		 * top of the column and greys the cards: the rows are the last answer, not a current one.
+		 * The consumer is also expected to pass each card as `unknown` meanwhile — this marks the
+		 * column, it does not rewrite the hosts.
+		 */
+		connection?: 'online' | 'reconnecting' | 'offline';
 	}
 
 	let {
@@ -65,6 +72,7 @@
 		onToggleCollapse,
 		onUpdateAgent,
 		onAddHost,
+		connection = 'online',
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -100,8 +108,16 @@
 	aria-label={tr('pdmux.sidebar.label', 'hosts')}
 	bind:this={sidebar}
 	style:--pdmux-sidebar-gutter={gutter === null ? undefined : `${gutter}px`}
+	data-pdmux-connection={connection}
 >
 	{#if header}{@render header()}{/if}
+	{#if connection !== 'online'}
+		<!-- Under the header and above the first card: the one place a glance at the column
+		     lands before it reads any host as up or down. -->
+		<p class="pdmux-sidebar-notice" data-pdmux-sidebar-notice={connection} role="status" aria-live="polite">
+			{tr('pdmux.sidebar.connectionLost', 'Server connection lost — status unknown')}
+		</p>
+	{/if}
 	{#if cards.length}
 		{#each cards as entry (entry.host.id)}
 			<HostCard

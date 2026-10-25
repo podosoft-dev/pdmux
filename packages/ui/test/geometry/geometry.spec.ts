@@ -11,6 +11,7 @@
  * OPT-IN: needs a browser binary. Run `bun run --cwd packages/ui test:geometry`
  * (which sets PDMUX_BROWSER_TEST=1); without the flag these skip and no server runs.
  */
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import {
 	FS_CHECK_W,
@@ -1427,6 +1428,77 @@ test.describe('pdmux ui geometry', () => {
 			// The box keeps its 3:1, unchecked and checked, on the row it sits on.
 			expect(unchecked.ratio).toBeGreaterThanOrEqual(3);
 			expect(checked.ratio).toBeGreaterThanOrEqual(3);
+		});
+	}
+});
+
+/** The app's Korean catalogue: what `?lost=ko` draws, read rather than quoted. */
+const KOREAN_CATALOG = JSON.parse(
+	readFileSync(new URL('../../../../apps/web/src/lib/i18n/catalogs/app/ko.json', import.meta.url), 'utf8'),
+) as { pdmux: { sidebar: { connectionLost: string } } };
+
+test.describe('pdmux ui geometry — cut off from the server', () => {
+	test.skip(!enabled, 'set PDMUX_BROWSER_TEST=1 to run the browser geometry checks');
+
+	// Desktop only: this harness is not the app's phone shell, so a narrow viewport overlaps its
+	// columns with or without the cover and measures nothing about it.
+	for (const viewport of [{ width: 1280, height: 800 }]) {
+		test(`[TC-PDUI-243] the pane cover fills each pane and the notice sits above the cards (${viewport.width}px)`, async ({ page }, testInfo) => {
+			await page.setViewportSize(viewport);
+			await page.goto('/?lost=ko');
+			await page.waitForSelector('[data-pdmux-lost]');
+			const measured = await page.evaluate(() => {
+				const box = (element: Element | null) => {
+					if (!element) return null;
+					const rect = element.getBoundingClientRect();
+					return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+				};
+				const panes = [...document.querySelectorAll('[data-pdmux-pane]')].filter((pane) => !(pane as HTMLElement).hidden && (pane as HTMLElement).offsetWidth > 0);
+				const covers = panes.map((pane) => {
+					const body = pane.querySelector('.pdmux-pane-body');
+					const cover = pane.querySelector('[data-pdmux-lost]');
+					const text = pane.querySelector('.pdmux-pane-lost-text');
+					const b = box(body);
+					const hit = b ? document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) : null;
+					return { body: b, cover: box(cover), text: box(text), hitsCover: Boolean(hit && cover?.contains(hit)) };
+				});
+				const sidebar = document.querySelector('[data-pdmux-sidebar]') as HTMLElement | null;
+				const notice = document.querySelector('[data-pdmux-sidebar-notice]');
+				const card = document.querySelector('[data-pdmux-host]');
+				return {
+					covers,
+					notice: box(notice),
+					noticeText: notice?.textContent?.trim() ?? '',
+					card: box(card),
+					cardOpacity: card ? getComputedStyle(card).opacity : null,
+					sidebar: box(sidebar),
+					sidebarOverflow: sidebar ? sidebar.scrollWidth - sidebar.clientWidth : null,
+					pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+				};
+			});
+			const shot = testInfo.outputPath(`cut-off-${viewport.width}.png`);
+			await page.screenshot({ path: shot });
+			await testInfo.attach(`cut-off-${viewport.width}`, { path: shot, contentType: 'image/png' });
+
+			expect(measured.covers.length).toBeGreaterThan(0);
+			for (const { body, cover, text, hitsCover } of measured.covers) {
+				expect(body && cover).toBeTruthy();
+				for (const edge of ['left', 'top', 'right', 'bottom'] as const) expect(Math.abs(cover![edge] - body![edge])).toBeLessThanOrEqual(1);
+				expect(hitsCover).toBe(true);
+				// Centred, and inside the pane.
+				expect(Math.abs((text!.left + text!.right) / 2 - (body!.left + body!.right) / 2)).toBeLessThanOrEqual(2);
+				expect(text!.left).toBeGreaterThanOrEqual(body!.left);
+				expect(text!.right).toBeLessThanOrEqual(body!.right);
+			}
+			expect(measured.pageOverflow).toBeLessThanOrEqual(0);
+			{
+				expect(measured.noticeText).toBe(KOREAN_CATALOG.pdmux.sidebar.connectionLost);
+				expect(measured.notice!.bottom).toBeLessThanOrEqual(measured.card!.top);
+				expect(measured.notice!.left).toBeGreaterThanOrEqual(measured.sidebar!.left);
+				expect(measured.notice!.right).toBeLessThanOrEqual(measured.sidebar!.right);
+				expect(measured.sidebarOverflow).toBeLessThanOrEqual(0);
+				expect(Number(measured.cardOpacity)).toBeLessThan(1);
+			}
 		});
 	}
 });

@@ -5,6 +5,7 @@
 	 * list a scroll container, is the detail inside the viewport) can only be answered
 	 * by a real engine.
 	 */
+	import korean from '../../../../apps/web/src/lib/i18n/catalogs/app/ko.json';
 	import {
 		type GridHost,
 		type TerminalLayout,
@@ -53,6 +54,16 @@
 
 	const query = new URLSearchParams(globalThis.location?.search ?? '');
 	const split = query.get('split');
+	/**
+	 * `?lost=1` draws the screen cut off from its server (TC-PDUI-243); `?lost=ko` does it with
+	 * the Korean wording the app passes — read from the app's catalogue, not copied here.
+	 */
+	const lost = query.get('lost');
+	const lostWords: Record<string, string> = {
+		'pdmux.pane.connectionLost': korean.pdmux.pane.connectionLost,
+		'pdmux.sidebar.connectionLost': korean.pdmux.sidebar.connectionLost,
+	};
+	const lostT = lost === 'ko' ? (key: string, fallback: string): string => lostWords[key] ?? fallback : undefined;
 	const mode = split === 'split2' || split === 'split4' || split === 'split9' ? split : defaultLayout().mode;
 	let layout = $state<TerminalLayout>({ ...defaultLayout(), mode, slots: buildDefaultSlots(hosts, { pad: 2 }) });
 	/**
@@ -123,7 +134,7 @@
 		host: {
 			id: host.id,
 			name: host.name,
-			state: 'online' as const,
+			state: lost ? ('unknown' as const) : ('online' as const),
 			// ⚠ ON THE LONG-NAME CARD DELIBERATELY. That name is one unbreakable token and
 			// is the shape that pushed the ⚙ off the edge before the header had a
 			// truncation rule; putting the update row on the same card is what makes the
@@ -434,6 +445,8 @@
 		     last thing in the scroll content, and the geometry checks measure that content. -->
 		<HostSidebar
 			{cards}
+			connection={lost ? 'reconnecting' : 'online'}
+			t={lostT}
 			now={seconds}
 			onAddHost={() => {}}
 			onUpdateAgent={() => {}}
@@ -450,6 +463,8 @@
 				onFocus={(slotId) => (layout = focusSlot(layout, slotId))}
 				onReadHistory={historyAnswer}
 				onZoom={(slotId) => (layout = toggleZoom(layout, slotId))}
+				connectionLost={Boolean(lost)}
+				t={lostT}
 			/>
 		</div>
 		<SplitHandle invert />

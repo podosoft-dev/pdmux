@@ -195,11 +195,20 @@
     return { kind, label: `${i18n.t.vm.badge} · ${i18n.t.vm.state[vm.state]}` };
   }
 
+  /**
+   * ⚠ WHILE THE SERVER IS UNREACHABLE NO HOST IS ONLINE TO THIS SCREEN. The rows are the last
+   * answer, kept so the column does not blank, but drawing them green with their last
+   * percentages is exactly the lie an outage used to tell. Each card reads as unknown and the
+   * column says why at its top.
+   */
+  const serverLost = $derived(!shell.feed.connection.online);
   const cards = $derived(
     shell.feed.hosts.map((host) => ({
-      host: hostSummary(host, updateMark(host), powerMark(host)),
+      host: serverLost
+        ? { ...hostSummary(host, updateMark(host), powerMark(host)), state: "unknown" as const }
+        : hostSummary(host, updateMark(host), powerMark(host)),
       agents: agentRowsFor(host, shell.providers, shell.feed.now),
-      resources: hostResources(host, freshById.get(host.id)),
+      resources: hostResources(host, serverLost ? undefined : freshById.get(host.id)),
       history: shell.feed.history[host.id] ?? null,
       services: serviceOptionsFor(host),
       prefs: cardPrefs(layout.cards, host.id),
@@ -329,7 +338,7 @@
     if (!settingsHost) return "";
     const reach = !settingsHost.enabled
       ? i18n.t.pdmux.host.stopped
-      : settingsHost.online
+      : settingsHost.online && !serverLost
         ? i18n.t.pdmux.host.online
         : i18n.t.pdmux.host.unknown;
     const seen = settingsHost.lastSeenAt
@@ -384,6 +393,7 @@
     {cards}
     now={nowSeconds}
     windowSec={shell.feed.windowSec}
+    connection={shell.feed.connection.state}
     {windowLabels}
     {t}
     onOpenService={(url: string) => window.open(url, "_blank", "noopener")}

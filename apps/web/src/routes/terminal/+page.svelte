@@ -27,6 +27,7 @@
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
   import { hostsApi } from "#lib/dashboard/api.js";
   import { FleetEvents } from "#lib/dashboard/fleet-events.js";
+  import { ServerConnection, TransportLoss, isServerUnreachable } from "#lib/dashboard/server-connection.svelte.js";
   import { gridHosts } from "#lib/dashboard/map.js";
   import { readTerminalHistory } from "#lib/dashboard/terminal-history.js";
   import type { HostView } from "#lib/dashboard/types.js";
@@ -50,6 +51,9 @@
   let sessionsOpen = $state(false);
   let renaming = $state<TerminalSlot | null>(null);
   let relayStatus = $state<RelayStatus>("idle");
+  // The same two signals as the dashboard: is the server there, and is this host's socket.
+  const connection = new ServerConnection();
+  const transportLoss = new TransportLoss();
 
   const relay = new TerminalRelay({
     url: browser ? defaultRelayUrl(window.location) : "",
@@ -61,6 +65,7 @@
       sessionMissing: i18n.t.pdmux.pane.restoredMissing,
     },
     onStatus: (status: RelayStatus) => (relayStatus = status),
+    onHostStatus: (hostId: string, status: RelayStatus) => transportLoss.note(hostId, status),
   });
 
   // The target is fixed for the lifetime of this window: it came from the URL, and a
@@ -131,12 +136,18 @@
     if (!data.hostId) return;
     try {
       host = await hostsApi.get(data.hostId);
+      connection.alive();
+    } catch (cause: unknown) {
+      // A failed read keeps the last answer on screen, as the dashboard's feed does — and,
+      // like it, stops vouching for that answer while the server is away.
+      if (isServerUnreachable(cause)) connection.lost();
+      else connection.alive();
+    } finally {
       now = Date.now();
-    } catch {
-      // A failed read keeps the last answer on screen, as the dashboard's feed does.
     }
   }
-  const events = new FleetEvents(readHost, readHost);
+  const events = new FleetEvents(readHost, readHost, { connection });
+  connection.onRecover(() => void readHost());
 
   /**
    * The same power controls as the dashboard's panes. The window shows one pane, so the
@@ -158,6 +169,8 @@
     events.stop();
     if (poll) clearInterval(poll);
     relay.dispose();
+    transportLoss.dispose();
+    connection.dispose();
   });
 </script>
 
@@ -211,6 +224,8 @@
       {t}
       onFocus={(slotId: string) => (layout = focusSlot(layout, slotId))}
       onZoom={(slotId: string) => (layout = focusSlot(layout, slotId))}
+      transport={relayStatus}
+      connectionLostFor={(hostId: string) => !connection.online || transportLoss.lost[hostId] === true}
     />
   {/if}
 </div>

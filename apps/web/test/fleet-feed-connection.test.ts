@@ -1,16 +1,19 @@
 import { ApiError } from "@podosoft/podokit-api-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HostView, MetricsResponse } from "../src/lib/dashboard/types";
+import type { HostView, MetricsResponse, PrefsView } from "../src/lib/dashboard/types";
 
 vi.mock("../src/lib/dashboard/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/lib/dashboard/api")>()),
   hostsApi: { list: vi.fn() },
   metricsApi: { series: vi.fn() },
+  prefsApi: { putLayout: vi.fn(async () => undefined), putHostPref: vi.fn(async () => undefined) },
 }));
 
 const { hostsApi, metricsApi } = await import("../src/lib/dashboard/api");
 const { FleetFeed } = await import("../src/lib/dashboard/fleet-feed.svelte");
 const { ServerConnection } = await import("../src/lib/dashboard/server-connection.svelte");
+const { ShellState } = await import("../src/lib/dashboard/shell-state.svelte");
+const { FLEET_SETTING_FALLBACK } = await import("../src/lib/dashboard/fleet-settings");
 
 function host(id: string): HostView {
   return { id, label: id, enabled: true, online: true, sessions: [] } as unknown as HostView;
@@ -75,5 +78,33 @@ describe("[TC-PDWEB-047] coming back reads the hosts and their trends again", ()
     await vi.waitFor(() => expect(metricsApi.series).toHaveBeenCalledTimes(1));
     expect(vi.mocked(hostsApi.list).mock.calls.length).toBeGreaterThanOrEqual(3);
     feed.stop();
+  });
+});
+
+describe("[TC-PDWEB-051] a pane is cut off when the server is gone or its host's socket stays away", () => {
+  it("covers every host's panes while the server is unreachable, and one host's after its socket outlasts the grace", () => {
+    vi.useFakeTimers();
+    const shell = new ShellState({
+      hosts: [host("a"), host("b")],
+      hostsOk: true,
+      prefs: { layouts: [], hostPrefs: {} } as unknown as PrefsView,
+      prefsOk: true,
+      fleet: FLEET_SETTING_FALLBACK,
+      relayMessages: {},
+    });
+    expect(shell.paneCutOff("a")).toBe(false);
+    shell.feed.connection.lost();
+    expect([shell.paneCutOff("a"), shell.paneCutOff("b")]).toEqual([true, true]);
+    shell.feed.connection.alive();
+    expect(shell.paneCutOff("a")).toBe(false);
+
+    shell.transportLoss.note("b", "reconnecting");
+    vi.advanceTimersByTime(2_999);
+    expect(shell.paneCutOff("b")).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect([shell.paneCutOff("a"), shell.paneCutOff("b")]).toEqual([false, true]);
+    shell.transportLoss.note("b", "open");
+    expect(shell.paneCutOff("b")).toBe(false);
+    shell.stop();
   });
 });

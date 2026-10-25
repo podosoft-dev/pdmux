@@ -169,6 +169,16 @@
 		 * does", which is what the third round of this bug turned out to be.
 		 */
 		transport?: 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
+		/**
+		 * The app says this pane is cut off from the server — the server itself is unreachable, or
+		 * this host's socket has been away for longer than a blip. The app decides because only it
+		 * can tell those apart from a two-second reconnect.
+		 *
+		 * ⚠ A CUT-OFF PANE MUST NOT LOOK ALIVE. During a three-minute proxy outage every pane kept
+		 * its last frame and swallowed keystrokes in silence. It is dimmed behind one centred line,
+		 * and a key pressed meanwhile is refused visibly (the line pulses) instead of vanishing.
+		 */
+		connectionLost?: boolean;
 	}
 
 	let {
@@ -210,6 +220,7 @@
 		onReadHistory,
 		diagnostics = false,
 		transport = 'open',
+		connectionLost = false,
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -351,7 +362,7 @@
 			// The Ctrl latch is spent HERE, on the surface -> connection bridge, because a
 			// soft keyboard's characters do not arrive as `keydown` on iOS — they only reach
 			// this callback. A latch that waited for a key event would never fire on a phone.
-			cleanups.push(created.onData((data, source) => opened.send(spendCtrl(data), source)));
+			cleanups.push(created.onData((data, source) => { if (refuseInput()) return; opened.send(spendCtrl(data), source); }));
 			const refit = (): void => {
 				const next = created.fit();
 				opened.resize(next.cols, next.rows);
@@ -421,6 +432,21 @@
 	 */
 	const touchBar = $derived(keyBar && visible && onScreen && (active || solo));
 
+	/**
+	 * Refuse a keystroke while the pane is cut off, and say so.
+	 *
+	 * The relay would drop it anyway; what changes is that the refusal is seen. Each refused key
+	 * restarts the overlay's pulse, so typing into a dead pane reads as "not now" rather than as
+	 * a terminal that is ignoring you.
+	 */
+	let refusals = $state(0);
+	$effect(() => { if (!connectionLost) refusals = 0; });
+	function refuseInput(): boolean {
+		if (!connectionLost) return false;
+		refusals += 1;
+		return true;
+	}
+
 	/** Ctrl, latched by the helper row: a finger cannot hold one key while pressing another. */
 	let ctrlLatch = $state(false);
 
@@ -438,14 +464,14 @@
 	 * one write, with the carriage return the shell expects.
 	 */
 	function composerSubmit(text: string, submit: boolean): void {
-		if (!text) return;
+		if (!text || refuseInput()) return;
 		connection?.send(submit ? `${text}\r` : text);
 	}
 
 	function helperKey(id: HelperKeyId): void {
 		const press = pressHelperKey({ ctrl: ctrlLatch }, id);
 		ctrlLatch = press.state.ctrl;
-		if (press.data) connection?.send(press.data);
+		if (press.data && !refuseInput()) connection?.send(press.data);
 		// Focus goes straight back to the terminal, or the keyboard closes under the user.
 		surface?.focus();
 	}
@@ -740,8 +766,9 @@
 
 <div
 	class="pdmux pdmux-pane"
-	class:pdmux-unreachable={!reachable}
-	class:pdmux-veiled={!reachable && Boolean(veil)}
+	class:pdmux-unreachable={!reachable && !connectionLost}
+	class:pdmux-veiled={!reachable && !connectionLost && Boolean(veil)}
+	class:pdmux-cut-off={connectionLost}
 	class:pdmux-dragging={dragging}
 	class:pdmux-focused={active}
 	class:pdmux-drop={dropTarget}
@@ -949,12 +976,26 @@
 			></button>
 		{/if}
 		<div class="pdmux-pane-surface" bind:this={surfaceHost} data-pdmux-surface></div>
-		{#if !reachable && veil}
+		{#if !reachable && veil && !connectionLost}
 			<div class="pdmux-pane-veil" data-pdmux-veil>{@render veil(actionContext)}</div>
+		{/if}
+		{#if connectionLost}
+			<!--
+				Over everything else in the box, and it TAKES the pointer: a click or a drag on a pane
+				that cannot send is the same silent loss as a keystroke. Whether the host is reachable
+				is not shown underneath — with the server away, nobody knows.
+			-->
+			<div class="pdmux-pane-lost" data-pdmux-lost role="status" aria-live="polite">
+				{#key refusals}
+					<p class="pdmux-pane-lost-text" data-pdmux-refused={refusals > 0 ? 'true' : 'false'}>
+						{tr('pdmux.pane.connectionLost', 'Lost connection to the server · reconnecting…')}
+					</p>
+				{/key}
+			</div>
 		{/if}
 		<!-- Not on an unreachable pane: the host is gone and the pane already says so; a second line
 		     saying the socket is retrying adds nothing but alarm (a machine put to sleep on purpose). -->
-		{#if transport !== 'open' && reachable}
+		{#if transport !== 'open' && reachable && !connectionLost}
 			<!--
 				⚠ NOT AN ERROR, AND NOT THE UNREACHABLE OVERLAY. The host is fine; this browser's
 				socket is away, which lasts a moment and is worth exactly one line — a full-pane

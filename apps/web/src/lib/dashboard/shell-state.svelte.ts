@@ -46,6 +46,7 @@ import {
   writeCachedLayout,
 } from "./layout-store";
 import { TerminalRelay, defaultRelayUrl, type RelayMessages, type RelayStatus } from "./terminal-relay";
+import { TransportLoss } from "./server-connection.svelte";
 import type { FleetSettingsView, HostView, PrefsView } from "./types";
 
 /** What the server load hands the shell, plus the wording the app owns. */
@@ -119,6 +120,8 @@ export class ShellState {
   relayStatus = $state<RelayStatus>("idle");
   /** Each host's own transport state, for its panes — see `TerminalRelay.onHostStatus`. */
   hostTransports = $state<Record<string, RelayStatus>>({});
+  /** Hosts whose terminal socket has been away for longer than a blip — their panes are covered. */
+  readonly transportLoss = new TransportLoss();
   /**
    * Which region a narrow screen is showing.
    *
@@ -140,8 +143,10 @@ export class ShellState {
       url: browser ? defaultRelayUrl(window.location) : "",
       messages: seed.relayMessages,
       onStatus: (status: RelayStatus) => (this.relayStatus = status),
-      onHostStatus: (hostId: string, status: RelayStatus) =>
-        (this.hostTransports = { ...this.hostTransports, [hostId]: status }),
+      onHostStatus: (hostId: string, status: RelayStatus) => {
+        this.hostTransports = { ...this.hostTransports, [hostId]: status };
+        this.transportLoss.note(hostId, status);
+      },
     });
     const initial = initialLayout(seed);
     this.layout = initial.layout;
@@ -156,6 +161,14 @@ export class ShellState {
     // hydrated layout back here would churn the row on every page load, and the server
     // copy is shared across the user's devices — a phone must not overwrite it.
     if (browser && initial.fresh) this.saver.queue(initial.layout);
+  }
+
+  /**
+   * Whether this host's panes are cut off: the server is unreachable, or this host's terminal
+   * socket has been away past the grace. Either way a keystroke would go nowhere.
+   */
+  paneCutOff(hostId: string): boolean {
+    return !this.feed.connection.online || this.transportLoss.lost[hostId] === true;
   }
 
   /** Every layout mutation goes through here so persistence can never be forgotten. */
@@ -270,6 +283,8 @@ export class ShellState {
     this.saver.flush();
     this.saver.dispose();
     this.relay.dispose();
+    this.transportLoss.dispose();
+    this.feed.connection.dispose();
     this.files.transfers.dispose();
   }
 }
