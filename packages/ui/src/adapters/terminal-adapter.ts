@@ -36,6 +36,12 @@ export interface TerminalConnection {
 	 * the machine restarted. The programs that were running are gone; the pane says so.
 	 */
 	onRestored?(listener: (restored: { reason: 'reboot' }) => void): () => void;
+	/**
+	 * The host has no session behind this pane's saved identity and could not reopen it
+	 * (`SESSION_NOT_FOUND`). Fired before `onExit`. A native pane then offers to open a new
+	 * session under the same name — only when the person asks, never by itself.
+	 */
+	onMissing?(listener: () => void): () => void;
 	send(data: string, source?: 'wheel'): void;
 	resize(cols: number, rows: number): void;
 	onData(listener: (data: string) => void): () => void;

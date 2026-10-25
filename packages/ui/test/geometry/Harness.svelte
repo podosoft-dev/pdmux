@@ -63,9 +63,27 @@
 		'pdmux.pane.connectionLost': korean.pdmux.pane.connectionLost,
 		'pdmux.sidebar.connectionLost': korean.pdmux.sidebar.connectionLost,
 	};
-	const lostT = lost === 'ko' ? (key: string, fallback: string): string => lostWords[key] ?? fallback : undefined;
+	/**
+	 * `?missing` makes every pane a native session the host no longer has (SESSION_NOT_FOUND),
+	 * with the reopen button and a socket that is not `open` — the reconnecting line must stay
+	 * away. `?missing=ko` uses the app's Korean wording. A click reopens as a normal pane.
+	 */
+	const missing = query.get('missing');
+	const missingWords: Record<string, string> = {
+		'pdmux.pane.missingSession': korean.pdmux.pane.missingSession,
+		'pdmux.pane.missingReopen': korean.pdmux.pane.missingReopen,
+	};
+	const lostT = lost === 'ko' ? (key: string, fallback: string): string => lostWords[key] ?? fallback
+		: missing === 'ko' ? (key: string, fallback: string): string => missingWords[key] ?? fallback : undefined;
 	const mode = split === 'split2' || split === 'split4' || split === 'split9' ? split : defaultLayout().mode;
-	let layout = $state<TerminalLayout>({ ...defaultLayout(), mode, slots: buildDefaultSlots(hosts, { pad: 2 }) });
+	const defaultSlots = buildDefaultSlots(hosts, { pad: 2 });
+	let layout = $state<TerminalLayout>({
+		...defaultLayout(),
+		mode,
+		slots: missing !== null
+			? defaultSlots.map((slot, index) => slot && slot.kind !== 'shell' ? { ...slot, kind: 'attach' as const, backend: 'native' as const, session: `w${index + 1}`, sessionId: `d5ac0000-0000-4000-8000-00000000000${index % 10}`, intent: 'attach' as const } : slot)
+			: defaultSlots,
+	});
 	/**
 	 * ⚠ THE SHEET'S NOTES ONLY EXIST ON AN ALTERNATE-BUFFER PANE, so `?history=` puts the
 	 * terminal there the way the real thing does: `ESC[?1049h` is the switch a multiplexer sends
@@ -94,7 +112,18 @@
 	 * the notice can be measured in the narrowest cell of a 3x3 split.
 	 */
 	const restored = query.has('restored');
-	const adapter: TerminalAdapter = restored
+	const adapter: TerminalAdapter = missing !== null
+		? {
+				open: (target: TerminalOpenTarget) => ({
+					...echoAdapter.open(target),
+					onMissing: (listener: () => void) => {
+						// The saved UUID is gone; a reopen by name (no UUID) succeeds.
+						if (target.sessionId) listener();
+						return () => undefined;
+					},
+				}),
+			}
+		: restored
 		? {
 				open: (target: TerminalOpenTarget) => ({
 					...echoAdapter.open(target),
@@ -464,6 +493,7 @@
 				onReadHistory={historyAnswer}
 				onZoom={(slotId) => (layout = toggleZoom(layout, slotId))}
 				connectionLost={Boolean(lost)}
+				transport={missing !== null ? 'idle' : undefined}
 				t={lostT}
 			/>
 		</div>

@@ -1565,6 +1565,31 @@
 	cursor: pointer;
 }
 
+/* A session that is gone: the sentence and the one thing to do about it. The button wraps
+   under the sentence in a narrow cell rather than squeezing it to a word per line. */
+.pdmux-pane-missing {
+	flex-wrap: wrap;
+	align-items: center;
+	row-gap: 4px;
+}
+
+.pdmux-pane-missing > span {
+	flex-basis: 14em;
+}
+
+.pdmux-pane-missing-reopen {
+	flex: none;
+	max-width: 100%;
+	padding: 2px 8px;
+	font-size: 11px;
+	line-height: 1.4;
+	white-space: normal;
+	text-align: start;
+	background: var(--pdmux-accent);
+	border-color: var(--pdmux-accent);
+	color: #fff;
+}
+
 .pdmux-pane.pdmux-dragging {
 	opacity: 0.45;
 }

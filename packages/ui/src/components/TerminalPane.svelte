@@ -26,6 +26,7 @@
 		slotIdentityLabel,
 		terminalTagForeground,
 		toProtocolTarget,
+		missingSessionTarget,
 		type HistoryLine,
 	} from '@pdmux/core';
 	import ReplaceIcon from '@lucide/svelte/icons/replace';
@@ -254,6 +255,24 @@
 	 * person dismisses it or the pane reconnects to something else.
 	 */
 	let restoredNotice = $state(false);
+	/**
+	 * The host has no session behind this native pane and could not reopen it
+	 * (`SESSION_NOT_FOUND`). The pane offers a new session under the same name.
+	 *
+	 * ⚠ ONLY ON A CLICK. The programs that ran there are gone; a shell that appeared under
+	 * the old name by itself would read as the old session carrying on.
+	 */
+	let missingSession = $state(false);
+	const missingTarget = $derived(missingSessionTarget(namedSlot));
+	/**
+	 * The person asked for a new session under this name, and — once the host answered — its
+	 * UUID. Plain variables, read when the connection effect runs: the mounted slot keeps
+	 * its original target (the grid never re-targets a mounted pane), so this pane has to
+	 * remember what it reopened as. Cleared when the slot itself is re-targeted.
+	 */
+	let reopenByName = false;
+	let reopenedId: string | null = null;
+	let openedKey = '';
 	// A mounted grid entry can still carry the original `new` target. Controls
 	// must use the UUID returned by this connection without reopening its PTY.
 	const resolvedSlot = $derived<TerminalSlot>(resolvedSessionId && slot.backend === 'native'
@@ -276,6 +295,17 @@
 	let lostSinceEnd = $state(false);
 	let reopenTicket = $state(0);
 
+	/** The button on a missing session: open a new one under the saved name, in this pane. */
+	function reopenMissing(): void {
+		if (!missingTarget) return;
+		missingSession = false;
+		reopenByName = true;
+		reopenedId = null;
+		ended = false;
+		lostSinceEnd = false;
+		reopenTicket += 1;
+	}
+
 	$effect(() => {
 		if (!ended) return;
 		if (!reachable) {
@@ -292,12 +322,23 @@
 		const host = surfaceHost;
 		// Read the target synchronously so a retarget re-runs this effect.
 		void connectionKey;
-		const target = untrack(() => ({ slotId: slot.id, hostId: slot.hostId, ...toProtocolTarget(slot) }));
+		const saved = untrack(() => ({ slotId: slot.id, hostId: slot.hostId, ...toProtocolTarget(slot) }));
 		// …and the reopen ticket, so an ended pane whose host came back opens again.
 		void reopenTicket;
 		if (!host) return;
+		if (connectionKey !== openedKey) {
+			openedKey = connectionKey;
+			reopenByName = false;
+			reopenedId = null;
+		}
+		// After a click: the new session's UUID once known, its name until then.
+		const fresh = untrack(() => reopenedId
+			? toProtocolTarget({ ...slot, sessionId: reopenedId })
+			: reopenByName ? missingTarget : null);
+		const target = fresh ? { slotId: saved.slotId, hostId: saved.hostId, ...fresh } : saved;
 		resolvedSessionId = null;
 		restoredNotice = false;
+		missingSession = false;
 		let disposed = false;
 		const cleanups: Array<() => void> = [];
 
@@ -325,9 +366,11 @@
 			connection = opened;
 			if (opened.onSession) cleanups.push(opened.onSession(id => {
 				resolvedSessionId = id;
+				if (reopenByName) reopenedId = id;
 				onSessionResolved?.(slot.id, id);
 			}));
 			if (opened.onRestored) cleanups.push(opened.onRestored(() => { restoredNotice = true; }));
+			if (opened.onMissing) cleanups.push(opened.onMissing(() => { if (target.backend === 'native') missingSession = true; }));
 			if (opened.onViewport) cleanups.push(opened.onViewport(value => { nativeViewport = value; created.setRemoteScrollback?.({ alternate: value.alternate ?? false, history: value.history ?? 0 }); }));
 			// Ask once now and then after every write: a pane that attaches to a multiplexer is
 			// already in the alternate buffer before its first byte arrives.
@@ -935,6 +978,16 @@
 		instead of "the machine restarted". Above the terminal like the scroll hint, so it
 		covers no rows, and it stays until dismissed.
 	-->
+	{#if missingSession}
+		<!-- Above the terminal like the restart notice. The button is the only way this pane
+		     opens again: see `missingSession`. -->
+		<p class="pdmux-pane-restored pdmux-pane-missing" data-pdmux-missing role="status">
+			<span>{tr('pdmux.pane.missingSession', "Session '{name}' no longer exists on this host. Programs that were running in it are gone.").replace('{name}', targetName)}</span>
+			{#if missingTarget}
+				<button type="button" class="pdmux-btn pdmux-pane-missing-reopen" data-pdmux-missing-reopen onclick={reopenMissing}>{tr('pdmux.pane.missingReopen', 'Open a new session with the same name')}</button>
+			{/if}
+		</p>
+	{/if}
 	{#if restoredNotice}
 		<p class="pdmux-pane-restored" data-pdmux-restored role="status">
 			<span>{tr('pdmux.pane.restoredReboot', "The host restarted, so session '{name}' was reopened. Programs that were running before were not restored.").replace('{name}', targetName)}</span>
@@ -995,7 +1048,9 @@
 		{/if}
 		<!-- Not on an unreachable pane: the host is gone and the pane already says so; a second line
 		     saying the socket is retrying adds nothing but alarm (a machine put to sleep on purpose). -->
-		{#if transport !== 'open' && reachable && !connectionLost}
+		<!-- Nor on a pane whose session is gone: nothing is reconnecting, and the line would
+		     sit under the notice that says so for as long as the pane stays open. -->
+		{#if transport !== 'open' && reachable && !connectionLost && !missingSession}
 			<!--
 				⚠ NOT AN ERROR, AND NOT THE UNREACHABLE OVERLAY. The host is fine; this browser's
 				socket is away, which lasts a moment and is worth exactly one line — a full-pane
