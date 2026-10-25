@@ -81,7 +81,7 @@ export async function verifyMacAgent(binary, signing) {
 }
 
 async function downloadPublishedAgent(version, directory) {
-  const releases = JSON.parse(execFileSync("gh", ["api", "--paginate", "--slurp", "repos/podosoft-dev/pdmux/releases?per_page=100"], { encoding: "utf8", timeout: 60_000 })).flat();
+  const releases = JSON.parse(execFileSync("gh", ["api", "--paginate", "--slurp", "repos/podosoft-dev/pdmux/releases?per_page=100"], { encoding: "utf8", timeout: 60_000, maxBuffer: 64 * 1024 * 1024 })).flat();
   const scratch = await mkdtemp(join(tmpdir(), "pdmux-agent-lookup-"));
   try {
     for (const release of releases.filter(item => !item.draft && !item.prerelease && item.assets.some(asset => asset.name === "manifest.json"))) {
