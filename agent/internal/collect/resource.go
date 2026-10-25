@@ -16,14 +16,9 @@ package collect
 // on. Injecting the reads is what makes "a meminfo with these exact numbers"
 // expressible.
 //
-// ⚠ WHERE GO IS THINNER THAN NODE: Node's os.loadavg/os.totalmem/os.freemem/
-// os.uptime are portable, and the TypeScript used them as per-metric fallbacks
-// for hosts without /proc. Go's standard library has no equivalent (they need
-// cgo or golang.org/x/sys, and this module deliberately has neither). On macOS
-// they are answered instead by the tools the system ships — see
-// `resource_macos.go`, which adds no dependency and follows the precedent `df -Pk`
-// already set. Anywhere else that is still nil: "not measured", which is true,
-// rather than a number obtained another way. Disk is unaffected: `df -Pk` is POSIX.
+// macOS uses bounded system tools instead of /proc (resource_macos.go), keeping
+// cross-compilation free of cgo. CPU utilization and load average are separate
+// measurements: runnable work per core is not the fraction of CPU time in use.
 
 import (
 	"context"
@@ -139,18 +134,19 @@ type LoadReader func() (load1 float64, ok bool)
 // CPUMeterOptions are the injectable parts of a CPUMeter. A zero value gives the
 // real host readers.
 type CPUMeterOptions struct {
+	// ReadUsage supplies an already sampled utilization percentage. A failed
+	// native reading must not turn into a load-average estimate.
+	ReadUsage func(context.Context) *int
 	ReadStat  StatReader
 	Load      LoadReader
 	CoreCount int
 }
 
-// CPUMeter measures CPU across passes.
-//
-// WHY NOT SLEEP 300ms LIKE THE SHELL VERSION IT REPLACES: the collector already
-// runs on a timer, so the previous pass is a free — and wider, therefore less
-// noisy — window. The first pass has no predecessor and reports nil rather than a
-// made-up number; a fresh agent legitimately shows "—" for one beat.
+// CPUMeter measures Linux CPU between heartbeat passes; the first pass has no
+// predecessor and returns nil. The native macOS reader takes its own two samples
+// over one second, so it can also answer the first call.
 type CPUMeter struct {
+	readUsage func(context.Context) *int
 	previous  *cpuSample
 	readStat  StatReader
 	load      LoadReader
@@ -160,9 +156,13 @@ type CPUMeter struct {
 // NewCPUMeter builds a meter, filling in the host readers for anything omitted.
 func NewCPUMeter(options CPUMeterOptions) *CPUMeter {
 	meter := &CPUMeter{
+		readUsage: options.ReadUsage,
 		readStat:  options.ReadStat,
 		load:      options.Load,
 		coreCount: options.CoreCount,
+	}
+	if meter.readUsage == nil && options.ReadStat == nil && options.Load == nil && runtime.GOOS == "darwin" {
+		meter.readUsage = readDarwinCPU
 	}
 	if meter.readStat == nil {
 		meter.readStat = func() (string, bool) { return readTextFile(procStatPath) }
@@ -176,14 +176,20 @@ func NewCPUMeter(options CPUMeterOptions) *CPUMeter {
 	return meter
 }
 
-// Sample returns the percentage since the previous call, or nil when there is
-// nothing honest to report yet.
+// Sample returns measured utilization, or nil when it cannot be measured.
 //
 // NOT SAFE FOR CONCURRENT USE, and it does not need to be: exactly one heartbeat
 // pass runs at a time and it owns the meter. A mutex here would advertise a
 // sharing pattern that would also be wrong for a different reason (two callers
 // would each see half the elapsed jiffies).
 func (m *CPUMeter) Sample() *int {
+	return m.sample(context.Background())
+}
+
+func (m *CPUMeter) sample(ctx context.Context) *int {
+	if m.readUsage != nil {
+		return m.readUsage(ctx)
+	}
 	text, ok := m.readStat()
 	if !ok {
 		return m.loadFallback()
@@ -200,8 +206,8 @@ func (m *CPUMeter) Sample() *int {
 	return cpuPctFromSamples(*previous, *current)
 }
 
-// loadFallback is the honest stand-in for a host with no /proc/stat: load per
-// core, which is the same quantity at a coarser resolution.
+// loadFallback retains the legacy estimate for unsupported hosts. macOS uses
+// measured utilization instead; load per core is not CPU utilization.
 func (m *CPUMeter) loadFallback() *int {
 	one, ok := m.load()
 	if !ok || math.IsNaN(one) || math.IsInf(one, 0) {
@@ -419,6 +425,10 @@ type DiskReading struct {
 // parseDf reads POSIX `df -Pk <path>` output, whose second line is the
 // filesystem: `device blocks used available capacity mount`.
 func parseDf(text string) *DiskReading {
+	return parseFilesystemUsage(text, false)
+}
+
+func parseFilesystemUsage(text string, sharedSpace bool) *DiskReading {
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	if len(lines) < 2 {
 		return nil
@@ -431,6 +441,18 @@ func parseDf(text string) *DiskReading {
 	used, usedErr := strconv.ParseInt(fields[2], 10, 64)
 	if blocksErr != nil || usedErr != nil || blocks <= 0 || used < 0 {
 		return nil
+	}
+	if sharedSpace {
+		// APFS's Used is only this volume, while Available is shared across
+		// the container. The sealed root volume omits user data entirely.
+		if len(fields) < 4 {
+			return nil
+		}
+		available, err := strconv.ParseInt(fields[3], 10, 64)
+		if err != nil || available < 0 || available > blocks {
+			return nil
+		}
+		used = blocks - available
 	}
 	totalBytes := blocks * 1024
 	usedBytes := used * 1024
@@ -451,15 +473,12 @@ func ReadDisk(ctx context.Context, path string, timeoutMs int) *DiskReading {
 	if result.Code != 0 {
 		return nil
 	}
-	return parseDf(result.Stdout)
+	return parseFilesystemUsage(result.Stdout, runtime.GOOS == "darwin")
 }
 
 // ReadLoad1 is the 1-minute load average from /proc/loadavg, or from `sysctl` on
 // macOS.
-//
-// ⚠ THIS ONE ALSO TURNS CPU ON. `CPUMeter.loadFallback` reports load per core for
-// any host with no /proc/stat, and that path was unreachable on macOS purely
-// because this function had no second source there.
+// Load is reported separately from the macOS utilization measurement.
 func ReadLoad1() (float64, bool) {
 	text, ok := readTextFile(procLoadavgPath)
 	if !ok {
@@ -526,7 +545,7 @@ func Resource(ctx context.Context, readers ResourceReaders) protocol.Resource {
 	// No meter means no CPU reading. Building a throwaway one per pass would
 	// report nil forever anyway (it never has a predecessor), only less obviously.
 	if readers.CPU != nil {
-		out.CPUPct = readers.CPU.Sample()
+		out.CPUPct = readers.CPU.sample(ctx)
 	}
 
 	readMemory := readers.Memory

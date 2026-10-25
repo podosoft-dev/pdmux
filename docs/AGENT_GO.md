@@ -35,6 +35,22 @@ at that moment the promise of "no assumptions about the target" is broken.
 
 Builds, versions and reproducibility live in [`VERSIONING.md`](VERSIONING.md).
 
+### Host resource measurements
+
+On Linux, CPU utilization comes from `/proc/stat` deltas between heartbeat passes.
+On macOS, the agent uses the second CPU-only sample from
+`/usr/sbin/iostat -d -C -n 0 -c 2 -w 1`: the first row is the average since boot,
+while the second measures the current one-second interval. This bounded subprocess
+adds about one second to the resource collector's wall time, runs alongside the other
+heartbeat collectors, and adds no dependency. A failed reading stays unknown; the
+separately reported one-minute load average is not a utilization percentage.
+
+macOS disk usage is total space minus available space from `df -Pk`. APFS shares
+free space across volumes, so the root volume's own `Used` column omits user data.
+Linux retains per-filesystem `Used` accounting. Memory and swap keep their existing
+OS readers. Live percentages follow the configured heartbeat interval (five seconds
+by default); stored history samples and chart refreshes have separate cadences.
+
 ---
 
 ## 2. Layout

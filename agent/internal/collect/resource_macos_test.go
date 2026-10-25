@@ -1,9 +1,84 @@
 package collect
 
 import (
+	"context"
+	"fmt"
+	"math"
 	"runtime"
 	"testing"
+	"time"
 )
+
+func TestDarwinCPU(t *testing.T) {
+	t.Run("[TC-PDAGENT-107] uses interval utilization instead of the boot average or load", func(t *testing.T) {
+		text := "      cpu\n us sy id\n 27 12 61\n 30 12 58\n"
+		if got := parseDarwinCPU(text); got == nil || *got != 42 {
+			t.Fatalf("CPU = %v, want the interval's 42%%", derefInt(got))
+		}
+		meter := NewCPUMeter(CPUMeterOptions{
+			ReadUsage: func(context.Context) *int { return parseDarwinCPU(text) },
+			Load:      func() (float64, bool) { return 40, true },
+			CoreCount: 18,
+		})
+		if got := meter.Sample(); got == nil || *got != 42 {
+			t.Fatalf("CPU = %v, want utilization even when load exceeds core count", derefInt(got))
+		}
+	})
+	t.Run("[TC-PDAGENT-107] accepts idle, fully busy and rounded intervals", func(t *testing.T) {
+		for row, want := range map[string]int{"0 0 100": 0, "60 40 0": 100, "40 24 37": 63} {
+			if got := parseDarwinCPU("cpu\nus sy id\n27 12 61\n" + row + "\n"); got == nil || *got != want {
+				t.Fatalf("%q = %v, want %d", row, derefInt(got), want)
+			}
+		}
+	})
+	t.Run("[TC-PDAGENT-107] rejects missing intervals and malformed percentages", func(t *testing.T) {
+		for _, text := range []string{
+			"", "cpu\nus sy id\n27 12 61\n", "27 12 61\n30 12 58\n",
+			"cpu\nus sy id\n27 12 61\nNaN 0 100\n", "cpu\nus sy id\n27 12 61\n1 +Inf 0\n",
+			"cpu\nus sy id\n27 12 61\n-1 1 100\n", "cpu\nus sy id\n27 12 61\n0 0 101\n",
+			"cpu\nus sy id\n27 12 61\n0 0 50\n", "cpu\nus sy id\n27 12 61\nno cpu here\n",
+		} {
+			if got := parseDarwinCPU(text); got != nil {
+				t.Fatalf("accepted invalid output %q as %d", text, *got)
+			}
+		}
+		meter := NewCPUMeter(CPUMeterOptions{
+			ReadUsage: func(context.Context) *int { return nil },
+			Load:      func() (float64, bool) { return 40, true },
+			CoreCount: 18,
+		})
+		if got := meter.Sample(); got != nil {
+			t.Fatalf("failed measurement became %d%% load estimate", *got)
+		}
+	})
+}
+
+func TestDarwinDisk(t *testing.T) {
+	t.Run("[TC-PDAGENT-012] includes other APFS volumes sharing the container", func(t *testing.T) {
+		text := "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s1s1 2000000 12000 800000 2% /\n"
+		got := parseFilesystemUsage(text, true)
+		if got == nil || got.UsedBytes != 1_200_000*1024 || got.TotalBytes != 2_000_000*1024 || got.Pct != 60 {
+			t.Fatalf("shared disk = %+v, want 60%%, including data volumes", got)
+		}
+		if volume := parseDf(text); volume == nil || volume.UsedBytes != 12_000*1024 || volume.Pct != 1 {
+			t.Fatalf("non-macOS volume accounting changed: %+v", volume)
+		}
+	})
+	t.Run("[TC-PDAGENT-012] validates shared free space and handles empty and full containers", func(t *testing.T) {
+		for available, want := range map[string]int{"2000000": 0, "0": 100} {
+			text := fmt.Sprintf("Filesystem 1024-blocks Used Available\n/dev/disk 2000000 12000 %s\n", available)
+			if got := parseFilesystemUsage(text, true); got == nil || got.Pct != want {
+				t.Fatalf("available %s = %+v, want %d%%", available, got, want)
+			}
+		}
+		for _, available := range []string{"", "nope", "-1", "2000001"} {
+			text := "Filesystem 1024-blocks Used Available\n/dev/disk 2000000 12000 " + available + "\n"
+			if got := parseFilesystemUsage(text, true); got != nil {
+				t.Fatalf("accepted invalid available space %q: %+v", available, got)
+			}
+		}
+	})
+}
 
 // A real `vm_stat` header plus the lines the memory figure is built from. Page
 // size 4096 keeps every expected byte count checkable by hand.
@@ -222,8 +297,7 @@ func TestReadDarwinUptimeSec(t *testing.T) {
 }
 
 // The whole point, end to end: on a Mac the four metrics that used to be "not
-// measured" are measured, and CPU comes back with them through the load fallback
-// that was already there.
+// measured" are measured using the default readers on a real Mac.
 func TestDarwinHostReadings(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("reads this host through macOS tools")
@@ -269,13 +343,34 @@ func TestDarwinHostReadings(t *testing.T) {
 		}
 	})
 
-	t.Run("[TC-PDAGENT-107] CPU reports through the load fallback, with no second sample", func(t *testing.T) {
-		// There is no /proc/stat here, so this is the first call AND the answer —
-		// unlike the Linux path, which must return nil until it has two samples.
-		if got := NewCPUMeter(CPUMeterOptions{}).Sample(); got == nil {
-			t.Fatal("CPU not measured on a host whose load is readable")
+	t.Run("[TC-PDAGENT-107] CPU uses the native interval reader", func(t *testing.T) {
+		meter := NewCPUMeter(CPUMeterOptions{})
+		if meter.readUsage == nil {
+			t.Fatal("default macOS meter still uses load average")
+		}
+		if got := meter.Sample(); got == nil {
+			t.Fatal("CPU not measured on a host whose iostat is readable")
 		} else if *got < 0 || *got > 100 {
 			t.Fatalf("cpu = %d; want 0..100", *got)
+		}
+	})
+	t.Run("[TC-PDAGENT-012] default disk reader includes shared available space", func(t *testing.T) {
+		text := mustRun(t, "df", "-Pk", "/")
+		want := parseFilesystemUsage(text, true)
+		got := ReadDisk(t.Context(), "/", defaultDiskTimeoutMs)
+		if want == nil || got == nil || got.TotalBytes != want.TotalBytes || math.Abs(float64(got.Pct-want.Pct)) > 1 {
+			t.Fatalf("disk = %+v, want shared space %+v", got, want)
+		}
+	})
+	t.Run("[TC-PDAGENT-107] resource cancellation stops the CPU sampling subprocess", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		timer := time.AfterFunc(50*time.Millisecond, cancel)
+		defer timer.Stop()
+		start := time.Now()
+		got := Resource(ctx, ResourceReaders{CPU: NewCPUMeter(CPUMeterOptions{})})
+		if got.CPUPct != nil || time.Since(start) > 500*time.Millisecond {
+			t.Fatalf("cancelled CPU = %v after %s; sampling must not delay shutdown", derefInt(got.CPUPct), time.Since(start))
 		}
 	})
 }

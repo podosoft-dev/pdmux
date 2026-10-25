@@ -1,28 +1,7 @@
 package collect
 
-// Memory, swap, load and uptime on a host with no /proc.
-//
-// The four readers next door all read /proc, and `resource.go` says plainly what
-// that costs off Linux: those metrics come back nil, "not measured", because the
-// portable answers Node had (os.totalmem/os.loadavg/os.uptime) need cgo or
-// golang.org/x/sys and this module deliberately has neither — the agent is a
-// reproducible, statically linked, cross-compiled binary and a C dependency would
-// end all three properties.
-//
-// ⚠ SO THIS FILE ADDS NO DEPENDENCY. It shells out, exactly as `ReadDisk` already
-// does for `df -Pk`, to tools that ship with macOS. That precedent is the whole
-// argument: a bounded subprocess was already the accepted way to ask the host
-// something the standard library cannot answer.
-//
-// ⚠ AND CPU COMES ALONG FOR FREE. `CPUMeter.loadFallback` was already written for
-// hosts without /proc/stat — load per core, "the same quantity at a coarser
-// resolution" — and it was dead on macOS only because `ReadLoad1` had no source
-// there. Making load work turns CPU on with it, with no second sample, no sleep
-// and no change to the meter.
-//
-// WHY THE PARSERS ARE PURE AND THE READERS ARE THIN: the numbers come from the
-// host, so the fixtures are the only way to assert on exact values — and they let
-// these specs run on the Linux CI that never sees a Mac.
+// macOS metrics use bounded tools shipped with the OS, without cgo or an
+// additional runtime dependency. Pure parsers also run against fixtures on CI.
 
 import (
 	"context"
@@ -34,10 +13,55 @@ import (
 	"github.com/podosoft-dev/pdmux/agent/internal/sys"
 )
 
-// macOS ships all three of these in /usr/sbin and /usr/bin, and they are bounded
+// macOS ships these tools in /usr/sbin and /usr/bin, and they are bounded
 // like `df` is: a host that cannot answer in this long is a host we report nil
 // for, not one the heartbeat waits behind.
 const darwinSysctlTimeoutMs = 2_000
+
+// parseDarwinCPU reads CPU-only `iostat -d -C -n 0 -c 2 -w 1` output.
+// The first row is the average since boot; only the second, one-second interval
+// describes current utilization. Load average must never substitute for it.
+func parseDarwinCPU(text string) *int {
+	header := false
+	var readings []int
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			continue
+		}
+		if fields[0] == "us" && fields[1] == "sy" && fields[2] == "id" {
+			header = true
+			continue
+		}
+		if !header {
+			continue
+		}
+		var values [3]float64
+		for index, field := range fields {
+			value, err := strconv.ParseFloat(field, 64)
+			if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 100 {
+				return nil
+			}
+			values[index] = value
+		}
+		if total := values[0] + values[1] + values[2]; total < 99 || total > 101 {
+			return nil
+		}
+		readings = append(readings, clampPct(100-values[2]))
+	}
+	if len(readings) != 2 {
+		return nil
+	}
+	return ptr(readings[1])
+}
+
+func readDarwinCPU(ctx context.Context) *int {
+	text, ok := runDarwinToolContext(ctx, "/usr/sbin/iostat", []string{"-d", "-C", "-n", "0", "-c", "2", "-w", "1"})
+	if !ok {
+		return nil
+	}
+	return parseDarwinCPU(text)
+}
 
 // parseSysctlLoadavg reads `sysctl -n vm.loadavg`, which prints the triple inside
 // braces: `{ 7.76 5.43 4.50 }`. Only load1 is consumed, matching `ReadLoad1`.
@@ -217,7 +241,11 @@ func swapusageField(text string, name string) (int64, bool) {
 // runDarwinTool is the one place a subprocess is spawned for these metrics, so
 // the timeout and the "non-zero means nil" rule are stated once.
 func runDarwinTool(file string, args []string) (string, bool) {
-	result := sys.Run(context.Background(), file, args, sys.Options{TimeoutMs: darwinSysctlTimeoutMs})
+	return runDarwinToolContext(context.Background(), file, args)
+}
+
+func runDarwinToolContext(ctx context.Context, file string, args []string) (string, bool) {
+	result := sys.Run(ctx, file, args, sys.Options{TimeoutMs: darwinSysctlTimeoutMs})
 	if result.Code != 0 {
 		return "", false
 	}
