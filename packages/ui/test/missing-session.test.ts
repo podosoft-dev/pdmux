@@ -167,7 +167,7 @@ it('[TC-PDUI-244] the reconnecting line is not drawn under a missing session', a
 
 it('[TC-PDUI-245] the notice and the button speak the reader’s language', async () => {
 	for (const [catalog, sentence, button] of [
-		[korean, "'w2' 세션이 이 호스트에 더 이상 없습니다. 그 안에서 실행 중이던 프로그램은 사라졌습니다.", '같은 이름으로 새 세션 열기'],
+		[korean, korean.pdmux.pane.missingSession.replace('{name}', 'w2'), korean.pdmux.pane.missingReopen],
 		[english, "Session 'w2' no longer exists on this host. Programs that were running in it are gone.", 'Open a new session with the same name'],
 	] as const) {
 		const native = host();

@@ -21,11 +21,17 @@ describe("[TC-PDWEB-057] the reopen offer is worded in both languages", () => {
   it("names the session, says its programs are gone, and labels the button", () => {
     const ko = uiTranslate(korean);
     const en = uiTranslate(english);
-    expect(ko("pdmux.pane.missingReopen", "")).toBe("같은 이름으로 새 세션 열기");
     expect(en("pdmux.pane.missingReopen", "")).toBe("Open a new session with the same name");
-    for (const translate of [ko, en]) expect(translate("pdmux.pane.missingSession", "")).toContain("{name}");
-    expect(ko("pdmux.pane.missingSession", "")).toContain("사라졌습니다");
     expect(en("pdmux.pane.missingSession", "")).toContain("are gone");
+    // The Korean wording is read from its catalogue (the repository's prose is English); what is
+    // checked is that it exists, is not the English left in place, and keeps the placeholder.
+    expect(ko("pdmux.pane.missingReopen", "")).toBe(korean.pdmux.pane.missingReopen);
+    for (const key of ["pdmux.pane.missingReopen", "pdmux.pane.missingSession"]) {
+      expect(ko(key, "")).not.toBe("");
+      expect(ko(key, "")).not.toBe(en(key, ""));
+      expect(ko(key, "")).toMatch(/[\uac00-\ud7a3]/);
+    }
+    for (const translate of [ko, en]) expect(translate("pdmux.pane.missingSession", "")).toContain("{name}");
   });
 });
 

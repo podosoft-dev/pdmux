@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import korean from '../../../../apps/web/src/lib/i18n/catalogs/app/ko.json' with { type: 'json' };
 
 test.describe('[TC-PDUI-247] the missing-session notice and its reopen button', () => {
 	test.skip(!process.env.PDMUX_BROWSER_TEST, 'set PDMUX_BROWSER_TEST=1 to run browser checks');
@@ -10,7 +11,7 @@ test.describe('[TC-PDUI-247] the missing-session notice and its reopen button', 
 			const notice = pane.locator('[data-pdmux-missing]');
 			await expect(notice).toBeVisible();
 			await expect(pane.locator('[data-pdmux-transport]')).toHaveCount(0);
-			if (locale === 'ko') await expect(notice.locator('[data-pdmux-missing-reopen]')).toHaveText('같은 이름으로 새 세션 열기');
+			if (locale === 'ko') await expect(notice.locator('[data-pdmux-missing-reopen]')).toHaveText(korean.pdmux.pane.missingReopen);
 			const geometry = await pane.evaluate((node) => {
 				const box = (selector: string): DOMRect => (node.querySelector(selector) as HTMLElement).getBoundingClientRect();
 				const text = node.querySelector('[data-pdmux-missing]') as HTMLElement;
