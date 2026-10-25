@@ -11,12 +11,18 @@
  *
  * A failed poll keeps the previous data on screen and records the error code. Blanking
  * the cards on one dropped request makes a working dashboard look broken.
+ *
+ * ⚠ KEEPING THE DATA IS NOT VOUCHING FOR IT. `now` used to advance only on a successful poll,
+ * so an outage froze every card at its last moment — "last seen" stopped counting and the hosts
+ * stayed green. `now` is the clock of the last attempt, and `connection` says whether the data
+ * on screen is current; the shell draws it as unknown while it is not.
  */
 import type { HostSeries } from "@pdmux/core";
 import { errorCode, hostsApi, metricsApi } from "./api";
 import { hostSeries } from "./map";
 import type { HostView } from "./types";
 import { FleetEvents } from "./fleet-events";
+import { ServerConnection, isServerUnreachable } from "./server-connection.svelte";
 
 /** Never poll faster than this, whatever the fleet's heartbeat is set to. */
 const MIN_POLL_MS = 2000;
@@ -29,15 +35,21 @@ export interface FleetFeedOptions {
   windowSec?: number;
   /** Session-only screens do not request metric trends. */
   includeHistory?: boolean;
+  /** Injectable for tests; one is created otherwise. */
+  connection?: ServerConnection;
 }
 
 export class FleetFeed {
   hosts = $state<HostView[]>([]);
   history = $state<Record<string, HostSeries>>({});
-  /** Epoch ms of the last successful poll — the cards' "now". */
+  /** Epoch ms of the last poll, answered or not — the cards' "now". */
   now = $state<number>(Date.now());
+  /** Epoch ms of the last successful poll: how old `hosts` is. */
+  lastSuccessAt = $state<number>(Date.now());
   /** Error code of the last failed poll, cleared by the next success. */
   error = $state<string | null>(null);
+  /** Whether the server can be reached; the hosts on screen are only current while it can. */
+  readonly connection: ServerConnection;
 
   readonly windowSec: number;
   private readonly pollMs: number;
@@ -47,17 +59,28 @@ export class FleetFeed {
   private historyBusy = false;
   private reading: Promise<void> | null = null;
   private rereading: Promise<void> | null = null;
-  private readonly events = new FleetEvents(() => this.refresh(), () => this.reload());
+  private readonly events: FleetEvents;
+  private stopRecover: (() => void) | null = null;
 
   constructor(options: FleetFeedOptions = {}) {
+    this.connection = options.connection ?? new ServerConnection();
+    this.events = new FleetEvents(() => this.refresh(), () => this.reload(), { connection: this.connection });
     this.includeHistory = options.includeHistory !== false;
     this.hosts = options.initialHosts ?? [];
     this.windowSec = options.windowSec ?? 3600;
     this.pollMs = Math.max(MIN_POLL_MS, (options.heartbeatSec ?? 5) * 1000);
   }
 
+  /** True while the hosts on screen may no longer be what the server would say. */
+  get stale(): boolean {
+    return !this.connection.online;
+  }
+
   start(): void {
     if (this.hostTimer) return;
+    // Whatever changed while the server was away is read again — the hosts and the trends,
+    // which would otherwise stay a minute behind on the history timer.
+    this.stopRecover = this.connection.onRecover(() => void this.reload());
     void this.refresh();
     if (this.includeHistory) void this.refreshHistory();
     this.hostTimer = setInterval(() => void this.refresh(), this.pollMs);
@@ -67,6 +90,8 @@ export class FleetFeed {
 
   stop(): void {
     this.events.stop();
+    this.stopRecover?.();
+    this.stopRecover = null;
     if (this.hostTimer) clearInterval(this.hostTimer);
     if (this.historyTimer) clearInterval(this.historyTimer);
     this.hostTimer = null;
@@ -110,10 +135,15 @@ export class FleetFeed {
   private async fetchHosts(): Promise<void> {
     try {
       this.hosts = await hostsApi.list();
-      this.now = Date.now();
+      this.lastSuccessAt = Date.now();
       this.error = null;
+      this.connection.alive();
     } catch (cause: unknown) {
       this.error = errorCode(cause);
+      if (isServerUnreachable(cause)) this.connection.lost();
+      else this.connection.alive();
+    } finally {
+      this.now = Date.now();
     }
   }
 

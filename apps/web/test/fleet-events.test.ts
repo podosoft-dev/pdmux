@@ -74,3 +74,90 @@ describe("[TC-PDWEB-038] fleet client after an event bus interruption", () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 });
+
+class FailingSource {
+  static instances: FailingSource[] = [];
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: (() => void) | null = null;
+  closed = false;
+  constructor(readonly url: string) { FailingSource.instances.push(this); }
+  close(): void { this.closed = true; }
+  send(data: string): void { this.onmessage?.({ data } as MessageEvent<string>); }
+  fail(): void { this.onerror?.(); }
+}
+
+function report(): { alive: ReturnType<typeof vi.fn<() => boolean>>; lost: ReturnType<typeof vi.fn<() => void>>; down: boolean } {
+  const state = { down: false } as { down: boolean };
+  const alive = vi.fn((): boolean => { const recovered = state.down; state.down = false; return recovered; });
+  const lost = vi.fn((): void => { state.down = true; });
+  return Object.assign(state, { alive, lost });
+}
+
+describe("[TC-PDWEB-044] a failed event stream is dialled again with backoff", () => {
+  afterEach((): void => { vi.useRealTimers(); FailingSource.instances = []; });
+
+  it("closes the source on an error, reports the loss and reconnects without waiting for the tab to be shown again", (): void => {
+    vi.useFakeTimers();
+    vi.stubGlobal("document", new TestDocument());
+    vi.stubGlobal("EventSource", FailingSource);
+    const refresh = vi.fn(async (): Promise<void> => {});
+    const connection = report();
+    const events = new FleetEvents(refresh, async (): Promise<void> => {}, { connection, random: () => 1, minBackoffMs: 1_000 });
+    events.start();
+    const first = FailingSource.instances[0]!;
+    first.send('{"type":"ready"}');
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    first.fail();
+    expect(first.closed).toBe(true);
+    expect(connection.lost).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(999);
+    expect(FailingSource.instances).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(FailingSource.instances).toHaveLength(2);
+
+    // The second attempt fails too: the delay doubles.
+    FailingSource.instances[1]!.fail();
+    vi.advanceTimersByTime(1_999);
+    expect(FailingSource.instances).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(FailingSource.instances).toHaveLength(3);
+
+    // It answers: the recovery reads everything, so `ready` does not also refresh.
+    FailingSource.instances[2]!.send('{"type":"ready"}');
+    expect(connection.alive).toHaveBeenLastCalledWith();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    events.stop();
+    vi.advanceTimersByTime(60_000);
+    expect(FailingSource.instances).toHaveLength(3);
+  });
+});
+
+describe("[TC-PDWEB-045] a silent event stream counts as lost", () => {
+  afterEach((): void => { vi.useRealTimers(); FailingSource.instances = []; });
+
+  it("keeps a stream that sends heartbeats and replaces one that stops", (): void => {
+    vi.useFakeTimers();
+    vi.stubGlobal("document", new TestDocument());
+    vi.stubGlobal("EventSource", FailingSource);
+    const connection = report();
+    const events = new FleetEvents(async (): Promise<void> => {}, async (): Promise<void> => {}, {
+      connection, silenceMs: 15_000, random: () => 1, minBackoffMs: 1_000, now: () => Date.now(),
+    });
+    events.start();
+    const source = FailingSource.instances[0]!;
+    for (let beat = 0; beat < 6; beat += 1) {
+      vi.advanceTimersByTime(5_000);
+      source.send('{"type":"heartbeat"}');
+    }
+    expect(source.closed).toBe(false);
+    expect(connection.lost).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(20_000);
+    expect(source.closed).toBe(true);
+    expect(connection.lost).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1_000);
+    expect(FailingSource.instances).toHaveLength(2);
+    events.stop();
+  });
+});
