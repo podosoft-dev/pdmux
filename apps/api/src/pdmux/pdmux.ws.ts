@@ -33,6 +33,25 @@ function rejection(error: unknown): Response {
   return Response.json({ success: false, error: { code, message: candidate.message } }, { status });
 }
 
+/**
+ * The dashboard's liveness probe on a terminal socket.
+ *
+ * A browser cannot see or answer a protocol-level ping from script, so it cannot tell a
+ * half-open socket from a quiet one. It sends `{"type":"ping"}` instead and expects a `pong`
+ * back. Answered here, before routing, so a socket relayed to a desktop answers too, and so the
+ * relay never sees a frame it would reject as invalid. A client that never pings is unaffected.
+ */
+export function terminalPing(message: unknown): boolean {
+  let value = message;
+  if (typeof value === "string") {
+    if (!value.includes("\"ping\"")) return false;
+    try { value = JSON.parse(value) as unknown; } catch { return false; }
+  }
+  return typeof value === "object" && value !== null && (value as { type?: unknown }).type === "ping";
+}
+
+const TERMINAL_PONG = JSON.stringify({ type: "pong", termId: "" });
+
 interface ClosableSocket {
   close(code?: number, reason?: string): void;
 }
@@ -112,7 +131,10 @@ export function createPdmuxWsPlugin(gateway: PdmuxGateway, desktop?: DesktopRout
           closeOnShutdown(ws.raw);
           gateway.openTerminal(ws.raw, context);
         },
-        message: (ws, message) => { if (!desktop?.terminalMessage(ws.raw, message)) gateway.terminalMessage(ws.raw, message); },
+        message: (ws, message) => {
+          if (terminalPing(message)) { ws.raw.send(TERMINAL_PONG); return; }
+          if (!desktop?.terminalMessage(ws.raw, message)) gateway.terminalMessage(ws.raw, message);
+        },
         drain: (ws) => gateway.terminalDrain(ws.raw),
         pong: (ws) => gateway.terminalPong(pongSocket(ws)),
         close: (ws, code, reason) => {

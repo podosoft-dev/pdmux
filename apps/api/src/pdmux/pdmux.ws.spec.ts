@@ -5,7 +5,7 @@ import { databaseUnavailable } from "../auth/database-outage";
 import type { AppContext } from "../core/services";
 import { GOING_AWAY, Shutdown } from "../core/shutdown";
 import type { PdmuxGateway } from "./pdmux.gateway";
-import { createPdmuxWsPlugin } from "./pdmux.ws";
+import { createPdmuxWsPlugin, terminalPing } from "./pdmux.ws";
 
 function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -282,6 +282,52 @@ describe("[TC-PDAGENT-130] a stopping API ends its WebSockets at once", () => {
       // A listener left behind would grow with every reconnect for the life of the process.
       expect(shutdown.active).toBe(0);
     } finally {
+      await app.stop(true);
+    }
+  });
+});
+
+describe("[TC-PDWEB-056] a browser's ping on a terminal socket is answered", () => {
+  it("recognizes the ping frame and nothing else", () => {
+    expect(terminalPing({ type: "ping", termId: "", ts: 1 })).toBe(true);
+    expect(terminalPing('{"type":"ping","termId":""}')).toBe(true);
+    expect(terminalPing({ type: "input", termId: "s1", data: "ping" })).toBe(false);
+    expect(terminalPing('{"type":"input","data":"\\"ping\\""}')).toBe(false);
+    expect(terminalPing("ping")).toBe(false);
+  });
+
+  it("answers pong over the socket and never hands the ping to the relay", async () => {
+    const terminalMessage = mock((_socket: unknown, _message: unknown) => undefined);
+    const gateway = {
+      authorizeTerminal: mock(async () => ({
+        hostId: "host-1",
+        hostLabel: "Host",
+        principal: { userId: "user-1", userName: "User", userEmail: "user@example.com", scopeId: "personal:user-1" },
+        bufferBytes: 1_024,
+      })),
+      openTerminal: mock(() => undefined),
+      terminalMessage,
+      terminalDrain: mock(() => undefined),
+      terminalPong: mock(() => undefined),
+      terminalClose: mock(() => undefined),
+    } as unknown as PdmuxGateway;
+    const app = new Elysia()
+      .use(createPdmuxWsPlugin(gateway)(context(new Shutdown())))
+      .listen({ hostname: "127.0.0.1", port: 0 });
+    const port = app.server?.port;
+    if (port === undefined) throw new Error("WebSocket test server did not start");
+    const socket = new WebSocket(`ws://127.0.0.1:${port}${TERMINAL_WS_PATH}?hostId=host-1`);
+    const received: string[] = [];
+    socket.addEventListener("message", (event) => received.push(String(event.data)));
+    try {
+      await opened(socket);
+      socket.send(JSON.stringify({ type: "ping", termId: "", ts: 1 }));
+      socket.send(JSON.stringify({ type: "resize", termId: "s1", cols: 80, rows: 24 }));
+      await waitFor(() => received.length === 1 && terminalMessage.mock.calls.length === 1);
+      expect(JSON.parse(received[0]!)).toEqual({ type: "pong", termId: "" });
+      expect(terminalMessage.mock.calls[0]?.[1]).toMatchObject({ type: "resize" });
+    } finally {
+      socket.close();
       await app.stop(true);
     }
   });
