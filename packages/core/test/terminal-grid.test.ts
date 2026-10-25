@@ -14,8 +14,11 @@ import {
 	type GridCell,
 	type GridHost,
 	type TerminalLayout,
+	type TerminalSlot,
 	assignSlot,
 	resolveSessionSlot,
+	adoptNativeSession,
+	renameSlotSessions,
 	buildDefaultSlots,
 	clearDockDetailHeight,
 	clearSlot,
@@ -842,13 +845,60 @@ it('[TC-PDUI-237] resolves renamed sessions by host and UUID without changing sa
  expect(resolveSessionSlot(slot, [])).toBe(slot);
 });
 
-it('[TC-PDUI-237] captures legacy IDs and follows renames without joining another session that reused its old name', () => {
+it('[TC-PDUI-237] captures legacy IDs and never joins another session that reused the id or the name', () => {
  const slot = { id: 's', hostId: 'h', kind: 'attach' as const, session: 'old' };
  const host = { id: 'h', name: 'host', online: true, sessions: [{ name: 'old', tmuxId: '$1' }] };
  const captured = resolveSessionSlot(slot, [host]);
  expect(captured.tmuxId).toBe('$1');
- const renamed = resolveSessionSlot(captured, [{ ...host, sessions: [{ name: 'old', tmuxId: '$2' }, { name: 'new', tmuxId: '$1' }] }]);
- expect(renamed.session).toBe('new');
- expect(toProtocolTarget(renamed)).toMatchObject({ backend: 'tmux', tmuxId: '$1' });
- expect(toProtocolTarget(renamed).session).toBeUndefined();
+ // `$1` now carries another name and `old` lives under another id. Neither is the
+ // saved session: an external `tmux rename-session` is not followed (a pdmux rename
+ // updates the slot itself — TC-PDCORE-107), because after a host restart the
+ // same id is a different session (TC-PDCORE-105).
+ const after = resolveSessionSlot(captured, [{ ...host, sessions: [{ name: 'old', tmuxId: '$2' }, { name: 'new', tmuxId: '$1' }] }]);
+ expect(after).toBe(captured);
+ expect(toProtocolTarget(after)).toEqual({ kind: 'session', backend: 'tmux', tmuxId: '$1', session: 'old' });
+});
+
+describe('saved tmux slots across a host restart', () => {
+	const saved: TerminalSlot = { id: 's12', hostId: 'h1', kind: 'attach', tmuxId: '$0', session: 'claude-1' };
+
+	it('[TC-PDCORE-104] a tmux target keeps its session name next to the id', () => {
+		expect(toProtocolTarget(saved)).toEqual({ kind: 'session', backend: 'tmux', tmuxId: '$0', session: 'claude-1' });
+		// A tmux name the contract would refuse is left out rather than failing the open.
+		expect(toProtocolTarget({ ...saved, session: 'has space' })).toEqual({ kind: 'session', backend: 'tmux', tmuxId: '$0' });
+	});
+
+	it('[TC-PDCORE-105] a reused $N under another name does not take the slot', () => {
+		const rebooted: GridHost[] = [{ id: 'h1', name: 'one', online: true, sessions: [{ name: 'w1', tmuxId: '$0' }] }];
+		expect(resolveSessionSlot(saved, rebooted)).toBe(saved);
+		const recreated: GridHost[] = [{ id: 'h1', name: 'one', online: true, sessions: [{ name: 'claude-1', tmuxId: '$5' }] }];
+		expect(resolveSessionSlot(saved, recreated)).toBe(saved);
+		const live: GridHost[] = [{ id: 'h1', name: 'one', online: true, sessions: [{ name: 'claude-1', tmuxId: '$0' }] }];
+		expect(resolveSessionSlot(saved, live)).toBe(saved);
+	});
+
+	it('[TC-PDCORE-106] a slot reopened as native continues as that native session and is saved that way', () => {
+		const sessionId = 'd5ac0000-0000-4000-8000-000000000001';
+		const layout: TerminalLayout = { ...defaultLayout(), slots: [saved, null] };
+		const adopted = adoptNativeSession(layout, 's12', sessionId);
+		expect(adopted.slots[0]).toEqual({ id: 's12', hostId: 'h1', kind: 'attach', backend: 'native', session: 'claude-1', sessionId, intent: 'attach' });
+		expect(toProtocolTarget(adopted.slots[0]!)).toEqual({ kind: 'session', session: 'claude-1', backend: 'native', sessionId, intent: 'attach' });
+		const reloaded = normalizeLayout(JSON.parse(JSON.stringify(adopted)), [{ id: 'h1', name: 'one', online: true }]);
+		expect(reloaded.slots[0]).toEqual(adopted.slots[0]);
+		// Already native with that UUID: nothing to save.
+		expect(adoptNativeSession(adopted, 's12', sessionId)).toBe(adopted);
+		expect(adoptNativeSession(layout, 'missing', sessionId)).toBe(layout);
+	});
+
+	it('[TC-PDCORE-107] a pdmux rename reaches every slot of that session and no other', () => {
+		const sessionId = 'd5ac0000-0000-4000-8000-000000000001';
+		const native: TerminalSlot = { id: 's2', hostId: 'h1', kind: 'attach', backend: 'native', sessionId, session: 'w2', intent: 'attach' };
+		const other: TerminalSlot = { id: 's3', hostId: 'h2', kind: 'attach', tmuxId: '$0', session: 'claude-1' };
+		const layout: TerminalLayout = { ...defaultLayout(), slots: [saved, native, other] };
+		const tmux = renameSlotSessions(layout, 'h1', { tmuxId: '$0' }, 'agent');
+		expect(tmux.slots.map(slot => slot?.session)).toEqual(['agent', 'w2', 'claude-1']);
+		const renamed = renameSlotSessions(layout, 'h1', { sessionId }, 'api');
+		expect(renamed.slots.map(slot => slot?.session)).toEqual(['claude-1', 'api', 'claude-1']);
+		expect(renameSlotSessions(layout, 'h1', {}, 'x')).toBe(layout);
+	});
 });

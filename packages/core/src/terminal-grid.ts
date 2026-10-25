@@ -198,16 +198,63 @@ export interface GridHost {
 	sessions?: readonly GridSession[];
 }
 
-/** Stable session identities are authoritative; saved names may be stale. */
+/**
+ * Follow a live session's name from its stable identity.
+ *
+ * A native UUID is an identity on its own, so a renamed native session is
+ * followed. A tmux `$N` IS NOT: tmux numbers sessions from `$0` per server, and
+ * after a host restart the first session anybody starts is `$0` again. A saved
+ * tmux slot therefore names its session by id AND name together and is never
+ * moved onto a live session whose id matches but whose name differs — that is a
+ * different session, and adopting it would put the pane on somebody else's work.
+ * A rename made through pdmux updates the slot itself (`renameSlotSessions`).
+ * A slot without an id yet captures one by name, as before.
+ */
 export function resolveSessionSlot(slot: TerminalSlot, hosts: readonly GridHost[]): TerminalSlot {
 	if (slot.kind === 'shell') return slot;
 	const sessions = hosts.find(host => host.id === slot.hostId)?.sessions ?? [];
-	const native = slot.backend === 'native';
-	const live = sessions.find(session => native
-		? session.backend === 'native' && Boolean(slot.sessionId) && session.sessionId === slot.sessionId
-		: session.backend !== 'native' && (slot.tmuxId ? session.tmuxId === slot.tmuxId : session.name === slot.session));
-	if (!live || live.name === slot.session && live.tmuxId === slot.tmuxId) return slot;
-	return { ...slot, session: live.name, ...(live.tmuxId ? { tmuxId: live.tmuxId } : {}) };
+	if (slot.backend === 'native') {
+		const live = slot.sessionId ? sessions.find(session => session.backend === 'native' && session.sessionId === slot.sessionId) : undefined;
+		return live && live.name !== slot.session ? { ...slot, session: live.name } : slot;
+	}
+	if (slot.tmuxId) return slot;
+	const live = sessions.find(session => session.backend !== 'native' && session.name === slot.session);
+	return live?.tmuxId ? { ...slot, tmuxId: live.tmuxId } : slot;
+}
+
+/**
+ * The slot continues as the native session the host answered with.
+ *
+ * Used when a pane's ready frame comes back native: a native session the pane
+ * created, or a saved tmux session the host reopened as native after a restart.
+ * The tmux id is dropped so every later open targets the native UUID; the name
+ * stays, because it is the same session as far as the person is concerned.
+ */
+export function adoptNativeSession(layout: TerminalLayout, slotId: string, sessionId: string): TerminalLayout {
+	let changed = false;
+	const slots = layout.slots.map(slot => {
+		if (!slot || slot.id !== slotId || slot.kind === 'shell') return slot;
+		if (slot.backend === 'native' && slot.sessionId === sessionId && slot.kind === 'attach' && slot.intent === 'attach' && !slot.tmuxId) return slot;
+		changed = true;
+		const { tmuxId: _tmuxId, ...rest } = slot;
+		return { ...rest, kind: 'attach' as const, backend: 'native' as const, sessionId, intent: 'attach' as const };
+	});
+	return changed ? { ...layout, slots } : layout;
+}
+
+/** Carry a rename made through pdmux into every slot that points at that session. */
+export function renameSlotSessions(layout: TerminalLayout, hostId: string, target: { sessionId?: string; tmuxId?: string }, name: string): TerminalLayout {
+	let changed = false;
+	const slots = layout.slots.map(slot => {
+		if (!slot || slot.hostId !== hostId || slot.kind === 'shell' || slot.session === name) return slot;
+		const same = target.sessionId
+			? slot.backend === 'native' && slot.sessionId === target.sessionId
+			: Boolean(target.tmuxId) && slot.backend !== 'native' && slot.tmuxId === target.tmuxId;
+		if (!same) return slot;
+		changed = true;
+		return { ...slot, session: name };
+	});
+	return changed ? { ...layout, slots } : layout;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,12 +354,19 @@ export function isSlotReachable(slot: TerminalSlot, hosts: readonly GridHost[]):
  */
 export function toProtocolTarget(slot: TerminalSlot): { kind: 'session' | 'shell'; session?: string; backend?: 'native' | 'tmux'; sessionId?: string; tmuxId?: string; intent?: 'create' | 'attach' | 'ensure' } {
 	if (slot.kind === 'shell') return { kind: 'shell' };
-	if (slot.tmuxId) return { kind: 'session', backend: 'tmux', tmuxId: slot.tmuxId };
+	// The name travels with the id: the host checks that the id still names this
+	// session, and reopens it by name when the restart took the tmux server away.
+	// ⚠ ONLY A NAME THE CONTRACT ACCEPTS. tmux allows names (spaces, dots) that a
+	// target's `session` refuses, and one refused field fails the whole open.
+	if (slot.tmuxId) return { kind: 'session', backend: 'tmux', tmuxId: slot.tmuxId, ...(slot.session && TARGET_SESSION_NAME.test(slot.session) ? { session: slot.session } : {}) };
 	const target = { kind: 'session' as const, session: slot.session ?? 'main', ...(slot.backend ? { backend: slot.backend } : {}) };
 	if (slot.sessionId) return { ...target, sessionId: slot.sessionId, intent: 'attach' };
 	if (slot.backend === 'native') return { ...target, intent: slot.intent ?? (slot.kind === 'new' ? 'create' : 'attach') };
 	return target;
 }
+
+/** The contract's `SESSION_NAME_PATTERN`; this package does not depend on the protocol. */
+const TARGET_SESSION_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 
 const sessionNames = (hosts: readonly GridHost[], hostId: string): string[] =>
 	(hosts.find((h) => h.id === hostId)?.sessions ?? []).map((s) => s.name);
