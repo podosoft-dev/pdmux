@@ -130,6 +130,21 @@ describe("TerminalRelayService", () => {
     expect(reopen?.target).toEqual({ kind: "session", backend: "native", session: "claude-1", sessionId, intent: "attach", cols: 80, rows: 24 });
   });
 
+  it("[TC-PDTERM-178] a refused native open frees the pane so the same slot can reopen by name", () => {
+    registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
+    const browser = new FakeBrowser();
+    const id = connect(browser);
+    const gone = "d5ac0000-0000-4000-8000-000000000002";
+    relay.handleClientFrame(id, { type: "open", termId: "s14", target: { kind: "session", backend: "native", session: "w2", sessionId: gone, intent: "attach", cols: 80, rows: 24 } });
+    relay.handleAgentFrame(HOST, { type: "error", termId: `${id}:s14`, message: "SESSION_NOT_FOUND" });
+    expect(browser.frames.at(-1)).toEqual({ type: "error", termId: "s14", message: "SESSION_NOT_FOUND" });
+    const before = agent.terminalFrames().length;
+    relay.handleClientFrame(id, { type: "open", termId: "s14", target: { kind: "session", backend: "native", session: "w2", intent: "ensure", cols: 80, rows: 24 } });
+    expect(browser.frames.at(-1)).not.toEqual({ type: "error", termId: "s14", message: "terminal already open" });
+    expect(agent.terminalFrames()).toHaveLength(before + 1);
+    expect(agent.terminalFrames().at(-1)).toMatchObject({ type: "open", target: { session: "w2", intent: "ensure" } });
+  });
+
   it("[TC-PDTERM-022] reconnects a slow native viewer instead of losing screen updates", () => {
     registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
     const browser = new FakeBrowser();

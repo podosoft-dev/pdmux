@@ -198,7 +198,10 @@ export class TerminalRelayService {
 		this.retryConnection(connection); return;
 	}
     this.send(connection, { ...frame, termId: clientTermId });
-    if (frame.type === "exit") this.closePane(connection, pane, "agent");
+    // An agent error is always a refused open (SESSION_NOT_FOUND, terminal limit, …): nothing
+    // runs on the host for this id, so the relay must forget the pane like an exit, or the
+    // browser reopening the same slot is answered "terminal already open" forever.
+    if (frame.type === "exit" || frame.type === "error") this.closePane(connection, pane, "agent");
   }
 
   /** Browser socket gone: kill its PTYs on the agent so nothing is left running. */
