@@ -8,7 +8,7 @@
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import { tick } from 'svelte';
-import { type TerminalLayout, defaultLayout } from '@pdmux/core';
+import { type TerminalLayout, defaultLayout, slotIdentityLabel, slotLabel } from '@pdmux/core';
 import type { TerminalAdapter, TerminalConnection, TerminalOpenTarget } from '../src/adapters/terminal-adapter.js';
 import type { TerminalSurface } from '../src/adapters/terminal-surface.js';
 import HostSidebar from '../src/components/HostSidebar.svelte';
@@ -58,6 +58,7 @@ const SLOT = { id: 's1', hostId: 'h1', kind: 'attach' as const, session: 'main' 
 const KOREAN: Record<string, string> = {
 	'pdmux.pane.connectionLost': '서버와 연결이 끊겼습니다 · 다시 연결 중…',
 	'pdmux.sidebar.connectionLost': '서버 연결 끊김 — 상태 미확인',
+	'pdmux.pane.shell': '셸',
 };
 const t = (key: string, fallback: string): string => KOREAN[key] ?? fallback;
 
@@ -158,5 +159,21 @@ describe('[TC-PDUI-241] the host column says the server is gone, above the first
 			expect(notice!.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 			lost.unmount();
 		}
+	});
+});
+
+describe('[TC-PDUI-242] a temporary shell is named in the reader’s language', () => {
+	it('labels the pane with the translated word and keeps English for a consumer without i18n', async () => {
+		const shell = { id: 's1', hostId: 'h1', kind: 'shell' as const, session: null };
+		expect(slotIdentityLabel(shell, 'alpha')).toBe('alpha·shell');
+		expect(slotLabel(shell, 'alpha', '셸')).toBe('alpha·셸');
+		expect(slotLabel({ ...SLOT }, 'alpha', '셸')).toBe('alpha·main');
+
+		const typing = surface();
+		const view = render(TerminalPane, {
+			props: { slot: shell, index: 0, hostName: 'alpha', adapter: new RecordingAdapter(), createSurface: typing.factory, t },
+		});
+		await tick();
+		expect(view.container.querySelector('.pdmux-pane-head')?.getAttribute('aria-label')).toBe('alpha·셸');
 	});
 });

@@ -225,8 +225,8 @@
 
 	const tr = $derived(translator(t));
 	const namedSlot = $derived({ ...slot, ...(sessionName ? { session: sessionName } : {}), ...(sessionTmuxId ? { tmuxId: sessionTmuxId } : {}) });
-	const label = $derived(slotLabel(namedSlot, hostName));
-	const identityLabel = $derived(slotIdentityLabel(namedSlot, hostName));
+	const label = $derived(slotLabel(namedSlot, hostName, tr('pdmux.pane.shell', 'shell')));
+	const identityLabel = $derived(slotIdentityLabel(namedSlot, hostName, tr('pdmux.pane.shell', 'shell')));
 	// A personal label/tag edit changes the slot object, never its PTY target.
 	const connectionKey = $derived(JSON.stringify({ slotId: slot.id, hostId: slot.hostId, ...toProtocolTarget(slot) }));
 	const targetName = $derived(

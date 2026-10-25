@@ -323,13 +323,16 @@ export function nextSlotId(slots: readonly GridCell[]): string {
 	return `s${max + 1}`;
 }
 
-/** Compose a display label. The consumer may replace it through its own i18n. */
-export function slotLabel(slot: TerminalSlot, hostName: string): string {
-	return slot.label || slotIdentityLabel(slot, hostName);
+/**
+ * Compose a display label. `shellWord` names a temporary shell in the consumer's language —
+ * the default is the English the label always had, so a consumer without i18n is unchanged.
+ */
+export function slotLabel(slot: TerminalSlot, hostName: string, shellWord = 'shell'): string {
+	return slot.label || slotIdentityLabel(slot, hostName, shellWord);
 }
 
-export function slotIdentityLabel(slot: TerminalSlot, hostName: string): string {
-	return `${hostName}·${slot.kind === 'shell' ? 'shell' : (slot.session ?? '')}`;
+export function slotIdentityLabel(slot: TerminalSlot, hostName: string, shellWord = 'shell'): string {
+	return `${hostName}·${slot.kind === 'shell' ? shellWord : (slot.session ?? '')}`;
 }
 
 export function setSlotPresentation(layout: TerminalLayout, slotId: string, value: unknown): TerminalLayout {

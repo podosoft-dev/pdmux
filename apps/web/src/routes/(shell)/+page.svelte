@@ -340,7 +340,7 @@
     const slot = layout.slots[index];
     if (!slot) return;
     const host = grid.find((entry) => entry.id === slot.hostId);
-    closing = { index, label: slotLabel(slot, host?.name ?? slot.hostId) };
+    closing = { index, label: slotLabel(slot, host?.name ?? slot.hostId, i18n.t.pdmux.pane.shell) };
     closeOpen = true;
   }
 

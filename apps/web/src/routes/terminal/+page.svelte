@@ -186,7 +186,7 @@
 <VmPowerConfirm power={vmPower} panesOn={(hostId: string) => (hostId === data.hostId ? 1 : 0)} />
 <Toaster />
 
-<svelte:head><title>{layout.slots[0] ? slotLabel(layout.slots[0], data.hostLabel) : data.hostLabel} · PDMux</title></svelte:head>
+<svelte:head><title>{layout.slots[0] ? slotLabel(layout.slots[0], data.hostLabel, i18n.t.pdmux.pane.shell) : data.hostLabel} · PDMux</title></svelte:head>
 
 <div class="pdmux pdmux-panel" style="height:100dvh" data-testid="detached-terminal">
   {#if !data.hostId}
