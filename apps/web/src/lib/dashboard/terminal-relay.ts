@@ -134,6 +134,9 @@ interface PaneEntry {
   restoredListeners: Set<(restored: { reason: "reboot" }) => void>;
   /** Set when the host reopened this pane as a new shell after a restart. */
   restored?: { reason: "reboot" };
+  missingListeners: Set<() => void>;
+  /** Set when the host answered `SESSION_NOT_FOUND`; the pane offers a reopen by name. */
+  missing?: boolean;
   viewListeners: Set<(viewport: NativeViewport) => void>;
   viewport?: NativeViewport;
   termId: string;
@@ -243,7 +246,7 @@ export class TerminalRelay implements TerminalAdapter {
       ...(target.tmuxId ? { tmuxId: target.tmuxId } : {}),
       ...(target.sessionId ? { sessionId: target.sessionId } : {}),
       ...(target.intent ? { intent: target.intent } : {}),
-      sessionListeners: new Set(), viewListeners: new Set(), restoredListeners: new Set(),
+      sessionListeners: new Set(), viewListeners: new Set(), restoredListeners: new Set(), missingListeners: new Set(),
       ...(target.session ? { session: target.session } : {}),
       cols: target.cols,
       rows: target.rows,
@@ -266,6 +269,7 @@ export class TerminalRelay implements TerminalAdapter {
       onViewport: (listener: (viewport: NativeViewport) => void): (() => void) => { entry.viewListeners.add(listener); if (entry.viewport) listener(entry.viewport); return () => entry.viewListeners.delete(listener); },
       onSession: (listener: (id: string) => void): (() => void) => { entry.sessionListeners.add(listener); if (entry.sessionId) listener(entry.sessionId); return () => entry.sessionListeners.delete(listener); },
       onRestored: (listener: (restored: { reason: "reboot" }) => void): (() => void) => { entry.restoredListeners.add(listener); if (entry.restored) listener(entry.restored); return () => entry.restoredListeners.delete(listener); },
+      onMissing: (listener: () => void): (() => void) => { entry.missingListeners.add(listener); if (entry.missing) listener(); return () => entry.missingListeners.delete(listener); },
       send: (data: string, source?: "wheel"): void => {
         if (entry.closed) return;
         this.send(connection, { type: "input", termId: entry.termId, data, ...(source ? { source } : {}) });
@@ -624,6 +628,13 @@ export class TerminalRelay implements TerminalAdapter {
         // an agent too old to restore) is the one refusal a person can act on: say what
         // to do instead of the bare code.
         this.emit(pane, notice(frame.message === "SESSION_NOT_FOUND" ? this.messages.sessionMissing : this.messages.failed(frame.message)));
+        // The pane offers to open a new session under the saved name. It does not reopen by
+        // itself: the programs that ran there are gone, and a fresh shell that appears on its
+        // own would read as the old session.
+        if (frame.message === "SESSION_NOT_FOUND") {
+          pane.missing = true;
+          for (const listener of pane.missingListeners) listener();
+        }
         this.release(connection, pane, null);
         break;
     }

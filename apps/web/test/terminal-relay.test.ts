@@ -636,3 +636,54 @@ describe("a saved pane across a host restart", () => {
     h.relay.dispose();
   });
 });
+
+describe("a native pane whose session the host no longer has", () => {
+  const gone = "d5ac0000-0000-4000-8000-000000000001";
+  const fresh = "d5ac0000-0000-4000-8000-000000000002";
+
+  it("[TC-PDTERM-173] SESSION_NOT_FOUND tells the pane its session is missing; other refusals do not", () => {
+    const h = harness();
+    const connection = h.relay.open({ ...target, slotId: "s14", session: "w2", backend: "native", sessionId: gone, intent: "attach" });
+    const early: string[] = [];
+    const exits: (number | null)[] = [];
+    connection.onMissing?.(() => early.push("missing"));
+    connection.onExit((code) => exits.push(code));
+    h.sockets[0]!.accept();
+    h.sockets[0]!.deliver({ type: "error", termId: "s14", message: "SESSION_NOT_FOUND" });
+    expect(early).toEqual(["missing"]);
+    expect(exits).toEqual([null]);
+    // A pane that subscribes after the frame still learns it.
+    const late: string[] = [];
+    connection.onMissing?.(() => late.push("missing"));
+    expect(late).toEqual(["missing"]);
+    // Nothing reopens by itself: the only open on the wire is the one the pane asked for.
+    h.run();
+    expect(h.sockets[0]!.frames().filter((frame) => frame.type === "open")).toHaveLength(1);
+
+    const other = h.relay.open({ ...target, slotId: "s15", session: "w3", backend: "native", sessionId: gone, intent: "attach" });
+    const flagged: string[] = [];
+    other.onMissing?.(() => flagged.push("missing"));
+    h.sockets[0]!.deliver({ type: "error", termId: "s15", message: "SESSION_LIMIT" });
+    expect(flagged).toEqual([]);
+    h.relay.dispose();
+  });
+
+  it("[TC-PDTERM-174] reopening by name sends no UUID, and the new UUID is what later reconnects target", () => {
+    const h = harness();
+    // What the pane opens after its button is clicked (`missingSessionTarget`).
+    const connection = h.relay.open({ slotId: "s14", hostId: "h1", kind: "session", session: "w2", backend: "native", intent: "ensure", cols: 80, rows: 24 });
+    const sessions: string[] = [];
+    connection.onSession?.((id) => sessions.push(id));
+    h.sockets[0]!.accept();
+    const opened = h.sockets[0]!.frames().find((frame) => frame.type === "open") as { termId: string; target: Record<string, unknown> };
+    expect(opened.termId).toBe("s14");
+    expect(opened.target).toMatchObject({ kind: "session", session: "w2", backend: "native", intent: "ensure" });
+    expect(opened.target.sessionId).toBeUndefined();
+    h.sockets[0]!.deliver({ type: "ready", termId: "s14", pid: 9, backend: "native", sessionId: fresh });
+    expect(sessions).toEqual([fresh]);
+    h.sockets[0]!.drop(); h.run(); h.sockets[1]!.accept();
+    const again = h.sockets[1]!.frames().find((frame) => frame.type === "open")?.target as Record<string, unknown>;
+    expect(again).toMatchObject({ session: "w2", backend: "native", sessionId: fresh, intent: "attach" });
+    h.relay.dispose();
+  });
+});
