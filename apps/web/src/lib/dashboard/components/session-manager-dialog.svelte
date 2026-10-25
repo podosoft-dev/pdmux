@@ -13,7 +13,11 @@
   import SessionRenameDialog from "./session-rename-dialog.svelte";
   import SessionTerminateDialog from "./session-terminate-dialog.svelte";
 
-  let { open = $bindable(false), onChanged }: { open?: boolean; onChanged: () => Promise<void> } = $props();
+  let { open = $bindable(false), onChanged }: {
+    open?: boolean;
+    /** `renamed` is set when the change was a rename, so open slots can follow it. */
+    onChanged: (renamed?: { hostId: string; sessionId?: string; tmuxId?: string; name: string }) => Promise<void>;
+  } = $props();
   const i18n = getI18n();
   const feed = new FleetFeed({ includeHistory: false });
   let selectedKey = $state<string | null>(null);
@@ -46,9 +50,9 @@
     try { await feed.refresh(); }
     finally { loading = false; }
   }
-  async function changed(): Promise<void> {
+  async function changed(renamed?: { hostId: string; sessionId?: string; tmuxId?: string; name: string }): Promise<void> {
     await refresh();
-    await onChanged();
+    await onChanged(renamed);
   }
 </script>
 
@@ -91,5 +95,5 @@
     </div>
   </Dialog.Content>
 </Dialog.Root>
-<SessionRenameDialog bind:open={renameOpen} slot={selected?.slot ?? null} onRenamed={changed} />
+<SessionRenameDialog bind:open={renameOpen} slot={selected?.slot ?? null} onRenamed={(renamed) => changed(renamed)} />
 <SessionTerminateDialog bind:open={terminateOpen} slot={selected?.slot ?? null} hostName={selected?.hostName} onTerminated={changed} />

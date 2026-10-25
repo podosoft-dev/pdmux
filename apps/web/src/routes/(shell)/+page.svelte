@@ -52,6 +52,8 @@
     toggleFiles,
     toggleSidebar,
     toggleZoom,
+    adoptNativeSession,
+    renameSlotSessions,
   } from "@pdmux/core";
   import { toast } from "svelte-sonner";
   import { errorCode, terminalApi } from "#lib/dashboard/api.js";
@@ -455,9 +457,10 @@
     onScrollback={(slot: TerminalSlot, action: "enter" | "exit") => void scrollback(slot, action)}
     onTerminateSession={(slot: TerminalSlot) => { terminating = slot; terminateOpen = true; }}
     onSessionResolved={(slotId: string, sessionId: string) => {
-      const current = layout.slots.find(slot => slot?.id === slotId);
-      if (!current || current.sessionId === sessionId && current.kind === "attach") return;
-      shell.apply({ ...layout, slots: layout.slots.map(slot => slot?.id === slotId ? { ...slot, backend: "native", sessionId, kind: "attach", intent: "attach" } : slot) });
+      // Also the path a saved tmux pane takes when the host reopened it as native after a
+      // restart: the slot drops its tmux id and is saved as the native session.
+      const next = adoptNativeSession(layout, slotId, sessionId);
+      if (next !== layout) shell.apply(next);
     }}
     onReadHistory={readHistory}
     {diagnostics}
@@ -539,7 +542,7 @@
 </div>
 
 <SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
-<SessionRenameDialog bind:open={renameOpen} slot={renaming} onRenamed={() => shell.feed.refresh()} />
+<SessionRenameDialog bind:open={renameOpen} slot={renaming} onRenamed={(renamed) => { const next = renameSlotSessions(layout, renamed.hostId, renamed, renamed.name); if (next !== layout) shell.apply(next); return shell.feed.refresh(); }} />
 <TerminalPresentationDialog bind:open={presentationOpen} value={editingSlot} onSave={(value) => { if (editingSlotId) shell.apply(setSlotPresentation(layout, editingSlotId, value)); }} />
 
 <ConfirmDialog

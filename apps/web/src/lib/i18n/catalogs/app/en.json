@@ -327,6 +327,9 @@
       "trend": "recent trend"
     },
     "pane": {
+      "restoredReboot": "The host restarted, so session '{name}' was reopened. Programs that were running before were not restored.",
+      "restoredDismiss": "Dismiss",
+      "restoredMissing": "This session no longer exists on the host. Close this panel and open a new session.",
       "close": "Close (this cell stays empty)",
       "detach": "Open in a new window",
       "ephemeral": "Temporary terminal",

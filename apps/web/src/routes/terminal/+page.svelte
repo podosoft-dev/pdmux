@@ -21,7 +21,7 @@
   import SessionRenameDialog from "#lib/dashboard/components/session-rename-dialog.svelte";
   import TerminalPresentationDialog from "#lib/dashboard/components/terminal-presentation-dialog.svelte";
   import { TerminalGrid } from "@pdmux/ui";
-  import { type SlotKind, type TerminalLayout, type TerminalSlot, type TerminalPresentation, defaultLayout, focusSlot, setSlotPresentation, slotLabel, resolveSessionSlot } from "@pdmux/core";
+  import { type SlotKind, type TerminalLayout, type TerminalSlot, type TerminalPresentation, defaultLayout, focusSlot, setSlotPresentation, slotLabel, resolveSessionSlot, adoptNativeSession, renameSlotSessions } from "@pdmux/core";
   import { getI18n } from "#lib/i18n/index.js";
   import { TerminalRelay, defaultRelayUrl, type RelayStatus } from "#lib/dashboard/terminal-relay.js";
   import { uiTranslate } from "#lib/dashboard/ui-i18n.js";
@@ -58,6 +58,7 @@
       hostOffline: i18n.t.dash.terminal.hostOffline,
       restored: i18n.t.dash.terminal.restored,
       dropped: (bytes: number) => i18n.t.dash.terminal.dropped.replace("{count}", String(bytes)),
+      sessionMissing: i18n.t.pdmux.pane.restoredMissing,
     },
     onStatus: (status: RelayStatus) => (relayStatus = status),
   });
@@ -116,6 +117,16 @@
     });
   });
 
+  /** A rename made from this window carries into its slot and its URL. */
+  function renamedHere(renamed: { hostId: string; sessionId?: string; tmuxId?: string; name: string }): void {
+    const next = renameSlotSessions(layout, renamed.hostId, renamed, renamed.name);
+    if (next === layout) return;
+    layout = next;
+    const url = new URL(window.location.href);
+    url.searchParams.set("session", renamed.name);
+    replaceState(url, {});
+  }
+
   async function readHost(): Promise<void> {
     if (!data.hostId) return;
     try {
@@ -155,8 +166,8 @@
 {#snippet paneActions(actions: TerminalPaneActionContext)}<TerminalPaneActions {actions} standalone host={host ?? undefined} {canManage} {now} onManageSessions={() => sessionsOpen = true} onRenameSession={(slot) => { renaming = slot; renameOpen = true; }} onEditPresentation={() => presentationOpen = true} />{/snippet}
 {#snippet paneVeil(_actions: TerminalPaneActionContext)}<VmPaneVeil host={host ?? undefined} {canManage} {now} />{/snippet}
 <SessionTerminateDialog bind:open={terminateOpen} slot={terminating} />
-<SessionManagerDialog bind:open={sessionsOpen} onChanged={readHost} />
-<SessionRenameDialog bind:open={renameOpen} slot={renaming} onRenamed={readHost} />
+<SessionManagerDialog bind:open={sessionsOpen} onChanged={(renamed) => { if (renamed) renamedHere(renamed); return readHost(); }} />
+<SessionRenameDialog bind:open={renameOpen} slot={renaming} onRenamed={(renamed) => { renamedHere(renamed); return readHost(); }} />
 <TerminalPresentationDialog bind:open={presentationOpen} value={layout.slots[0]} onSave={(value) => {
   layout = setSlotPresentation(layout, "detached", value);
   const url = new URL(window.location.href);
@@ -186,13 +197,14 @@
       {paneVeil}
       onReadHistory={readTerminalHistory}
       onSessionResolved={(slotId: string, sessionId: string) => {
-        const slot = layout.slots.find(item => item?.id === slotId);
-        if (slot?.sessionId === sessionId) return;
-        layout = { ...layout, slots: layout.slots.map(item => item?.id === slotId ? { ...item, backend: "native", sessionId, kind: "attach", intent: "attach" } : item) };
+        const next = adoptNativeSession(layout, slotId, sessionId);
+        if (next === layout) return;
+        layout = next;
         const url = new URL(window.location.href);
         url.searchParams.set("backend", "native");
         url.searchParams.set("kind", "attach");
         url.searchParams.set("sessionId", sessionId);
+        url.searchParams.delete("tmuxId");
         replaceState(url, {});
       }}
       onTerminateSession={(slot: TerminalSlot) => { terminating = slot; terminateOpen = true; }}

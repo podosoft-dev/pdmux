@@ -81,6 +81,7 @@ function harness(): Harness {
       restored: "relay back",
       dropped: (bytes) => `${bytes} bytes lost`,
       failed: (message) => `failed: ${message}`,
+      sessionMissing: "session gone: close and reopen",
     },
     onStatus: (status) => statuses.push(status),
     onHostStatus: (hostId, status) => hostStatuses.push([hostId, status]),
@@ -588,7 +589,50 @@ it("[TC-PDUI-237] reconnects a renamed tmux session by its acknowledged ID", () 
   h.sockets[0]!.accept();
   h.sockets[0]!.deliver({ type: "ready", termId: "s1", pid: 42, tmuxId: "$9" });
   h.sockets[0]!.drop(); h.run(); h.sockets[1]!.accept();
-  expect(h.sockets[1]!.frames().find(frame => frame.type === "open")).toMatchObject({ target: { backend: "tmux", tmuxId: "$9" } });
-  expect((h.sockets[1]!.frames().find(frame => frame.type === "open")?.target as Record<string, unknown>).session).toBeUndefined();
+  // The name travels with the id so the host can tell a reused `$9` from this session.
+  expect(h.sockets[1]!.frames().find(frame => frame.type === "open")).toMatchObject({ target: { backend: "tmux", tmuxId: "$9", session: "old-name" } });
   h.relay.dispose();
+});
+
+describe("a saved pane across a host restart", () => {
+  const sessionId = "d5ac0000-0000-4000-8000-000000000001";
+
+  it("[TC-PDTERM-168] a saved tmux pane opens with its id and its name", () => {
+    const h = harness();
+    h.relay.open({ slotId: "s12", hostId: "h1", kind: "session", backend: "tmux", tmuxId: "$0", session: "claude-1", cols: 80, rows: 24 });
+    h.sockets[0]!.accept();
+    expect(h.sockets[0]!.frames().find(frame => frame.type === "open")).toMatchObject({ target: { backend: "tmux", tmuxId: "$0", session: "claude-1" } });
+    h.relay.dispose();
+  });
+
+  it("[TC-PDTERM-169] a pane the host reopened as native is announced and reconnects to the native UUID", () => {
+    const h = harness();
+    const connection = h.relay.open({ slotId: "s12", hostId: "h1", kind: "session", backend: "tmux", tmuxId: "$0", session: "claude-1", cols: 80, rows: 24 });
+    const sessions: string[] = [];
+    const restored: string[] = [];
+    connection.onSession?.((id) => sessions.push(id));
+    h.sockets[0]!.accept();
+    h.sockets[0]!.deliver({ type: "ready", termId: "s12", pid: 7, backend: "native", sessionId, restored: { reason: "reboot" } });
+    connection.onRestored?.((value) => restored.push(value.reason));
+    expect(sessions).toEqual([sessionId]);
+    // A listener that subscribes after the frame still learns it — the pane mounts late.
+    expect(restored).toEqual(["reboot"]);
+    h.sockets[0]!.drop(); h.run(); h.sockets[1]!.accept();
+    const reopen = h.sockets[1]!.frames().find(frame => frame.type === "open")?.target as Record<string, unknown>;
+    expect(reopen).toMatchObject({ backend: "native", sessionId, session: "claude-1", intent: "attach" });
+    expect(reopen.tmuxId).toBeUndefined();
+    h.relay.dispose();
+  });
+
+  it("[TC-PDTERM-170] a saved session the host no longer has says what to do instead of the code", () => {
+    const h = harness();
+    const connection = h.relay.open({ ...target, slotId: "s14", backend: "native", sessionId, intent: "attach" });
+    let written = "";
+    connection.onData((chunk) => { written += chunk; });
+    h.sockets[0]!.accept();
+    h.sockets[0]!.deliver({ type: "error", termId: "s14", message: "SESSION_NOT_FOUND" });
+    expect(written).toContain("session gone: close and reopen");
+    expect(written).not.toContain("SESSION_NOT_FOUND");
+    h.relay.dispose();
+  });
 });

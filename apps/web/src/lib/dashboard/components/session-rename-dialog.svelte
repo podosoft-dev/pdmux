@@ -12,7 +12,8 @@
   let { open = $bindable(false), slot, onRenamed }: {
     open?: boolean;
     slot: TerminalSlot | null;
-    onRenamed: () => Promise<void>;
+    /** The rename landed; `renamed` says which session it was, so slots can follow it. */
+    onRenamed: (renamed: { hostId: string; sessionId?: string; tmuxId?: string; name: string }) => Promise<void>;
   } = $props();
   const i18n = getI18n();
   let name = $state("");
@@ -31,8 +32,8 @@
     busy = true;
     error = "";
     try {
-      await terminalApi.rename(target.hostId, target.sessionId, name, target.tmuxId);
-      await onRenamed();
+      const result = await terminalApi.rename(target.hostId, target.sessionId, name, target.tmuxId);
+      await onRenamed({ hostId: target.hostId, name: result.name, ...(target.tmuxId ? { tmuxId: target.tmuxId } : { sessionId: target.sessionId }) });
       open = false;
     } catch (cause: unknown) {
       const code = errorCode(cause);

@@ -23,6 +23,7 @@
     cardPrefs,
     freshMetrics,
     setSidebarWidth,
+    renameSlotSessions,
   } from "@pdmux/core";
   import LanguageSwitch from "#lib/components/language-switch.svelte";
   import ImpersonationBanner from "#lib/components/impersonation-banner.svelte";
@@ -122,6 +123,7 @@
         hostOffline: i18n.t.dash.terminal.hostOffline,
         restored: i18n.t.dash.terminal.restored,
         dropped: (bytes: number) => i18n.t.dash.terminal.dropped.replace("{count}", String(bytes)),
+        sessionMissing: i18n.t.pdmux.pane.restoredMissing,
       },
     }),
   );
@@ -413,7 +415,7 @@
 </div>
 
 <SettingsDialog data={data} />
-<SessionManagerDialog bind:open={shell.sessionsOpen} onChanged={() => shell.feed.refresh()} />
+<SessionManagerDialog bind:open={shell.sessionsOpen} onChanged={(renamed) => { if (renamed) { const next = renameSlotSessions(shell.layout, renamed.hostId, renamed, renamed.name); if (next !== shell.layout) shell.apply(next); } return shell.feed.refresh(); }} />
 
 <!-- The card's own way out of the fleet. Declared here and handed to the popover as a
      value, so a member is passed nothing at all rather than an empty section.

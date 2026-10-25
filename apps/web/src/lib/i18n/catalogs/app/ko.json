@@ -327,6 +327,9 @@
       "trend": "최근 추세"
     },
     "pane": {
+      "restoredReboot": "호스트가 재부팅되어 '{name}' 세션을 새로 열었습니다. 이전에 실행 중이던 프로그램은 복구되지 않습니다.",
+      "restoredDismiss": "닫기",
+      "restoredMissing": "이 세션은 호스트에 더 이상 없습니다. 이 패널을 닫고 새 세션을 여세요.",
       "close": "닫기(이 칸은 빈 칸으로 남는다)",
       "detach": "새 창으로 열기",
       "ephemeral": "임시 터미널",

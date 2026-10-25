@@ -48,6 +48,8 @@ export interface RelayMessages {
   restored: string;
   dropped: (bytes: number) => string;
   failed: (message: string) => string;
+  /** The saved session is gone and the host could not reopen it. */
+  sessionMissing: string;
 }
 
 export interface TerminalRelayOptions {
@@ -76,6 +78,7 @@ const DEFAULT_MESSAGES: RelayMessages = {
   restored: "reconnected",
   dropped: (bytes) => `${bytes} bytes dropped`,
   failed: (message) => message,
+  sessionMissing: "this session no longer exists on the host; close this panel and open a new session",
 };
 
 const OPEN = 1;
@@ -116,6 +119,9 @@ interface PaneEntry {
   tmuxId?: string;
   intent?: "create" | "attach" | "ensure";
   sessionListeners: Set<(id: string) => void>;
+  restoredListeners: Set<(restored: { reason: "reboot" }) => void>;
+  /** Set when the host reopened this pane as a new shell after a restart. */
+  restored?: { reason: "reboot" };
   viewListeners: Set<(viewport: NativeViewport) => void>;
   viewport?: NativeViewport;
   termId: string;
@@ -211,7 +217,7 @@ export class TerminalRelay implements TerminalAdapter {
       ...(target.tmuxId ? { tmuxId: target.tmuxId } : {}),
       ...(target.sessionId ? { sessionId: target.sessionId } : {}),
       ...(target.intent ? { intent: target.intent } : {}),
-      sessionListeners: new Set(), viewListeners: new Set(),
+      sessionListeners: new Set(), viewListeners: new Set(), restoredListeners: new Set(),
       ...(target.session ? { session: target.session } : {}),
       cols: target.cols,
       rows: target.rows,
@@ -233,6 +239,7 @@ export class TerminalRelay implements TerminalAdapter {
       viewport: (x: number, y: number, follow = false): void => { this.send(connection, { type: "viewport", termId: entry.termId, x, y, follow }); },
       onViewport: (listener: (viewport: NativeViewport) => void): (() => void) => { entry.viewListeners.add(listener); if (entry.viewport) listener(entry.viewport); return () => entry.viewListeners.delete(listener); },
       onSession: (listener: (id: string) => void): (() => void) => { entry.sessionListeners.add(listener); if (entry.sessionId) listener(entry.sessionId); return () => entry.sessionListeners.delete(listener); },
+      onRestored: (listener: (restored: { reason: "reboot" }) => void): (() => void) => { entry.restoredListeners.add(listener); if (entry.restored) listener(entry.restored); return () => entry.restoredListeners.delete(listener); },
       send: (data: string, source?: "wheel"): void => {
         if (entry.closed) return;
         this.send(connection, { type: "input", termId: entry.termId, data, ...(source ? { source } : {}) });
@@ -502,7 +509,10 @@ export class TerminalRelay implements TerminalAdapter {
       termId: pane.termId,
       target: {
         kind: pane.kind,
-        ...(pane.tmuxId ? { tmuxId: pane.tmuxId } : pane.session ? { session: pane.session } : {}),
+        // The name travels with a tmux id: the host checks the pair, and reopens the
+        // session by name when the restart took the tmux server away.
+        ...(pane.tmuxId && pane.backend !== "native" ? { tmuxId: pane.tmuxId } : {}),
+        ...(pane.session ? { session: pane.session } : {}),
         ...(pane.backend ? { backend: pane.backend } : {}),
         ...(pane.sessionId ? { sessionId: pane.sessionId } : {}),
         ...(pane.intent ? { intent: pane.intent } : {}),
@@ -545,8 +555,15 @@ export class TerminalRelay implements TerminalAdapter {
       case "ready":
         if (frame.tmuxId) { pane.tmuxId = frame.tmuxId; pane.backend = "tmux"; }
         if (frame.backend === "native" && frame.sessionId) {
+          // Also the answer for a saved tmux pane the host reopened as native: every
+          // later open must target this UUID, not the tmux id it was saved with.
           pane.backend = "native"; pane.sessionId = frame.sessionId; pane.intent = "attach";
+          delete pane.tmuxId;
           for (const listener of pane.sessionListeners) listener(frame.sessionId);
+        }
+        if (frame.restored) {
+          pane.restored = frame.restored;
+          for (const listener of pane.restoredListeners) listener(frame.restored);
         }
         this.attached(connection, pane);
         break;
@@ -566,7 +583,10 @@ export class TerminalRelay implements TerminalAdapter {
         this.release(connection, pane, frame.code);
         break;
       case "error":
-        this.emit(pane, notice(this.messages.failed(frame.message)));
+        // A saved session the host no longer has (and could not reopen — no restart, or
+        // an agent too old to restore) is the one refusal a person can act on: say what
+        // to do instead of the bare code.
+        this.emit(pane, notice(frame.message === "SESSION_NOT_FOUND" ? this.messages.sessionMissing : this.messages.failed(frame.message)));
         this.release(connection, pane, null);
         break;
     }
