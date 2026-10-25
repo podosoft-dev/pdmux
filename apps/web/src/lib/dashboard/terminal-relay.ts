@@ -70,6 +70,10 @@ export interface TerminalRelayOptions {
   random?: () => number;
   schedule?: (fn: () => void, ms: number) => unknown;
   cancel?: (handle: unknown) => void;
+  /** Clock for the ping watchdog. */
+  now?: () => number;
+  /** How often an open socket is pinged; see `watch`. */
+  pingIntervalMs?: number;
 }
 
 const DEFAULT_MESSAGES: RelayMessages = {
@@ -82,6 +86,10 @@ const DEFAULT_MESSAGES: RelayMessages = {
 };
 
 const OPEN = 1;
+/** The browser's liveness probe and the server's answer (`apps/api/src/pdmux/pdmux.ws.ts`). */
+const PING_INTERVAL_MS = 10_000;
+/** Silence after which a socket whose server answers pings is taken for dead. */
+const PING_MISSES = 2.5;
 /** The API relay's close code for a host without a connected agent (`terminal-relay.service.ts`). */
 const HOST_OFFLINE_CLOSE = 4001;
 
@@ -157,6 +165,10 @@ interface HostConnection {
   status: RelayStatus;
   /** Whether the fleet last said this host is reachable — see `noteReachable`. */
   reachable: boolean | null;
+  /** Ping watchdog: its timer, the last frame of any kind, and whether this socket's server answers pings. */
+  pingHandle: unknown;
+  lastInboundAt: number;
+  pongSeen: boolean;
 }
 
 export class TerminalRelay implements TerminalAdapter {
@@ -170,6 +182,8 @@ export class TerminalRelay implements TerminalAdapter {
   private readonly random: () => number;
   private readonly schedule: (fn: () => void, ms: number) => unknown;
   private readonly cancel: (handle: unknown) => void;
+  private readonly now: () => number;
+  private readonly pingIntervalMs: number;
 
   private readonly connections = new Map<string, HostConnection>();
   private disposed = false;
@@ -188,6 +202,8 @@ export class TerminalRelay implements TerminalAdapter {
     this.random = options.random ?? Math.random;
     this.schedule = options.schedule ?? ((fn, ms) => setTimeout(fn, ms));
     this.cancel = options.cancel ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+    this.now = options.now ?? Date.now;
+    this.pingIntervalMs = options.pingIntervalMs ?? PING_INTERVAL_MS;
   }
 
   /** How many panes currently hold a connection. Used by the page's status line. */
@@ -371,6 +387,9 @@ export class TerminalRelay implements TerminalAdapter {
       panes: new Map(),
       status: "idle",
       reachable: null,
+      pingHandle: null,
+      lastInboundAt: 0,
+      pongSeen: false,
     };
     this.connections.set(hostId, created);
     return created;
@@ -386,6 +405,8 @@ export class TerminalRelay implements TerminalAdapter {
   private closeSocket(connection: HostConnection): void {
     if (connection.connectHandle !== null) this.cancel(connection.connectHandle);
     connection.connectHandle = null;
+    if (connection.pingHandle !== null) this.cancel(connection.pingHandle);
+    connection.pingHandle = null;
     const socket = connection.socket;
     connection.socket = null;
     if (!socket) return;
@@ -460,6 +481,7 @@ export class TerminalRelay implements TerminalAdapter {
       if (connection.connectHandle !== null) this.cancel(connection.connectHandle);
       connection.connectHandle = null;
       connection.hadConnection = true;
+      this.watch(connection, socket);
       // Re-open every live pane. The default target is a multiplexer session, so
       // this reattaches to work that kept running while the socket was away.
       for (const pane of connection.panes.values()) {
@@ -539,11 +561,16 @@ export class TerminalRelay implements TerminalAdapter {
   }
 
   private receive(connection: HostConnection, raw: unknown): void {
+    connection.lastInboundAt = this.now();
     let payload: unknown;
     try {
       payload = JSON.parse(String(raw));
     } catch {
       return; // A frame we cannot read costs that frame, never the socket.
+    }
+    if (isPong(payload)) {
+      connection.pongSeen = true;
+      return;
     }
     const parsed = parseTerminalServerFrame(payload);
     if (!parsed.ok) return;
@@ -620,4 +647,38 @@ export class TerminalRelay implements TerminalAdapter {
     pane.exit.clear();
     this.refreshStatus();
   }
+
+  /**
+   * Ping an open socket and drop it when its server has gone quiet.
+   *
+   * ⚠ A HALF-OPEN SOCKET NEVER CLOSES ON ITS OWN. A proxy that went away without a FIN, or a
+   * laptop that changed networks, leaves `readyState` at OPEN while nothing arrives and every
+   * keystroke disappears — the server pings the browser at the protocol level, but a browser
+   * cannot see or answer that from script. So the page asks: an application `ping` every
+   * interval, which the server answers with `pong`.
+   *
+   * ⚠ ONLY A SERVER THAT HAS ANSWERED ONE IS HELD TO IT. An older server ignores the ping, and
+   * dropping its socket for silence would reconnect a healthy terminal every half minute. Any
+   * frame counts as life, so a busy pane is never dropped for a late pong.
+   */
+  private watch(connection: HostConnection, socket: RelaySocket): void {
+    connection.lastInboundAt = this.now();
+    connection.pongSeen = false;
+    const tick = (): void => {
+      connection.pingHandle = null;
+      if (connection.socket !== socket || socket.readyState !== OPEN) return;
+      if (connection.pongSeen && this.now() - connection.lastInboundAt > this.pingIntervalMs * PING_MISSES) {
+        this.dropped(connection);
+        return;
+      }
+      try { socket.send(JSON.stringify({ type: "ping", termId: "", ts: this.now() })); } catch { this.dropped(connection); return; }
+      connection.pingHandle = this.schedule(tick, this.pingIntervalMs);
+    };
+    if (connection.pingHandle !== null) this.cancel(connection.pingHandle);
+    connection.pingHandle = this.schedule(tick, this.pingIntervalMs);
+  }
+}
+
+function isPong(payload: unknown): boolean {
+  return typeof payload === "object" && payload !== null && (payload as { type?: unknown }).type === "pong";
 }
