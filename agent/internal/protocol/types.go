@@ -754,6 +754,9 @@ type AgentConnectorAbility struct {
 
 // AgentHello is the first frame on every connection.
 type AgentHello struct {
+	// BootID is this host's current boot identity; empty (omitted) where the
+	// platform has none or it could not be read.
+	BootID          *string              `json:"bootId,omitempty"`
 	Terminal        AgentTerminalAbility `json:"terminal"`
 	ProtocolVersion int                  `json:"protocolVersion"`
 	// AgentVersion is ⚠ FREE-FORM ON PURPOSE — do not tighten it to a SemVer

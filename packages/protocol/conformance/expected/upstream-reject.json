@@ -12,6 +12,8 @@
 		"heartbeat-cpu-fractional": "heartbeat.resource.cpuPct: Expected integer, received float",
 		"diagnostic-message-too-long": "heartbeat.diagnostics.0.message: String must contain at most 512 character(s)",
 		"repos-limit-zero": "repos.0.limit: Number must be greater than 0",
-		"terminal-native-invalid-screen": "frame.cols: Number must be greater than 0"
+		"terminal-native-invalid-screen": "frame.cols: Number must be greater than 0",
+		"terminal-ready-restored-unknown-reason": "frame.restored.reason: Invalid enum value. Expected 'reboot', received 'crash'",
+		"hello-boot-id-empty": "hello.bootId: Invalid"
 	}
 }

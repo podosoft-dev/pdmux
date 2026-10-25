@@ -74,3 +74,32 @@ it('[TC-PDUI-237] validates stable tmux targets and ready identities independent
  expect(parseTerminalServerFrame(ready)).toEqual({ ok: true, data: terminalServerFrameSchema.parse(ready) });
  for (const tmuxId of ['name', '-a', '$3;kill-server', '$']) expect(parseTerminalServerFrame({ ...ready, tmuxId }).ok).toBe(false);
 });
+
+describe('reboot restore travels as an optional, additive field', () => {
+	const sessionId = 'd5ac0000-0000-4000-8000-000000000001';
+	const ready = { type: 'ready', termId: 's14', backend: 'native', sessionId, pid: 7, restored: { reason: 'reboot' } };
+
+	it('[TC-PDPROTO-016] a ready frame says a session was reopened, and both parsers agree', () => {
+		const canonical = terminalServerFrameSchema.parse(ready);
+		expect(canonical).toMatchObject({ restored: { reason: 'reboot' } });
+		expect(parseTerminalServerFrame(ready)).toEqual({ ok: true, data: canonical });
+		// Agents older than restore never send it; their frame is unchanged.
+		const { restored: _restored, ...old } = ready;
+		expect(terminalServerFrameSchema.parse(old)).not.toHaveProperty('restored');
+		expect(parseTerminalServerFrame(old)).toEqual({ ok: true, data: terminalServerFrameSchema.parse(old) });
+	});
+
+	it('[TC-PDPROTO-017] an unknown restore reason is refused by the contract and ignored by the browser', () => {
+		const future = { ...ready, restored: { reason: 'crash' } };
+		expect(terminalServerFrameSchema.safeParse(future).success).toBe(false);
+		// The browser keeps the terminal and only drops the announcement it cannot read.
+		const browser = parseTerminalServerFrame(future);
+		expect(browser.ok).toBe(true);
+		if (browser.ok) expect(browser.data).not.toHaveProperty('restored');
+	});
+
+	it('[TC-PDPROTO-018] an open target carries the saved tmux id together with its name', () => {
+		const frame = { type: 'open', termId: 's12', target: { kind: 'session', backend: 'tmux', tmuxId: '$0', session: 'claude-1', cols: 80, rows: 24 } };
+		expect(terminalClientFrameSchema.parse(frame)).toMatchObject({ target: { tmuxId: '$0', session: 'claude-1' } });
+	});
+});

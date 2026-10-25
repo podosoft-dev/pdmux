@@ -525,8 +525,17 @@ func (f *DetailAckFrame) stampDownstream() DownstreamType {
 // Terminal branches
 // ---------------------------------------------------------------------------
 
+// TerminalRestored says why a terminal came back as a new shell. The only reason
+// is "reboot": the programs that were running are not revived.
+type TerminalRestored struct {
+	Reason string `json:"reason"`
+}
+
 // TerminalReady says the PTY is up.
 type TerminalReady struct {
+	// Restored is set when this terminal is a NEW shell reopened under its saved
+	// identity because the host restarted. Absent otherwise, and from older agents.
+	Restored  *TerminalRestored  `json:"restored,omitempty"`
 	TmuxID    *string            `json:"tmuxId,omitempty"`
 	Backend   *string            `json:"backend,omitempty"`
 	SessionID *string            `json:"sessionId,omitempty"`

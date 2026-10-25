@@ -708,9 +708,22 @@ export const terminalClientFrameSchema = z.discriminatedUnion('type', [
 ]);
 export type TerminalClientFrame = z.infer<typeof terminalClientFrameSchema>;
 
+/**
+ * Why a terminal came back as a NEW shell under its saved identity.
+ *
+ * ⚠ ONLY `reboot` EXISTS, ON PURPOSE. A session is reopened only when the host
+ * restarted (a native session recorded in an earlier boot, or a saved tmux session
+ * whose server is gone). The programs that were running are not revived, and the
+ * pane says so; a closed enum keeps a future reason from arriving unannounced.
+ * The whole object is optional, so older servers strip it and older agents never
+ * send it.
+ */
+const terminalRestoredSchema = z.object({ reason: z.enum(['reboot']) });
+export type TerminalRestored = z.infer<typeof terminalRestoredSchema>;
+
 /** Agent -> server -> browser. */
 export const terminalServerFrameSchema = z.discriminatedUnion('type', [
-	z.object({ type: z.literal('ready'), termId: z.string(), pid: z.number().int().nullable().default(null), backend: z.enum(['native', 'tmux']).optional(), sessionId: z.string().uuid().optional(), tmuxId: z.string().regex(/^\$[0-9]{1,16}$/).optional() }),
+	z.object({ type: z.literal('ready'), termId: z.string(), pid: z.number().int().nullable().default(null), backend: z.enum(['native', 'tmux']).optional(), sessionId: z.string().uuid().optional(), tmuxId: z.string().regex(/^\$[0-9]{1,16}$/).optional(), restored: terminalRestoredSchema.optional() }),
 	z.object({ type: z.literal('screen'), termId: z.string(), data: z.string().max(65536), sequence: z.number().int().nonnegative(), cols: z.number().int().positive().max(1000), rows: z.number().int().positive().max(500), canvasCols: z.number().int().positive().max(1000), canvasRows: z.number().int().positive().max(500), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean(), alternate: z.boolean().optional(), history: z.number().int().nonnegative().max(5000).optional() }),
 	z.object({ type: z.literal('session-result'), termId: z.string(), lines: z.array(z.string()), screenOnly: z.boolean().default(false), error: z.string().max(512).default(''), name: z.string().regex(SESSION_NAME_PATTERN).optional() }),
 	z.object({
@@ -828,6 +841,12 @@ export const agentHelloSchema = z.object({
 	/** A growable object, not a closed capability enum, so old servers ignore it safely. */
 	connectors: agentConnectorAbilitySchema.default({ cloudflared: false }),
 	terminal: agentTerminalAbilitySchema.default({}),
+	/**
+	 * This host's current boot identity (Linux `boot_id`, macOS
+	 * `kern.bootsessionuuid`). Absent from older agents and from platforms without
+	 * one; a change between two hellos means the host restarted.
+	 */
+	bootId: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
 });
 export type AgentHello = z.infer<typeof agentHelloSchema>;
 

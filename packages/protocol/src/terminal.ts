@@ -10,7 +10,7 @@ export const TERMINAL_WS_PATH = '/terminal/ws';
 export const SESSION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 
 export type TerminalServerFrame =
-	| { type: 'ready'; termId: string; pid: number | null; backend?: 'native' | 'tmux'; sessionId?: string; tmuxId?: string }
+	| { type: 'ready'; termId: string; pid: number | null; backend?: 'native' | 'tmux'; sessionId?: string; tmuxId?: string; restored?: { reason: 'reboot' } }
 	| { type: 'screen'; termId: string; data: string; sequence: number; cols: number; rows: number; canvasCols: number; canvasRows: number; x: number; y: number; follow: boolean; alternate?: boolean; history?: number }
 	| { type: 'session-result'; termId: string; lines: string[]; screenOnly: boolean; error: string; name?: string }
 	| { type: 'output'; termId: string; data: string; dropped: number }
@@ -44,7 +44,10 @@ export function parseTerminalServerFrame(value: unknown): TerminalServerFramePar
 			if (pid === undefined) return { ok: false, error: 'pid: expected integer or null' };
 			if (frame.backend !== undefined && frame.backend !== 'native' && frame.backend !== 'tmux') return { ok: false, error: 'backend: invalid' };
 			if (frame.sessionId !== undefined && (typeof frame.sessionId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(frame.sessionId))) return { ok: false, error: 'sessionId: invalid' };
-			return { ok: true, data: { type: 'ready', termId: frame.termId, pid, ...(frame.backend ? { backend: frame.backend } : {}), ...(typeof frame.sessionId === 'string' ? { sessionId: frame.sessionId } : {}), ...(typeof frame.tmuxId === 'string' ? { tmuxId: frame.tmuxId } : {}) } };
+			// An unknown restore reason is dropped rather than failing the frame: the
+			// terminal still works, it just is not announced as reopened.
+			const restored = recordOf(frame.restored)?.reason === 'reboot' ? { restored: { reason: 'reboot' as const } } : {};
+			return { ok: true, data: { type: 'ready', termId: frame.termId, pid, ...(frame.backend ? { backend: frame.backend } : {}), ...(typeof frame.sessionId === 'string' ? { sessionId: frame.sessionId } : {}), ...(typeof frame.tmuxId === 'string' ? { tmuxId: frame.tmuxId } : {}), ...restored } };
 		}
 		case 'screen': {
             if (frame.alternate !== undefined && typeof frame.alternate !== 'boolean') return { ok: false, error: 'screen.alternate: invalid boolean' };

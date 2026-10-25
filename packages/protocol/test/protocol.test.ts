@@ -180,6 +180,18 @@ describe('[TC-PDPROTO-006] safeParse never throws and names the offending field'
 	});
 });
 
+describe('[TC-PDPROTO-019] hello may report the host boot identity', () => {
+	const hello = { protocolVersion: 1, agentVersion: '0.1.36', hostname: 'h', os: 'linux', arch: 'amd64' };
+	it('[TC-PDPROTO-019] accepts a boot identity, keeps older hellos valid, refuses a malformed one', () => {
+		expect(agentHelloSchema.parse({ ...hello, bootId: '3f2a9c1e-6b7d-4e8f-9a0b-1c2d3e4f5a6b' }).bootId).toBe('3f2a9c1e-6b7d-4e8f-9a0b-1c2d3e4f5a6b');
+		// Agent 0.1.35 and older omit it; nothing defaults it into existence.
+		expect(agentHelloSchema.parse(hello)).not.toHaveProperty('bootId');
+		for (const bootId of ['', 'short', 'x'.repeat(65), '../etc/passwd']) {
+			expect(agentHelloSchema.safeParse({ ...hello, bootId }).success).toBe(false);
+		}
+	});
+});
+
 describe('[TC-PDPROTO-007] the contract evolves additively', () => {
 	it('[TC-PDPROTO-007] freezes the top-level key sets of the wire types', () => {
 		// Renaming or removing a key breaks every already-installed agent. If this

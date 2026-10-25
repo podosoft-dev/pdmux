@@ -647,6 +647,10 @@
           "maxLength": 32,
           "type": "string"
         },
+        "bootId": {
+          "pattern": "^[A-Za-z0-9-]{8,64}$",
+          "type": "string"
+        },
         "capabilities": {
           "default": [],
           "items": {
@@ -2850,6 +2854,21 @@
                 }
               ],
               "default": null
+            },
+            "restored": {
+              "additionalProperties": true,
+              "properties": {
+                "reason": {
+                  "enum": [
+                    "reboot"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason"
+              ],
+              "type": "object"
             },
             "sessionId": {
               "format": "uuid",

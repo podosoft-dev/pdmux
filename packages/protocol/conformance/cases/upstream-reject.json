@@ -149,6 +149,45 @@
 					"follow": true
 				}
 			}
+		},
+		{
+			"id": "terminal-ready-restored-unknown-reason",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "Only a reboot reopens a session; an unknown reason must not reach a browser as an announcement nobody defined.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "ready",
+					"termId": "s14",
+					"backend": "native",
+					"sessionId": "d5ac0000-0000-4000-8000-000000000001",
+					"pid": 7,
+					"restored": {
+						"reason": "crash"
+					}
+				}
+			}
+		},
+		{
+			"id": "hello-boot-id-empty",
+			"direction": "upstream",
+			"expect": "reject",
+			"why": "An empty boot identity is not an answer; the agent must omit the key instead.",
+			"frame": {
+				"type": "hello",
+				"hello": {
+					"protocolVersion": 1,
+					"agentVersion": "0.1.36",
+					"hostname": "build-01",
+					"os": "linux",
+					"arch": "amd64",
+					"capabilities": [
+						"metrics"
+					],
+					"bootId": ""
+				}
+			}
 		}
 	]
 }

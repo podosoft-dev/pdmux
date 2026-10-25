@@ -401,6 +401,45 @@
 				"type": "session-result"
 			},
 			"type": "terminal"
+		},
+		"terminal-ready-restored": {
+			"frame": {
+				"backend": "native",
+				"pid": 7,
+				"restored": {
+					"reason": "reboot"
+				},
+				"sessionId": "d5ac0000-0000-4000-8000-000000000001",
+				"termId": "s14",
+				"type": "ready"
+			},
+			"type": "terminal"
+		},
+		"hello-boot-id": {
+			"hello": {
+				"address": "",
+				"agentVersion": "0.1.36",
+				"arch": "amd64",
+				"bootId": "3f2a9c1e-6b7d-4e8f-9a0b-1c2d3e4f5a6b",
+				"capabilities": [
+					"metrics"
+				],
+				"connectors": {
+					"cloudflared": false
+				},
+				"hostname": "build-01",
+				"os": "linux",
+				"protocolVersion": 1,
+				"terminal": {
+					"nativeSessions": false,
+					"screenProtocol": 0
+				},
+				"update": {
+					"canRestart": false,
+					"restartMode": "none"
+				}
+			},
+			"type": "hello"
 		}
 	},
 	"rejected": {}

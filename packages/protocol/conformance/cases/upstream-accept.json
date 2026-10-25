@@ -244,6 +244,45 @@
 					]
 				}
 			}
+		},
+		{
+			"id": "terminal-ready-restored",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "A session reopened after a host restart says so on its ready frame; Go must emit and both languages must read the same optional object.",
+			"frame": {
+				"type": "terminal",
+				"frame": {
+					"type": "ready",
+					"termId": "s14",
+					"backend": "native",
+					"sessionId": "d5ac0000-0000-4000-8000-000000000001",
+					"pid": 7,
+					"restored": {
+						"reason": "reboot"
+					}
+				}
+			}
+		},
+		{
+			"id": "hello-boot-id",
+			"direction": "upstream",
+			"expect": "accept",
+			"why": "A hello may carry the host's boot identity; older agents omit it and nothing defaults it.",
+			"frame": {
+				"type": "hello",
+				"hello": {
+					"protocolVersion": 1,
+					"agentVersion": "0.1.36",
+					"hostname": "build-01",
+					"os": "linux",
+					"arch": "amd64",
+					"capabilities": [
+						"metrics"
+					],
+					"bootId": "3f2a9c1e-6b7d-4e8f-9a0b-1c2d3e4f5a6b"
+				}
+			}
 		}
 	]
 }
