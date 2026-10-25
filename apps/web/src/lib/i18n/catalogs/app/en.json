@@ -1032,7 +1032,8 @@
       "missingTarget": "No terminal target was given",
       "reconnecting": "Reconnecting to the terminal relay…",
       "restored": "Reconnected to the terminal",
-      "unavailable": "The terminal relay is not reachable"
+      "unavailable": "The terminal relay is not reachable",
+      "failed": "The terminal stopped with an error: {message}"
     },
     "title": "Dashboard",
     "tokens": {

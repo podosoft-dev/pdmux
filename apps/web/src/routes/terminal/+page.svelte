@@ -28,6 +28,7 @@
   import { hostsApi } from "#lib/dashboard/api.js";
   import { FleetEvents } from "#lib/dashboard/fleet-events.js";
   import { ServerConnection, TransportLoss, isServerUnreachable } from "#lib/dashboard/server-connection.svelte.js";
+  import { relayMessages } from "#lib/dashboard/wording.js";
   import { gridHosts } from "#lib/dashboard/map.js";
   import { readTerminalHistory } from "#lib/dashboard/terminal-history.js";
   import type { HostView } from "#lib/dashboard/types.js";
@@ -57,13 +58,7 @@
 
   const relay = new TerminalRelay({
     url: browser ? defaultRelayUrl(window.location) : "",
-    messages: {
-      reconnecting: i18n.t.dash.terminal.reconnecting,
-      hostOffline: i18n.t.dash.terminal.hostOffline,
-      restored: i18n.t.dash.terminal.restored,
-      dropped: (bytes: number) => i18n.t.dash.terminal.dropped.replace("{count}", String(bytes)),
-      sessionMissing: i18n.t.pdmux.pane.restoredMissing,
-    },
+    messages: () => relayMessages(i18n.t),
     onStatus: (status: RelayStatus) => (relayStatus = status),
     onHostStatus: (hostId: string, status: RelayStatus) => transportLoss.note(hostId, status),
   });

@@ -1032,7 +1032,8 @@
       "missingTarget": "터미널 대상이 지정되지 않았습니다",
       "reconnecting": "터미널 중계에 다시 연결하는 중…",
       "restored": "터미널에 다시 연결했습니다",
-      "unavailable": "터미널 중계에 연결할 수 없습니다"
+      "unavailable": "터미널 중계에 연결할 수 없습니다",
+      "failed": "터미널이 오류로 중단되었습니다: {message}"
     },
     "title": "대시보드",
     "tokens": {

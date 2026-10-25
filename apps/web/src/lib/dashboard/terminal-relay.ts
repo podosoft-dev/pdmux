@@ -56,7 +56,11 @@ export interface TerminalRelayOptions {
   /** Base socket URL; the host id is appended as a query parameter per connection. */
   url?: string;
   createSocket?: (url: string) => RelaySocket;
-  messages?: Partial<RelayMessages>;
+  /**
+   * A function when the wording can change while the relay lives — a locale switch must not
+   * leave the next notice in the language the page loaded in.
+   */
+  messages?: Partial<RelayMessages> | (() => Partial<RelayMessages>);
   onStatus?: (status: RelayStatus) => void;
   /**
    * One host's status changed. The page shows it on that host's panes only — the
@@ -174,7 +178,7 @@ interface HostConnection {
 export class TerminalRelay implements TerminalAdapter {
   private readonly url: string;
   private readonly createSocket: (url: string) => RelaySocket;
-  private readonly messages: RelayMessages;
+  private readonly wording: () => Partial<RelayMessages>;
   private readonly onStatus: (status: RelayStatus) => void;
   private readonly onHostStatus: (hostId: string, status: RelayStatus) => void;
   private readonly retryBaseMs: number;
@@ -194,7 +198,8 @@ export class TerminalRelay implements TerminalAdapter {
     this.url = options.url ?? "";
     this.createSocket =
       options.createSocket ?? ((url: string) => new WebSocket(url) as unknown as RelaySocket);
-    this.messages = { ...DEFAULT_MESSAGES, ...(options.messages ?? {}) };
+    const messages = options.messages;
+    this.wording = typeof messages === "function" ? messages : () => messages ?? {};
     this.onStatus = options.onStatus ?? ((): void => {});
     this.onHostStatus = options.onHostStatus ?? ((): void => {});
     this.retryBaseMs = options.retryBaseMs ?? 500;
@@ -204,6 +209,11 @@ export class TerminalRelay implements TerminalAdapter {
     this.cancel = options.cancel ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
     this.now = options.now ?? Date.now;
     this.pingIntervalMs = options.pingIntervalMs ?? PING_INTERVAL_MS;
+  }
+
+  /** Read at each notice, so the wording follows the page's current locale. */
+  private get messages(): RelayMessages {
+    return { ...DEFAULT_MESSAGES, ...this.wording() };
   }
 
   /** How many panes currently hold a connection. Used by the page's status line. */

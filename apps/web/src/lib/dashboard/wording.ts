@@ -14,6 +14,7 @@
  */
 import type { Messages } from "#lib/i18n/messages.js";
 import { errorCode } from "./api";
+import type { RelayMessages } from "./terminal-relay";
 
 /** For a code already in hand — a recorded one, e.g. the feed's last failure. */
 export function codeMessage(code: string | null, t: Messages): string {
@@ -42,4 +43,21 @@ export function agentUpdateMessage(cause: unknown, t: Messages): string {
   if (code === "AGENT_RELEASE_UNAVAILABLE" || code === "AGENT_RELEASE_INVALID") return t.dash.agent.noRelease;
   if (code === "NO_CANARY") return t.dash.agent.noCanary;
   return causeMessage(cause, t);
+}
+
+/**
+ * The notices the terminal relay writes into a pane, in the page's current language.
+ *
+ * `failed` wraps the relay's own reason, which is a protocol string and stays as the server
+ * wrote it; the sentence around it is what the reader needs in their language.
+ */
+export function relayMessages(t: Messages): RelayMessages {
+  return {
+    reconnecting: t.dash.terminal.reconnecting,
+    hostOffline: t.dash.terminal.hostOffline,
+    restored: t.dash.terminal.restored,
+    dropped: (bytes: number) => t.dash.terminal.dropped.replace("{count}", String(bytes)),
+    failed: (message: string) => t.dash.terminal.failed.replace("{message}", message),
+    sessionMissing: t.pdmux.pane.restoredMissing,
+  };
 }

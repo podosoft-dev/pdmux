@@ -62,8 +62,11 @@ export interface ShellSeed {
   /** False when the prefs request failed — then, and only then, the cache speaks. */
   prefsOk?: boolean;
   fleet: FleetSettingsView;
-  /** Relay notices are user-facing text, so they come from the app's i18n. */
-  relayMessages: Partial<RelayMessages>;
+  /**
+   * Relay notices are user-facing text, so they come from the app's i18n. A function, so a
+   * locale switch reaches the next notice without re-creating the relay.
+   */
+  relayMessages: Partial<RelayMessages> | (() => Partial<RelayMessages>);
 }
 
 /**

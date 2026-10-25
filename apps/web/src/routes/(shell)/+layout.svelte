@@ -46,6 +46,7 @@
     serviceOptionsFor,
   } from "#lib/dashboard/map.js";
   import { cardUpdate, paneSlots } from "#lib/dashboard/agent-update.js";
+  import { relayMessages } from "#lib/dashboard/wording.js";
   import { agentUpdateApi } from "#lib/dashboard/api.js";
   import { agentUpdateMessage } from "#lib/dashboard/wording.js";
   import AgentUpdateConfirm from "#lib/dashboard/components/agent-update-confirm.svelte";
@@ -118,13 +119,8 @@
       prefs: data.prefs,
       prefsOk: data.prefsOk,
       fleet: data.fleet,
-      relayMessages: {
-        reconnecting: i18n.t.dash.terminal.reconnecting,
-        hostOffline: i18n.t.dash.terminal.hostOffline,
-        restored: i18n.t.dash.terminal.restored,
-        dropped: (bytes: number) => i18n.t.dash.terminal.dropped.replace("{count}", String(bytes)),
-        sessionMissing: i18n.t.pdmux.pane.restoredMissing,
-      },
+      // Read per notice: a locale switch must not leave the next notice in the old language.
+      relayMessages: () => relayMessages(i18n.t),
     }),
   );
 

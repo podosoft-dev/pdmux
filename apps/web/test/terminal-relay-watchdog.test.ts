@@ -1,5 +1,5 @@
 /**
- * The relay notices a socket that stopped answering.
+ * The relay notices a socket that stopped answering, and words its notices in the current language.
  *
  * A proxy that disappears without closing the TCP connection leaves the browser's socket OPEN and
  * silent: no `close`, no `error`, and every keystroke vanishes. Only the page asking — and the
@@ -7,6 +7,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { TerminalRelay, type RelayMessages, type RelaySocket } from "$lib/dashboard/terminal-relay";
+import { relayMessages } from "$lib/dashboard/wording";
+import type { Messages } from "$lib/i18n/messages";
+import english from "$lib/i18n/catalogs/app/en.json";
+import korean from "$lib/i18n/catalogs/app/ko.json";
 
 class FakeSocket implements RelaySocket {
   readyState = 0;
@@ -25,7 +29,7 @@ class FakeSocket implements RelaySocket {
 
 const PING = 1_000;
 
-function harness(messages?: Partial<RelayMessages>) {
+function harness(messages?: Partial<RelayMessages> | (() => Partial<RelayMessages>)) {
   let clock = 0;
   const sockets: FakeSocket[] = [];
   const timers: { at: number; fn: () => void; id: number }[] = [];
@@ -118,6 +122,38 @@ describe("[TC-PDWEB-049] a socket whose server stopped answering is replaced", (
     advance(PING * 20);
     expect(socket.closed).toBe(false);
     expect(socket.pings()).toBe(20);
+    relay.dispose();
+  });
+});
+
+describe("[TC-PDWEB-050] relay notices follow the current language", () => {
+  it("reads the wording when it writes a notice, not when the relay was created", () => {
+    let locale: "en" | "ko" = "en";
+    const { relay, sockets } = harness(() => relayMessages((locale === "en" ? english : { ...english, ...korean }) as unknown as Messages));
+    const connection = relay.open(target);
+    const chunks: string[] = [];
+    connection.onData((chunk) => chunks.push(chunk));
+    const socket = sockets[0]!;
+    socket.accept();
+    socket.deliver({ type: "ready", termId: "t1", pid: 1 });
+    locale = "ko";
+    socket.readyState = 3;
+    socket.onclose?.({ code: 1006 });
+    expect(chunks.join("")).toContain(korean.dash.terminal.reconnecting);
+    expect(chunks.join("")).not.toContain(english.dash.terminal.reconnecting);
+    relay.dispose();
+  });
+
+  it("wraps the relay's own error in the reader's language instead of writing it bare", () => {
+    const { relay, sockets } = harness(() => relayMessages({ ...english, ...korean } as unknown as Messages));
+    const connection = relay.open(target);
+    const chunks: string[] = [];
+    connection.onData((chunk) => chunks.push(chunk));
+    const socket = sockets[0]!;
+    socket.accept();
+    socket.deliver({ type: "error", termId: "t1", message: "unknown terminal" });
+    const text = chunks.join("");
+    expect(text).toContain(korean.dash.terminal.failed.replace("{message}", "unknown terminal"));
     relay.dispose();
   });
 });
