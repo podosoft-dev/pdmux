@@ -41,6 +41,7 @@ import (
 	"github.com/podosoft-dev/pdmux/agent/internal/sample"
 	nativeSession "github.com/podosoft-dev/pdmux/agent/internal/session"
 	"github.com/podosoft-dev/pdmux/agent/internal/state"
+	"github.com/podosoft-dev/pdmux/agent/internal/sys"
 	"github.com/podosoft-dev/pdmux/agent/internal/term"
 	"github.com/podosoft-dev/pdmux/agent/internal/usage"
 )
@@ -463,6 +464,12 @@ func BuildHello(hostname, version, serverURL string, ability protocol.AgentUpdat
 	hello.Address = clip(PrimaryAddress(serverURL), maxHostname)
 	hello.OS = runtime.GOOS
 	hello.Arch = runtime.GOARCH
+	// Lets the server see that a host restarted between two connections. The
+	// session helper reads the same value to decide what may be reopened. Absent
+	// where the platform has none — never an empty string the contract refuses.
+	if boot := sys.BootID(); boot != "" {
+		hello.BootID = &boot
+	}
 	hello.Capabilities = []protocol.AgentCapability{
 		protocol.CapabilityMetrics,
 		protocol.CapabilitySessions,
