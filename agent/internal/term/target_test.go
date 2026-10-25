@@ -100,7 +100,11 @@ func TestResolveTarget(t *testing.T) {
 }
 
 func TestTmuxStableTarget(t *testing.T) {
-	t.Run("[TC-PDUI-237] an ID attaches without creating a replacement named session", func(t *testing.T) {
+	// A live ID resolves to an attach and never to `new -s`, which would start a
+	// replacement tmux session under the old name. Whether the saved ID is still
+	// live is decided before this, by name and id together (TC-PDTERM-161..164):
+	// a gone one becomes a native session announced as reopened, never tmux.
+	t.Run("[TC-PDUI-237] a live ID attaches without starting a replacement tmux session", func(t *testing.T) {
 		id, old := "$12", "before"
 		resolved, err := ResolveTarget(protocol.TerminalTarget{Kind: protocol.TerminalSession, TmuxID: &id, Session: &old}, nil)
 		if err != nil {

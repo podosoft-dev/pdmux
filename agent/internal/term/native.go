@@ -5,6 +5,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/podosoft-dev/pdmux/agent/internal/log"
 	"github.com/podosoft-dev/pdmux/agent/internal/protocol"
 	"github.com/podosoft-dev/pdmux/agent/internal/session"
 )
@@ -15,7 +16,10 @@ func (m *Manager) nativeFor(id string) *session.Attachment {
 	return m.native[id]
 }
 
-func (m *Manager) openNative(id string, target protocol.TerminalTarget) {
+// openNative attaches a native session. restore marks a session opened in place
+// of a tmux session that is gone: the helper starts it where a native session of
+// that name last was, and the ready frame says it was reopened.
+func (m *Manager) openNative(id string, target protocol.TerminalTarget, restore bool) {
 	if target.Kind == protocol.TerminalShell {
 		m.fail(id, "INVALID_SESSION_TARGET")
 		return
@@ -57,7 +61,7 @@ func (m *Manager) openNative(id string, target protocol.TerminalTarget) {
 	if target.Intent != nil {
 		intent = *target.Intent
 	}
-	request := session.Request{Action: intent, Name: name, Cols: target.Cols, Rows: target.Rows}
+	request := session.Request{Action: intent, Name: name, Cols: target.Cols, Rows: target.Rows, Restore: restore}
 	if target.SessionID != nil {
 		request.ID = *target.SessionID
 		request.Action = "attach"
@@ -79,7 +83,12 @@ func (m *Manager) openNative(id string, target protocol.TerminalTarget) {
 	m.mu.Unlock()
 	m.opened.Add(1)
 	backend := "native"
-	m.emit(&protocol.TerminalReady{Type: protocol.TermReady, TermID: id, Pid: attachment.Info.PID, Backend: &backend, SessionID: &attachment.Info.ID})
+	ready := &protocol.TerminalReady{Type: protocol.TermReady, TermID: id, Pid: attachment.Info.PID, Backend: &backend, SessionID: &attachment.Info.ID}
+	if restore || attachment.Info.Restored == session.RestoredReboot {
+		ready.Restored = &protocol.TerminalRestored{Reason: session.RestoredReboot}
+		m.logger.Info("Reopened a session after a host restart", log.F("termId", id), log.F("target", "session:"+attachment.Info.Name))
+	}
+	m.emit(ready)
 	go func() {
 		defer attachment.Close()
 		defer func() {

@@ -84,7 +84,12 @@ type Options struct {
 	// policy. nil uses the host's tmux, but only with the real Spawn: a fake PTY
 	// attaches no client, and its spec must not reach a tmux server on the
 	// machine running it.
-	Tmux            func(args ...string) (string, error)
+	Tmux func(args ...string) (string, error)
+	// TmuxSessions lists the tmux sessions on the host as id -> name. ok=false
+	// means the answer is unknown (tmux timed out or failed in an unexpected
+	// way) and nothing may be concluded from it. nil uses the host's tmux, but
+	// only with the real Spawn, for the same reason as Tmux.
+	TmuxSessions    func() (sessions map[string]string, ok bool)
 	FlushInterval   time.Duration
 	MaxPendingBytes int
 	MaxTerminals    int
@@ -102,6 +107,9 @@ type Manager struct {
 	which func(string) (string, bool)
 	// tmux saves and restores window-size around pdmux viewers; nil disables it.
 	tmux tmuxRunner
+	// tmuxSessions answers whether a saved tmux target still exists; nil never
+	// concludes that it does not.
+	tmuxSessions func() (map[string]string, bool)
 
 	// windowMu orders the per-session viewer count with the save and restore it
 	// triggers, so a viewer that opens during the last one's restore saves again
@@ -173,6 +181,7 @@ func NewManager(options Options) *Manager {
 		spawn:           options.Spawn,
 		which:           options.Which,
 		tmux:            options.Tmux,
+		tmuxSessions:    options.TmuxSessions,
 		viewers:         make(map[string]int),
 		flushInterval:   options.FlushInterval,
 		maxTerminals:    options.MaxTerminals,
@@ -185,6 +194,9 @@ func NewManager(options Options) *Manager {
 		m.spawn = Spawn
 		if m.tmux == nil {
 			m.tmux = hostTmux
+		}
+		if m.tmuxSessions == nil {
+			m.tmuxSessions = hostTmuxSessions
 		}
 	}
 	if m.logger == nil {
@@ -319,7 +331,21 @@ func (m *Manager) lookup(termID string) *terminal {
 
 func (m *Manager) open(termID string, target protocol.TerminalTarget) {
 	if target.Backend != nil && *target.Backend == "native" {
-		m.openNative(termID, target)
+		m.openNative(termID, target, false)
+		return
+	}
+	if m.savedTmuxTarget(target) == tmuxTargetGone {
+		// The tmux session this pane was saved with no longer exists — after a
+		// reboot there is no tmux server at all. Starting tmux again would give
+		// an empty session that only looks like the old one, and the next
+		// restart would lose it the same way; a native session survives agent
+		// restarts and is what the pane continues as. The browser is told it was
+		// reopened (ready.restored), never left to think its program survived.
+		name := *target.Session
+		native := "native"
+		ensure := "ensure"
+		m.logger.Info("Reopened a missing tmux session as a native session", log.F("termId", termID), log.F("target", "session:"+name))
+		m.openNative(termID, protocol.TerminalTarget{Kind: protocol.TerminalSession, Backend: &native, Session: &name, Intent: &ensure, Cols: target.Cols, Rows: target.Rows}, true)
 		return
 	}
 	m.mu.Lock()
