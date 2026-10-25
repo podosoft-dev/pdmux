@@ -110,7 +110,24 @@ describe("TerminalRelayService", () => {
     registry.unregister(HOST, agent);
     const replacement = new FakeAgent();
     registry.register(HOST, replacement, "token-1");
-    expect(replacement.terminalFrames()).toEqual([{ type: "open", termId: `${id}:legacy`, target: { kind: "session", backend: "tmux", tmuxId: "$9", cols: 120, rows: 40 } }]);
+    expect(replacement.terminalFrames()).toEqual([{ type: "open", termId: `${id}:legacy`, target: { kind: "session", backend: "tmux", tmuxId: "$9", session: "main", cols: 120, rows: 40 } }]);
+  });
+
+  it("[TC-PDTERM-167] a tmux pane the host reopened as native reattaches the native UUID and keeps its name", () => {
+    registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
+    const browser = new FakeBrowser();
+    const id = connect(browser);
+    relay.handleClientFrame(id, { type: "open", termId: "s12", target: { kind: "session", backend: "tmux", tmuxId: "$0", session: "claude-1", cols: 80, rows: 24 } });
+    expect(agent.terminalFrames().at(-1)).toMatchObject({ target: { tmuxId: "$0", session: "claude-1" } });
+    const sessionId = "d5ac0000-0000-4000-8000-000000000001";
+    relay.handleAgentFrame(HOST, { type: "ready", termId: `${id}:s12`, pid: 7, backend: "native", sessionId, restored: { reason: "reboot" } });
+    expect(browser.frames.at(-1)).toEqual({ type: "ready", termId: "s12", pid: 7, backend: "native", sessionId, restored: { reason: "reboot" } });
+    registry.unregister(HOST, agent);
+    const replacement = new FakeAgent();
+    registry.register(HOST, replacement, "token-1");
+    registry.setTerminalAbility(HOST, { nativeSessions: true, screenProtocol: 1 });
+    const [reopen] = replacement.terminalFrames() as Array<{ target: Record<string, unknown> }>;
+    expect(reopen?.target).toEqual({ kind: "session", backend: "native", session: "claude-1", sessionId, intent: "attach", cols: 80, rows: 24 });
   });
 
   it("[TC-PDTERM-022] reconnects a slow native viewer instead of losing screen updates", () => {

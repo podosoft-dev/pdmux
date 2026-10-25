@@ -184,12 +184,16 @@ export class TerminalRelayService {
       this.deliverOutput(connection, pane, frame.data, frame.dropped);
       return;
     }
- if (frame.type === "ready" && frame.tmuxId) {
-  pane.open.target = { ...pane.open.target, backend: "tmux", tmuxId: frame.tmuxId, session: undefined };
- }
-	if (frame.type === "ready" && frame.backend === "native" && frame.sessionId) {
-		pane.open.target = { ...pane.open.target, backend: "native", sessionId: frame.sessionId, intent: "attach" };
-	}
+    // The reopen after an agent reconnect targets what the agent answered with. A tmux id
+    // keeps its name: the id alone is not an identity across a host restart, and the agent
+    // checks the pair. A native answer — including a tmux session the host reopened as native
+    // after a restart — drops the tmux id so the reopen attaches the native UUID.
+    if (frame.type === "ready" && frame.tmuxId) {
+      pane.open.target = { ...pane.open.target, backend: "tmux", tmuxId: frame.tmuxId };
+    }
+    if (frame.type === "ready" && frame.backend === "native" && frame.sessionId) {
+      pane.open.target = { ...pane.open.target, backend: "native", sessionId: frame.sessionId, intent: "attach", tmuxId: undefined };
+    }
 	if (frame.type === "screen" && connection.socket.bufferedAmount + Buffer.byteLength(frame.data, "utf8") > connection.bufferBytes) {
 		this.retryConnection(connection); return;
 	}
