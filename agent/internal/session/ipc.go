@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/podosoft-dev/pdmux/agent/internal/semver"
+	"github.com/podosoft-dev/pdmux/agent/internal/sys"
 )
 
 type endpoint struct {
@@ -122,13 +123,15 @@ func Serve(ctx context.Context, root, version string, spawn Factory) error {
 	}
 	defer os.Remove(file)
 	engine := NewEngine(spawn)
+	engine.EnableRestore(root, sys.BootID(), nil)
 	defer engine.Close()
-	go func() { <-ctx.Done(); _ = listener.Close() }()
+	go func() { <-ctx.Done(); engine.MarkClosing(); _ = listener.Close() }()
 	stopIdle := make(chan struct{})
 	defer close(stopIdle)
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
+		refreshed := time.Now()
 		for {
 			select {
 			case <-stopIdle:
@@ -137,6 +140,12 @@ func Serve(ctx context.Context, root, version string, spawn Factory) error {
 				if engine.Idle(now) {
 					_ = listener.Close()
 					return
+				}
+				// A shell's directory changes as the person works; keep the
+				// record close enough that a reboot reopens it where they were.
+				if now.Sub(refreshed) >= restoreRefreshInterval {
+					refreshed = now
+					engine.RefreshRestore()
 				}
 			}
 		}
@@ -230,8 +239,13 @@ func serveConnection(connection net.Conn, metadata endpoint, engine *Engine, shu
 	}
 }
 
+// restoreRefreshInterval is how often live sessions' directories are copied into
+// restore.json. Reading /proc/<pid>/cwd is a readlink per session.
+const restoreRefreshInterval = 30 * time.Second
+
 func (e *Engine) Close() {
 	e.mu.Lock()
+	e.closing = true
 	for _, s := range e.sessions {
 		s.process.Kill()
 	}

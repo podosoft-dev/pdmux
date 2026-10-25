@@ -34,6 +34,10 @@ type Info struct {
 	Name     string `json:"name"`
 	Attached int    `json:"attached"`
 	PID      *int   `json:"pid"`
+	// Restored is set only on the info an attach returns, and only when that
+	// session was reopened after the machine restarted (RestoredReboot). Helpers
+	// older than restore never set it, which reads as "not restored".
+	Restored string `json:"restored,omitempty"`
 }
 
 // Screen is a rendered viewport, never raw program escape sequences. Queries
@@ -66,6 +70,11 @@ type Request struct {
 	X         int    `json:"x,omitempty"`
 	Y         int    `json:"y,omitempty"`
 	Follow    bool   `json:"follow,omitempty"`
+	// Restore marks an `ensure` made in place of a multiplexer session that is
+	// gone. A new session then starts in the directory recorded for a native
+	// session of the same name from an earlier boot, when there is one. Older
+	// helpers ignore the field and simply ensure.
+	Restore bool `json:"restore,omitempty"`
 }
 
 type Reply struct {

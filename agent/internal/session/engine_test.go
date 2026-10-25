@@ -60,6 +60,8 @@ func TestNativePersistence(t *testing.T) {
 		if info.ID != again.ID || info.PID == nil || again.PID == nil || *info.PID != *again.PID {
 			t.Fatal("attachment replaced the program")
 		}
+		// No restore record and no reboot: a missing ID is refused. Only a session
+		// recorded in an earlier boot may be reopened (TC-PDTERM-154..156).
 		if _, _, err := engine.Open(session.Request{Action: "attach", ID: "missing", Name: "native", Cols: 80, Rows: 24}); err == nil {
 			t.Fatal("a missing ID silently created a shell")
 		}

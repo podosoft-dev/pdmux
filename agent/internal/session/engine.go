@@ -23,6 +23,11 @@ type Engine struct {
 	sessions map[string]*running
 	lastUsed time.Time
 	stopping bool
+	// closing is set once the helper itself is shutting down (a signal, the OS
+	// going down). Sessions that end after it keep their restore entry: they did
+	// not end, the machine did.
+	closing bool
+	restore *restoreStore
 }
 
 type running struct {
@@ -40,6 +45,10 @@ type running struct {
 	input      chan queuedInput
 	inputDone  chan struct{}
 	lastTrim   time.Time
+	// terminated marks an explicit terminate, which must never come back.
+	terminated bool
+	// restoredAt is when this session was reopened after a reboot; zero otherwise.
+	restoredAt time.Time
 }
 
 type queuedInput struct {
@@ -88,6 +97,51 @@ func NewEngine(spawn Factory) *Engine {
 	return &Engine{spawn: spawn, sessions: make(map[string]*running), lastUsed: time.Now()}
 }
 
+// EnableRestore keeps root/restore.json for this engine under the boot bootID.
+// An empty bootID leaves restore off — see openRestoreStore.
+func (e *Engine) EnableRestore(root, bootID string, now func() time.Time) {
+	store := openRestoreStore(root, bootID, now)
+	e.mu.Lock()
+	e.restore = store
+	e.mu.Unlock()
+}
+
+// MarkClosing records that the helper is going down, before it kills anything.
+func (e *Engine) MarkClosing() {
+	e.mu.Lock()
+	e.closing = true
+	e.mu.Unlock()
+}
+
+// RefreshRestore copies each live session's size and, where the platform exposes
+// it, current directory into its restore entry.
+func (e *Engine) RefreshRestore() {
+	e.mu.Lock()
+	store := e.restore
+	type snapshot struct {
+		id, name   string
+		pid        *int
+		cols, rows int
+	}
+	live := make([]snapshot, 0, len(e.sessions))
+	for _, s := range e.sessions {
+		live = append(live, snapshot{id: s.info.ID, name: s.info.Name, pid: s.info.PID, cols: s.cols, rows: s.rows})
+	}
+	e.mu.Unlock()
+	if store == nil {
+		return
+	}
+	for _, s := range live {
+		directory := processDirectory(s.pid)
+		store.update(s.id, func(entry *RestoreEntry) {
+			entry.Name, entry.Cols, entry.Rows = s.name, s.cols, s.rows
+			if directory != "" {
+				entry.Cwd = directory
+			}
+		})
+	}
+}
+
 func (e *Engine) List() []Info {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -119,6 +173,7 @@ func (e *Engine) Rename(id, name string) (Info, error) {
 		}
 	}
 	s.info.Name = name
+	e.restore.update(id, func(entry *RestoreEntry) { entry.Name = name })
 	info := s.info
 	info.Cols, info.Rows, info.Attached = s.cols, s.rows, len(s.views)
 	return info, nil
@@ -159,10 +214,18 @@ func (e *Engine) Open(request Request) (*View, Info, error) {
 		return nil, Info{}, fmt.Errorf("SESSION_VIEWER_LIMIT")
 	}
 	var s *running
+	// A UUID that is not running may belong to a session the machine's restart
+	// ended. Only then is it reopened, under the same UUID, so every pane and
+	// every saved layout that points at it lands on the new shell.
+	var restoring *RestoreEntry
 	if request.ID != "" {
 		s = e.sessions[request.ID]
 		if s == nil {
-			return nil, Info{}, fmt.Errorf("SESSION_NOT_FOUND")
+			entry, ok := e.restore.restorable(request.ID)
+			if !ok {
+				return nil, Info{}, fmt.Errorf("SESSION_NOT_FOUND")
+			}
+			restoring = &entry
 		}
 	} else {
 		for _, candidate := range e.sessions {
@@ -172,22 +235,36 @@ func (e *Engine) Open(request Request) (*View, Info, error) {
 			}
 		}
 	}
+	restored := false
 	if s == nil {
-		if request.Action != "create" && request.Action != "ensure" {
+		id, name, directory := randomID(), request.Name, request.Directory
+		switch {
+		case restoring != nil:
+			id, name, directory = restoring.UUID, freeName(restoring.Name, e.nameTaken), restoreDirectory(restoring.Cwd)
+		case request.Action != "create" && request.Action != "ensure":
 			return nil, Info{}, fmt.Errorf("SESSION_NOT_FOUND")
+		case request.Restore && request.Action == "ensure":
+			// The multiplexer session this name belonged to is gone. Start where a
+			// native session of the same name last was, if one was recorded.
+			if entry, ok := e.restore.restorableByName(request.Name); ok {
+				directory = restoreDirectory(entry.Cwd)
+				e.restore.forget(entry.UUID)
+			}
 		}
-		if !validName.MatchString(request.Name) {
+		if !validName.MatchString(name) {
 			return nil, Info{}, fmt.Errorf("INVALID_SESSION_NAME")
 		}
 		if len(e.sessions) >= MaxSessions {
 			return nil, Info{}, fmt.Errorf("SESSION_LIMIT")
 		}
 		cols, rows := dimensions(request.Cols, request.Rows)
-		p, err := e.spawn(cols, rows, request.Directory)
+		p, err := e.spawn(cols, rows, directory)
 		if err != nil {
 			return nil, Info{}, fmt.Errorf("SESSION_START_FAILED: %w", err)
 		}
-		s = &running{info: Info{ID: randomID(), Name: request.Name, PID: p.Pid()}, process: p, vt: vt.NewEmulator(cols, rows), cols: cols, rows: rows, views: make(map[*View]struct{}), modes: make(map[ansi.Mode]bool), dirty: true, queryDone: make(chan struct{}), input: make(chan queuedInput, 64), inputDone: make(chan struct{})}
+		e.restore.record(RestoreEntry{UUID: id, Name: name, Cwd: directory, Cols: cols, Rows: rows})
+		restored = restoring != nil
+		s = &running{info: Info{ID: id, Name: name, PID: p.Pid()}, process: p, vt: vt.NewEmulator(cols, rows), cols: cols, rows: rows, views: make(map[*View]struct{}), modes: make(map[ansi.Mode]bool), dirty: true, queryDone: make(chan struct{}), input: make(chan queuedInput, 64), inputDone: make(chan struct{})}
 		s.vt.SetScrollbackSize(HistoryLines)
 		s.vt.SetCallbacks(vt.Callbacks{
 			EnableMode: func(mode ansi.Mode) {
@@ -263,7 +340,25 @@ func (e *Engine) Open(request Request) (*View, Info, error) {
 	e.resize(s)
 	e.render(s, v, true)
 	e.lastUsed = time.Now()
-	return v, s.info, nil
+	if restored {
+		s.restoredAt = e.lastUsed
+	}
+	info := s.info
+	// Every pane of a layout reattaches within moments of the agent's return, so
+	// each of them is told; a viewer arriving long after is not.
+	if !s.restoredAt.IsZero() && e.lastUsed.Sub(s.restoredAt) < restoredNoticeWindow {
+		info.Restored = RestoredReboot
+	}
+	return v, info, nil
+}
+
+func (e *Engine) nameTaken(name string) bool {
+	for _, s := range e.sessions {
+		if s.info.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func randomID() string {
@@ -288,6 +383,14 @@ func (e *Engine) pump(s *running) {
 				e.mu.Lock()
 				s.closed = true
 				delete(e.sessions, s.info.ID)
+				// Only a session alive when the machine went down may come back. A
+				// shell that ended while this helper was running normally — its own
+				// exit, a signal, or an explicit terminate — has ended for good.
+				// Once the helper is closing (the OS is shutting it down) the shells
+				// it kills keep their entries; a terminate never does.
+				if s.terminated || !e.closing {
+					e.restore.forget(s.info.ID)
+				}
 				for v := range s.views {
 					e.render(s, v, true)
 					final := Reply{}
@@ -492,6 +595,9 @@ func (e *Engine) Terminate(id string) error {
 	if s == nil {
 		return fmt.Errorf("SESSION_NOT_FOUND")
 	}
+	e.mu.Lock()
+	s.terminated = true
+	e.mu.Unlock()
 	s.process.Kill()
 	return nil
 }
