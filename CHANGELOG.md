@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.17.14
+
+- A pane whose session vanished because its host restarted now comes back on its own: the
+  agent (0.1.36) records each native session's name, size and working directory with the
+  host's boot identity, and after a reboot reopens it as a fresh shell under the same id,
+  name and directory, with a notice that earlier programs were not restored. Saved tmux panes
+  whose tmux server is gone reopen as native sessions of the same name instead of tmux, and a
+  tmux id reused by a new server no longer captures a saved pane. Within the same boot a
+  missing session still fails rather than being replaced.
+- Show when the browser has lost the server: host cards turn grey and unknown under a
+  "server connection lost" notice instead of looking online with a frozen clock, panes are
+  covered with a reconnecting overlay that refuses keys visibly, the event stream reconnects
+  with backoff instead of only on tab focus, and a ping detects half-open terminal sockets.
+- Fix English text in the Korean interface: commit details and the view tabs had keys in
+  neither catalogue, terminal notices kept the language the page loaded in, server errors
+  reached panes untranslated, and there was no localized error page. A shared appearance
+  record no longer switches other devices' language unless it actually changed.
+- macOS hosts report real CPU use and APFS disk use instead of load per core and the root
+  snapshot's Used column.
+
 ## 0.17.13
 
 - Organizations can have teams (PodoKit 1.7.3). An administrator turns them on in Settings
