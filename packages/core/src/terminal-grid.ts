@@ -368,6 +368,25 @@ export function toProtocolTarget(slot: TerminalSlot): { kind: 'session' | 'shell
 	return target;
 }
 
+/**
+ * The wire target that opens a NEW native session under a vanished one's saved name.
+ *
+ * For a native pane whose session the host no longer has and cannot restore
+ * (`SESSION_NOT_FOUND`: no restore record — the host restarted under an agent that
+ * kept none, or the session was ended). The UUID is left out on purpose: it names
+ * the session that is gone. `ensure` creates the name, or joins the live session
+ * that already holds it — the engine looks the name up before it creates anything.
+ * The ready frame's new UUID is then saved through `adoptNativeSession`, which keeps
+ * the slot's id, label, tags and cell.
+ *
+ * `null` for anything else: a shell has no name to reuse, and a tmux slot already
+ * reopens by name on the host.
+ */
+export function missingSessionTarget(slot: TerminalSlot): { kind: 'session'; session: string; backend: 'native'; intent: 'ensure' } | null {
+	if (slot.kind === 'shell' || slot.backend !== 'native' || !slot.session || !TARGET_SESSION_NAME.test(slot.session)) return null;
+	return { kind: 'session', session: slot.session, backend: 'native', intent: 'ensure' };
+}
+
 /** The contract's `SESSION_NAME_PATTERN`; this package does not depend on the protocol. */
 const TARGET_SESSION_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 

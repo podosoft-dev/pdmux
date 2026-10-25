@@ -18,6 +18,7 @@ import {
 	assignSlot,
 	resolveSessionSlot,
 	adoptNativeSession,
+	missingSessionTarget,
 	renameSlotSessions,
 	buildDefaultSlots,
 	clearDockDetailHeight,
@@ -900,5 +901,42 @@ describe('saved tmux slots across a host restart', () => {
 		const renamed = renameSlotSessions(layout, 'h1', { sessionId }, 'api');
 		expect(renamed.slots.map(slot => slot?.session)).toEqual(['claude-1', 'api', 'claude-1']);
 		expect(renameSlotSessions(layout, 'h1', {}, 'x')).toBe(layout);
+	});
+});
+
+describe('a native pane whose session is gone reopens under the same name', () => {
+	const gone = 'd5ac0000-0000-4000-8000-000000000001';
+	const fresh = 'd5ac0000-0000-4000-8000-000000000002';
+	const tags = [{ name: 'prod', color: '#123456' }];
+	const slot: TerminalSlot = { id: 's14', hostId: 'h1', kind: 'attach', backend: 'native', session: 'w2', sessionId: gone, intent: 'attach', label: 'API', tags };
+
+	it('[TC-PDCORE-108] the reopen target names the session, drops the vanished UUID and asks to ensure', () => {
+		expect(missingSessionTarget(slot)).toEqual({ kind: 'session', session: 'w2', backend: 'native', intent: 'ensure' });
+		expect(missingSessionTarget(slot)).not.toHaveProperty('sessionId');
+		// A slot created as `new` reopens the same way: the name is what survives.
+		expect(missingSessionTarget({ ...slot, kind: 'new', intent: 'create' })?.intent).toBe('ensure');
+	});
+
+	it('[TC-PDCORE-109] only a named native slot has such a target', () => {
+		expect(missingSessionTarget({ id: 's1', hostId: 'h1', kind: 'shell', session: null })).toBeNull();
+		expect(missingSessionTarget({ id: 's1', hostId: 'h1', kind: 'attach', session: 'w2', tmuxId: '$0' })).toBeNull();
+		expect(missingSessionTarget({ id: 's1', hostId: 'h1', kind: 'attach', session: 'w2' })).toBeNull();
+		expect(missingSessionTarget({ ...slot, session: null })).toBeNull();
+		expect(missingSessionTarget({ ...slot, session: 'has space' })).toBeNull();
+	});
+
+	it('[TC-PDCORE-110] the new UUID replaces the old one in place and is saved that way', () => {
+		const other: TerminalSlot = { id: 's15', hostId: 'h1', kind: 'attach', backend: 'native', session: 'w3', sessionId: gone, intent: 'attach' };
+		const layout: TerminalLayout = { ...defaultLayout(), focusId: 's14', zoomId: 's14', slots: [null, slot, other] };
+		const next = adoptNativeSession(layout, 's14', fresh);
+		expect(next.slots[1]).toEqual({ ...slot, sessionId: fresh });
+		// Same cell, same id: focus, zoom and the other cells are untouched.
+		expect(next.slots[0]).toBeNull();
+		expect(next.slots[2]).toBe(other);
+		expect(next.focusId).toBe('s14');
+		expect(next.zoomId).toBe('s14');
+		const reloaded = normalizeLayout(JSON.parse(JSON.stringify(next)), [{ id: 'h1', name: 'one', online: true }]);
+		expect(reloaded.slots[1]).toEqual(next.slots[1]);
+		expect(toProtocolTarget(reloaded.slots[1]!)).toEqual({ kind: 'session', session: 'w2', backend: 'native', sessionId: fresh, intent: 'attach' });
 	});
 });
