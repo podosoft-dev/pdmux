@@ -665,3 +665,68 @@ describe('[TC-PDUI-195] the sidebar pads its right side by the scrollbar it meas
 		expect(css).not.toMatch(/\.pdmux-sidebar\s*\{[^}]*padding-right:/);
 	});
 });
+
+describe('[TC-PDUI-250] the column can be reordered by its grips', () => {
+	const three = [
+		{ host: { id: 'a', name: 'alpha' } },
+		{ host: { id: 'b', name: 'beta' } },
+		{ host: { id: 'c', name: 'gamma' } },
+	];
+
+	it('draws no grip when nothing can save an order', () => {
+		const { container } = render(HostSidebar, { props: { cards: three } });
+		expect(container.querySelector('[data-pdmux-grip]')).toBeNull();
+	});
+
+	it('moves a card one place per arrow key and says where it went', async () => {
+		const onMove = vi.fn();
+		const { container } = render(HostSidebar, { props: { cards: three, onMove } });
+		const grips = container.querySelectorAll<HTMLElement>('[data-pdmux-grip]');
+		expect(grips).toHaveLength(3);
+		await fireEvent.keyDown(grips[1]!, { key: 'ArrowUp' });
+		expect(onMove).toHaveBeenLastCalledWith(1, 0);
+		expect(container.querySelector('[data-pdmux-reorder-status]')?.textContent).toBe('Moved to position 1');
+		await fireEvent.keyDown(grips[1]!, { key: 'ArrowDown' });
+		expect(onMove).toHaveBeenLastCalledWith(1, 2);
+		// Past either end is not a move.
+		await fireEvent.keyDown(grips[0]!, { key: 'ArrowUp' });
+		await fireEvent.keyDown(grips[2]!, { key: 'ArrowDown' });
+		expect(onMove).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not move anything while the server is unreachable', async () => {
+		const onMove = vi.fn();
+		const { container } = render(HostSidebar, { props: { cards: three, onMove, connection: 'offline' } });
+		await fireEvent.keyDown(container.querySelectorAll<HTMLElement>('[data-pdmux-grip]')[1]!, { key: 'ArrowUp' });
+		expect(onMove).not.toHaveBeenCalled();
+	});
+
+	it('names the card on its grip, in the consumer\'s language', () => {
+		const t = (key: string, fallback: string): string => (key === 'pdmux.card.reorder' ? 'T:reorder ({name})' : fallback);
+		const { container } = render(HostSidebar, { props: { cards: three, onMove: vi.fn(), t } });
+		expect(container.querySelector('[data-pdmux-grip]')?.getAttribute('aria-label')).toBe('T:reorder (alpha)');
+	});
+});
+
+describe('[TC-PDUI-251] a card shows which terminals are open on its host, folded or not', () => {
+	it('numbers them as the pane headers do and goes to one when pressed', async () => {
+		const onOpenPane = vi.fn();
+		const { container } = render(HostCard, {
+			props: { host: { id: 'h1', name: 'alpha' }, panes: [2, 3], collapsed: true, onToggleCollapse: vi.fn(), onOpenPane },
+		});
+		const jumps = container.querySelectorAll<HTMLButtonElement>('button[data-pdmux-pane-jump]');
+		expect([...jumps].map((button) => button.textContent)).toEqual(['#3', '#4']);
+		expect(jumps[0]?.getAttribute('aria-label')).toBe('go to terminal #3');
+		await fireEvent.click(jumps[1]!);
+		expect(onOpenPane).toHaveBeenCalledWith(3);
+	});
+
+	it('draws nothing for a host with no terminal, and plain numbers without a way to go there', () => {
+		const empty = render(HostCard, { props: { host: { id: 'h1', name: 'alpha' } } });
+		expect(empty.container.querySelector('[data-pdmux-panes]')).toBeNull();
+		cleanup();
+		const plain = render(HostCard, { props: { host: { id: 'h1', name: 'alpha' }, panes: [0] } });
+		expect(plain.container.querySelector('button[data-pdmux-pane-jump]')).toBeNull();
+		expect(plain.container.querySelector('[data-pdmux-pane-jump]')?.textContent).toBe('#1');
+	});
+});

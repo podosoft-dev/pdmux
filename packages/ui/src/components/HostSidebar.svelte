@@ -6,7 +6,7 @@
 	 * page around it must never scroll: the terminals own the rest of the viewport,
 	 * and a page-level scrollbar would push them out of it.
 	 */
-	import type { Snippet } from 'svelte';
+	import { type Snippet, tick } from 'svelte';
 	import type { AgentRow, CardPrefs, HostSeries, ServiceOption } from '@pdmux/core';
 	import { type Translate, translator } from '../i18n.js';
 	import type { HostResources, HostSummary } from '../types.js';
@@ -21,6 +21,8 @@
 		prefs?: CardPrefs;
 		/** Folded to its header. Resolved by the consumer, one entry at a time. */
 		collapsed?: boolean;
+		/** Terminal cells open on this host (0-based, as the pane headers number them). */
+		panes?: readonly number[];
 	}
 
 	interface Props {
@@ -57,6 +59,13 @@
 		 * column, it does not rewrite the hosts.
 		 */
 		connection?: 'online' | 'reconnecting' | 'offline';
+		/**
+		 * Move the card drawn at `from` to `to` (indexes into `cards`). Absent = no grip and
+		 * no reordering. Called once per drop or arrow key, never while the pointer moves.
+		 */
+		onMove?: (from: number, to: number) => void;
+		/** A terminal number on a card was pressed. Absent = the numbers are plain text. */
+		onOpenPane?: (index: number) => void;
 	}
 
 	let {
@@ -73,6 +82,8 @@
 		onUpdateAgent,
 		onAddHost,
 		connection = 'online',
+		onMove,
+		onOpenPane,
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -100,6 +111,112 @@
 		observer.observe(element);
 		return () => observer.disconnect();
 	});
+
+	/*
+	 * Reordering. The column owns the gesture because only the column knows where every
+	 * card is; a card reports a press on its grip and arrow keys, nothing else.
+	 *
+	 * ⚠ NOTHING MOVES UNTIL THE DROP. Re-sorting under the pointer would save a position
+	 * per pixel and shuffle the very rectangles the next move is measured against. The
+	 * carried card steps back, a line marks where it will land, and one `onMove` fires on
+	 * release. While the server is unreachable nothing can be saved, so nothing starts.
+	 */
+	const canMove = $derived(onMove !== undefined && connection === 'online');
+	let carry = $state<{ hostId: string; from: number; startY: number; started: boolean } | null>(null);
+	let gap = $state<number | null>(null);
+	let announcement = $state('');
+
+	const target = $derived.by(() => {
+		if (!carry?.started || gap === null) return null;
+		const to = gap > carry.from ? gap - 1 : gap;
+		return to === carry.from ? null : to;
+	});
+
+	function dropSide(index: number): 'before' | 'after' | null {
+		if (target === null || gap === null) return null;
+		if (gap === index) return 'before';
+		if (gap === cards.length && index === cards.length - 1) return 'after';
+		return null;
+	}
+
+	function cardElements(): HTMLElement[] {
+		return sidebar ? Array.from(sidebar.querySelectorAll<HTMLElement>(':scope > [data-pdmux-host]')) : [];
+	}
+
+	function startCarry(hostId: string, event: PointerEvent): void {
+		if (!canMove || event.button !== 0) return;
+		const from = cards.findIndex((entry) => entry.host.id === hostId);
+		if (from < 0) return;
+		event.preventDefault();
+		carry = { hostId, from, startY: event.clientY, started: false };
+		gap = null;
+		window.addEventListener('pointermove', moveCarry);
+		window.addEventListener('pointerup', endCarry);
+		window.addEventListener('pointercancel', cancelCarry);
+	}
+
+	function moveCarry(event: PointerEvent): void {
+		if (!carry) return;
+		// A few pixels of slack, so a click on the grip is a click and not a drop in place.
+		if (!carry.started && Math.abs(event.clientY - carry.startY) < 4) return;
+		carry.started = true;
+		const rects = cardElements().map((element) => element.getBoundingClientRect());
+		let next = rects.length;
+		for (let index = 0; index < rects.length; index++) {
+			const rect = rects[index];
+			if (rect && event.clientY < rect.top + rect.height / 2) {
+				next = index;
+				break;
+			}
+		}
+		gap = next;
+	}
+
+	function stopListening(): void {
+		window.removeEventListener('pointermove', moveCarry);
+		window.removeEventListener('pointerup', endCarry);
+		window.removeEventListener('pointercancel', cancelCarry);
+	}
+
+	function endCarry(): void {
+		const from = carry?.from;
+		const to = target;
+		stopListening();
+		carry = null;
+		gap = null;
+		if (from !== undefined && to !== null) {
+			onMove?.(from, to);
+			announce(to);
+		}
+	}
+
+	function cancelCarry(): void {
+		stopListening();
+		carry = null;
+		gap = null;
+	}
+
+	$effect(() => () => stopListening());
+
+	function announce(to: number): void {
+		announcement = tr('pdmux.card.moved', 'Moved to position {n}').replaceAll('{n}', String(to + 1));
+	}
+
+	async function keyMove(hostId: string, delta: -1 | 1): Promise<void> {
+		if (!canMove) return;
+		const from = cards.findIndex((entry) => entry.host.id === hostId);
+		const to = from + delta;
+		if (from < 0 || to < 0 || to >= cards.length) return;
+		onMove?.(from, to);
+		announce(to);
+		// The keyed card moves in the DOM, and a moved element can lose focus; keep it on
+		// the grip so the next arrow press moves the same card again.
+		await tick();
+		cardElements()
+			.find((element) => element.dataset.pdmuxHost === hostId)
+			?.querySelector<HTMLElement>('[data-pdmux-grip]')
+			?.focus();
+	}
 </script>
 
 <aside
@@ -109,6 +226,7 @@
 	bind:this={sidebar}
 	style:--pdmux-sidebar-gutter={gutter === null ? undefined : `${gutter}px`}
 	data-pdmux-connection={connection}
+	data-pdmux-reordering={carry?.started ? 'true' : undefined}
 >
 	{#if header}{@render header()}{/if}
 	{#if connection !== 'online'}
@@ -119,7 +237,7 @@
 		</p>
 	{/if}
 	{#if cards.length}
-		{#each cards as entry (entry.host.id)}
+		{#each cards as entry, index (entry.host.id)}
 			<HostCard
 				host={entry.host}
 				agents={entry.agents}
@@ -136,6 +254,12 @@
 				{onOpenSettings}
 				{onToggleCollapse}
 				{onUpdateAgent}
+				panes={entry.panes}
+				{onOpenPane}
+				onGripPointerDown={onMove ? startCarry : undefined}
+				onGripKey={onMove ? keyMove : undefined}
+				dragging={carry?.started === true && carry.hostId === entry.host.id}
+				drop={dropSide(index)}
 			/>
 		{/each}
 	{:else}
@@ -157,6 +281,7 @@
 			<span>{tr('pdmux.sidebar.add', 'Add host')}</span>
 		</button>
 	{/if}
+	<p class="pdmux-sr-only" aria-live="polite" data-pdmux-reorder-status>{announcement}</p>
 	{#if footer}
 		<!-- Sticky, not just last: with a fleet that overflows the column, a footer in
 		     normal flow can only be reached by scrolling past every card. -->

@@ -933,6 +933,119 @@
 	transform: rotate(90deg);
 }
 
+/*
+ * The reorder grip. Narrow (a handle, not a target you aim a click at) but as tall as the
+ * other header controls, so the row keeps its 24px. Quiet until the card is hovered or the
+ * grip has focus: six dots on every card at full contrast would be the busiest thing in the
+ * column, and the column was simplified on purpose (0.17.21).
+ */
+.pdmux-card-grip {
+	flex: none;
+	margin-block: -6px;
+	margin-inline: -8px -6px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	inline-size: 20px;
+	block-size: 36px;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--pdmux-muted);
+	opacity: 0.35;
+	cursor: grab;
+	touch-action: none;
+	border-radius: var(--pdmux-radius-sm);
+	transition: opacity 0.12s ease;
+}
+
+.pdmux-card:hover .pdmux-card-grip,
+.pdmux-card-grip:focus-visible,
+.pdmux-card[data-pdmux-dragging='true'] .pdmux-card-grip {
+	opacity: 1;
+}
+
+/* No hover on a touch screen, so the grip cannot wait for one. */
+@media (hover: none) {
+	.pdmux-card-grip {
+		opacity: 0.7;
+	}
+}
+
+.pdmux-card-grip:focus-visible {
+	outline: none;
+	color: var(--pdmux-fg);
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--pdmux-ring) 50%, transparent);
+}
+
+.pdmux-card-grip svg {
+	inline-size: 14px;
+	block-size: 14px;
+	pointer-events: none;
+}
+
+/* While a card is carried: it steps back, and a line shows where it will land. The line is
+   the card's own outline on the side it will be dropped, so nothing moves under the pointer
+   until the drop. */
+.pdmux-card[data-pdmux-dragging='true'] {
+	opacity: 0.5;
+}
+
+.pdmux-sidebar[data-pdmux-reordering='true'] {
+	cursor: grabbing;
+	user-select: none;
+}
+
+.pdmux-card[data-pdmux-drop='before'] {
+	box-shadow: 0 -3px 0 0 var(--pdmux-accent);
+}
+
+.pdmux-card[data-pdmux-drop='after'] {
+	box-shadow: 0 3px 0 0 var(--pdmux-accent);
+}
+
+/* The terminal numbers beside the name: ONE quiet pill (`#2 #4 #5`), not a chip per number —
+   a chip each cost the name most of a 300px header once a host had three terminals. The
+   NAME gives way first (it has an ellipsis and a tooltip; the numbers are what the user
+   asked to see). Only past half the header is the pill clipped, its title listing them all. Muted tabular figures, like the
+   pane header, so `#3` here reads as the same `#3` there. */
+.pdmux-card-panes {
+	flex: none;
+	max-inline-size: 50%;
+	display: inline-flex;
+	align-items: center;
+	overflow: hidden;
+	padding: 0 3px;
+	border: 1px solid var(--pdmux-line);
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.5;
+	font-variant-numeric: tabular-nums;
+	color: var(--pdmux-muted);
+}
+
+.pdmux-card-pane {
+	flex: none;
+	padding: 0 2px;
+	border: 0;
+	border-radius: 4px;
+	background: none;
+	color: inherit;
+	font: inherit;
+}
+
+button.pdmux-card-pane {
+	cursor: pointer;
+}
+
+button.pdmux-card-pane:hover,
+button.pdmux-card-pane:focus-visible {
+	outline: none;
+	background: var(--pdmux-hover);
+	color: var(--pdmux-fg);
+}
+
 /* A folded card is a header and nothing else, so the padding that framed four widgets
    is suddenly most of its height. */
 .pdmux-card[data-pdmux-collapsed='true'] {

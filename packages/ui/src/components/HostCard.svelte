@@ -56,6 +56,23 @@
 		onToggleCollapse?: (hostId: string) => void;
 		/** Absent = no control is drawn, even when `host.update` says one is offered. */
 		onUpdateAgent?: (hostId: string, anchor: HTMLElement) => void;
+		/**
+		 * Terminal cells (0-based, the same number the pane header shows as `#N`) that are
+		 * open on this host. Drawn beside the name, folded or not.
+		 */
+		panes?: readonly number[];
+		/** Absent = the pane numbers are text, not buttons. */
+		onOpenPane?: (index: number) => void;
+		/**
+		 * The reorder grip. Absent = no grip. The column owns the gesture (it knows where the
+		 * other cards are); the card only reports a press and arrow keys.
+		 */
+		onGripPointerDown?: (hostId: string, event: PointerEvent) => void;
+		onGripKey?: (hostId: string, delta: -1 | 1) => void;
+		/** This card is being carried by the reorder gesture. */
+		dragging?: boolean;
+		/** The carried card will land on this side of this card. */
+		drop?: 'before' | 'after' | null;
 	}
 
 	let {
@@ -74,6 +91,12 @@
 		onOpenSettings,
 		onToggleCollapse,
 		onUpdateAgent,
+		panes = [],
+		onOpenPane,
+		onGripPointerDown,
+		onGripKey,
+		dragging = false,
+		drop = null,
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -96,6 +119,9 @@
 	 * user cannot get back, and nothing on screen would say why.
 	 */
 	const folded = $derived(collapsed && onToggleCollapse !== undefined);
+	const reorderLabel = $derived(tr('pdmux.card.reorder', 'move card ({name})').replaceAll('{name}', host.name));
+	const paneLabel = (index: number): string =>
+		tr('pdmux.card.paneJump', 'go to terminal #{n}').replaceAll('{n}', String(index + 1));
 	const foldLabel = $derived(
 		folded ? tr('pdmux.card.expand', 'expand card') : tr('pdmux.card.collapse', 'collapse card'),
 	);
@@ -122,8 +148,37 @@
 	data-pdmux-host={host.id}
 	data-pdmux-state={host.state ?? 'online'}
 	data-pdmux-collapsed={folded ? 'true' : 'false'}
+	data-pdmux-dragging={dragging ? 'true' : undefined}
+	data-pdmux-drop={drop ?? undefined}
 >
 	<header class="pdmux-card-head">
+		<!--
+			The reorder grip, before everything else in the header: it is the handle of the
+			whole card, and the left edge is where a list's handles are looked for. Six dots,
+			drawn (lucide `grip-vertical`, ISC), narrower than the other controls because it is
+			a handle rather than a button you aim at — the 36px hit box is kept vertically.
+			Arrow keys move the card one place while it has focus.
+		-->
+		{#if onGripPointerDown || onGripKey}
+			<button
+				class="pdmux-card-grip"
+				type="button"
+				aria-label={reorderLabel}
+				title={reorderLabel}
+				data-pdmux-grip
+				onpointerdown={(event) => onGripPointerDown?.(host.id, event)}
+				onkeydown={(event) => {
+					if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+					event.preventDefault();
+					onGripKey?.(host.id, event.key === 'ArrowUp' ? -1 : 1);
+				}}
+			>
+				<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+					<circle cx="9" cy="5" r="1.6" /><circle cx="9" cy="12" r="1.6" /><circle cx="9" cy="19" r="1.6" />
+					<circle cx="15" cy="5" r="1.6" /><circle cx="15" cy="12" r="1.6" /><circle cx="15" cy="19" r="1.6" />
+				</svg>
+			</button>
+		{/if}
 		<!--
 			The disclosure control, and it goes FIRST — before the thing it discloses,
 			which is where every tree and accordion has taught people to look for it. The
@@ -162,6 +217,29 @@
 			</button>
 		{/if}
 		<span data-pdmux-name title={host.name}>{host.name}</span>
+		<!--
+			Which terminals show this host, as the pane headers number them (`#3`). They stay
+			when the card is folded: "where is this host open" is exactly what a folded column
+			is for. A button each when the consumer can take you there.
+		-->
+		{#if panes.length}
+			<span class="pdmux-card-panes" data-pdmux-panes title={panes.map((index) => `#${index + 1}`).join(' ')}>
+				{#each panes as index (index)}
+					{#if onOpenPane}
+						<button
+							type="button"
+							class="pdmux-card-pane"
+							data-pdmux-pane-jump={index}
+							aria-label={paneLabel(index)}
+							title={paneLabel(index)}
+							onclick={() => onOpenPane(index)}>#{index + 1}</button
+						>
+					{:else}
+						<span class="pdmux-card-pane" data-pdmux-pane-jump={index}>#{index + 1}</span>
+					{/if}
+				{/each}
+			</span>
+		{/if}
 		<!--
 			Reachability, drawn. ONE FAMILY, THREE SILHOUETTES: a chain link that is joined,
 			parted, or dashed — which is exactly what the three labels already said in words

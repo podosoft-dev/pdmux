@@ -157,9 +157,12 @@
 	// folded: the regression the geometry guards is the header changing shape as the
 	// chevron turns, and only a real toggle puts both states on the same card.
 	let folded = $state<Record<string, boolean>>({});
+	/** The column's order (TC-PDUI-252): a real drag reorders it, and the spec reads it back. */
+	let order = $state<string[]>(hosts.map((host) => host.id));
+	let openedPane = $state<number | null>(null);
 
 	const cards = $derived(
-		hosts.map((host) => ({
+		order.map((id) => hosts.find((host) => host.id === id)!).map((host) => ({
 		host: {
 			id: host.id,
 			name: host.name,
@@ -193,6 +196,8 @@
 		services: serviceOptions([{ id: 'web', label: 'web', url: 'https://web.test', status: 'up' as const }]),
 		prefs: cardPrefs({}, host.id),
 		collapsed: folded[host.id] === true,
+		// Terminal numbers on both cards; three on the long name so they compete with it for the header.
+		panes: host.id === 'h2' ? [1, 3, 4] : [0],
 		})),
 	);
 
@@ -480,7 +485,15 @@
 			onAddHost={() => {}}
 			onUpdateAgent={() => {}}
 			onToggleCollapse={(hostId) => (folded = { ...folded, [hostId]: !folded[hostId] })}
+			onMove={(from, to) => {
+				const next = [...order];
+				const [moved] = next.splice(from, 1);
+				if (moved) next.splice(to, 0, moved);
+				order = next;
+			}}
+			onOpenPane={(index) => (openedPane = index)}
 		/>
+		<output hidden data-harness-order={order.join(',')} data-harness-pane={openedPane ?? ''}></output>
 		<SplitHandle onCommit={(delta) => (layout = setSidebarWidth(layout, layout.sidebarWidth + delta))} />
 		<div class="pdmux pdmux-panel">
 			<TerminalGrid
