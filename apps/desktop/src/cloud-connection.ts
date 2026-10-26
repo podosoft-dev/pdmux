@@ -7,12 +7,22 @@ import { DESKTOP_PROTOCOL_VERSION, DESKTOP_SCHEME } from "@pdmux/desktop-protoco
 import { readFile, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import type { StackManager } from "./stack-manager.js";
+import { COOKIE_STORAGE_KEY, connectFailure, reconnectDelayMs, withoutStoredExpiry } from "./cloud-session.js";
+
+const sessionCipher = {
+  encrypt: (value: string) => safeStorage.encryptString(value),
+  decrypt: (value: Buffer) => safeStorage.decryptString(value),
+};
 
 function cloudClient(url: string, values: Map<string, unknown>, save: () => void) {
   return createAuthClient({ baseURL: url, plugins: [electronClient({
     clientID: "pdmux-desktop", signInURL: `${url}/desktop/connect`, protocol: DESKTOP_SCHEME,
     userImageProxy: { enabled: false },
-    storage: { getItem: key => values.get(key), setItem: (key, value) => { values.set(key, value); save(); } },
+    // The cookie jar is read without the expiry it was stored with: see `cloud-session.ts`.
+    storage: {
+      getItem: key => key === COOKIE_STORAGE_KEY && safeStorage.isEncryptionAvailable() ? withoutStoredExpiry(values.get(key), sessionCipher) : values.get(key),
+      setItem: (key, value) => { values.set(key, value); save(); },
+    },
   })] });
 }
 export class CloudConnection {
@@ -20,6 +30,7 @@ export class CloudConnection {
   private url = "";
   private values = new Map<string, unknown>();
   private generation = 0;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
   private write = Promise.resolve();
   private readonly file: string;
   constructor(private readonly window: BrowserWindow, private readonly stack: StackManager, private appUrl: string, userData: string, profileId: string, private readonly beforeConnect: () => Promise<unknown>, private readonly defaultServer: string) {
@@ -101,9 +112,27 @@ export class CloudConnection {
         this.url = url.origin;
         for (const [key, value] of saved.values) this.values.set(key, value);
         this.client = this.createClient();
-        if (this.client.getCookie()) await this.stack.control("connect", { url: this.url, cookie: this.client.getCookie() });
-      } catch { /* An unavailable server or keychain never prevents local use. */ }
+        this.reconnect(this.generation, 0);
+      } catch { /* An unreadable keychain never prevents local use. */ }
     }
+  }
+  /**
+   * Connect the saved session, and keep trying while it fails for a reason that can pass.
+   *
+   * ⚠ ONE ATTEMPT AT LAUNCH WAS NOT ENOUGH. A launch with no network yet, or during a server
+   * deploy, failed once, the error was swallowed, and the app stayed offline until it was
+   * restarted — with every server host shown disconnected and nothing saying why. A 401 stops
+   * the loop: the server ended the session and only signing in again can help. Any user action
+   * on the connection bumps `generation`, which cancels a pending attempt.
+   */
+  private reconnect(generation: number, attempt: number): void {
+    clearTimeout(this.reconnectTimer); this.reconnectTimer = undefined;
+    const client = this.client;
+    if (generation !== this.generation || !client?.getCookie()) return;
+    void this.stack.control("connect", { url: this.url, cookie: client.getCookie() }).catch((error: unknown) => {
+      if (generation !== this.generation || connectFailure(error) === "signed-out") return;
+      this.reconnectTimer = setTimeout(() => this.reconnect(generation, attempt + 1), reconnectDelayMs(attempt));
+    });
   }
   async handleUrl(value: string): Promise<void> {
     const url = new URL(value);
@@ -125,6 +154,7 @@ export class CloudConnection {
     if (this.client?.getCookie()) await this.stack.control("connect", { url: this.url, cookie: this.client.getCookie() });
   }
   close(): void {
+    this.generation += 1; clearTimeout(this.reconnectTimer);
     for (const name of ["connect", "authenticate", "workspace", "disconnect", "open"]) ipcMain.removeHandler(`pdmux:connection:${name}`);
   }
 }

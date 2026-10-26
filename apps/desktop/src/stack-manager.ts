@@ -247,7 +247,7 @@ export class StackManager {
       method: "POST", headers: { "content-type": "application/json", "x-pdmux-desktop-capability": this.capability, cookie: this.localCookie },
       body: JSON.stringify({ action, ...data }),
     });
-    if (!response.ok) throw Object.assign(new Error(`Desktop connection failed (${response.status})`), { code: "DESKTOP_CONNECTION_FAILED" });
+    if (!response.ok) throw Object.assign(new Error(`Desktop connection failed (${response.status})`), { code: "DESKTOP_CONNECTION_FAILED", status: response.status });
     return response.json();
   }
 
