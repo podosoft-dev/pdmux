@@ -119,6 +119,14 @@
 	 * user cannot get back, and nothing on screen would say why.
 	 */
 	const folded = $derived(collapsed && onToggleCollapse !== undefined);
+	/**
+	 * Where the name starts in the header, so the terminal-number row lines up under it: the
+	 * grip ends 6px in (20px box, -8/-6 margins), the chevron 30px later (36px box, -6 margin),
+	 * each followed by the header's 8px gap. Measured in the harness, not guessed (TC-PDUI-252).
+	 */
+	const nameIndent = $derived(
+		(onGripPointerDown || onGripKey ? 14 : 0) + (onToggleCollapse ? 38 : 0),
+	);
 	const reorderLabel = $derived(tr('pdmux.card.reorder', 'move card ({name})').replaceAll('{name}', host.name));
 	const paneLabel = (index: number): string =>
 		tr('pdmux.card.paneJump', 'go to terminal #{n}').replaceAll('{n}', String(index + 1));
@@ -150,6 +158,7 @@
 	data-pdmux-collapsed={folded ? 'true' : 'false'}
 	data-pdmux-dragging={dragging ? 'true' : undefined}
 	data-pdmux-drop={drop ?? undefined}
+	style:--pdmux-card-name-indent={`${nameIndent}px`}
 >
 	<header class="pdmux-card-head">
 		<!--
@@ -217,29 +226,6 @@
 			</button>
 		{/if}
 		<span data-pdmux-name title={host.name}>{host.name}</span>
-		<!--
-			Which terminals show this host, as the pane headers number them (`#3`). They stay
-			when the card is folded: "where is this host open" is exactly what a folded column
-			is for. A button each when the consumer can take you there.
-		-->
-		{#if panes.length}
-			<span class="pdmux-card-panes" data-pdmux-panes title={panes.map((index) => `#${index + 1}`).join(' ')}>
-				{#each panes as index (index)}
-					{#if onOpenPane}
-						<button
-							type="button"
-							class="pdmux-card-pane"
-							data-pdmux-pane-jump={index}
-							aria-label={paneLabel(index)}
-							title={paneLabel(index)}
-							onclick={() => onOpenPane(index)}>#{index + 1}</button
-						>
-					{:else}
-						<span class="pdmux-card-pane" data-pdmux-pane-jump={index}>#{index + 1}</span>
-					{/if}
-				{/each}
-			</span>
-		{/if}
 		<!--
 			Reachability, drawn. ONE FAMILY, THREE SILHOUETTES: a chain link that is joined,
 			parted, or dashed — which is exactly what the three labels already said in words
@@ -311,6 +297,31 @@
 			</svg>
 		</button>
 	</header>
+	<!--
+		Which terminals show this host, as the pane headers number them (`#3`). A row of its own
+		under the name, not beside it: in the header they cost the name most of a 300px card
+		(`dev-p…` with `#3 #4`, 2026-10-26), and the name is what identifies the card. Only hosts
+		with a terminal get the row; it stays when the card is folded, since "where is this host
+		open" is exactly what a folded column is for.
+	-->
+	{#if panes.length}
+		<div class="pdmux-card-panes" data-pdmux-panes title={panes.map((index) => `#${index + 1}`).join(' ')}>
+			{#each panes as index (index)}
+				{#if onOpenPane}
+					<button
+						type="button"
+						class="pdmux-card-pane"
+						data-pdmux-pane-jump={index}
+						aria-label={paneLabel(index)}
+						title={paneLabel(index)}
+						onclick={() => onOpenPane(index)}>#{index + 1}</button
+					>
+				{:else}
+					<span class="pdmux-card-pane" data-pdmux-pane-jump={index}>#{index + 1}</span>
+				{/if}
+			{/each}
+		</div>
+	{/if}
 
 	{#if widgets.agents && !folded}
 		<ul class="pdmux-widget" data-pdmux-widget="agents">

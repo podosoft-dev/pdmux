@@ -1004,20 +1004,15 @@
 	box-shadow: 0 3px 0 0 var(--pdmux-accent);
 }
 
-/* The terminal numbers beside the name: ONE quiet pill (`#2 #4 #5`), not a chip per number —
-   a chip each cost the name most of a 300px header once a host had three terminals. The
-   NAME gives way first (it has an ellipsis and a tooltip; the numbers are what the user
-   asked to see). Only past half the header is the pill clipped, its title listing them all. Muted tabular figures, like the
-   pane header, so `#3` here reads as the same `#3` there. */
+/* The terminal numbers, on a row under the name (0.17.23 — beside it they cost the name most of
+   the header). Indented to the name's own start, past the grip and the chevron, so the numbers
+   read as belonging to it; wraps rather than clips when a host has many. Muted tabular figures,
+   like the pane header, so `#3` here reads as the same `#3` there. */
 .pdmux-card-panes {
-	flex: none;
-	max-inline-size: 50%;
-	display: inline-flex;
-	align-items: center;
-	overflow: hidden;
-	padding: 0 3px;
-	border: 1px solid var(--pdmux-line);
-	border-radius: 999px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px 4px;
+	margin: 2px 0 0 var(--pdmux-card-name-indent, 32px);
 	font-size: 11px;
 	font-weight: 500;
 	line-height: 1.5;
@@ -1027,9 +1022,9 @@
 
 .pdmux-card-pane {
 	flex: none;
-	padding: 0 2px;
-	border: 0;
-	border-radius: 4px;
+	padding: 0 5px;
+	border: 1px solid var(--pdmux-line);
+	border-radius: 999px;
 	background: none;
 	color: inherit;
 	font: inherit;

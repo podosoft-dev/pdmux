@@ -165,7 +165,8 @@
 		order.map((id) => hosts.find((host) => host.id === id)!).map((host) => ({
 		host: {
 			id: host.id,
-			name: host.name,
+			// `?names=fleet`: the length of a real dev host name, for the name-clipping check.
+			name: host.id === 'h1' && query.get('names') === 'fleet' ? 'dev-pdindex' : host.name,
 			state: lost ? ('unknown' as const) : ('online' as const),
 			// ⚠ ON THE LONG-NAME CARD DELIBERATELY. That name is one unbreakable token and
 			// is the shape that pushed the ⚙ off the edge before the header had a
@@ -197,7 +198,7 @@
 		prefs: cardPrefs({}, host.id),
 		collapsed: folded[host.id] === true,
 		// Terminal numbers on both cards; three on the long name so they compete with it for the header.
-		panes: host.id === 'h2' ? [1, 3, 4] : [0],
+		panes: host.id === 'h2' ? [1, 3, 4] : query.get('names') === 'fleet' ? [2, 3, 6] : [0],
 		})),
 	);
 
