@@ -651,6 +651,25 @@ export function focusSlot(layout: TerminalLayout, slotId: string | null): Termin
 	return { ...layout, focusId: slotId };
 }
 
+/**
+ * Bring cell `index` on screen and focus it: the page that holds it, and no zoom on some
+ * other pane (a zoom shows one pane only, so the asked-for one would stay hidden). An empty
+ * or out-of-range cell is a no-op — there is nothing there to go to.
+ *
+ * What a terminal number on a host card does (`#3` = cell 2).
+ */
+export function revealSlot(layout: TerminalLayout, index: number): TerminalLayout {
+	const slot = cells(layout)[index];
+	if (!slot) return layout;
+	const size = GRID_SIZE[layout.mode] ?? GRID_SIZE.split4;
+	return {
+		...layout,
+		page: Math.floor(index / size),
+		zoomId: layout.zoomId && layout.zoomId !== slot.id ? null : layout.zoomId,
+		focusId: slot.id,
+	};
+}
+
 /** Put a target into cell `index`, growing the grid with empty cells if needed. */
 export function assignSlot(
 	layout: TerminalLayout,

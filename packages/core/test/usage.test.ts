@@ -9,6 +9,9 @@ import {
 	agentRow,
 	agentRows,
 	cardCollapsed,
+	cardOrder,
+	moveCard,
+	orderHosts,
 	cardPrefs,
 	gaugeCell,
 	providerLabel,
@@ -122,16 +125,17 @@ describe('[TC-PDCORE-030] card widgets are per card, use safe defaults, and surv
 	});
 });
 
-describe('[TC-PDCORE-096] a card folds to its header, per host, and stays folded', () => {
-	it('is not a widget, survives a hydrate, and outlives a widget toggle', () => {
+describe('[TC-PDCORE-096] a card folds to its header, per host, and stays as the user left it', () => {
+	it('starts folded, is not a widget, survives a hydrate, and outlives a widget toggle', () => {
 		let cards: CardPrefsMap = {};
-		expect(cardCollapsed(cards, 'h1')).toBe(false);
-		expect(cardCollapsed(undefined, 'h1')).toBe(false);
+		// 0.17.21: every card starts folded; the user opens what they need.
+		expect(cardCollapsed(cards, 'h1')).toBe(true);
+		expect(cardCollapsed(undefined, 'h1')).toBe(true);
 
 		cards = toggleCardCollapsed(cards, 'h1');
-		expect(cardCollapsed(cards, 'h1')).toBe(true);
-		// Per card: the operator folds the host they rarely look at, not the column.
-		expect(cardCollapsed(cards, 'h2')).toBe(false);
+		expect(cardCollapsed(cards, 'h1')).toBe(false);
+		// Per card: opening one host does not open the column.
+		expect(cardCollapsed(cards, 'h2')).toBe(true);
 		expect(toggleCardCollapsed(cards, '')).toBe(cards);
 
 		// ⚠ FOLDING IS NOT HIDING EVERY WIDGET. A folded card still remembers what it
@@ -139,21 +143,72 @@ describe('[TC-PDCORE-096] a card folds to its header, per host, and stays folded
 		expect(cardPrefs(cards, 'h1')).toEqual({ agents: true, resources: true, links: false });
 		cards = toggleCardWidget(cards, 'h1', 'resources');
 		expect(cardPrefs(cards, 'h1').resources).toBe(false);
-		expect(cardCollapsed(cards, 'h1')).toBe(true);
-		cards = toggleCardCollapsed(cards, 'h1');
 		expect(cardCollapsed(cards, 'h1')).toBe(false);
+		cards = toggleCardCollapsed(cards, 'h1');
+		expect(cardCollapsed(cards, 'h1')).toBe(true);
 		expect(cardPrefs(cards, 'h1').resources).toBe(false);
 
 		// The reload path. Everything persisted goes through `sanitizeCardPrefs`, and it
-		// DROPS keys it does not know — which is exactly how a fold would come back open.
+		// DROPS keys it does not know — which is exactly how an opened card would fold again.
 		const reloaded = sanitizeCardPrefs(JSON.parse(JSON.stringify(toggleCardCollapsed(cards, 'h1'))));
-		expect(cardCollapsed(reloaded, 'h1')).toBe(true);
+		expect(cardCollapsed(reloaded, 'h1')).toBe(false);
 		expect(cardPrefs(reloaded, 'h1').resources).toBe(false);
-		// A row that carries nothing but the fold still has to be kept.
-		expect(cardCollapsed(sanitizeCardPrefs({ lone: { collapsed: true } }), 'lone')).toBe(true);
+		// A row that carries nothing but the opening still has to be kept.
+		expect(cardCollapsed(sanitizeCardPrefs({ lone: { open: true } }), 'lone')).toBe(false);
 		// …and junk is still junk.
-		expect(cardCollapsed(sanitizeCardPrefs({ h1: { collapsed: 'yes' } }), 'h1')).toBe(false);
-		expect(CARD_WIDGETS).not.toContain('collapsed');
+		expect(cardCollapsed(sanitizeCardPrefs({ h1: { open: 'yes' } }), 'h1')).toBe(true);
+		expect(CARD_WIDGETS).not.toContain('open');
+	});
+});
+
+describe('[TC-PDCORE-111] every card folds once when the key moved from `collapsed` to `open`', () => {
+	it('does not read an old `collapsed: false`, and drops the old key once the card is toggled', () => {
+		// The operator asked for cards they had already opened to fold too.
+		const legacy = sanitizeCardPrefs({ h1: { collapsed: false, links: true }, h2: { collapsed: true } });
+		expect(cardCollapsed(legacy, 'h1')).toBe(true);
+		expect(cardCollapsed(legacy, 'h2')).toBe(true);
+		// The widget choice on the same row is not lost with it.
+		expect(cardPrefs(legacy, 'h1').links).toBe(true);
+		// A record that still carries the old key (straight from the server) loses it on toggle.
+		const opened = toggleCardCollapsed({ h1: { collapsed: false } as CardPrefsMap[string] }, 'h1');
+		expect(opened.h1).toEqual({ open: true });
+	});
+});
+
+describe('[TC-PDCORE-112] the column follows each user\'s own order', () => {
+	const hosts = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+	it('puts placed cards first by position and keeps the rest in arrival order', () => {
+		expect(orderHosts(hosts, undefined).map((h) => h.id)).toEqual(['a', 'b', 'c', 'd']);
+		const map: CardPrefsMap = { c: { order: 0 }, a: { order: 1 } };
+		// A host added later (d, b never placed) lands below the arrangement, not inside it.
+		expect(orderHosts(hosts, map).map((h) => h.id)).toEqual(['c', 'a', 'b', 'd']);
+		// Junk positions are not positions.
+		expect(orderHosts(hosts, { d: { order: -1 } as CardPrefsMap[string], c: { order: 1.5 } as CardPrefsMap[string] }).map((h) => h.id)).toEqual(['a', 'b', 'c', 'd']);
+	});
+
+	it('moves one card, numbers the whole column, and reports only what changed', () => {
+		const ids = ['a', 'b', 'c', 'd'];
+		const first = moveCard({}, ids, 3, 0);
+		expect(orderHosts(hosts, first.map).map((h) => h.id)).toEqual(['d', 'a', 'b', 'c']);
+		expect(first.changed.sort()).toEqual(['a', 'b', 'c', 'd']);
+		// Moving it back down one place touches the two cards that swapped, nothing else.
+		const second = moveCard(first.map, ['d', 'a', 'b', 'c'], 0, 1);
+		expect(orderHosts(hosts, second.map).map((h) => h.id)).toEqual(['a', 'd', 'b', 'c']);
+		expect(second.changed.sort()).toEqual(['a', 'd']);
+		// Out of range or no-op = same map, nothing to save.
+		expect(moveCard(first.map, ids, 1, 1)).toEqual({ map: first.map, changed: [] });
+		expect(moveCard(first.map, ids, 0, 9).changed).toEqual([]);
+	});
+
+	it('keeps the position through a reload and through the other settings on the card', () => {
+		const { map } = moveCard({ b: { open: true, links: true } }, ['a', 'b'], 1, 0);
+		const reloaded = sanitizeCardPrefs(JSON.parse(JSON.stringify(map)));
+		expect(cardOrder(reloaded, 'b')).toBe(0);
+		expect(cardCollapsed(reloaded, 'b')).toBe(false);
+		expect(cardPrefs(reloaded, 'b').links).toBe(true);
+		// Toggling a widget or the fold keeps the position.
+		expect(cardOrder(toggleCardWidget(reloaded, 'b', 'agents'), 'b')).toBe(0);
+		expect(cardOrder(toggleCardCollapsed(reloaded, 'b'), 'b')).toBe(0);
 	});
 });
 

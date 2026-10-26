@@ -39,6 +39,7 @@ import {
 	pageCount,
 	pickerApply,
 	removeSlot,
+	revealSlot,
 	setClickAction,
 	setDockDetailHeight,
 	setDockTarget,
@@ -938,5 +939,31 @@ describe('a native pane whose session is gone reopens under the same name', () =
 		const reloaded = normalizeLayout(JSON.parse(JSON.stringify(next)), [{ id: 'h1', name: 'one', online: true }]);
 		expect(reloaded.slots[1]).toEqual(next.slots[1]);
 		expect(toProtocolTarget(reloaded.slots[1]!)).toEqual({ kind: 'session', session: 'w2', backend: 'native', sessionId: fresh, intent: 'attach' });
+	});
+});
+
+describe('[TC-PDCORE-113] a terminal number on a host card brings that pane on screen', () => {
+	const slot = (id: string): TerminalSlot => ({ id, hostId: 'h1', kind: 'shell', session: null });
+	const base: TerminalLayout = {
+		...defaultLayout(),
+		mode: 'split4',
+		slots: [slot('s1'), slot('s2'), null, slot('s4'), slot('s5'), slot('s6')],
+		page: 0,
+		zoomId: null,
+		focusId: 's1',
+	};
+	it('turns to the page that holds the cell and focuses it', () => {
+		const next = revealSlot(base, 4);
+		expect(next.page).toBe(1);
+		expect(next.focusId).toBe('s5');
+		expect(visibleSlots(next).map((cell) => cell?.id ?? null)).toContain('s5');
+	});
+	it('drops a zoom on another pane, keeps one on this pane', () => {
+		expect(revealSlot({ ...base, zoomId: 's2' }, 4).zoomId).toBeNull();
+		expect(revealSlot({ ...base, zoomId: 's5' }, 4).zoomId).toBe('s5');
+	});
+	it('does nothing for an empty or missing cell', () => {
+		expect(revealSlot(base, 2)).toBe(base);
+		expect(revealSlot(base, 99)).toBe(base);
 	});
 });
