@@ -179,6 +179,21 @@ describe("[TC-PDUI-104] resources", () => {
     expect(resources.swapHint).toBe("2.0Gi/8.0Gi");
   });
 
+  it("[TC-PDUI-248] a host that is not live shows no readings instead of its last heartbeat", () => {
+    const stale = host({
+      online: false,
+      resource: {
+        cpuPct: 27, memPct: 78, diskPct: 1, memUsedBytes: 12 * 1024 ** 3, memTotalBytes: 16 * 1024 ** 3,
+        diskUsedBytes: null, diskTotalBytes: null, swapPct: 91, swapUsedBytes: 1, swapTotalBytes: 2, load1: null, uptimeSec: null,
+      },
+    });
+    expect(hostResources(stale, null)).toEqual({ cpuPct: null, memPct: null, diskPct: null, swapPct: null, memHint: "", diskHint: "", swapHint: "" });
+    // Online, but this screen lost the server: the caller says it is not live.
+    const online = { ...stale, online: true };
+    expect(hostResources(online, undefined, false).cpuPct).toBeNull();
+    expect(hostResources(online, null).cpuPct).toBe(27);
+  });
+
   it("hints 0B/0B for a swapless host, which is what separates it from an empty one", () => {
     const swapless = hostResources(
       host({

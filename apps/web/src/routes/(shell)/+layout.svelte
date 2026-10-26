@@ -204,7 +204,7 @@
         ? { ...hostSummary(host, updateMark(host), powerMark(host)), state: "unknown" as const }
         : hostSummary(host, updateMark(host), powerMark(host)),
       agents: agentRowsFor(host, shell.providers, shell.feed.now),
-      resources: hostResources(host, serverLost ? undefined : freshById.get(host.id)),
+      resources: hostResources(host, serverLost ? undefined : freshById.get(host.id), !serverLost && host.online),
       history: shell.feed.history[host.id] ?? null,
       services: serviceOptionsFor(host),
       prefs: cardPrefs(layout.cards, host.id),

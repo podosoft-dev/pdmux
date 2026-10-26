@@ -188,7 +188,13 @@ function ratioHint(used: number | null | undefined, total: number | null | undef
  * showing nothing — the row carries the timestamp that made it stale in the first
  * place, so the dash it draws is honest either way.
  */
-export function hostResources(host: HostView, fresh: MetricsRow | null | undefined): HostResources {
+export function hostResources(host: HostView, fresh: MetricsRow | null | undefined, live = host.online): HostResources {
+  // A host we are not hearing from right now (offline, a relaying desktop that is closed,
+  // or this screen cut off from the server) has no current readings. Its last heartbeat
+  // can be days old; drawing it as "CPU 27%" reads as a measurement, so it reads as unknown.
+  if (!live) {
+    return { cpuPct: null, memPct: null, diskPct: null, swapPct: null, memHint: "", diskHint: "", swapHint: "" };
+  }
   const resource = host.resource;
   return {
     cpuPct: fresh?.cpuPct ?? resource?.cpuPct ?? null,
