@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.17.17
+
+- The line a pane writes when its session is gone no longer contradicts the reopen button
+  beside it: it now points to "Open a new session with the same name" or closing the panel,
+  instead of only telling the user to close the panel.
+
 ## 0.17.16
 
 - Fix "Open a new session with the same name" failing with "terminal already open": the relay

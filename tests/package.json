@@ -1,6 +1,6 @@
 {
   "name": "pdmux-tests",
-  "version": "0.17.16",
+  "version": "0.17.17",
   "private": true,
   "scripts": {
     "test:e2e": "bun run-e2e.ts",
