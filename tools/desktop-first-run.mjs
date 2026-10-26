@@ -34,7 +34,9 @@ export async function verifyDesktopFirstRun(page, screenshot, { fresh = true } =
     await card.waitFor();
     assert.ok((await card.textContent()).includes(host.label),"[TC-PDDESKTOP-017] the default host name appears in the host sidebar");
     const hostBounds = await card.boundingBox();
-    assert.ok(hostBounds.width>150 && hostBounds.height>50,"[TC-PDDESKTOP-017] the named host card has a usable surface");
+    // 0.17.21: cards start folded to their header, so the card is one row tall until opened.
+    assert.ok(hostBounds.width>150 && hostBounds.height>=30,"[TC-PDDESKTOP-017] the named host card has a usable surface");
+    assert.equal(await card.getAttribute("data-pdmux-collapsed"),"true","[TC-PDDESKTOP-017] a new host card starts folded");
     assert.equal(await card.locator("[data-pdmux-name]").getAttribute("title"),host.label,"[TC-PDDESKTOP-017] the complete host name is available on hover");
     await page.screenshot({path:`${screenshot}.host.png`});
     await writeFile(`${screenshot}.host.json`,JSON.stringify({label:host.label,bounds:hostBounds},null,2));
