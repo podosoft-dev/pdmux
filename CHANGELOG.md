@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.17.19
+
+- A host card no longer draws the last heartbeat's CPU, memory, swap and disk when the host
+  is not live (offline, relayed by a desktop app that is closed, or while the screen has lost
+  the server). Those readings could be days old; the card shows them as unknown instead.
+
 ## 0.17.18
 
 - A host relayed by a desktop app that is not running no longer shows as online with the
