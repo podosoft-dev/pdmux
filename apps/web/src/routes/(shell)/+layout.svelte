@@ -14,6 +14,7 @@
    */
   import "@pdmux/ui/styles.css";
   import { onDestroy, onMount, untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
   import { beforeNavigate, goto, replaceState } from "$app/navigation";
   import { page } from "$app/state";
   import { CardSettingsPopover, HostSidebar, ShellViewTabs, SplitHandle } from "@pdmux/ui";
@@ -22,6 +23,7 @@
     cardCollapsed,
     cardPrefs,
     freshMetrics,
+    SHELL_STACK_MAX_WIDTH,
     setSidebarWidth,
     renameSlotSessions,
   } from "@pdmux/core";
@@ -43,6 +45,7 @@
     hostResources,
     hostSummary,
     metricsFeed,
+    paneIndexesByHost,
     serviceOptionsFor,
   } from "#lib/dashboard/map.js";
   import { cardUpdate, paneSlots } from "#lib/dashboard/agent-update.js";
@@ -198,8 +201,10 @@
    * column says why at its top.
    */
   const serverLost = $derived(!shell.feed.connection.online);
+  /** Terminal cells per host, numbered as the pane headers number them (`#N` = index + 1). */
+  const panesByHost = $derived(paneIndexesByHost(layout.slots));
   const cards = $derived(
-    shell.feed.hosts.map((host) => ({
+    shell.orderedHosts.map((host) => ({
       host: serverLost
         ? { ...hostSummary(host, updateMark(host), powerMark(host)), state: "unknown" as const }
         : hostSummary(host, updateMark(host), powerMark(host)),
@@ -209,6 +214,7 @@
       services: serviceOptionsFor(host),
       prefs: cardPrefs(layout.cards, host.id),
       collapsed: cardCollapsed(layout.cards, host.id),
+      panes: panesByHost.get(host.id) ?? [],
     })),
   );
 
@@ -224,6 +230,14 @@
   // panel IS the view — deriving it means `data-view` can never name a region the
   // current route did not render.
   const view = $derived(onDashboard ? shell.view : "page");
+  /**
+   * Language, theme and profile sit in the dashboard's toolbar, beside the file explorer
+   * toggle (0.17.21: the column is for hosts). Where there is no such toolbar — any route
+   * but `/`, and a narrow screen whose toolbar is compact — they stay at the top of the
+   * column, so they are never out of reach. Same breakpoint as the dashboard page.
+   */
+  const stacked = new MediaQuery(`max-width: ${SHELL_STACK_MAX_WIDTH - 1}px`, untrack(() => data.phoneHint));
+  const toolsInToolbar = $derived(onDashboard && !stacked.current);
   const tabs = $derived([
     { id: "hosts", label: i18n.t.dash.tabs.hosts, iconKind: "servers" as const },
     { id: "terminal", label: i18n.t.dash.tabs.terminal, iconKind: "terminal" as const },
@@ -254,6 +268,14 @@
    * sized in `dvh` keeps the terminal's last rows and the key row underneath the keyboard.
    */
   const keyboard = trackVisualViewport();
+
+  /** A terminal number on a card: go to the dashboard, the terminals, and that cell. */
+  async function openPane(index: number): Promise<void> {
+    if (!onDashboard) await goto("/");
+    // Only a narrow screen has regions to switch; on a desktop the terminals are already there.
+    if (stacked.current) selectView(shell, "terminal");
+    shell.revealPane(index);
+  }
 
   async function chooseView(id: string): Promise<void> {
     // The tab bar is only rendered on a narrow screen, where a non-dashboard route
@@ -397,18 +419,10 @@
     onToggleCollapse={(hostId: string) => shell.toggleCollapsed(hostId)}
   onUpdateAgent={data.canManage ? openUpdate : undefined}
     onAddHost={data.canManage ? () => (addOpen = true) : undefined}
-  >
-    {#snippet header()}
-      <!-- Preferences and profile stay here; return navigation belongs to each page. -->
-      <div class="flex items-center gap-1" data-testid="shell-toolbar">
-        <div class="ms-auto flex items-center gap-0.5">
-          <LanguageSwitch />
-          <ThemeToggle />
-          <ShellUserMenu user={data.user} canManage={data.canManage} desktopStatus={data.desktopStatus} />
-        </div>
-      </div>
-    {/snippet}
-  </HostSidebar>
+    onMove={(from: number, to: number) => shell.moveCard(from, to)}
+    onOpenPane={(index: number) => openPane(index)}
+    header={toolsInToolbar ? undefined : sidebarTools}
+  />
 
   <SplitHandle {t} onDrag={(delta) => dragSidebar(delta, false)} onCommit={(delta) => dragSidebar(delta, true)} />
 
@@ -419,6 +433,17 @@
   <ShellViewTabs {tabs} active={onDashboard ? shell.view : null} {t} onSelect={chooseView} />
   </main>
 </div>
+
+<!-- Preferences and profile; return navigation belongs to each page. -->
+{#snippet sidebarTools()}
+  <div class="flex items-center gap-1" data-testid="shell-toolbar">
+    <div class="ms-auto flex items-center gap-0.5">
+      <LanguageSwitch />
+      <ThemeToggle />
+      <ShellUserMenu user={data.user} canManage={data.canManage} desktopStatus={data.desktopStatus} />
+    </div>
+  </div>
+{/snippet}
 
 <SettingsDialog data={data} />
 <SessionManagerDialog bind:open={shell.sessionsOpen} onChanged={(renamed) => { if (renamed) { const next = renameSlotSessions(shell.layout, renamed.hostId, renamed, renamed.name); if (next !== shell.layout) shell.apply(next); } return shell.feed.refresh(); }} />

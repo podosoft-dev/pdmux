@@ -257,7 +257,10 @@
       "expand": "expand card",
       "settings": "card settings",
       "settingsFor": "card settings",
-      "update": "update agent"
+      "update": "update agent",
+      "reorder": "move card ({name})",
+      "moved": "Moved to position {n}",
+      "paneJump": "go to terminal #{n}"
     },
     "cell": {
       "assign": "Assign a terminal to this cell",

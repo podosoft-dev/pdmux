@@ -257,7 +257,10 @@
       "expand": "카드 펼치기",
       "settings": "카드 설정",
       "settingsFor": "카드 설정",
-      "update": "에이전트 업데이트"
+      "update": "에이전트 업데이트",
+      "reorder": "카드 순서 바꾸기 ({name})",
+      "moved": "{n}번째로 옮겼습니다",
+      "paneJump": "#{n} 터미널로 이동"
     },
     "cell": {
       "assign": "이 칸에 터미널 지정",

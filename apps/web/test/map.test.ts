@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { freshMetrics } from "@pdmux/core";
 import {
   agentRowsFor,
+  paneIndexesByHost,
   formatBytes,
   gridHosts,
   serviceOptionsFor,
@@ -560,5 +561,14 @@ describe("[TC-PDWEB-027] a service that was turned off", () => {
     const legacy = { id: "s1", label: "api", port: 3000, probe: "tcp", path: "/", urlTemplate: null, sortOrder: 0, status: "up", latencyMs: 1 } as unknown as HostServiceView;
     const options = serviceOptionsFor(host({ address: "10.0.0.1", services: [legacy] }));
     expect(options.map((option) => option.label)).toEqual(["api"]);
+  });
+});
+
+describe("[TC-PDUI-253] a host card numbers its terminals as the pane headers do", () => {
+  it("lists each host's cells by grid index, skipping empty cells without renumbering", () => {
+    const map = paneIndexesByHost([{ hostId: "a" }, null, { hostId: "b" }, { hostId: "a" }, undefined, { hostId: "a" }]);
+    expect(map.get("a")).toEqual([0, 3, 5]);
+    expect(map.get("b")).toEqual([2]);
+    expect(map.get("c")).toBeUndefined();
   });
 });

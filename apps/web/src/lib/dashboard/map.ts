@@ -439,3 +439,17 @@ export function workingDiffFiles<T>(diff: {
   if (!diff) return [];
   return [...(diff.staged ?? []), ...(diff.unstaged ?? []), ...(diff.untracked ?? [])];
 }
+
+/**
+ * Terminal cells per host, numbered as the pane headers number them (`#N` = index + 1), so
+ * a host card can say where that host is open. Empty cells are skipped, not renumbered: the
+ * numbers are the grid's, not a count.
+ */
+export function paneIndexesByHost(slots: readonly ({ hostId: string } | null | undefined)[]): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  slots.forEach((slot, index) => {
+    if (!slot) return;
+    out.set(slot.hostId, [...(out.get(slot.hostId) ?? []), index]);
+  });
+  return out;
+}

@@ -32,6 +32,7 @@
     clearSlot,
     cycleMode,
     focusSlot,
+    revealSlot,
     movePage,
     pageCount,
     pickerApply,
@@ -62,6 +63,9 @@
   import FilesDockPanel from "#lib/dashboard/components/files-dock.svelte";
   import ConfirmDialog from "#lib/dashboard/components/confirm-dialog.svelte";
   import TerminalToolbar from "#lib/dashboard/components/terminal-toolbar.svelte";
+  import LanguageSwitch from "#lib/components/language-switch.svelte";
+  import ThemeToggle from "#lib/components/theme-toggle.svelte";
+  import ShellUserMenu from "#lib/dashboard/components/shell-user-menu.svelte";
   import SessionTerminateDialog from "#lib/dashboard/components/session-terminate-dialog.svelte";
   import TerminalPaneActions from "#lib/dashboard/components/terminal-pane-actions.svelte";
   import TerminalPaneWarning from "#lib/dashboard/components/terminal-pane-warning.svelte";
@@ -166,6 +170,21 @@
     // there. Paging on a phone is navigation, not a change to the arrangement. The pane's
     // own tap still focuses it (that is what raises the software keyboard).
   }
+  /**
+   * A terminal number pressed on a host card. A desktop turns to the page and focuses the
+   * pane (a layout change, like the pager); a phone moves its LOCAL cursor, for the same
+   * reason `paged` does not write it.
+   */
+  let handledPaneRequest = 0;
+  $effect(() => {
+    const request = shell.paneRequest;
+    if (!request || request.seq === handledPaneRequest) return;
+    handledPaneRequest = request.seq;
+    untrack(() => {
+      if (stacked.current) cursor = request.index;
+      else shell.apply(revealSlot(layout, request.index));
+    });
+  });
   const takenSessions = $derived(
     layout.slots.filter((slot): slot is TerminalSlot => Boolean(slot?.session)).map((slot) => slot.session ?? ""),
   );
@@ -430,7 +449,13 @@
     onToggleFiles={() => shell.apply(toggleFiles(layout))}
     onAdd={(element: HTMLElement) => openPicker(null, element)}
     compact={stacked.current}
-  />
+  >
+    {#snippet trailing()}
+      <LanguageSwitch />
+      <ThemeToggle />
+      <ShellUserMenu user={data.user} canManage={data.canManage} desktopStatus={data.desktopStatus} />
+    {/snippet}
+  </TerminalToolbar>
   <TerminalGrid
     createSurface={desktopTerminalSurface}
     layout={viewLayout}

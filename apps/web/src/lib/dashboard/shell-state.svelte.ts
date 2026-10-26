@@ -24,6 +24,8 @@ import {
   normalizeLayout,
   resolveSessionSlot,
   starterCells,
+  moveCard,
+  orderHosts,
   toggleCardCollapsed,
   toggleCardWidget,
 } from "@pdmux/core";
@@ -137,6 +139,13 @@ export class ShellState {
    */
   view = $state<ShellView>("terminal");
 
+  /**
+   * A terminal number on a host card was pressed: the dashboard brings that cell on screen.
+   * A request rather than a layout write because a narrow screen answers it with its local
+   * cursor (which must not travel to other devices); `seq` lets the same number be pressed twice.
+   */
+  paneRequest = $state<{ index: number; seq: number } | null>(null);
+
   private readonly saver: LayoutSaver;
 
   constructor(seed: ShellSeed) {
@@ -236,6 +245,31 @@ export class ShellState {
 
   toggleCollapsed(hostId: string): void {
     this.writeCard(hostId, toggleCardCollapsed(this.layout.cards, hostId));
+  }
+
+  /** The column as this user arranged it (per user; the organisation's order is the fallback). */
+  get orderedHosts(): HostView[] {
+    return orderHosts(this.feed.hosts, this.layout.cards);
+  }
+
+  /**
+   * Move a card in the column, `from`/`to` being positions as drawn. Every card gets a
+   * position (see `moveCard`), and only the rows whose position changed are written.
+   */
+  moveCard(from: number, to: number): void {
+    const ids = this.orderedHosts.map((host) => host.id);
+    const { map, changed } = moveCard(this.layout.cards, ids, from, to);
+    if (!changed.length) return;
+    this.apply({ ...this.layout, cards: map });
+    for (const hostId of changed) {
+      void prefsApi.putHostPref(hostId, (map[hostId] ?? {}) as Record<string, unknown>).catch(() => {
+        // As in `writeCard`: the layout save carries the same order moments later.
+      });
+    }
+  }
+
+  revealPane(index: number): void {
+    this.paneRequest = { index, seq: (this.paneRequest?.seq ?? 0) + 1 };
   }
 
   /**

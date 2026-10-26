@@ -17,6 +17,7 @@
   import * as ToggleGroup from "#lib/components/ui/toggle-group/index.js";
   import * as Tooltip from "#lib/components/ui/tooltip/index.js";
   import { fmt, getI18n } from "#lib/i18n/index.js";
+  import type { Snippet } from "svelte";
   import type { RelayStatus } from "../terminal-relay";
 
   let {
@@ -32,6 +33,7 @@
     onToggleDock,
     onToggleFiles,
     onAdd,
+    trailing,
   }: {
     layout: TerminalLayout;
     pages: number;
@@ -46,6 +48,11 @@
     onToggleDock: () => void;
     onToggleFiles: () => void;
     onAdd: (anchor: HTMLElement) => void;
+    /**
+     * Language, theme and profile, after the panel toggles (0.17.21: moved out of the host
+     * column). Drawn only on the full toolbar; a compact one leaves them in the column.
+     */
+    trailing?: Snippet;
   } = $props();
 
   const i18n = getI18n();
@@ -226,6 +233,13 @@
         </Tooltip.Trigger>
         <Tooltip.Content>{i18n.t.dash.files.toggle}</Tooltip.Content>
       </Tooltip.Root>
+      {#if trailing}
+        <!-- A rule and a gap set the account tools apart from the panel toggles, and the
+             trailing margin keeps the profile off the window edge. -->
+        <div class="ms-1.5 me-1 flex items-center gap-0.5 border-s ps-1.5" data-testid="toolbar-account">
+          {@render trailing()}
+        </div>
+      {/if}
     {/if}
   </div>
 </Tooltip.Provider>

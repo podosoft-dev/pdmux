@@ -270,29 +270,38 @@ test.describe.serial("pdmux dashboard", () => {
     await page.waitForTimeout(1200);
   });
 
-  test("[TC-PDUI-215] a folded card is remembered per host, and folding is not hiding", async ({ page }) => {
+  test("[TC-PDUI-215] an opened card is remembered per host, and folding is not hiding", async ({ page }) => {
     await ready(page, "/");
     const card = page.locator("[data-pdmux-host]").first();
     const hostId = await card.getAttribute("data-pdmux-host");
     expect(hostId).toBeTruthy();
+    // 0.17.21: every card starts folded and the user opens what they need. The fixture user
+    // may have opened it in an earlier run, so start from folded either way.
+    if ((await card.getAttribute("data-pdmux-collapsed")) === "false") {
+      await card.locator("[data-pdmux-fold]").click();
+      await page.waitForTimeout(1500);
+    }
+    await expect(card).toHaveAttribute("data-pdmux-collapsed", "true");
+
+    await card.locator("[data-pdmux-fold]").click();
+    await expect(card).toHaveAttribute("data-pdmux-collapsed", "false");
     const before = await card.locator("[data-pdmux-widget]").count();
     expect(before, "the fixture card shows nothing, so folding it would prove nothing").toBeGreaterThan(0);
 
-    await card.locator("[data-pdmux-fold]").click();
-    await expect(card).toHaveAttribute("data-pdmux-collapsed", "true");
-
     // Written per host to the server, so another device (and this reload) agrees. The
     // trap this guards is `sanitizeCardPrefs` dropping a key it does not know: the card
-    // folds on screen, the row is written, and the reload quietly comes back open.
+    // opens on screen, the row is written, and the reload quietly comes back folded.
     await page.waitForTimeout(1500);
     await ready(page, "/");
     const same = page.locator(`[data-pdmux-host='${hostId}']`);
-    await expect(same).toHaveAttribute("data-pdmux-collapsed", "true");
-
-    // ⚠ THE WIDGETS ARE HIDDEN, NOT TURNED OFF. Unfolding has to bring back exactly what
-    // was there — if the fold wrote through the widget switches, this count would drop.
-    await same.locator("[data-pdmux-fold]").click();
     await expect(same).toHaveAttribute("data-pdmux-collapsed", "false");
+    await expect(same.locator("[data-pdmux-widget]")).toHaveCount(before);
+
+    // ⚠ THE WIDGETS ARE HIDDEN, NOT TURNED OFF. Folding and opening again has to bring back
+    // exactly what was there — if the fold wrote through the widget switches, this count would drop.
+    await same.locator("[data-pdmux-fold]").click();
+    await expect(same).toHaveAttribute("data-pdmux-collapsed", "true");
+    await same.locator("[data-pdmux-fold]").click();
     await expect(same.locator("[data-pdmux-widget]")).toHaveCount(before);
     await page.waitForTimeout(1200);
   });
@@ -549,54 +558,40 @@ test.describe.serial("pdmux dashboard", () => {
     expect(placed.reachable).toBe(true);
   });
 
-  test("[TC-PDUI-184] the host column spends one row on controls, not two", async ({ page }) => {
+  test("[TC-PDUI-184] the host column starts with its cards; language, theme and profile sit in the toolbar", async ({ page }) => {
     /**
-     * The column exists to hold cards; every pixel above the first one is overhead. The
-     * controls had a row to themselves only because the product name occupied the row
-     * above them — and the name is the one thing on this screen nobody needs telling,
-     * since they are looking at it. Measured before and after: 66px of header became
-     * 32px, and the first card moved from 78px down the column to 44px.
-     *
-     * Asserted as "one row" rather than against those numbers: a font or a token can move
-     * them by a pixel without anything being wrong, but a second row is always a
-     * regression of the thing this changed.
-     *
-     * Keep language, theme and profile. Product pages own their Dashboard return action;
-     * the card tile adds hosts and the profile menu carries secondary navigation.
+     * The column exists to hold cards; every pixel above the first one is overhead. It once
+     * spent two rows on the product name and these controls, then one (2026-09); since 0.17.21
+     * it spends none on a desktop dashboard: language, theme and profile moved to the terminal
+     * toolbar, past the panel toggles and set apart by a rule. Where that toolbar is not drawn
+     * (a phone) they stay at the top of the column.
      */
     await ready(page, "/");
     await openSidebar(page);
 
     const probe = await page.evaluate(() => {
       const sidebar = document.querySelector("[data-pdmux-sidebar]") as HTMLElement;
-      const header = sidebar.firstElementChild as HTMLElement;
-      const toolbar = document.querySelector("[data-testid='shell-toolbar']") as HTMLElement;
-      const controls = [...toolbar.querySelectorAll<HTMLElement>("button, a")];
+      const account = document.querySelector("[data-testid='toolbar-account']") as HTMLElement | null;
+      const files = document.querySelector("[data-testid='toggle-files']") as HTMLElement | null;
+      const controls = account ? [...account.querySelectorAll<HTMLElement>("button, a")] : [];
+      const box = (el: HTMLElement) => el.getBoundingClientRect();
       const first = controls[0] ?? null;
-      const box = (el: HTMLElement | null) => (el ? el.getBoundingClientRect() : null);
       return {
-        wordmark: Boolean(document.querySelector("[data-testid='dashboard-title']")),
-        headerHeight: Math.round(box(header)!.height),
+        firstInColumn: sidebar.firstElementChild?.hasAttribute("data-pdmux-host") ?? false,
+        columnTools: sidebar.querySelectorAll("[data-testid='shell-toolbar']").length,
         labels: controls.map((control) => control.getAttribute("aria-label")),
-        control: first ? Math.round(box(first)!.height) : 0,
-        sameRow: controls.every((control) => Math.abs(box(control)!.y - box(first)!.y) < 2),
-        contained: controls.every((control) => box(control)!.left >= box(toolbar)!.left && box(control)!.right <= box(toolbar)!.right),
-        ordered: controls.every((control, index) => index === 0 || box(controls[index - 1])!.right <= box(control)!.left),
-        sidebarBack: toolbar.querySelectorAll("[data-testid='open-dashboard']").length,
+        afterFiles: Boolean(files && first && box(files).right <= box(first).left),
+        sameRow: Boolean(first) && controls.every((control) => Math.abs(box(control).y - box(first!).y) < 2),
+        insideWindow: controls.every((control) => box(control).right <= window.innerWidth),
       };
     });
 
-    expect(probe.wordmark, "the wordmark is back, and it costs a row").toBe(false);
+    expect(probe.firstInColumn, "something sits above the first card").toBe(true);
+    expect(probe.columnTools).toBe(0);
     expect(probe.labels).toEqual(["Language", "Toggle theme", "Account menu"]);
-    expect(probe.sidebarBack).toBe(0);
-    expect(probe.control).toBeGreaterThan(0);
-    // One row: the header is a control tall, give or take its own padding.
-    expect(probe.headerHeight, "the column spends more than one row above the first card").toBeLessThanOrEqual(
-      probe.control + 8,
-    );
-    expect(probe.sameRow, "the three controls are on different rows").toBe(true);
-    expect(probe.contained, "a toolbar control exceeds the sidebar").toBe(true);
-    expect(probe.ordered, "toolbar controls overlap or changed order").toBe(true);
+    expect(probe.afterFiles, "the account tools are not after the file explorer toggle").toBe(true);
+    expect(probe.sameRow).toBe(true);
+    expect(probe.insideWindow).toBe(true);
   });
 
   test("[TC-PDUI-182] host management is reachable from the card it is about", async ({ page, request }) => {
