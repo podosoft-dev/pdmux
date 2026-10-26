@@ -9,10 +9,10 @@
       "name": "pdmux-api",
       "version": "0.17.22",
       "dependencies": {
-        "@better-auth/api-key": "^1.7.10",
+        "@better-auth/api-key": "^1.7.12",
         "@better-auth/electron": "1.7.12",
-        "@better-auth/oauth-provider": "^1.7.10",
-        "@better-auth/passkey": "^1.7.10",
+        "@better-auth/oauth-provider": "^1.7.12",
+        "@better-auth/passkey": "^1.7.12",
         "@elysia/cors": "^1.4.2",
         "@elysia/openapi": "^1.4.15",
         "@modelcontextprotocol/sdk": "^1.32.0",
@@ -23,7 +23,7 @@
         "@podosoft/podokit-auth": "^0.6.0",
         "@podosoft/podokit-contracts": "^0.7.0",
         "@podosoft/podokit-runtime": "^0.5.1",
-        "better-auth": "^1.7.10",
+        "better-auth": "^1.7.12",
         "bullmq": "^5.57.0",
         "class-transformer": "^0.5.1",
         "class-validator": "^0.14.1",
@@ -79,7 +79,7 @@
         "@pdmux/desktop-protocol": "workspace:*",
         "@pdmux/protocol": "workspace:*",
         "@pdmux/ui": "workspace:*",
-        "@podosoft/podokit-api-client": "^0.10.0",
+        "@podosoft/podokit-api-client": "^0.10.1",
         "better-auth": "1.7.12",
         "bits-ui": "^2.18.1",
         "clsx": "^2.1.1",
@@ -364,7 +364,7 @@
 
     "@playwright/test": ["@playwright/test@1.62.1", "", { "dependencies": { "playwright": "1.62.1" }, "bin": { "playwright": "cli.js" } }, "sha512-DTcUc8qii+cpHvtOwggMtBRMjKZHXYWdw8syRYu2vtzuq4Wxphqq4NfCs5Zt44L6mA8rfDfj+PHnxFc/FeK6mQ=="],
 
-    "@podosoft/podokit-api-client": ["@podosoft/podokit-api-client@0.10.0", "", { "dependencies": { "@better-auth/api-key": "^1.7.10", "@better-auth/passkey": "^1.7.10", "@podosoft/podokit-contracts": "^0.7.0", "better-auth": "^1.7.10" } }, "sha512-HrhnmmWWqaLVWcw/uRq8nozKpN8S7WtroQuEi/xb49ofaVWqUYSG6n8+L6DHog+zbVZrTi1C94xfhAsiyvFrMg=="],
+    "@podosoft/podokit-api-client": ["@podosoft/podokit-api-client@0.10.1", "", { "dependencies": { "@better-auth/api-key": "^1.7.12", "@better-auth/passkey": "^1.7.12", "@podosoft/podokit-contracts": "^0.7.0", "better-auth": "^1.7.12" } }, "sha512-jXHHSIZQoK+0WgqXTgEErVkzzdMtnC0YEcGF8ktBfkP2A5NWxU/+u4mpETJ2TbO+s7xfcpVS0rZL4qAFF6Vj9Q=="],
 
     "@podosoft/podokit-auth": ["@podosoft/podokit-auth@0.6.0", "", {}, "sha512-xSEX3iXdUHkyZ2eosiA4svMk196w0eixPPuhOCK8weL+pjoFAZx8UgmfbSToNHMM02cmsKQBohXEgGKwLcFmgQ=="],
 

@@ -22,7 +22,7 @@
     "@pdmux/desktop-protocol": "workspace:*",
     "@pdmux/protocol": "workspace:*",
     "@pdmux/ui": "workspace:*",
-    "@podosoft/podokit-api-client": "^0.10.0",
+    "@podosoft/podokit-api-client": "^0.10.1",
     "better-auth": "1.7.12",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
