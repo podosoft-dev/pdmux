@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.17.22
+
+- The desktop app no longer goes offline from its server seven days after signing in. It
+  ignored its own stored copy of the session cookie once the sign-in expiry passed, although
+  the server had kept the session alive; it now lets the server decide, and a launch that
+  cannot reach the server retries instead of staying offline until the next restart.
+
 ## 0.17.21
 
 - Language, theme and the account menu moved from the top of the host column to the

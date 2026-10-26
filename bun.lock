@@ -7,7 +7,7 @@
     },
     "apps/api": {
       "name": "pdmux-api",
-      "version": "0.17.21",
+      "version": "0.17.22",
       "dependencies": {
         "@better-auth/api-key": "^1.7.10",
         "@better-auth/electron": "1.7.12",
@@ -52,7 +52,7 @@
     },
     "apps/desktop": {
       "name": "pdmux-desktop",
-      "version": "0.17.21",
+      "version": "0.17.22",
       "dependencies": {
         "electron-updater": "^6.8.9",
         "zod": "^3.23.8",
@@ -70,7 +70,7 @@
     },
     "apps/web": {
       "name": "pdmux-web",
-      "version": "0.17.21",
+      "version": "0.17.22",
       "dependencies": {
         "@better-auth/electron": "1.7.12",
         "@internationalized/date": "^3.12.2",
@@ -109,7 +109,7 @@
     },
     "packages/core": {
       "name": "@pdmux/core",
-      "version": "0.17.21",
+      "version": "0.17.22",
       "devDependencies": {
         "@types/node": "^20.17.0",
         "typescript": "^6.0.3",
@@ -118,7 +118,7 @@
     },
     "packages/desktop-protocol": {
       "name": "@pdmux/desktop-protocol",
-      "version": "0.17.21",
+      "version": "0.17.22",
       "dependencies": {
         "zod": "^3.23.8",
       },
@@ -129,7 +129,7 @@
     },
     "packages/mcp": {
       "name": "@pdmux/mcp",
-      "version": "0.17.21",
+      "version": "0.17.22",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.32.0",
         "zod": "^4.4.3",
@@ -141,7 +141,7 @@
     },
     "packages/protocol": {
       "name": "@pdmux/protocol",
-      "version": "0.17.21",
+      "version": "0.17.22",
       "dependencies": {
         "zod": "^3.24.1",
       },
@@ -153,10 +153,10 @@
     },
     "packages/ui": {
       "name": "@pdmux/ui",
-      "version": "0.17.21",
+      "version": "0.17.22",
       "dependencies": {
         "@lucide/svelte": "^1.23.0",
-        "@pdmux/core": "0.17.21",
+        "@pdmux/core": "0.17.22",
         "@xterm/addon-fit": "^0.10.0",
         "@xterm/addon-unicode11": "0.8.0",
         "@xterm/xterm": "^5.5.0",
@@ -181,7 +181,7 @@
     },
     "tests": {
       "name": "pdmux-tests",
-      "version": "0.17.21",
+      "version": "0.17.22",
       "devDependencies": {
         "@playwright/test": "^1.61.1",
         "otpauth": "^9.5.1",
