@@ -103,7 +103,7 @@ export class DesktopRouter {
         const response = await this.request(session, binding, { hostKey: binding.key, method: "GET", path: `/hosts/${host.id}`, headers: {} }, null, AbortSignal.timeout(5_000));
         if (response.ok) { view = await response.json() as Record<string, unknown>; connected = true; await this.service.cacheView(binding, view); }
       } catch { /* Cached metadata remains usable while the original owner is offline. */ }
-      output.push({ ...view, id: host.id, connected: connected && view.connected === true,
+      output.push({ ...desktopHostView(view, connected), id: host.id,
         origin: { kind: this.client ? "server" : "desktop", readOnly: !connected, deviceId: binding.origin } });
     }
     return output;
@@ -163,4 +163,13 @@ export class DesktopRouter {
     this.terminals.delete(socket); channel.abort.abort(); try { channel.controller.close(); } catch { /* Closed by peer. */ }
   }
   close(): void { this.client?.disconnect(); for (const peer of this.peers.values()) peer.close(); this.peers.clear(); for (const socket of this.terminals.keys()) { this.closeTerminal(socket); socket.close(1001); } }
+}
+
+/**
+ * A host relayed by another device is only as current as that device. While the device is
+ * unreachable the cached view is the last thing it said — including `online: true` from
+ * whenever it was last open — so it must not be shown as online or as live metrics.
+ */
+export function desktopHostView(view: Record<string, unknown>, connected: boolean): Record<string, unknown> {
+  return { ...view, online: connected && view.online === true, connected: connected && view.connected === true };
 }
