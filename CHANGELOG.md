@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.17.18
+
+- A host relayed by a desktop app that is not running no longer shows as online with the
+  metrics it last reported: the server fell back to the cached view and passed its old
+  `online: true` through. It now shows the host offline until the desktop answers again.
+
 ## 0.17.17
 
 - The line a pane writes when its session is gone no longer contradicts the reopen button

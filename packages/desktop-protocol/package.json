@@ -1,6 +1,6 @@
 {
   "name": "@pdmux/desktop-protocol",
-  "version": "0.17.17",
+  "version": "0.17.18",
   "private": true,
   "type": "module",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
