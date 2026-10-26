@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.17.21
+
+- Language, theme and the account menu moved from the top of the host column to the
+  terminal toolbar, after the file explorer toggle (a phone keeps them in the column).
+- Host cards can be reordered by dragging their grip or with the arrow keys. The order is
+  saved per user; the organisation's order in settings is unchanged.
+- A card lists the terminals open on its host (`#2 #4`, as the pane headers number them);
+  pressing a number goes to that terminal.
+- Cards start folded and remember the ones you open. Cards opened before this release fold
+  once.
+
 ## 0.17.20
 
 - A host card no longer draws the stored Claude and Codex usage gauges when the host is not
