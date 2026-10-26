@@ -336,7 +336,7 @@
       "restoredDismiss": "Dismiss",
       "missingSession": "Session '{name}' no longer exists on this host. Programs that were running in it are gone.",
       "missingReopen": "Open a new session with the same name",
-      "restoredMissing": "This session no longer exists on the host. Close this panel and open a new session.",
+      "restoredMissing": "This session no longer exists on the host. Use \"Open a new session with the same name\" above, or close this panel.",
       "close": "Close (this cell stays empty)",
       "detach": "Open in a new window",
       "ephemeral": "Temporary terminal",

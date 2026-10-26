@@ -336,7 +336,7 @@
       "restoredDismiss": "닫기",
       "missingSession": "'{name}' 세션이 이 호스트에 더 이상 없습니다. 그 안에서 실행 중이던 프로그램은 사라졌습니다.",
       "missingReopen": "같은 이름으로 새 세션 열기",
-      "restoredMissing": "이 세션은 호스트에 더 이상 없습니다. 이 패널을 닫고 새 세션을 여세요.",
+      "restoredMissing": "이 세션은 호스트에 더 이상 없습니다. 위의 「같은 이름으로 새 세션 열기」를 누르거나 이 패널을 닫으세요.",
       "close": "닫기(이 칸은 빈 칸으로 남는다)",
       "detach": "새 창으로 열기",
       "ephemeral": "임시 터미널",

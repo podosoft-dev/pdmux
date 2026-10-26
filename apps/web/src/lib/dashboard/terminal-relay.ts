@@ -86,7 +86,7 @@ const DEFAULT_MESSAGES: RelayMessages = {
   restored: "reconnected",
   dropped: (bytes) => `${bytes} bytes dropped`,
   failed: (message) => message,
-  sessionMissing: "this session no longer exists on the host; close this panel and open a new session",
+  sessionMissing: "this session no longer exists on the host; open a new one with the same name above, or close this panel",
 };
 
 const OPEN = 1;
