@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.17.20
+
+- A host card no longer draws the stored Claude and Codex usage gauges when the host is not
+  live (offline, relayed by a desktop app that is closed, or while the screen has lost the
+  server). Those were the last report, not the current budget; the card shows nothing reported.
+
 ## 0.17.19
 
 - A host card no longer draws the last heartbeat's CPU, memory, swap and disk when the host
