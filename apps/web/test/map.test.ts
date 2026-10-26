@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { freshMetrics } from "@pdmux/core";
 import {
+  agentRowsFor,
   formatBytes,
   gridHosts,
   serviceOptionsFor,
@@ -192,6 +193,18 @@ describe("[TC-PDUI-104] resources", () => {
     const online = { ...stale, online: true };
     expect(hostResources(online, undefined, false).cpuPct).toBeNull();
     expect(hostResources(online, null).cpuPct).toBe(27);
+  });
+
+  it("[TC-PDUI-249] a host that is not live shows no agent budget instead of its last report", () => {
+    const usage = [{ provider: "claude", processes: 2, ts: 1_000, windows: [{ key: "week", remainingPct: 21, usedPct: 79 }] }];
+    const stale = host({ online: false, usage } as Partial<HostView>);
+    const rows = agentRowsFor(stale, ["claude", "codex"], 2_000);
+    expect(rows.map((r) => r.provider)).toEqual(["claude", "codex"]);
+    expect(rows.every((r) => r.windows.length === 0 && r.processes === 0)).toBe(true);
+    const online = { ...stale, online: true };
+    expect(agentRowsFor(online, ["claude"], 2_000)[0].windows[0].usedPct).toBe(79);
+    // Online, but this screen lost the server: the caller says it is not live.
+    expect(agentRowsFor(online, ["claude"], 2_000, false)[0].windows).toEqual([]);
   });
 
   it("hints 0B/0B for a swapless host, which is what separates it from an empty one", () => {

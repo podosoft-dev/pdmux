@@ -303,9 +303,15 @@ export function serviceOptionsFor(host: HostView): ServiceOption[] {
   return serviceOptions(serviceInputs(host));
 }
 
-/** Agent budget rows in a fixed provider order so two cards line up. */
-export function agentRowsFor(host: HostView, providers: readonly string[], nowMs: number): AgentRow[] {
-  return agentRows(host.usage ?? [], providers, nowMs);
+/**
+ * Agent budget rows in a fixed provider order so two cards line up.
+ *
+ * A host that is not live gets the "nothing reported" rows, like its resources get
+ * "—": the stored gauges were the last report, and an offline Desktop host kept
+ * showing them as if they were current (2026-10-26, Mac 9B5E at 79% and 98%).
+ */
+export function agentRowsFor(host: HostView, providers: readonly string[], nowMs: number, live = host.online): AgentRow[] {
+  return agentRows(live ? (host.usage ?? []) : [], providers, nowMs);
 }
 
 /** Reference data for the card's settings popover. Empty values are dropped. */

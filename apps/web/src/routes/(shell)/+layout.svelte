@@ -203,7 +203,7 @@
       host: serverLost
         ? { ...hostSummary(host, updateMark(host), powerMark(host)), state: "unknown" as const }
         : hostSummary(host, updateMark(host), powerMark(host)),
-      agents: agentRowsFor(host, shell.providers, shell.feed.now),
+      agents: agentRowsFor(host, shell.providers, shell.feed.now, !serverLost && host.online),
       resources: hostResources(host, serverLost ? undefined : freshById.get(host.id), !serverLost && host.online),
       history: shell.feed.history[host.id] ?? null,
       services: serviceOptionsFor(host),
