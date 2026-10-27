@@ -117,6 +117,12 @@ non-test build, so bumping the version for them publishes a new version whose bi
 **byte-identical to the previous one** — every host re-downloads the same bytes, which is
 the same dishonesty pointing the other way.
 
+`packages/protocol/src/` and `packages/protocol/scripts/` are also excluded when the
+generated `packages/protocol/schema/` did not change. The agent reads the contract only
+through that artefact (`schema:check` pins it to the source, and the agent's schema hash
+test pins its embedded copy to it), so a dependency or generator change that keeps those
+bytes identical cannot change the binary.
+
 ### 5-2. `agent-binaries` — does it really report the version it promised?
 
 Builds all five with `bun run build:agent`, then:

@@ -233,6 +233,15 @@ jobs:
             | grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|^packages/protocol/src/terminal\.ts$|/package\.json$|^bun\.lock$)' \
             || true)
 
+          # The contract source and its generator reach the agent only through the
+          # generated `packages/protocol/schema/` (`schema:check` pins it to the source,
+          # and the agent's schema hash test pins its embedded copy to it). When those
+          # bytes did not move — a dependency or generator change that keeps the
+          # artefact identical — the binary cannot change either.
+          if git diff --quiet "$BASE" HEAD -- packages/protocol/schema; then
+            changed=$(printf '%s\n' "$changed" | grep -Ev '^packages/protocol/(src|scripts)/' || true)
+          fi
+
           if [ -z "$changed" ]; then
             echo "No agent or contract source changed; no bump required."
             exit 0
