@@ -243,7 +243,9 @@ finally:
     if (legacy) {
       const legacyWindow = await context.newPage();
       try {
-        await legacyWindow.goto(`/terminal?${new URLSearchParams({ host: hostId, kind: "attach", backend: "tmux", tmuxId: legacy.id, session: "legacy-one" })}`, { waitUntil: "domcontentloaded", timeout: 10_000 });
+        // Hydrated before it is relied on: the rename below reaches this window as a live
+        // update, which server-rendered markup never applies.
+        await ready(legacyWindow, `/terminal?${new URLSearchParams({ host: hostId, kind: "attach", backend: "tmux", tmuxId: legacy.id, session: "legacy-one" })}`);
         await expect(legacyWindow.locator(".pdmux-pane-caption")).toContainText("legacy-one");
         await page.bringToFront();
         await manager.locator(`[data-host-id="${hostId}"][data-session-id="${legacy.id}"]`).click({ timeout: 5_000 });
