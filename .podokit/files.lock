@@ -161,7 +161,7 @@
     },
     "apps/api/package.json": {
       "tier": "managed",
-      "outHash": "sha256:cf3f923cf18d062ae3828ef4e947d2f3a57c87ed9abe2aec3390e0ef2739d3d9"
+      "outHash": "sha256:81a91bd88e1cd101c25a47e95a06a206249671fe879e71979cc4c60c28c10f99"
     },
     "apps/api/scripts/.keep": {
       "tier": "managed",
