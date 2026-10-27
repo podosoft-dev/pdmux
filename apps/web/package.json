@@ -15,7 +15,7 @@
     "test:file-transfers-ui": "bunx playwright test --config test/file-transfers-ui/playwright.config.ts"
   },
   "dependencies": {
-    "@better-auth/electron": "1.7.12",
+    "@better-auth/electron": "1.7.14",
     "@internationalized/date": "^3.12.2",
     "@lucide/svelte": "^1.23.0",
     "@pdmux/core": "workspace:*",
@@ -23,7 +23,7 @@
     "@pdmux/protocol": "workspace:*",
     "@pdmux/ui": "workspace:*",
     "@podosoft/podokit-api-client": "^0.10.1",
-    "better-auth": "1.7.12",
+    "better-auth": "1.7.14",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "dompurify": "3.4.17",
