@@ -215,6 +215,11 @@ finally:
     await page.locator("[data-pdmux-detach]").press("Enter");
     const popup = await popupPromise;
     try {
+      // The detached window's markup is server-rendered, so the checks below pass before
+      // it hydrates, and a click on the pane menu before hydration opens nothing. On a
+      // fresh dev server the /terminal route compiles on this first visit, which is what
+      // made the menu click land early every time.
+      await hydrated(popup);
       await expect(popup.locator(".pdmux-pane-tag")).toHaveText("\uc6b4\uc601");
       await expect(popup.locator(".pdmux-pane-tag")).toHaveCSS("color", "rgb(253, 224, 71)");
       await expect(popup).toHaveTitle("\uacb0\uc81c API \uc791\uc5c5 · PDMux");
