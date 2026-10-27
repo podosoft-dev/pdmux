@@ -1245,6 +1245,7 @@
         "reselectDrop": "For a mixed selection, drop the same files and folders here.",
         "continue": "Continue",
         "genericError": "The transfer stopped. Retry or select the original source again.",
+        "errorCode": "Error code: {code}",
         "sourceChanged": "The selected source differs from the original. Start a new transfer.",
         "limit": "The transfer exceeds the file count or size limit.",
         "diskFull": "Not enough temporary disk space.",

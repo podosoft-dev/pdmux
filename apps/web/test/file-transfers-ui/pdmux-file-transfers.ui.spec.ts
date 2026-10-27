@@ -2,7 +2,8 @@ import { devices, expect, test, type Locator, type Page } from "@playwright/test
 import type { FileTransferEntryView, FileTransferView } from "@pdmux/protocol";
 import { MARKDOWN_SAMPLE } from "./preview-assets";
 
-interface Refusal { status: 429 | 503; retryAfter?: string }
+/** A refused chunk. 429 and 503 are waited out; any other status pauses the upload. */
+interface Refusal { status: 400 | 429 | 503; retryAfter?: string; code?: string }
 interface Fixture {
   jobs: FileTransferView[];
   entries: FileTransferEntryView[];
@@ -86,7 +87,7 @@ async function fixture(page: Page, refusals: Refusal[] = []): Promise<Fixture> {
           const refusal = refusals.shift();
           chunkRequests.push({ at: Date.now(), status: refusal?.status ?? 200 });
           if (refusal) {
-            const code = refusal.status === 429 ? "RATE_LIMIT_EXCEEDED" : "BACKEND_UNAVAILABLE";
+            const code = refusal.code ?? (refusal.status === 429 ? "RATE_LIMIT_EXCEEDED" : "BACKEND_UNAVAILABLE");
             await route.fulfill({ status: refusal.status, headers: refusal.retryAfter ? { "retry-after": refusal.retryAfter } : {},
               json: { success: false, error: { code, message: code, statusCode: refusal.status } } });
             return;
@@ -604,6 +605,61 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`transfer-retry-${width}-done.png`), fullPage: true, animations: "disabled" });
   });
 }
+
+for (const width of [1280, 390]) {
+  test(`[TC-PDFILE-021] a refused chunk pauses and names its code under the generic reason at ${width}px`, async ({ page }, testInfo): Promise<void> => {
+    await page.setViewportSize({ width, height: 844 });
+    // What a desktop relay that dropped the chunk headers answered (#30).
+    const state = await fixture(page, [{ status: 400, code: "FILES_TRANSFER_CHUNK" }]);
+    state.release();
+    await page.goto("/");
+    await page.getByTestId("files-upload-folder").click();
+    await page.getByTestId("transfer-conflict").getByRole("button", { name: "Overwrite", exact: true }).click();
+    await expect.poll(() => state.controls).toEqual(["start", "pause"]);
+    await details(page);
+    const alert = page.getByTestId("transfer-list").getByRole("alert");
+    await expect(alert).toContainText("The transfer stopped. Retry or select the original source again.");
+    const code = alert.getByTestId("transfer-error-code");
+    await expect(code).toHaveText("Error code: FILES_TRANSFER_CHUNK");
+
+    const geometry = await page.evaluate(() => {
+      const box = (element: Element | null): { x: number; y: number; width: number; height: number } | null => {
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
+      };
+      const list = document.querySelector('[data-testid="transfer-list"]');
+      const code = document.querySelector('[data-testid="transfer-error-code"]');
+      return {
+        reason: box(code?.previousElementSibling ?? null),
+        code: box(code),
+        list: box(list),
+        listOverflow: list ? list.scrollWidth - list.clientWidth : -1,
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+    expect(geometry.code?.height ?? 0).toBeGreaterThan(0);
+    // Under the sentence it qualifies, inside the list, and never wider than it.
+    expect(geometry.code?.y ?? 0).toBeGreaterThanOrEqual((geometry.reason?.y ?? 0) + (geometry.reason?.height ?? 0));
+    expect((geometry.code?.x ?? 0) + (geometry.code?.width ?? 0)).toBeLessThanOrEqual((geometry.list?.x ?? 0) + (geometry.list?.width ?? 0) + 1);
+    expect(geometry.listOverflow).toBeLessThanOrEqual(0);
+    expect(geometry.pageOverflow).toBeLessThanOrEqual(0);
+    await testInfo.attach("error-code-geometry", { body: JSON.stringify(geometry), contentType: "application/json" });
+    await page.screenshot({ path: testInfo.outputPath(`transfer-error-code-${width}.png`), fullPage: true, animations: "disabled" });
+  });
+}
+
+test("[TC-PDFILE-021] a code with its own sentence is not repeated as a code", async ({ page }): Promise<void> => {
+  const state = await fixture(page, [{ status: 400, code: "FILES_TRANSFER_SOURCE_CHANGED" }]);
+  state.release();
+  await page.goto("/");
+  await page.getByTestId("files-upload-folder").click();
+  await page.getByTestId("transfer-conflict").getByRole("button", { name: "Overwrite", exact: true }).click();
+  await expect.poll(() => state.controls).toEqual(["start", "pause"]);
+  await details(page);
+  await expect(page.getByTestId("transfer-list").getByRole("alert")).toContainText("The selected source differs");
+  await expect(page.getByTestId("transfer-error-code")).toHaveCount(0);
+});
 
 test.describe("checkbox contrast at 390px", (): void => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, userAgent: devices["Pixel 7"].userAgent });

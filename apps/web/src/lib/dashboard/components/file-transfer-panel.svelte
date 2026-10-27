@@ -34,17 +34,17 @@
   const finished = $derived(transfers.jobs.filter((job) => ["completed", "cancelled", "expired"].includes(job.state)));
   const columns = $derived([{ key: "created", label: messages.title, sortable: true, class: "w-full" }]);
 
-  function reason(code: string): string {
-    if (code === "FILES_TRANSFER_CLEAR_FAILED") return messages.clearError;
-    if (code === "FILES_TRANSFER_SOURCE_CHANGED") return messages.sourceChanged;
-    if (code === "FILES_TRANSFER_LIMIT") return messages.limit;
-    if (code === "FILES_TRANSFER_DISK_FULL") return messages.diskFull;
-    if (code === "FILES_TRANSFER_PICKER_UNSUPPORTED") return messages.pickerUnsupported;
-    if (code === "HOST_FILES_TRANSFER_UNSUPPORTED") return messages.upgrade;
-    if (code === "FILES_TRANSFER_RESELECT") return messages.reselect;
-    if (code === "FILES_TRANSFER_EXCLUDED") return messages.excluded;
-    return messages.genericError;
-  }
+  const reasons = $derived<Record<string, string>>({
+    FILES_TRANSFER_CLEAR_FAILED: messages.clearError,
+    FILES_TRANSFER_SOURCE_CHANGED: messages.sourceChanged,
+    FILES_TRANSFER_LIMIT: messages.limit,
+    FILES_TRANSFER_DISK_FULL: messages.diskFull,
+    FILES_TRANSFER_PICKER_UNSUPPORTED: messages.pickerUnsupported,
+    HOST_FILES_TRANSFER_UNSUPPORTED: messages.upgrade,
+    FILES_TRANSFER_RESELECT: messages.reselect,
+    FILES_TRANSFER_EXCLUDED: messages.excluded,
+  });
+  function reason(code: string): string { return reasons[code] ?? messages.genericError; }
   function resume(job: FileTransferView): void {
     if (job.direction === "download" || transfers.hasSource(job.id)) void transfers.resume(job);
     else reselect = job;
@@ -91,6 +91,11 @@
   }
 </script>
 
+{#snippet failureCode(code: string)}
+  <!-- The generic sentence cannot say what failed; the code is what a report needs (#30). -->
+  {#if !(code in reasons)}<p class="text-muted-foreground font-mono text-[0.6875rem] break-all" data-testid="transfer-error-code">{fmt(messages.errorCode, { code })}</p>{/if}
+{/snippet}
+
 {#if transfers.jobs.length || transfers.preparing || transfers.error || legacyUpload}
   <section class="h-9 shrink-0 border-t text-xs" data-testid="file-transfer-panel" aria-label={messages.title}>
     <Button variant="ghost" class="h-9 w-full min-w-0 justify-between gap-2 rounded-none px-2 text-xs" onclick={openDetails} data-testid="transfers-summary" aria-haspopup="dialog">
@@ -107,7 +112,7 @@
       <Tabs.List class="shrink-0 grid w-full grid-cols-2"><Tabs.Trigger id={`${panelId}-current`} aria-controls={panelId} value="current" class="min-w-0 px-1 text-xs sm:text-sm"><span class="truncate" title={messages.current}>{messages.current}</span><span class="shrink-0">({active + attention})</span></Tabs.Trigger><Tabs.Trigger id={`${panelId}-history`} aria-controls={panelId} value="history" class="min-w-0 px-1 text-xs sm:text-sm">{messages.history} ({history.length})</Tabs.Trigger></Tabs.List>
       <div class="min-h-0 flex-1 overflow-y-auto" id={panelId} role="tabpanel" tabindex="0" aria-labelledby={`${panelId}-${view}`} data-testid="transfer-list">
         {#if view === "current"}
-        {#if transfers.error}<p class="text-destructive break-words px-2 py-1" role="alert">{reason(transfers.error)}</p>{/if}
+        {#if transfers.error}<div class="px-2 py-1" role="alert"><p class="text-destructive break-words">{reason(transfers.error)}</p>{@render failureCode(transfers.error)}</div>{/if}
         {#if transfers.preparing}
           {@const preparation = transfers.preparing}
           <div class="space-y-1 px-2 py-1" data-testid="transfer-preparation">
@@ -148,7 +153,7 @@
                     <span>{humanSize(job.bytes)} / {humanSize(job.totalBytes)}</span>
                     <span>{fmt(messages.count, { done: String(job.completedEntries), total: String(job.totalEntries) })}</span>
                   </p>
-                  {#if job.errorCode}<p class="text-destructive break-words">{reason(job.errorCode)}</p>{/if}
+                  {#if job.errorCode}<p class="text-destructive break-words">{reason(job.errorCode)}</p>{@render failureCode(job.errorCode)}{/if}
                   {#if job.exclusions.length}
                     <p>{messages.excluded}</p>
                     <pre class="max-h-20 overflow-auto whitespace-pre-wrap break-all">{job.exclusions.join("\n")}</pre>
