@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.17.23
+
+- Renaming a tmux session in pdmux now renames it in every window that has the session open,
+  not only the one you renamed it from. A window that held a different session under a reused
+  id still keeps it.
+- Chunked uploads to a host reached through a desktop app no longer stop on every chunk: the
+  desktop relay now forwards the chunk offset and checksum.
+- A transfer that stops on an error without its own message shows the error code under the
+  general reason.
+- A host card lists its terminal numbers on their own row under the name, so long host names
+  are no longer cut short.
+- Dependency updates: PodoKit 1.7.5 with Better Auth 1.7.14, and Zod 4 throughout, which
+  closes an advisory where validating oversized collections could exhaust memory. Patched
+  body-parser, fast-uri and undici.
+
 ## 0.17.22
 
 - The desktop app no longer goes offline from its server seven days after signing in. It

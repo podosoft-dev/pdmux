@@ -1,6 +1,6 @@
 {
   "name": "pdmux-api",
-  "version": "0.17.22",
+  "version": "0.17.23",
   "private": true,
   "scripts": {
     "dev": "bun --watch src/main.ts",
