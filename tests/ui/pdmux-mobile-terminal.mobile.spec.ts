@@ -18,6 +18,7 @@ interface HostRow {
   label: string;
   online: boolean;
   enabled: boolean;
+  terminal?: { nativeSessions: boolean };
 }
 
 async function onlineHost(request: APIRequestContext): Promise<HostRow | null> {
@@ -76,36 +77,33 @@ async function showTab(page: Page, view: "hosts" | "terminal" | "git"): Promise<
  * machine's REAL multiplexer sessions — editors, other agents' shells. A spec that typed
  * into the first pane sent `echo pdmux-key-27941` straight into a live agent session
  * (observed). A named session cannot be mistaken for someone's work.
+ *
+ * ⚠ THE PICKER CANNOT TELL WHETHER THE SESSION EXISTS YET. Its list is the host's last
+ * heartbeat, which is up to one heartbeat interval (15 s) old. This helper used to look for
+ * the session there and press "New session" when it was missing. The previous test had just
+ * created it, the list did not show it yet, and the strict native create was refused:
+ * "The terminal stopped with an error: SESSION_EXISTS". A later run on the same agent
+ * then found two rows with the name (the tmux one TC-PDTERM-131 opens, and this native
+ * one) and failed on strict mode. So the target is written to the layout with the intent
+ * that joins the session or creates it on the host itself (`ensure`, the reopen-by-name
+ * target), and no decision rests on a stale list. A host without native sessions gets the
+ * tmux `new` target, which is `new -A` and joins in the same way.
  */
-async function useOwnSession(page: Page, hostId: string): Promise<void> {
+async function useOwnSession(page: Page, request: APIRequestContext, host: HostRow): Promise<void> {
   const own = workerSession();
-  const pane = page.locator("[data-pdmux-pane]:not([hidden])").first();
-  // A first visit now opens four EMPTY cells (it joins `main` only if the host has one, and
-  // never grabs somebody else's session), so there may be no pane to retarget — then the
-  // add control fills the first empty cell instead.
-  if ((await pane.count()) > 0) await pane.locator("[data-pdmux-retarget]").click();
-  else await page.locator("[data-testid='add-terminal']").click();
-  const picker = page.locator("[data-pdmux-popover='target-picker']");
-  await expect(picker).toBeVisible();
-  await picker.locator(`[data-pdmux-host='${hostId}']`).click();
-  const existing = picker.locator(`[data-pdmux-session='${own}']`);
-  if ((await existing.count()) > 0) {
-    // Reuse it, so repeated runs do not litter the host with sessions.
-    await existing.click();
-  } else {
-    await picker.getByLabel(/session name/i).fill(own);
-    await picker.locator("[data-pdmux-action='new']").click();
-  }
-  /**
-   * …then page to it. A phone shows ONE cell and the assignment lands in the first empty
-   * cell, which is not necessarily the cell on screen. Stepping the pager is what a person
-   * would do, and it is bounded.
-   */
+  const saved = await readLayout(request);
+  const base = saved ?? { name: "default", payload: {}, isDefault: true };
+  const slot = host.terminal?.nativeSessions
+    ? { id: "own-session", hostId: host.id, kind: "new", session: own, backend: "native", intent: "ensure" }
+    : { id: "own-session", hostId: host.id, kind: "new", session: own };
+  await writeLayout(request, {
+    ...base,
+    payload: { ...base.payload, mode: "split4", page: 0, slots: [slot], focusId: null, zoomId: null },
+  });
+  await ready(page, "/");
+  await showTab(page, "terminal");
   const label = page.locator(`.pdmux-pane-label:has-text("${own}")`);
-  await expect(async () => {
-    if ((await label.count()) === 0) await page.locator("[data-testid='page-next']").click();
-    await expect(label).toBeVisible({ timeout: 1500 });
-  }).toPass({ timeout: 20_000 });
+  await expect(label).toBeVisible({ timeout: 20_000 });
 }
 
 
@@ -169,7 +167,7 @@ test.describe("pdmux terminal on a phone", () => {
     await ready(page, "/");
     await showTab(page, "terminal");
     // Bring up a pane this suite owns: a first visit may have none at all.
-    await useOwnSession(page, host.id);
+    await useOwnSession(page, request, host);
     const pane = page.locator("[data-pdmux-pane]:not([hidden])").first();
     const surface = pane.locator("[data-pdmux-surface]");
     await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 20_000 });
@@ -211,7 +209,7 @@ test.describe("pdmux terminal on a phone", () => {
     await ready(page, "/");
     await showTab(page, "terminal");
     // Everything below TYPES, so it must be typing into a session this test created.
-    await useOwnSession(page, host.id);
+    await useOwnSession(page, request, host);
     const pane = page.locator("[data-pdmux-pane]:not([hidden])").first();
     const surface = pane.locator("[data-pdmux-surface]");
     await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 20_000 });
@@ -313,7 +311,7 @@ test.describe("pdmux terminal on a phone", () => {
     });
     await ready(page, "/");
     await showTab(page, "terminal");
-    await useOwnSession(page, host.id);
+    await useOwnSession(page, request, host);
     const pane = page.locator("[data-pdmux-pane]:not([hidden])").first();
     const surface = pane.locator("[data-pdmux-surface]");
     await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 20_000 });
@@ -415,7 +413,7 @@ test.describe("pdmux terminal on a phone", () => {
     });
     await ready(page, "/");
     await showTab(page, "terminal");
-    await useOwnSession(page, host.id);
+    await useOwnSession(page, request, host);
     const pane = page.locator("[data-pdmux-pane]:not([hidden])").first();
     const surface = pane.locator("[data-pdmux-surface]");
     await expect(surface.locator(".xterm-rows")).toBeVisible({ timeout: 20_000 });
