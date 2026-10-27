@@ -11,9 +11,9 @@ export const fsTransferEntrySchema = z.object({
 
 /** A bounded, correlated operation; paths are always relative to the agent home. */
 export const fsTransferRequestSchema = z.object({
-	requestId: z.string().uuid(),
-	transferId: z.string().uuid(),
-	entryId: z.string().uuid(),
+	requestId: z.guid(),
+	transferId: z.guid(),
+	entryId: z.guid(),
 	action: z.enum(['list', 'stat', 'mkdir', 'read', 'write', 'commit', 'discard', 'touch']),
 	path: z.string().max(1024),
 	offset: z.number().int().nonnegative().default(0),
@@ -25,9 +25,9 @@ export const fsTransferRequestSchema = z.object({
 });
 
 export const fsTransferResultSchema = z.object({
-	requestId: z.string().uuid(),
-	transferId: z.string().uuid(),
-	entryId: z.string().uuid(),
+	requestId: z.guid(),
+	transferId: z.guid(),
+	entryId: z.guid(),
 	entries: z.array(fsTransferEntrySchema).max(250).default([]),
 	next: z.number().int().nonnegative().nullable().default(null),
 	offset: z.number().int().nonnegative().default(0),

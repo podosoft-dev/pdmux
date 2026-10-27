@@ -16,13 +16,12 @@
  *  1. `additionalProperties: true`, everywhere. Every object in the protocol is
  *     zod's default `strip`, and `test/protocol.test.ts` (TC-PDPROTO-007) pins
  *     that an unknown field is ignored so a newer server keeps talking to an
- *     older agent. `zod-to-json-schema` emits `additionalProperties: false` for
- *     strip objects unless told otherwise — the exact inversion of that rule,
- *     which would make a schema-driven Go reader reject the frames zod accepts.
- *     `removeAdditionalStrategy: 'strict'` is the (badly named) option that means
- *     "a strip object allows additional properties"; `assertContract` then
- *     re-checks every emitted object, so the guarantee does not rest on an option
- *     name surviving a dependency bump.
+ *     older agent. zod's `toJSONSchema` writes `additionalProperties: false` for
+ *     strip objects in output mode and nothing in input mode; `false` would be
+ *     the exact inversion of that rule, making a schema-driven Go reader reject
+ *     the frames zod accepts. `keepContract` writes `true` on every strip object
+ *     and `assertContract` then re-checks every emitted object, so the guarantee
+ *     does not rest on a generator default surviving a dependency bump.
  *
  *  2. Byte-identical output on every machine. Keys are sorted and the file ends
  *     in a newline, so `--check` compares bytes and a diff means a real change.
@@ -34,7 +33,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from 'zod';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(HERE, '..');
@@ -85,8 +84,8 @@ const CONSTANT_NAMES = [
  * type exists. `percent` and `epochSeconds` are exported without the suffix and
  * keep their own names; they MUST be named, because they are single zod
  * instances reused across many fields and an unnamed shared instance makes
- * `zod-to-json-schema` point later uses at wherever it happened to serialise the
- * first one (`#/$defs/usageWindow/properties/usedPct/anyOf/0`) — a ref that moves
+ * the generator inline or point later uses at wherever it happened to serialise
+ * the first one (`#/$defs/usageWindow/properties/usedPct/anyOf/0`) — a ref that moves
  * whenever a field is reordered.
  */
 function collectNamedSchemas(protocol) {
@@ -118,21 +117,30 @@ function collectNamedSchemas(protocol) {
 export function buildSchema(protocol) {
 	const named = collectNamedSchemas(protocol);
 
-	// One pass over every named schema. Seeding `definitions` first is what makes
-	// a shared sub-schema serialise once and be referenced by name everywhere else.
-	const generated = zodToJsonSchema(/** @type {never} */ (named[ROOT_NAMES[0]]), {
-		definitions: /** @type {never} */ (named),
-		definitionPath: '$defs',
-		$refStrategy: 'root',
-		target: 'jsonSchema7',
-		// "strict" = only an explicitly `.strict()` object rejects unknown keys.
-		// Everything in this protocol is `strip`, so everything allows them.
-		removeAdditionalStrategy: 'strict',
-		errorMessages: false,
-		markdownDescription: false,
+	// One registry holding every named schema. Registration is what makes a shared
+	// sub-schema serialise once and be referenced by name everywhere else.
+	const registry = z.registry();
+	for (const [name, value] of Object.entries(named)) registry.add(/** @type {never} */ (value), { id: name });
+
+	const generated = z.toJSONSchema(registry, {
+		target: 'draft-07',
+		// The agent READS these frames, so the schema describes what a reader may
+		// receive: a defaulted field may be absent (never `required`), and its
+		// default is stated for the reader to substitute.
+		io: 'input',
+		unrepresentable: 'throw',
+		cycles: 'throw',
+		reused: 'inline',
+		uri: (id) => `#/$defs/${id}`,
+		override: ({ zodSchema, jsonSchema }) => keepContract(zodSchema, jsonSchema),
 	});
 
-	const defs = /** @type {Record<string, Record<string, unknown>>} */ (generated.$defs);
+	/** @type {Record<string, Record<string, unknown>>} */
+	const defs = {};
+	for (const [name, def] of Object.entries(generated.schemas)) {
+		const { $schema: _schema, $id: _id, ...body } = /** @type {Record<string, unknown>} */ (def);
+		defs[name] = body;
+	}
 
 	/** @type {Record<string, unknown>} */
 	const schema = {
@@ -167,8 +175,78 @@ export function buildSchema(protocol) {
 		constants[name] = protocol[name];
 	}
 
+	keepDocumentShape(schema);
 	assertContract(schema);
 	return { schema: sortKeys(schema), constants: sortKeys(constants) };
+}
+
+/**
+ * Per-node adjustments that keep zod 4's output on the contract the Go agent was
+ * built against. Each one restores what the document said before zod 4 and is
+ * pinned by `--check` against the committed bytes, so none of them can drift
+ * silently:
+ *
+ *  - A strip object allows unknown keys (property 1 in the header). zod 4 leaves
+ *    `additionalProperties` out in input mode; it is written explicitly here.
+ *  - `.prefault(value)` is how zod 4 spells zod 3's `.default(value)` for an
+ *    object: the value is parsed, so the nested defaults fill in. zod 4 emits it
+ *    as the private `_prefault` keyword; a reader needs the standard `default`.
+ *  - A discriminated union becomes `oneOf` in zod 4. Every branch carries a
+ *    distinct `const` tag, so `anyOf` and `oneOf` accept the same frames, and the
+ *    Go generator reads the branches from `anyOf`.
+ *  - `.int()` emits the safe-integer range as bounds in zod 4. The protocol never
+ *    stated those bounds, and adding them would tighten what the agent accepts.
+ *  - `z.guid()` keeps zod 3's lax UUID check (any hex in the 8-4-4-4-12 shape);
+ *    zod 4's `.uuid()` would reject ids without RFC version and variant bits. The
+ *    artefact states it as `format: uuid` without a `pattern`, as before.
+ *
+ * @param {any} zodSchema
+ * @param {Record<string, unknown>} jsonSchema
+ */
+function keepContract(zodSchema, jsonSchema) {
+	const def = zodSchema._zod.def;
+	if (def.type === 'object' && def.catchall === undefined) jsonSchema.additionalProperties = true;
+	if (def.type === 'prefault' && '_prefault' in jsonSchema) {
+		jsonSchema.default = jsonSchema._prefault;
+		delete jsonSchema._prefault;
+	}
+	if (def.type === 'union' && Array.isArray(jsonSchema.oneOf)) {
+		jsonSchema.anyOf = jsonSchema.oneOf;
+		delete jsonSchema.oneOf;
+	}
+	if (def.type === 'number') {
+		if (jsonSchema.maximum === Number.MAX_SAFE_INTEGER) delete jsonSchema.maximum;
+		if (jsonSchema.minimum === Number.MIN_SAFE_INTEGER) delete jsonSchema.minimum;
+	}
+	if (def.type === 'string' && def.format === 'guid') delete jsonSchema.pattern;
+}
+
+/**
+ * Whole-document adjustments zod 4 makes after `override` runs.
+ *
+ *  - A `$ref` with sibling keywords (a defaulted named schema) is wrapped as
+ *    `allOf: [{ $ref }]` for draft-07. The Go generator maps a property to a type
+ *    by its direct `$ref`, so the wrapper is unwrapped.
+ *  - A nullable bare type is folded to `type: [t, "null"]`. The document spells
+ *    every nullable as `anyOf: [{ type: t }, { type: "null" }]`, which draft-07
+ *    treats as the same schema.
+ *
+ * @param {unknown} document
+ */
+function keepDocumentShape(document) {
+	walk(document, '', (node) => {
+		const allOf = node.allOf;
+		if (!Array.isArray(allOf) || allOf.length !== 1 || '$ref' in node) return;
+		const only = allOf[0];
+		if (!isPlainObject(only) || Object.keys(only).length !== 1 || typeof only.$ref !== 'string') return;
+		delete node.allOf;
+		node.$ref = only.$ref;
+	});
+	walk(document, '', (node) => {
+		if (!Array.isArray(node.type) || 'anyOf' in node) return;
+		node.anyOf = node.type.map((type) => ({ type }));
+		delete node.type;
+	});
 }
 
 /**

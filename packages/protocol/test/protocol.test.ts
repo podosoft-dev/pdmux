@@ -30,6 +30,7 @@ import {
 	gitUncommittedSchema,
 	heartbeatSchema,
 	repoSnapshotSchema,
+	resourceSchema,
 	safeParse,
 	terminalClientFrameSchema,
 	terminalServerFrameSchema,
@@ -275,6 +276,28 @@ describe('[TC-PDPROTO-007] the contract evolves additively', () => {
 		const parsed = heartbeatSchema.parse({ ts: 1, somethingAddedLater: true });
 		expect('somethingAddedLater' in parsed).toBe(false);
 		expect(parsed.ts).toBe(1);
+	});
+
+	it('[TC-PDPROTO-007] fills a defaulted object field through its own defaults', () => {
+		// zod 4's `.default({})` returns `{}` as is; the contract has always parsed
+		// it, so an absent `resource` arrives with every key present (`.prefault`).
+		const heartbeat = heartbeatSchema.parse({ ts: 1 });
+		expect(Object.keys(heartbeat.resource).sort()).toEqual(Object.keys(resourceSchema.shape).sort());
+		expect(Object.values(heartbeat.resource).every((value) => value === null)).toBe(true);
+		const snapshot = repoSnapshotSchema.parse({ path: '/p', name: 'p', ts: 1 });
+		expect(snapshot.head).toEqual({ branch: null, sha: null, detached: false, upstream: null, ahead: null, behind: null });
+		// Two parses never share one default object.
+		expect(heartbeatSchema.parse({ ts: 1 }).resource).not.toBe(heartbeat.resource);
+	});
+
+	it('[TC-PDPROTO-007] accepts any hex id in the UUID shape, as agents already send', () => {
+		// zod 4's `.uuid()` also demands RFC version and variant bits; the contract
+		// only ever checked the 8-4-4-4-12 hex shape, so ids stay `z.guid()`.
+		const exec = { command: 'uptime' };
+		expect(agentExecSchema.safeParse({ ...exec, commandId: '00000000-0000-0000-0000-000000000001' }).success).toBe(true);
+		expect(agentExecSchema.safeParse({ ...exec, commandId: 'ABCDEF01-2345-6789-ABCD-EF0123456789' }).success).toBe(true);
+		expect(agentExecSchema.safeParse({ ...exec, commandId: '0f1b8b3e-6a5e-4f0a-9a1a-2c3d4e5f6a7' }).success).toBe(false);
+		expect(agentExecSchema.safeParse({ ...exec, commandId: 'not-a-uuid' }).success).toBe(false);
 	});
 });
 

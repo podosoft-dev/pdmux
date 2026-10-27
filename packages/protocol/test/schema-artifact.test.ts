@@ -158,8 +158,8 @@ describe('[TC-PDPROTO-013] the generated schema artefact', () => {
 
 	it('[TC-PDPROTO-013] leaves every object open to unknown fields', () => {
 		// THE INVERSION THIS GUARDS: zod strips unknown keys (TC-PDPROTO-007), but
-		// zod-to-json-schema writes `additionalProperties: false` for a strip object
-		// by default. A Go reader built from that would reject exactly the frames a
+		// zod's `toJSONSchema` writes `additionalProperties: false` for a strip object
+		// in output mode. A Go reader built from that would reject exactly the frames a
 		// newer server sends to an older agent. Checked over EVERY object node, not
 		// just the two roots, because one nested object is enough to drop a frame.
 		const objects = collectObjectNodes();

@@ -52,7 +52,7 @@ export const epochSeconds = z.number().int().nonnegative();
 export const muxSessionSchema = z.object({
 	name: z.string().min(1).max(128),
 	backend: z.enum(['native', 'tmux']).optional(),
-	sessionId: z.string().uuid().optional(),
+	sessionId: z.guid().optional(),
 	tmuxId: z.string().regex(/^\$[0-9]{1,16}$/).optional(),
 	attached: z.number().int().nonnegative().default(0),
 	windows: z.number().int().nonnegative().default(0),
@@ -93,7 +93,7 @@ export type AgentUsage = z.infer<typeof agentUsageSchema>;
 /** Result of probing one registered service port on the host. */
 export const serviceProbeSchema = z.object({
 	/** Server-assigned service id, echoed back so the UI can join without guessing. */
-	id: z.string().uuid(),
+	id: z.guid(),
 	status: z.enum(['up', 'down', 'unknown']).default('unknown'),
 	latencyMs: z.number().int().nonnegative().nullable().default(null),
 });
@@ -179,7 +179,7 @@ export type CloudflaredStatus = z.infer<typeof cloudflaredStatusSchema>;
 
 export const heartbeatSchema = z.object({
 	ts: epochSeconds,
-	resource: resourceSchema.default({}),
+	resource: resourceSchema.prefault({}),
 	sessions: z.array(muxSessionSchema).max(256).default([]),
 	usage: z.array(agentUsageSchema).max(16).default([]),
 	services: z.array(serviceProbeSchema).max(64).default([]),
@@ -204,7 +204,7 @@ export const heartbeatSchema = z.object({
 	/** Degraded capabilities on the host — surfaced on the card, not just in logs. */
 	diagnostics: z.array(agentDiagnosticSchema).max(16).default([]),
 	/** Absent from old agents; the default is the fail-closed, inactive state. */
-	cloudflared: cloudflaredStatusSchema.default({ state: 'off', version: null, errorCode: null }),
+	cloudflared: cloudflaredStatusSchema.prefault({ state: 'off', version: null, errorCode: null }),
 });
 export type Heartbeat = z.infer<typeof heartbeatSchema>;
 
@@ -502,7 +502,7 @@ export const fsDirSchema = z.object({
 	 * reads of the same path a second apart are different answers, and matching on
 	 * the path alone would let a stale one settle a newer request.
 	 */
-	requestId: z.string().uuid(),
+	requestId: z.guid(),
 	path: z.string().max(FS_CAPS.maxPathChars),
 	/**
 	 * The absolute home directory this listing is relative to — for DISPLAY, and
@@ -547,7 +547,7 @@ export const FS_CHUNK_BYTES = 1_048_576;
  * what lets an HTTP `Range` request be served without reading what precedes it.
  */
 export const fsChunkSchema = z.object({
-	requestId: z.string().uuid(),
+	requestId: z.guid(),
 	path: z.string().max(FS_CAPS.maxPathChars),
 	/** Where this slice starts, in bytes from the beginning of the file. */
 	offset: z.number().int().nonnegative().default(0),
@@ -574,7 +574,7 @@ export type FsChunk = z.infer<typeof fsChunkSchema>;
  * to carry a secret"), and a file being uploaded is that surface exactly.
  */
 export const fsWroteSchema = z.object({
-	requestId: z.string().uuid(),
+	requestId: z.guid(),
 	path: z.string().max(FS_CAPS.maxPathChars),
 	/** Bytes accepted in THIS request. */
 	written: z.number().int().nonnegative().default(0),
@@ -592,7 +592,7 @@ export type FsWrote = z.infer<typeof fsWroteSchema>;
  * distrust it.
  */
 export const fsRemovedSchema = z.object({
-	requestId: z.string().uuid(),
+	requestId: z.guid(),
 	path: z.string().max(FS_CAPS.maxPathChars),
 	removed: z.number().int().nonnegative().default(0),
 	error: z.string().max(512).nullable().default(null),
@@ -601,7 +601,7 @@ export type FsRemoved = z.infer<typeof fsRemovedSchema>;
 
 /** One file from the host's disk. Same shape as a git blob, for the same viewer. */
 export const fsFileSchema = z.object({
-	requestId: z.string().uuid(),
+	requestId: z.guid(),
 	path: z.string().max(FS_CAPS.maxPathChars),
 	lines: z.array(z.string().max(FS_CAPS.maxLineChars)).max(FS_CAPS.maxLines).default([]),
 	binary: z.boolean().default(false),
@@ -618,7 +618,7 @@ export const repoSnapshotSchema = z.object({
 	/** Display name — the checkout's directory, or a submodule's path. */
 	name: z.string().max(512),
 	ts: epochSeconds,
-	head: gitHeadSchema.default({}),
+	head: gitHeadSchema.prefault({}),
 	refs: z.array(gitRefSchema).max(2000).default([]),
 	commits: z.array(gitCommitSchema).max(1000).default([]),
 	uncommitted: gitUncommittedSchema.nullable().default(null),
@@ -682,7 +682,7 @@ export { SESSION_NAME_PATTERN } from './terminal.js';
 export const terminalTargetSchema = z.object({
 	kind: z.enum(['session', 'shell']).default('session'),
 	backend: z.enum(['native', 'tmux']).optional(),
-	sessionId: z.string().uuid().optional(),
+	sessionId: z.guid().optional(),
 	tmuxId: z.string().regex(/^\$[0-9]{1,16}$/).optional(),
 	intent: z.enum(['create', 'attach', 'ensure']).optional(),
 	/** Session name for `kind: 'session'`; ignored for `shell`. */
@@ -695,7 +695,7 @@ export type TerminalTarget = z.infer<typeof terminalTargetSchema>;
 /** Browser -> server -> agent. */
 export const terminalClientFrameSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('viewport'), termId: z.string().min(1).max(64), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean().default(false), history: z.number().int().min(-5000).max(5000).default(0) }),
-	z.object({ type: z.literal('session-control'), termId: z.string().min(1).max(64), action: z.enum(['history', 'terminate', 'rename']), sessionId: z.string().uuid(), name: z.string().regex(SESSION_NAME_PATTERN).optional() }),
+	z.object({ type: z.literal('session-control'), termId: z.string().min(1).max(64), action: z.enum(['history', 'terminate', 'rename']), sessionId: z.guid(), name: z.string().regex(SESSION_NAME_PATTERN).optional() }),
 	z.object({ type: z.literal('open'), termId: z.string().min(1).max(64), target: terminalTargetSchema }),
 	z.object({ type: z.literal('input'), termId: z.string().min(1).max(64), data: z.string(), source: z.literal('wheel').optional() }),
 	z.object({
@@ -723,7 +723,7 @@ export type TerminalRestored = z.infer<typeof terminalRestoredSchema>;
 
 /** Agent -> server -> browser. */
 export const terminalServerFrameSchema = z.discriminatedUnion('type', [
-	z.object({ type: z.literal('ready'), termId: z.string(), pid: z.number().int().nullable().default(null), backend: z.enum(['native', 'tmux']).optional(), sessionId: z.string().uuid().optional(), tmuxId: z.string().regex(/^\$[0-9]{1,16}$/).optional(), restored: terminalRestoredSchema.optional() }),
+	z.object({ type: z.literal('ready'), termId: z.string(), pid: z.number().int().nullable().default(null), backend: z.enum(['native', 'tmux']).optional(), sessionId: z.guid().optional(), tmuxId: z.string().regex(/^\$[0-9]{1,16}$/).optional(), restored: terminalRestoredSchema.optional() }),
 	z.object({ type: z.literal('screen'), termId: z.string(), data: z.string().max(65536), sequence: z.number().int().nonnegative(), cols: z.number().int().positive().max(1000), rows: z.number().int().positive().max(500), canvasCols: z.number().int().positive().max(1000), canvasRows: z.number().int().positive().max(500), x: z.number().int().nonnegative().max(1000), y: z.number().int().nonnegative().max(500), follow: z.boolean(), alternate: z.boolean().optional(), history: z.number().int().nonnegative().max(5000).optional() }),
 	z.object({ type: z.literal('session-result'), termId: z.string(), lines: z.array(z.string()), screenOnly: z.boolean().default(false), error: z.string().max(512).default(''), name: z.string().regex(SESSION_NAME_PATTERN).optional() }),
 	z.object({
@@ -837,10 +837,10 @@ export const agentHelloSchema = z.object({
 	arch: z.string().max(32),
 	capabilities: z.array(agentCapabilitySchema).default([]),
 	/** Absent from every agent built before remote update — the default says "no". */
-	update: agentUpdateAbilitySchema.default({}),
+	update: agentUpdateAbilitySchema.prefault({}),
 	/** A growable object, not a closed capability enum, so old servers ignore it safely. */
-	connectors: agentConnectorAbilitySchema.default({ cloudflared: false }),
-	terminal: agentTerminalAbilitySchema.default({}),
+	connectors: agentConnectorAbilitySchema.prefault({ cloudflared: false }),
+	terminal: agentTerminalAbilitySchema.prefault({}),
 	/**
 	 * This host's current boot identity (Linux `boot_id`, macOS
 	 * `kern.bootsessionuuid`). Absent from older agents and from platforms without
@@ -861,7 +861,7 @@ export type AgentHello = z.infer<typeof agentHelloSchema>;
  */
 export const updateStatusSchema = z.object({
 	/** Echoes `agentUpdate.commandId`, so a retry is recognisable as the same job. */
-	commandId: z.string().uuid(),
+	commandId: z.guid(),
 	phase: z.enum([
 		'accepted',
 		'downloading',
@@ -917,7 +917,7 @@ export const EXEC_OUTPUT_MAX = 64_000;
  */
 export const agentExecSchema = z.object({
 	/** The server's id for this run; `execResult` echoes it. */
-	commandId: z.string().uuid(),
+	commandId: z.guid(),
 	/** Binary name or absolute path. Resolved on the host, not here. */
 	command: z.string().min(1).max(256),
 	args: z.array(z.string().max(4096)).max(64).default([]),
@@ -938,7 +938,7 @@ export type AgentExec = z.infer<typeof agentExecSchema>;
  * running at all (`COMMAND_NOT_FOUND`).
  */
 export const execResultSchema = z.object({
-	commandId: z.string().uuid(),
+	commandId: z.guid(),
 	exitCode: z.number().int(),
 	stdout: z.string().max(EXEC_OUTPUT_MAX).default(''),
 	stderr: z.string().max(EXEC_OUTPUT_MAX).default(''),
@@ -980,7 +980,7 @@ export type AgentUpstream = z.infer<typeof agentUpstreamSchema>;
  * requires touching the host again.
  */
 export const agentServiceConfigSchema = z.object({
-	id: z.string().uuid(),
+	id: z.guid(),
 	port: z.number().int().positive().max(65_535),
 	probe: z.enum(['tcp', 'http', 'none']).default('tcp'),
 	path: z.string().max(512).default('/'),
@@ -1017,7 +1017,7 @@ export const agentConfigSchema = z.object({
 	/** Terminal output the agent may buffer per pane before it drops oldest bytes. */
 	terminalBufferBytes: z.number().int().min(4096).max(4_000_000).default(262_144),
 	/** Dedicated per-host Cloudflare tunnel connector. TCP routes are intentionally unsupported. */
-	cloudflared: agentCloudflaredConfigSchema.default({
+	cloudflared: agentCloudflaredConfigSchema.prefault({
 		enabled: false,
 		token: '',
 		checkIntervalSec: 86_400,
@@ -1049,7 +1049,7 @@ export type AgentConfig = z.infer<typeof agentConfigSchema>;
  */
 export const agentUpdateSchema = z.object({
 	/** Idempotency key. Re-sending the same id must not start a second download. */
-	commandId: z.string().uuid(),
+	commandId: z.guid(),
 	/** SemVer of the target build. The agent refuses `<= own` unless `force`. */
 	version: z.string().min(1).max(32),
 	/**
@@ -1095,7 +1095,7 @@ export const agentDownstreamSchema = z.discriminatedUnion('type', [
 	z.object({
 		type: z.literal('welcome'),
 		terminalScreenProtocol: z.number().int().nonnegative().default(0),
-		hostId: z.string().uuid(),
+		hostId: z.guid(),
 		config: agentConfigSchema,
 		/** Server's own SemVer. Advisory — logged by the agent, never a gate. */
 		serverVersion: z.string().max(32).default(''),
@@ -1165,12 +1165,12 @@ export const agentDownstreamSchema = z.discriminatedUnion('type', [
 	z.object({
 		type: z.literal('fsList'),
 		/** Pairs the answer with the request that is waiting on it — see `fsDir`. */
-		requestId: z.string().uuid(),
+		requestId: z.guid(),
 		path: z.string().max(FS_CAPS.maxPathChars),
 	}),
 	z.object({
 		type: z.literal('fsRead'),
-		requestId: z.string().uuid(),
+		requestId: z.guid(),
 		path: z.string().max(FS_CAPS.maxPathChars),
 	}),
 	/**
@@ -1188,7 +1188,7 @@ export const agentDownstreamSchema = z.discriminatedUnion('type', [
 	 */
 	z.object({
 		type: z.literal('fsPut'),
-		requestId: z.string().uuid(),
+		requestId: z.guid(),
 		path: z.string().max(FS_CAPS.maxPathChars),
 		offset: z.number().int().nonnegative().default(0),
 		/** base64, at most `FS_CHUNK_BYTES` decoded. */
@@ -1207,7 +1207,7 @@ export const agentDownstreamSchema = z.discriminatedUnion('type', [
 	 */
 	z.object({
 		type: z.literal('fsDelete'),
-		requestId: z.string().uuid(),
+		requestId: z.guid(),
 		path: z.string().max(FS_CAPS.maxPathChars),
 		recursive: z.boolean().default(false),
 	}),
@@ -1217,7 +1217,7 @@ export const agentDownstreamSchema = z.discriminatedUnion('type', [
 	 */
 	z.object({
 		type: z.literal('fsGet'),
-		requestId: z.string().uuid(),
+		requestId: z.guid(),
 		path: z.string().max(FS_CAPS.maxPathChars),
 		offset: z.number().int().nonnegative().default(0),
 		/**

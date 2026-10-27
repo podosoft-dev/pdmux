@@ -211,9 +211,11 @@ newline, and **nothing derived from the clock, a path or the environment**. One
 
 ⚠ `schema:build` must keep `additionalProperties: true` on **every object**. Every object in
 the protocol uses zod's default `strip`, and silently ignoring unknown fields is what lets a
-new server keep talking to an old agent (`TC-PDPROTO-007`). `zod-to-json-schema` emits the
-opposite (`false`) by default, so rather than trusting one option, every object is
-re-checked after generation.
+new server keep talking to an old agent (`TC-PDPROTO-007`). zod's `toJSONSchema` emits the
+opposite (`false`) for a strip object in output mode, so the generator writes `true` itself
+and every object is re-checked after generation. The other zod 4 differences the generator
+undoes, so the artefact stays the one the agent was built against, are listed on
+`keepContract` in `scripts/build-schema.mjs`.
 
 ### The conformance corpus
 

@@ -4,16 +4,16 @@
 	"protocolVersion": 1,
 	"accepted": {},
 	"rejected": {
-		"hello-capabilities-null": "hello.capabilities: Expected array, received null",
-		"hello-update-null": "hello.update: Expected object, received null",
-		"hello-unknown-capability": "hello.capabilities.1: Invalid enum value. Expected 'metrics' | 'sessions' | 'terminal' | 'git' | 'usage' | 'services' | 'exec' | 'files' | 'files-transfer-v1', received 'containers'",
-		"heartbeat-resource-null": "heartbeat.resource: Expected object, received null",
-		"heartbeat-cpu-out-of-range": "heartbeat.resource.cpuPct: Number must be less than or equal to 100",
-		"heartbeat-cpu-fractional": "heartbeat.resource.cpuPct: Expected integer, received float",
-		"diagnostic-message-too-long": "heartbeat.diagnostics.0.message: String must contain at most 512 character(s)",
-		"repos-limit-zero": "repos.0.limit: Number must be greater than 0",
-		"terminal-native-invalid-screen": "frame.cols: Number must be greater than 0",
-		"terminal-ready-restored-unknown-reason": "frame.restored.reason: Invalid enum value. Expected 'reboot', received 'crash'",
-		"hello-boot-id-empty": "hello.bootId: Invalid"
+		"hello-capabilities-null": "hello.capabilities: Invalid input: expected array, received null",
+		"hello-update-null": "hello.update: Invalid input: expected object, received null",
+		"hello-unknown-capability": "hello.capabilities.1: Invalid option: expected one of \"metrics\"|\"sessions\"|\"terminal\"|\"git\"|\"usage\"|\"services\"|\"exec\"|\"files\"|\"files-transfer-v1\"",
+		"heartbeat-resource-null": "heartbeat.resource: Invalid input: expected object, received null",
+		"heartbeat-cpu-out-of-range": "heartbeat.resource.cpuPct: Too big: expected number to be <=100",
+		"heartbeat-cpu-fractional": "heartbeat.resource.cpuPct: Invalid input: expected int, received number",
+		"diagnostic-message-too-long": "heartbeat.diagnostics.0.message: Too big: expected string to have <=512 characters",
+		"repos-limit-zero": "repos.0.limit: Too small: expected number to be >0",
+		"terminal-native-invalid-screen": "frame.cols: Too small: expected number to be >0",
+		"terminal-ready-restored-unknown-reason": "frame.restored.reason: Invalid input: expected \"reboot\"",
+		"hello-boot-id-empty": "hello.bootId: Invalid string: must match pattern /^[A-Za-z0-9-]{8,64}$/"
 	}
 }
