@@ -186,6 +186,8 @@ export interface GridSession {
 	name: string;
 	attached?: number;
 	windows?: number;
+	/** Names a tmux session had before renames made through pdmux, oldest first (the API's `SessionRenames`). */
+	previousNames?: readonly string[];
 }
 
 /** A host, reduced to what the grid needs. Structurally a subset of the API's host. */
@@ -207,7 +209,11 @@ export interface GridHost {
  * tmux slot therefore names its session by id AND name together and is never
  * moved onto a live session whose id matches but whose name differs — that is a
  * different session, and adopting it would put the pane on somebody else's work.
- * A rename made through pdmux updates the slot itself (`renameSlotSessions`).
+ * A rename made through pdmux updates the slot itself (`renameSlotSessions`) in
+ * the window that made it. Every other window follows it through `previousNames`:
+ * the API lists the names pdmux renamed a live tmux session from, and a saved slot
+ * moves to the new name only when its id matches AND its saved name is one of them.
+ * A reused id carries no such names, so it is still never adopted.
  * A slot without an id yet captures one by name, as before.
  */
 export function resolveSessionSlot(slot: TerminalSlot, hosts: readonly GridHost[]): TerminalSlot {
@@ -217,7 +223,12 @@ export function resolveSessionSlot(slot: TerminalSlot, hosts: readonly GridHost[
 		const live = slot.sessionId ? sessions.find(session => session.backend === 'native' && session.sessionId === slot.sessionId) : undefined;
 		return live && live.name !== slot.session ? { ...slot, session: live.name } : slot;
 	}
-	if (slot.tmuxId) return slot;
+	if (slot.tmuxId) {
+		const renamed = sessions.find(session => session.backend !== 'native' && session.tmuxId === slot.tmuxId);
+		return renamed && renamed.name !== slot.session && slot.session && renamed.previousNames?.includes(slot.session)
+			? { ...slot, session: renamed.name }
+			: slot;
+	}
 	const live = sessions.find(session => session.backend !== 'native' && session.name === slot.session);
 	return live?.tmuxId ? { ...slot, tmuxId: live.tmuxId } : slot;
 }

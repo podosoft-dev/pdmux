@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, spyOn } from "bun:test";
-import type { Heartbeat } from "@pdmux/protocol";
+import type { AgentHello, Heartbeat } from "@pdmux/protocol";
 import { AppException } from "../common/app-exception";
 import { ProductLogger } from "../logging/product-logger";
 import { FleetSetting } from "../fleet/fleet-setting.entity";
@@ -12,6 +12,7 @@ import { HostGitRoot } from "./host-git-root.entity";
 import { HostService } from "./host-service.entity";
 import { Host } from "./host.entity";
 import { HostsService } from "./hosts.service";
+import { SessionRenames } from "../terminal/session-renames";
 
 const ORG_A = "org-a";
 const ORG_B = "org-b";
@@ -238,6 +239,23 @@ describe("HostsService", () => {
     // And a current agent that looked and found none still says so, distinctly.
     await ctx.service.applyHeartbeat(host.id, { ...beat, listeners: [] } as unknown as Heartbeat);
     expect((await ctx.service.getView(ORG_A, host.id)).listeners).toEqual([]);
+  });
+
+  it("[TC-PDUI-237] reports the names pdmux renamed a tmux session from, until its agent reconnects", async () => {
+    const renames = new SessionRenames();
+    ctx.service.setSessionRenames(renames);
+    const host = await ctx.service.create(ORG_A, { label: "renamed" });
+    const session = { name: "legacy-renamed", backend: "tmux" as const, tmuxId: "$0", attached: 0, windows: 1 };
+    await ctx.service.applyHeartbeat(host.id, {
+      ts: Math.floor(Date.now() / 1000), resource: {}, sessions: [session], usage: [], services: [], diagnostics: [],
+    } as unknown as Heartbeat);
+    renames.record({ type: "host.session-renamed", hostId: host.id, tmuxId: "$0", from: "legacy-one", to: "legacy-renamed" });
+    expect((await ctx.service.getView(ORG_A, host.id)).sessions).toEqual([{ ...session, previousNames: ["legacy-one"] }]);
+    expect((await ctx.service.list(ORG_A)).find((view) => view.id === host.id)?.sessions).toEqual([{ ...session, previousNames: ["legacy-one"] }]);
+    await ctx.service.applyHello(host.id, {
+      agentVersion: "0.1.36", protocolVersion: 1, os: "linux", arch: "amd64", capabilities: [], connectors: { cloudflared: false }, address: "",
+    } as unknown as AgentHello);
+    expect((await ctx.service.getView(ORG_A, host.id)).sessions).toEqual([session]);
   });
 
   it("[TC-PDHOST-019] carries the on/off state of each service to the card", async () => {

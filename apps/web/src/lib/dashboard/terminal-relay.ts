@@ -18,7 +18,7 @@
  * and because the default target is a multiplexer session, coming back reattaches to
  * work that kept running.
  */
-import { TERMINAL_WS_PATH, parseTerminalServerFrame } from "@pdmux/protocol/terminal";
+import { SESSION_NAME_PATTERN, TERMINAL_WS_PATH, parseTerminalServerFrame } from "@pdmux/protocol/terminal";
 import type { TerminalAdapter, TerminalConnection, TerminalOpenTarget } from "@pdmux/ui";
 
 /** What the page shows about the relay itself. */
@@ -263,7 +263,15 @@ export class TerminalRelay implements TerminalAdapter {
     this.sendOpen(connection, entry);
 
     return {
-      resolveTmuxSession: (id: string): void => { if (/^\$[0-9]{1,16}$/.test(id) && entry.backend !== "native") { entry.tmuxId = id; entry.backend = "tmux"; } },
+      resolveTmuxSession: (id: string, name?: string): void => {
+        if (!/^\$[0-9]{1,16}$/.test(id) || entry.backend === "native") return;
+        // A new name is only taken for the session this pane already holds: the layout
+        // moved it there because pdmux renamed that session (`resolveSessionSlot`), and a
+        // reconnect with the old name would no longer match it on the host.
+        if (name && SESSION_NAME_PATTERN.test(name) && (!entry.tmuxId || entry.tmuxId === id)) entry.session = name;
+        entry.tmuxId = id;
+        entry.backend = "tmux";
+      },
       scrollHistory: (delta: number): void => { this.send(connection, { type: "viewport", termId: entry.termId, x: 0, y: 0, follow: false, history: delta }); },
       viewport: (x: number, y: number, follow = false): void => { this.send(connection, { type: "viewport", termId: entry.termId, x, y, follow }); },
       onViewport: (listener: (viewport: NativeViewport) => void): (() => void) => { entry.viewListeners.add(listener); if (entry.viewport) listener(entry.viewport); return () => entry.viewListeners.delete(listener); },

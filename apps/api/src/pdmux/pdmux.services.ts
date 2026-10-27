@@ -82,6 +82,7 @@ import { PrefsService } from "../prefs/prefs.service";
 import { TerminalRelayService } from "../terminal/terminal-relay.service";
 import { HostEvents } from "./host-events";
 import { TerminalMuxController } from "../terminal/terminal-mux.controller";
+import { SessionRenames, isSessionRenamedEvent } from "../terminal/session-renames";
 
 export interface PdmuxServices {
   dataSource: DataSource;
@@ -229,7 +230,16 @@ export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): Pdm
   );
   const detailRequests = new AgentDetailRequestService(git, agentRegistry);
   const terminalRelay = new TerminalRelayService(agentRegistry);
-  const terminalMux = new TerminalMuxController(agentExec, agentRegistry, hosts);
+  // Tmux renames made through pdmux, learned by every replica through the host event bus.
+  const sessionRenames = new SessionRenames();
+  hosts.setSessionRenames(sessionRenames);
+  void events.subscribe((event: unknown): void => {
+    if (isSessionRenamedEvent(event)) sessionRenames.record(event);
+  });
+  const terminalMux = new TerminalMuxController(agentExec, agentRegistry, hosts, (event) => {
+    sessionRenames.record(event);
+    events.publish(event);
+  });
 
   const authority = new McpAuthorityService(dataSource);
   const hostMcpKeys = new HostMcpKeysService(dataSource.getRepository(HostMcpKey), hosts);

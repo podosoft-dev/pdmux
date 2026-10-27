@@ -112,7 +112,8 @@ export interface HostView {
   online: boolean;
   connected: boolean;
   resource: Resource | null;
-  sessions: MuxSession[];
+  /** Live sessions; a tmux session renamed through pdmux lists the names it had (oldest first). */
+  sessions: (MuxSession & { previousNames?: string[] })[];
   usage: AgentUsage[];
   /**
    * What the host cannot do, recomputed every heartbeat.

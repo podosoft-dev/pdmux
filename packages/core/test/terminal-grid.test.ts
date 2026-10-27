@@ -903,6 +903,26 @@ describe('saved tmux slots across a host restart', () => {
 		expect(renamed.slots.map(slot => slot?.session)).toEqual(['claude-1', 'api', 'claude-1']);
 		expect(renameSlotSessions(layout, 'h1', {}, 'x')).toBe(layout);
 	});
+
+	it('[TC-PDUI-237] another window follows a pdmux rename of its tmux session, and only that', () => {
+		// The API lists the names pdmux renamed a live tmux session from.
+		const renamed: GridHost[] = [{ id: 'h1', name: 'one', online: true, sessions: [{ name: 'agent', tmuxId: '$0', previousNames: ['claude-1'] }] }];
+		expect(resolveSessionSlot(saved, renamed)).toEqual({ ...saved, session: 'agent' });
+		// Renamed twice before this window looked: any earlier name leads to the current one.
+		const twice: GridHost[] = [{ id: 'h1', name: 'one', online: true, sessions: [{ name: 'agent-2', tmuxId: '$0', previousNames: ['claude-1', 'agent'] }] }];
+		expect(resolveSessionSlot(saved, twice).session).toBe('agent-2');
+		// Same id, new name, no record of a pdmux rename: a reused id, so the slot stays.
+		const reused: GridHost[] = [{ id: 'h1', name: 'one', online: true, sessions: [{ name: 'agent', tmuxId: '$0' }] }];
+		expect(resolveSessionSlot(saved, reused)).toBe(saved);
+		// A record for somebody else's earlier name does not move this slot either.
+		const unrelated: GridHost[] = [{ id: 'h1', name: 'one', online: true, sessions: [{ name: 'agent', tmuxId: '$0', previousNames: ['w9'] }] }];
+		expect(resolveSessionSlot(saved, unrelated)).toBe(saved);
+		// Another session's previous names are not this one's.
+		const elsewhere: GridHost[] = [{ id: 'h1', name: 'one', online: true, sessions: [{ name: 'agent', tmuxId: '$3', previousNames: ['claude-1'] }] }];
+		expect(resolveSessionSlot(saved, elsewhere)).toBe(saved);
+		// The followed slot then sends the new name with the id, which is the pair the host joins.
+		expect(toProtocolTarget(resolveSessionSlot(saved, renamed))).toEqual({ kind: 'session', backend: 'tmux', tmuxId: '$0', session: 'agent' });
+	});
 });
 
 describe('a native pane whose session is gone reopens under the same name', () => {

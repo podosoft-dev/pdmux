@@ -248,7 +248,7 @@
 	let surfaceHost = $state<HTMLDivElement | null>(null);
 	let surface: TerminalSurface | null = null;
 	let connection = $state.raw<TerminalConnection | null>(null);
-	$effect(() => { if (sessionTmuxId) connection?.resolveTmuxSession?.(sessionTmuxId); });
+	$effect(() => { if (sessionTmuxId) connection?.resolveTmuxSession?.(sessionTmuxId, sessionName ?? undefined); });
 	let resolvedSessionId = $state<string | null>(null);
 	/**
 	 * The host reopened this pane as a new shell because it restarted. Shown until the

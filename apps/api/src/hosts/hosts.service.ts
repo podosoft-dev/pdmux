@@ -1,6 +1,6 @@
 import { ProductLogger } from "../logging/product-logger";
 import { DataSource, In, Repository } from "typeorm";
-import type { AgentHello, Heartbeat, UpdateStatus } from "@pdmux/protocol";
+import type { AgentHello, Heartbeat, MuxSession, UpdateStatus } from "@pdmux/protocol";
 import { AgentReleaseService } from "../agents/agent-release.service";
 import { AppException } from "../common/app-exception";
 import { FleetSettingsService } from "../fleet/fleet-settings.service";
@@ -12,6 +12,7 @@ import { HostService } from "./host-service.entity";
 import { resolveGitRoots } from "./git-roots";
 import { orderAssignments, toHostView, type HostView } from "./host-view";
 import { ServiceExposure } from "../integrations/service-exposure.entity";
+import type { HostSession, SessionRenames } from "../terminal/session-renames";
 
 /** Set by the gateway so the sidebar can distinguish "beat recently" from
  *  "socket is attached right now" without the hosts module importing it. */
@@ -89,6 +90,13 @@ export class HostsService {
   private connectedProbe: ConnectedProbe = () => false;
 	private terminalProbe: (id: string) => AgentHello["terminal"] = () => ({ nativeSessions: false, screenProtocol: 0 });
 	setTerminalProbe(probe: (id: string) => AgentHello["terminal"]): void { this.terminalProbe = probe; }
+  private sessionRenames: SessionRenames | null = null;
+  /** The tmux renames made through pdmux, reported on the live sessions of every view. */
+  setSessionRenames(renames: SessionRenames): void { this.sessionRenames = renames; }
+  private annotate(hostId: string): ((sessions: MuxSession[]) => HostSession[]) | undefined {
+    const renames = this.sessionRenames;
+    return renames ? (sessions) => renames.annotate(hostId, sessions) : undefined;
+  }
   private enrollmentIssuer: EnrollmentIssuer | null = null;
   private enabledChangeListener: HostEnabledChangeListener = () => {};
   private removedListener: HostRemovedListener = () => {};
@@ -210,6 +218,7 @@ export class HostsService {
 		terminal: this.terminalProbe(host.id),
         latestAgentVersion: this.releases.latestFor(host.os, host.arch),
         exposures: exposuresByHost.get(host.id) ?? [],
+        annotateSessions: this.annotate(host.id),
       }),
     ));
   }
@@ -230,6 +239,7 @@ export class HostsService {
 		terminal: this.terminalProbe(host.id),
       latestAgentVersion: this.releases.latestFor(host.os, host.arch),
       exposures,
+      annotateSessions: this.annotate(host.id),
     })]);
     if (!view) throw new AppException("HOST_NOT_FOUND", "Host not found", 404);
     return view;
@@ -432,6 +442,8 @@ export class HostsService {
   // --- agent-driven updates (no session; the gateway authenticated the token) ---
 
   async applyHello(hostId: string, hello: AgentHello): Promise<void> {
+    // A reconnecting agent may come back to a new tmux server, where the ids start over.
+    this.sessionRenames?.forget(hostId);
     await this.hosts.update(
       { id: hostId },
       {
