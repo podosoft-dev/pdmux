@@ -7,6 +7,7 @@ import { MuxCopyModeDto, MuxHistoryDto, MuxRenameDto, MuxSessionDto } from "./dt
 import { AgentRegistryService } from "../agents/agent-registry.service";
 import { HostsService } from "../hosts/hosts.service";
 import { randomUUID } from "node:crypto";
+import type { SessionRenamedEvent } from "./session-renames";
 
 /**
  * Reaching a pane's SCROLLBACK, which is not in the browser.
@@ -58,16 +59,27 @@ export class TerminalMuxController {
   /** A ceiling on round trips, so a pathological pane cannot hold the request open. */
   private static readonly MAX_WINDOWS = 40;
 
-  constructor(private readonly exec: AgentExecService, private readonly registry?: AgentRegistryService, private readonly hosts?: HostsService) {}
+  constructor(
+    private readonly exec: AgentExecService,
+    private readonly registry?: AgentRegistryService,
+    private readonly hosts?: HostsService,
+    /** Told about each tmux rename, so other windows on the session can follow it (`SessionRenames`). */
+    private readonly renamed?: (event: SessionRenamedEvent) => void,
+  ) {}
 
   async rename(session: AuthSession, hostId: string, dto: MuxRenameDto): Promise<{ name: string; sessionId?: string; tmuxId?: string }> {
     if (dto.backend === "tmux") {
       const id = this.tmuxId(dto.tmuxId);
       const current = await this.run(session, hostId, ["list-sessions", "-F", "#{session_id}|#{session_name}"]);
-      if (current.stdout.split("\n").some(line => { const at = line.indexOf("|"); return at > 0 && line.slice(at + 1) === dto.name && line.slice(0, at) !== id; })) {
-        throw new AppException("SESSION_EXISTS", "A tmux session already has that name", 409);
+      let from: string | undefined;
+      for (const line of current.stdout.split("\n")) {
+        const at = line.indexOf("|");
+        if (at <= 0) continue;
+        if (line.slice(0, at) === id) from = line.slice(at + 1);
+        else if (line.slice(at + 1) === dto.name) throw new AppException("SESSION_EXISTS", "A tmux session already has that name", 409);
       }
       await this.run(session, hostId, ["rename-session", "-t", id, "--", dto.name]);
+      if (from && from !== dto.name) this.renamed?.({ type: "host.session-renamed", hostId, tmuxId: id, from, to: dto.name });
       this.registry?.sendToHost(hostId, { type: "collect", what: "heartbeat" });
       return { name: dto.name, tmuxId: id };
     }

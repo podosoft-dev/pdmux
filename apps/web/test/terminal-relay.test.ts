@@ -594,6 +594,20 @@ it("[TC-PDUI-237] reconnects a renamed tmux session by its acknowledged ID", () 
   h.relay.dispose();
 });
 
+it("[TC-PDUI-237] reconnects a tmux pane under the name another window gave it", () => {
+  const h = harness();
+  const connection = h.relay.open({ slotId: "s1", hostId: "h1", kind: "session", backend: "tmux", tmuxId: "$9", session: "old-name", cols: 80, rows: 24 });
+  h.sockets[0]!.accept();
+  h.sockets[0]!.deliver({ type: "ready", termId: "s1", pid: 42, tmuxId: "$9" });
+  // The layout followed a pdmux rename of $9; a reconnect must send the pair the host has now.
+  connection.resolveTmuxSession?.("$9", "new-name");
+  // A name the contract refuses is never sent: it would fail the whole open.
+  connection.resolveTmuxSession?.("$9", "bad name");
+  h.sockets[0]!.drop(); h.run(); h.sockets[1]!.accept();
+  expect(h.sockets[1]!.frames().find(frame => frame.type === "open")).toMatchObject({ target: { backend: "tmux", tmuxId: "$9", session: "new-name" } });
+  h.relay.dispose();
+});
+
 describe("a saved pane across a host restart", () => {
   const sessionId = "d5ac0000-0000-4000-8000-000000000001";
 

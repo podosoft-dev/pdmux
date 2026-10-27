@@ -7,6 +7,7 @@ import { AgentExecService } from "../agents/agent-exec.service";
 import { AppException } from "../common/app-exception";
 import { MuxCopyModeDto, MuxHistoryDto, MuxRenameDto } from "./dto/terminal-mux.dto";
 import { TerminalMuxController } from "./terminal-mux.controller";
+import type { SessionRenamedEvent } from "./session-renames";
 import { AgentRegistryService } from "../agents/agent-registry.service";
 import type { HostsService } from "../hosts/hosts.service";
 import type { AgentDownstream } from "@pdmux/protocol";
@@ -65,6 +66,7 @@ function ok(stdout = ""): ExecResult {
 function build(...results: ExecResult[]): {
   controller: TerminalMuxController;
   calls: { organizationId: string; hostId: string; args: string[] }[];
+  renamed: SessionRenamedEvent[];
 } {
   const calls: { organizationId: string; hostId: string; args: string[] }[] = [];
   const queue = [...results];
@@ -74,7 +76,8 @@ function build(...results: ExecResult[]): {
       return queue.shift() ?? ok();
     }),
   } as unknown as AgentExecService;
-  return { controller: new TerminalMuxController(exec), calls };
+  const renamed: SessionRenamedEvent[] = [];
+  return { controller: new TerminalMuxController(exec, undefined, undefined, (event) => renamed.push(event)), calls, renamed };
 }
 
 describe("[TC-PDTERM-136] reaching a pane's scrollback without typing into it", () => {
@@ -354,6 +357,16 @@ describe("[TC-PDUI-237] tmux session management", () => {
       ["tmux", "kill-session", "-t", "$3"],
     ]);
     expect(ctx.calls.every(call => call.organizationId === "org-a")).toBe(true);
+    // The rename is reported with the name the session had, so other windows can follow it.
+    expect(ctx.renamed).toEqual([{ type: "host.session-renamed", hostId: HOST, tmuxId: "$3", from: "old", to: "new-name" }]);
+  });
+  it("reports nothing when the name does not change or the rename is refused", async () => {
+    const same = build(ok("$3|old\n"), ok());
+    await same.controller.rename(SESSION, HOST, { backend: "tmux", tmuxId: "$3", name: "old" });
+    expect(same.renamed).toEqual([]);
+    const refused = build(ok("$3|old\n$4|taken\n"));
+    await expect(refused.controller.rename(SESSION, HOST, { backend: "tmux", tmuxId: "$3", name: "taken" })).rejects.toMatchObject({ code: "SESSION_EXISTS" });
+    expect(refused.renamed).toEqual([]);
   });
   it("refuses duplicate names and missing or malicious IDs before mutating a session", async () => {
     const ctx = build(ok("$3|old\n$4|taken\n"));

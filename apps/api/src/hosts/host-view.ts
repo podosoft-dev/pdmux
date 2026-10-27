@@ -13,6 +13,7 @@ import type { Host } from "./host.entity";
 import type { HostService, ProbeKind } from "./host-service.entity";
 import type { ServiceExposure } from "../integrations/service-exposure.entity";
 import type { HostVmView } from "../vm/host-vms.service";
+import type { HostSession } from "../terminal/session-renames";
 
 /**
  * Shapes the sidebar reads. Kept as pure functions over rows + the stored
@@ -76,7 +77,8 @@ export interface HostView {
   online: boolean;
   connected: boolean;
   resource: Heartbeat["resource"] | null;
-  sessions: MuxSession[];
+  /** Live sessions; a tmux session renamed through pdmux lists the names it had (`SessionRenames`). */
+  sessions: HostSession[];
   usage: AgentUsage[];
   /** Degraded capabilities the agent reported (git missing, PTY fallback, …).
    *  Carried to the card on purpose: in `doctor` output on the host, nobody sees
@@ -186,6 +188,8 @@ export function toHostView(
      */
     latestAgentVersion: string | null;
     exposures?: ServiceExposure[];
+    /** Adds what the API knows about the live sessions — the names pdmux renamed each from. */
+    annotateSessions?: (sessions: MuxSession[]) => HostSession[];
   },
 ): HostView {
   const heartbeat = host.lastHeartbeat;
@@ -216,7 +220,7 @@ export function toHostView(
     connected: options.connected,
 	terminal: options.terminal ?? { nativeSessions: false, screenProtocol: 0 },
     resource: heartbeat?.resource ?? null,
-    sessions: heartbeat?.sessions ?? [],
+    sessions: options.annotateSessions ? options.annotateSessions(heartbeat?.sessions ?? []) : heartbeat?.sessions ?? [],
     usage: heartbeat?.usage ?? [],
     diagnostics: heartbeat?.diagnostics ?? [],
     services: joinServiceProbes(services, heartbeat, options.exposures),

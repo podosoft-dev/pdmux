@@ -26,7 +26,12 @@ export interface TerminalOpenTarget {
 export interface TerminalViewport { x: number; y: number; cols: number; rows: number; canvasCols: number; canvasRows: number; follow: boolean; alternate?: boolean; history?: number }
 
 export interface TerminalConnection {
- resolveTmuxSession?(id: string): void;
+	/**
+	 * The tmux session this pane is on, as the layout now knows it: its id, and its name
+	 * when that changed (a rename made through pdmux). A reconnect sends the pair, and
+	 * the host only joins a tmux session whose id and name both match.
+	 */
+	resolveTmuxSession?(id: string, name?: string): void;
 	scrollHistory?(delta: number): void;
 	viewport?(x: number, y: number, follow?: boolean): void;
 	onViewport?(listener: (viewport: TerminalViewport) => void): () => void;

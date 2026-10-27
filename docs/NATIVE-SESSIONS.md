@@ -55,7 +55,15 @@ The previous programs, their output and their scrollback are not recovered. The 
 is what keeps a fresh shell under an old name from being mistaken for the old session.
 A tmux session renamed outside PDMux is no longer followed by id: the same id after a
 restart is a different session, so a saved pane only matches its id together with the
-name it was saved with. Renames made through PDMux update the saved panes.
+name it was saved with. Renames made through PDMux update the saved panes, in every
+window: the API records each tmux rename it makes and lists the earlier names on the
+live session (`previousNames`), and a pane follows the new name only when its id matches
+and its saved name is one of them. The window then reconnects and reloads under the new
+name. A record lasts while the host reports that id under the new name (or the old one,
+until the heartbeat that shows the rename arrives). It is dropped when the session ends,
+when it is renamed outside PDMux, or when the agent reconnects. Records are kept in the
+API's memory and shared between replicas through the event bus. After an API restart a
+window that still holds the old name reopens it as a native session, as before.
 
 ## Existing tmux sessions
 
