@@ -896,11 +896,12 @@ test.describe.serial("pdmux dashboard", () => {
     await expect(sidebar).toBeVisible();
   });
 
-  test("[TC-PDUI-138] the signed-in user is an avatar in the sidebar's control row", async ({ page }) => {
+  test("[TC-PDUI-138] the signed-in user is an avatar at the end of the toolbar's account controls", async ({ page }) => {
     await ready(page, "/");
     const sidebar = page.locator("[data-pdmux-sidebar]");
-    const trigger = page.locator("[data-testid='shell-user']");
-    const theme = page.getByRole("button", { name: "Toggle theme" });
+    const account = page.locator("[data-testid='toolbar-account']");
+    const trigger = account.locator("[data-testid='shell-user']");
+    const theme = account.getByRole("button", { name: "Toggle theme" });
     await expect(trigger).toBeVisible();
 
     // The band it used to occupy is GONE, not merely emptied. That block cost ~52px of
@@ -908,27 +909,28 @@ test.describe.serial("pdmux dashboard", () => {
     // of the change — a footer slot that still renders would give none of them back.
     await expect(page.locator("[data-pdmux-sidebar-foot]")).toHaveCount(0);
 
-    // Top of the column and last in the control row: it shares the row the language and
-    // theme switches already had, to the RIGHT of the theme toggle, and sits above the
-    // first card rather than below the last one.
+    // Since 0.17.21 a desktop dashboard draws language, theme and profile in the terminal
+    // toolbar (TC-PDUI-184), so the avatar is the last of those controls: on their row, to
+    // the RIGHT of the theme toggle, and not in the host column at all.
+    await expect(sidebar.locator("[data-testid='shell-user']")).toHaveCount(0);
     const box = await page.evaluate(() => {
-      const side = document.querySelector("[data-pdmux-sidebar]")?.getBoundingClientRect();
-      const user = document.querySelector("[data-testid='shell-user']")?.getBoundingClientRect();
-      const card = document.querySelector("[data-pdmux-sidebar] [data-pdmux-host]")?.getBoundingClientRect();
+      const user = document.querySelector("[data-testid='toolbar-account'] [data-testid='shell-user']")?.getBoundingClientRect();
+      const controls = [...document.querySelectorAll<HTMLElement>("[data-testid='toolbar-account'] button, [data-testid='toolbar-account'] a")];
+      const last = controls.at(-1)?.getBoundingClientRect();
       return {
-        sidebarTop: Math.round(side?.top ?? -1),
-        sidebarRight: Math.round(side?.right ?? -1),
         userTop: Math.round(user?.top ?? -1),
         userRight: Math.round(user?.right ?? -1),
-        cardTop: card ? Math.round(card.top) : null,
+        lastRight: Math.round(last?.right ?? -1),
       };
     });
-    // Within the column's own padding of the top — i.e. in the header row, not the list.
-    expect(box.userTop - box.sidebarTop).toBeLessThanOrEqual(24);
-    expect(box.userRight).toBeLessThanOrEqual(box.sidebarRight);
-    if (box.cardTop !== null) expect(box.userTop).toBeLessThan(box.cardTop);
-    const themeRight = await theme.evaluate((node) => Math.round(node.getBoundingClientRect().right));
-    expect(box.userRight).toBeGreaterThan(themeRight);
+    expect(box.userRight, "the avatar is not the last account control").toBe(box.lastRight);
+    expect(box.userRight).toBeLessThanOrEqual(page.viewportSize()?.width ?? Infinity);
+    const themeBox = await theme.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return { right: Math.round(rect.right), top: Math.round(rect.top) };
+    });
+    expect(box.userRight).toBeGreaterThan(themeBox.right);
+    expect(Math.abs(box.userTop - themeBox.top), "the avatar left the theme toggle's row").toBeLessThanOrEqual(4);
     await expectOnScreen(trigger, "user menu trigger");
     await expectScrollable(sidebar, "host sidebar");
     await expectViewportBound(page);
