@@ -5,9 +5,16 @@
 # because rollout requires a person to approve the exact deployment plan hash.
 #
 # amd64 and arm64 are built on native GitHub-hosted runners. Each matrix job pushes
-# untagged image digests, and the publish job joins both digests into one manifest
-# tag. Publishing a tag from each architecture would let the last writer silently
-# replace the other architecture.
+# untagged image digests, and the publish-images job joins both digests into one
+# manifest tag. Publishing a tag from each architecture would let the last writer
+# silently replace the other architecture.
+#
+# The image tag does not wait for the desktop installers: macOS signing and
+# notarization are the longest path, and a server rollout only needs the images.
+# publish-images tags them as soon as both architectures are verified, and publish
+# attaches the installers to the GitHub release when they are ready. If the desktop
+# half fails after the images are tagged, rerun it on the same commit; moving the tag
+# to a new commit would retag images that may already be deployed.
 #
 # The release also attaches the four host-agent binaries, native desktop installers,
 # checksums, update metadata, and the agent manifest. Agents still download from the
@@ -217,10 +224,10 @@ jobs:
       agent_artifact: ${{ needs.agent.outputs.artifact_name }}
     secrets: inherit
 
-  publish:
-    needs: [verify, agent, build, desktop]
+  publish-images:
+    needs: [verify, agent, build]
     permissions:
-      contents: write
+      contents: read
       packages: write
     runs-on: ubuntu-latest
     steps:
@@ -234,12 +241,6 @@ jobs:
           merge-multiple: true
           path: /tmp/digests
 
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: pdmux-*
-          merge-multiple: true
-          path: /tmp/desktop
-
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -247,10 +248,6 @@ jobs:
           registry: ${{ needs.verify.outputs.registry }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
 
       - name: Join the per-architecture digests into one tag
         run: |
@@ -292,19 +289,6 @@ jobs:
           echo "Agent $version" >> "$GITHUB_STEP_SUMMARY"
           sed 's/^/    /' "$dir/SHA256SUMS" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Prepare desktop release assets
-        run: |
-          bun tools/merge-desktop-update-metadata.mjs \
-            /tmp/desktop/latest-mac.yml \
-            /tmp/desktop/latest-mac-macos-intel.yml \
-            /tmp/desktop/latest-mac-macos-apple-silicon.yml
-          rm /tmp/desktop/latest-mac-macos-intel.yml /tmp/desktop/latest-mac-macos-apple-silicon.yml
-          (
-            cd /tmp/desktop
-            sha256sum -- * > DESKTOP-SHA256SUMS
-          )
-          cat /tmp/desktop/DESKTOP-SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
-
       # A version must identify identical bytes whether the web image is amd64,
       # arm64, or the standalone GitHub release asset.
       - name: Check both architectures carry the same agent binaries
@@ -328,6 +312,68 @@ jobs:
           fi
           echo "Agent $version is identical in both images and in the release assets." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Report what to deploy
+        run: |
+          echo "Pushed ${{ needs.verify.outputs.api }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed ${{ needs.verify.outputs.web }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Roll out with `podo deploy plan --profile <name> --release ${{ needs.verify.outputs.tag }}`, then apply the printed hash.' >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: [verify, agent, publish-images, desktop]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.releaseTag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pdmux-*
+          merge-multiple: true
+          path: /tmp/desktop
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # The same canonical archive again: publish-images has proved both web images
+      # carry these bytes, so the release assets match what the web serves.
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-binaries
+          path: /tmp/agent-binaries
+
+      - name: Restore the agent binaries
+        id: agent
+        run: |
+          set -euo pipefail
+          tar -xf /tmp/agent-binaries/agent-binaries.tar -C apps/web/static
+          version="$(sed -nE 's/^[[:space:]]*(var|const)[[:space:]]+AgentVersion[[:space:]]*=[[:space:]]*"([^"]*)".*/\2/p' agent/internal/cli/version.go)"
+          [ -n "$version" ] || { echo "::error file=agent/internal/cli/version.go::Could not read AgentVersion."; exit 1; }
+          dir="apps/web/static/agent/$version"
+          (cd "$dir" && sha256sum -c SHA256SUMS) || {
+            echo "::error::The agent-binaries artifact does not match $dir/SHA256SUMS."
+            exit 1
+          }
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare desktop release assets
+        run: |
+          bun tools/merge-desktop-update-metadata.mjs \
+            /tmp/desktop/latest-mac.yml \
+            /tmp/desktop/latest-mac-macos-intel.yml \
+            /tmp/desktop/latest-mac-macos-apple-silicon.yml
+          rm /tmp/desktop/latest-mac-macos-intel.yml /tmp/desktop/latest-mac-macos-apple-silicon.yml
+          (
+            cd /tmp/desktop
+            sha256sum -- * > DESKTOP-SHA256SUMS
+          )
+          cat /tmp/desktop/DESKTOP-SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+
       - name: Attach release artifacts
         uses: softprops/action-gh-release@v2
         with:
@@ -348,10 +394,5 @@ jobs:
             ${{ steps.agent.outputs.dir }}/manifest.json
             /tmp/desktop/*
 
-      - name: Report what to deploy
-        run: |
-          echo "Pushed ${{ needs.verify.outputs.api }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
-          echo "Pushed ${{ needs.verify.outputs.web }}:${{ needs.verify.outputs.tag }} (amd64, arm64)" >> "$GITHUB_STEP_SUMMARY"
-          echo "Attached macOS Intel, macOS Apple Silicon, Windows x64, and Linux x64 desktop artifacts." >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo 'Roll out with `podo deploy plan --profile <name> --release ${{ needs.verify.outputs.tag }}`, then apply the printed hash.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Report the release
+        run: echo "Attached macOS Intel, macOS Apple Silicon, Windows x64, and Linux x64 desktop artifacts." >> "$GITHUB_STEP_SUMMARY"

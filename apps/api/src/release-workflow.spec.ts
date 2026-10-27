@@ -75,7 +75,8 @@ describe("release workflow", () => {
       "tag_name: ${{ needs.verify.outputs.tag }}",
       "uses: ./.github/workflows/desktop.yml",
       "source_ref: ${{ inputs.releaseTag || github.ref_name }}",
-      "needs: [verify, agent, build, desktop]",
+      "needs: [verify, agent, build]",
+      "needs: [verify, agent, publish-images, desktop]",
       "pattern: pdmux-*",
       "bun tools/merge-desktop-update-metadata.mjs",
       "DESKTOP-SHA256SUMS",
@@ -92,6 +93,21 @@ describe("release workflow", () => {
     expect(workflow).not.toContain("secrets.REGISTRY_USERNAME");
     expect(workflow).not.toContain("secrets.REGISTRY_PASSWORD");
     expect(workflow).not.toContain("npm ci");
+  });
+
+  test("[TC-PDHOST-024] tags the images without waiting for the desktop installers", () => {
+    const jobs = (YAML.parse(workflow) as { jobs: Record<string, { needs?: string | string[]; steps?: { name?: string }[] }> }).jobs;
+    const needs = (name: string): string[] => {
+      const value = jobs[name]?.needs;
+      return value === undefined ? [] : Array.isArray(value) ? value : [value];
+    };
+    const steps = (name: string): string[] => (jobs[name]?.steps ?? []).map(step => step.name ?? "");
+    expect(needs("publish-images")).toEqual(["verify", "agent", "build"]);
+    expect(needs("publish")).toEqual(expect.arrayContaining(["publish-images", "desktop"]));
+    expect(steps("publish-images")).toContain("Join the per-architecture digests into one tag");
+    expect(steps("publish-images")).toContain("Check both architectures carry the same agent binaries");
+    expect(steps("publish")).not.toContain("Join the per-architecture digests into one tag");
+    expect(steps("publish")).toContain("Attach release artifacts");
   });
 
   test("[TC-PDDESKTOP-009] packages only for releases or explicit manual runs", () => {

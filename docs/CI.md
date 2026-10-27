@@ -110,7 +110,7 @@ it on the same commit and added four macOS jobs (about 14 runner minutes) to eac
    cache that `ci` saves on `main`. It hands the result to every installer runner as an
    `agent-binaries` tar archive, which keeps the executables' file modes. Installer runners no longer
    install Go.
-2. **The release attaches those bytes.** `publish` restores the same archive, checks it with
+2. **The release attaches those bytes.** `publish` (since 2026-10-27, `publish-images` for the image check) restores the same archive, checks it with
    `sha256sum -c SHA256SUMS`, and keeps comparing it with the binaries inside both web images. It no
    longer installs Go or builds the agent a second time.
 3. **Installers start beside verify.** In `release.yml` the `desktop` job no longer needs `verify`.
@@ -187,6 +187,24 @@ release faster: the next speed-up has to shorten both the macOS Intel path and t
   Compare large binary values as bytes, not with a deep equal.
 - **Never trade a release proof for time**: signing, clean-runner verification, checksums, image and
   asset equality, the asset list, and the `verify` gate before `publish`.
+
+## Images do not wait for the installers (2026-10-27)
+
+`release.yml` publishes in two jobs. `publish-images` needs only `verify`, `agent` and `build`: it
+joins both architecture digests into the `vX.Y.Z` tag and checks that both web images carry the
+agent bytes of the canonical archive. `publish` needs `publish-images` and `desktop` and attaches
+the agent binaries and installers to the GitHub release. The release itself still appears only after
+every installer is signed and verified on a clean runner; only the server images, which do not depend
+on the installers, are tagged earlier.
+
+v0.17.23 (run 40487538517) showed the wait this removes: both images were built by 10:24 UTC, but the
+tag and the release waited for macOS Intel packaging (10:21–10:30) and its verification (10:30–10:34),
+so the rollout could not start until 10:35. With the split, `podo deploy plan` can run about ten
+minutes after the tag push.
+
+If the desktop half fails after the images are tagged, fix it and rerun on the same commit. Moving the
+tag to a new commit would retag images that may already be deployed; deployments pin digests, but the
+tag would stop naming what is serving.
 
 ## Developer ID signing transition
 
