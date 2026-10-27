@@ -11,7 +11,7 @@ export const syncRecordSchema = z.object({
   key: z.string().min(1).max(256),
   kind: z.enum(["host", "layout", "widgets", "appearance"]),
   origin: z.string().max(128),
-  value: z.record(z.unknown()).nullable(),
+  value: z.record(z.string(), z.unknown()).nullable(),
 }).strict();
 export type SyncRecord = z.infer<typeof syncRecordSchema>;
 export const syncChangeSchema = syncRecordSchema.extend({
@@ -19,7 +19,7 @@ export const syncChangeSchema = syncRecordSchema.extend({
 });
 export type SyncChange = z.infer<typeof syncChangeSchema>;
 export const syncBatchSchema = z.object({
-  version: z.literal(DESKTOP_PROTOCOL_VERSION), deviceId: z.string().uuid(),
+  version: z.literal(DESKTOP_PROTOCOL_VERSION), deviceId: z.guid(),
   name: z.string().min(1).max(128), changes: z.array(syncChangeSchema).max(2_000),
 }).strict();
 export interface SyncConflict { key: string; local: SyncRecord; server: SyncRecord; serverHash: string }
@@ -38,10 +38,10 @@ export function chooseChange(base: string | null, local: string, server: string,
   return "conflict";
 }
 
-const id = z.string().uuid();
+const id = z.guid();
 export const bridgeFrameSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("open"), id, hostKey: z.string().max(256), method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "WS"]), path: z.string().max(8192), headers: z.record(z.string().max(8192)) }).strict(),
-  z.object({ type: z.literal("head"), id, status: z.number().int().min(200).max(599), headers: z.record(z.string().max(8192)) }).strict(),
+  z.object({ type: z.literal("open"), id, hostKey: z.string().max(256), method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "WS"]), path: z.string().max(8192), headers: z.record(z.string(), z.string().max(8192)) }).strict(),
+  z.object({ type: z.literal("head"), id, status: z.number().int().min(200).max(599), headers: z.record(z.string(), z.string().max(8192)) }).strict(),
   z.object({ type: z.literal("chunk"), id, data: z.string().max(65_536) }).strict(),
   z.object({ type: z.literal("credit"), id, count: z.number().int().min(1).max(WINDOW_CHUNKS) }).strict(),
   z.object({ type: z.literal("end"), id }).strict(),

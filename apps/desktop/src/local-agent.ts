@@ -27,7 +27,7 @@ const legacyLabels = [desktopMessages("en").localHost, desktopMessages("ko").loc
 const LABEL_LIMIT = 64;
 const DEFAULT_LABEL_VERSION = 2;
 const TOKEN_NAME = "Desktop runtime";
-const configuration = z.object({ hostId: z.string().uuid(), token: z.string().default(""), tokenId: z.string().optional(), server: z.string(), hostname: z.string(), layoutPrepared: z.boolean().default(false), defaultLabelVersion: z.number().int().default(1) });
+const configuration = z.object({ hostId: z.guid(), token: z.string().default(""), tokenId: z.string().optional(), server: z.string(), hostname: z.string(), layoutPrepared: z.boolean().default(false), defaultLabelVersion: z.number().int().default(1) });
 type Configuration = z.infer<typeof configuration>;
 interface TokenRow { id: string; name: string; revokedAt: string | null; expiresAt: string | null }
 const live = (row: TokenRow): boolean => !row.revokedAt && (!row.expiresAt || Date.parse(row.expiresAt) > Date.now());
