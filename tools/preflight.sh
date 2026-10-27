@@ -107,6 +107,10 @@ agent_version() {
 	# The Zod-free terminal parser is browser-only and parity-tested against the schema embedded by the agent.
 	changed=$(git diff --name-only "$base" HEAD -- agent packages/protocol |
 		grep -Ev '(_test\.go$|/testdata/|^packages/protocol/test/|^packages/protocol/conformance/|^packages/protocol/src/terminal\.ts$|/package\.json$|^bun\.lock$)' || true)
+	# Contract source reaches the agent only through the generated schema; unchanged bytes, unchanged binary.
+	if git diff --quiet "$base" HEAD -- packages/protocol/schema; then
+		changed=$(printf '%s\n' "$changed" | grep -Ev '^packages/protocol/(src|scripts)/' || true)
+	fi
 	[ -z "$changed" ] && { echo "  no agent or contract source changed"; return 0; }
 
 	echo "  changed:"; echo "$changed" | sed 's/^/    /'
