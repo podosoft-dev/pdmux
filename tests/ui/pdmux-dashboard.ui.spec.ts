@@ -249,6 +249,11 @@ test.describe.serial("pdmux dashboard", () => {
     const card = page.locator("[data-pdmux-host]").first();
     const hostId = await card.getAttribute("data-pdmux-host");
     expect(hostId).toBeTruthy();
+    // 0.17.21: every card starts folded, and a folded card hides its widgets. Open it so
+    // the toggle has something to show, and fold it again at the end if it started folded.
+    const startedFolded = (await card.getAttribute("data-pdmux-collapsed")) === "true";
+    if (startedFolded) await card.locator("[data-pdmux-fold]").click();
+    await expect(card).toHaveAttribute("data-pdmux-collapsed", "false");
     await expect(card.locator("[data-pdmux-widget='resources']")).toBeVisible();
 
     await card.locator(".pdmux-cog").click();
@@ -267,6 +272,11 @@ test.describe.serial("pdmux dashboard", () => {
     await same.locator(".pdmux-cog").click();
     await page.locator("[data-pdmux-popover='card-settings'] [data-pdmux-toggle='resources']").click();
     await expect(same.locator("[data-pdmux-widget='resources']")).toBeVisible();
+    if (startedFolded) {
+      await page.keyboard.press("Escape");
+      await same.locator("[data-pdmux-fold]").click();
+      await expect(same).toHaveAttribute("data-pdmux-collapsed", "true");
+    }
     await page.waitForTimeout(1200);
   });
 
