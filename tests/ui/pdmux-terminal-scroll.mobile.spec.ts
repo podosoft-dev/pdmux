@@ -69,6 +69,20 @@ async function dragDown(page: Page, steps = 10, pitch = 14): Promise<void> {
 }
 
 /** Everything the page has sent up the socket, as the protocol's own `input` frames. */
+/**
+ * What the terminal sends on its own rather than what a person typed: replies to the
+ * program's queries (device attributes `CSI ? … c` / `CSI > … c`, status reports
+ * `CSI … n` / `CSI … R`, colour and other OSC replies, DCS replies) and focus reports.
+ * tmux queries the client's colours and attributes again when the pane is focused or
+ * resized, and a tap on a phone does both (it raises the keyboard), so these arrive
+ * right after a tap. They are xterm answering tmux, not keys.
+ */
+const TERMINAL_REPLY = /^(?:\x1b\[[?>]?[\d;]*[cnR]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b\[[IO])+$/;
+
+async function typedInputs(page: Page): Promise<string[]> {
+  return (await sentInputs(page)).filter((data) => data.length > 0 && !TERMINAL_REPLY.test(data));
+}
+
 async function sentInputs(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const frames = (window as unknown as { __pdmuxSent?: string[] }).__pdmuxSent ?? [];
@@ -236,16 +250,16 @@ test.describe("reaching a pane's scrollback from a phone", () => {
         .toBe(0);
 
       // A tap must stay a tap: it is what raises the software keyboard.
-      const beforeTap = (await sentInputs(page)).length;
+      const beforeTap = (await typedInputs(page)).length;
       await tmux.tap();
       await page.waitForTimeout(300);
-      expect((await sentInputs(page)).slice(beforeTap), "a tap was turned into keystrokes").toEqual([]);
+      expect((await typedInputs(page)).slice(beforeTap), "a tap was turned into keystrokes").toEqual([]);
 
       // A horizontal drag belongs to the browser's back gesture — which on a phone IS this
       // app's view navigation (`mobile-view.svelte.ts` puts each view in history on purpose).
       // There is no in-app swipe handler to compete with; the axis lock is protecting the
       // platform's own gesture.
-      const beforeSwipe = (await sentInputs(page)).length;
+      const beforeSwipe = (await typedInputs(page)).length;
       const box = await tmux.boundingBox();
       const cdp = await page.context().newCDPSession(page);
       const y = Math.round((box?.y ?? 0) + (box?.height ?? 0) / 2);
@@ -258,7 +272,7 @@ test.describe("reaching a pane's scrollback from a phone", () => {
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       await cdp.detach();
       await page.waitForTimeout(300);
-      expect((await sentInputs(page)).slice(beforeSwipe), "a sideways swipe was read as a scroll").toEqual([]);
+      expect((await typedInputs(page)).slice(beforeSwipe), "a sideways swipe was read as a scroll").toEqual([]);
 
       // …and the vertical drag reaches the history the way the wheel does: xterm converts a
       // wheel over this buffer into cursor keys for the program (measured on this pane:
