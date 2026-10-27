@@ -192,6 +192,28 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
       const downloaded = await fetch(`${serverUrl}/hosts/${mirror.id}/files/download?${new URLSearchParams({ path: relative })}`, { headers: { cookie: cloudCookie } });
       assert.equal(downloaded.status, 200);
       assert.equal(await downloaded.text(), contents, "Keep file bytes unchanged through the relay");
+      // A chunk names its offset and digest in headers; the relay must carry them (#30).
+      const transfers = `${serverUrl}/hosts/${mirror.id}/file-transfers`;
+      const send = async (method, path, body, headers = {}) => {
+        const response = await fetch(transfers + path, { method, body, headers: { cookie: cloudCookie, ...headers } });
+        assert.equal(response.status, 200, `${method} file-transfers${path}: ${await response.clone().text()}`);
+        return response.json();
+      };
+      const sendJson = (method, path, value) => send(method, path, JSON.stringify(value), { "content-type": "application/json" });
+      const sha = data => createHash("sha256").update(data).digest("hex");
+      const chunked = new Uint8Array(2.5 * 1_048_576).map((_, index) => index % 251);
+      const pieces = [0, 1, 2].map(index => chunked.subarray(index * 1_048_576, (index + 1) * 1_048_576));
+      const transferId = crypto.randomUUID(), entryId = crypto.randomUUID();
+      await sendJson("POST", "", { id: transferId, direction: "upload", basePath: fileFixture.slice(homedir().length + 1), selection: [] });
+      await sendJson("POST", `/${transferId}/manifest`, { entries: [{ id: entryId, path: "chunked.bin", kind: "file", size: chunked.length, fingerprint: sha(pieces.map(sha).join("")), modified: "1" }] });
+      await sendJson("POST", `/${transferId}/control`, { action: "start" });
+      for (let attempt = 0; attempt < 50 && (await send("GET", `/${transferId}`)).state !== "running"; attempt += 1) await new Promise(resolve => setTimeout(resolve, 100));
+      await send("POST", `/${transferId}/entries/${entryId}/reconcile`);
+      for (const [index, piece] of pieces.entries()) {
+        await send("PUT", `/${transferId}/entries/${entryId}/chunk`, piece, { "content-type": "application/octet-stream", "x-transfer-offset": String(index * 1_048_576), "x-transfer-sha256": sha(piece) });
+      }
+      assert.equal((await send("POST", `/${transferId}/entries/${entryId}/commit`)).state, "committed");
+      assert.equal(sha(await readFile(join(fileFixture, "chunked.bin"))), sha(chunked), "Keep chunked upload bytes unchanged through the relay");
       const terminal = new WebSocket(`${tlsOrigin.replace(/^https/, "wss")}/terminal/ws?hostId=${mirror.id}`, { headers: { cookie: cloudCookie, origin: tlsOrigin } });
       let output = "";
       await new Promise((accept, reject) => {

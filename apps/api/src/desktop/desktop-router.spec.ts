@@ -88,3 +88,21 @@ describe("[TC-PDDESKTOP-015] metadata writes lock only what they change", () => 
     expect(service.lock.size).toBe(0);
   });
 });
+
+describe("[TC-PDDESKTOP-013] relayed host requests", () => {
+  it("[TC-PDDESKTOP-013] carries an upload chunk's offset and digest to the original backend", async () => {
+    const pdmux = { auth: { requireSession: async () => session("owner", "") }, hosts: { get: async () => ({ id: HOST }) } } as unknown as PdmuxServices;
+    const record = { kind: "host", key: "host:other-desktop:source", hostId: HOST, origin: "other-desktop", userId: "owner", value: { label: "Other desktop" }, connectionKey: "" };
+    const records = { find: async () => [record] } as unknown as Repository<DesktopRecord>;
+    const router = new DesktopRouter(new DesktopService(pdmux, records), null);
+    const sent: Record<string, string>[] = [];
+    const bridge = { request: async (input: { headers: Record<string, string> }) => { sent.push(input.headers); return Response.json({ id: "entry" }); }, close: () => undefined };
+    router.register(session("owner", ""), "other-desktop", { bridge: bridge as never, close: () => undefined });
+    const request = new Request(`http://api.test/hosts/${HOST}/file-transfers/job/entries/entry/chunk`, {
+      method: "PUT", body: new Uint8Array([1, 2, 3]),
+      headers: { "content-type": "application/octet-stream", "x-transfer-offset": "1048576", "x-transfer-sha256": "a".repeat(64) },
+    });
+    expect((await router.forward(request))?.status).toBe(200);
+    expect(sent).toEqual([expect.objectContaining({ "x-transfer-offset": "1048576", "x-transfer-sha256": "a".repeat(64) })]);
+  });
+});
