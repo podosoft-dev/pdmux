@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { createServer } from "node:https";
@@ -18,8 +19,12 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
   try {
     execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-keyout", join(root, "key.pem"), "-out", join(root, "cert.pem"), "-subj", "/CN=localhost", "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost", "-addext", "basicConstraints=critical,CA:TRUE"], { stdio: "ignore" });
     const code = await new Promise((accept, reject) => {
-      const child = spawn(process.execPath, [import.meta.filename], { stdio: "inherit", timeout: 180_000, env: { ...process.env, PDMUX_SYNC_FIXTURE: root, NODE_EXTRA_CA_CERTS: join(root, "cert.pem") } });
-      child.once("error", reject); child.once("exit", accept);
+      // Its own process group: a timeout must also stop the servers and agents the
+      // fixture started, which a signal to the fixture alone leaves running.
+      const child = spawn(process.execPath, [import.meta.filename], { stdio: "inherit", detached: true, env: { ...process.env, PDMUX_SYNC_FIXTURE: root, NODE_EXTRA_CA_CERTS: join(root, "cert.pem") } });
+      const signal = name => { try { process.kill(-child.pid, name); } catch { /* The group already exited. */ } };
+      const timer = setTimeout(() => { console.error("Stop the desktop synchronization smoke after 180 seconds"); signal("SIGTERM"); setTimeout(() => signal("SIGKILL"), 5_000).unref(); }, 180_000);
+      child.once("error", reject); child.once("exit", code => { clearTimeout(timer); signal("SIGKILL"); accept(code); });
     });
     assert.equal(code, 0, "Isolated desktop synchronization smoke failed");
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -28,6 +33,17 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
   const repository = resolve(import.meta.dirname, "..");
   const agentVersion = parseAgentVersion(await readFile(join(repository, "agent/internal/cli/version.go"), "utf8"));
   const agentBinary = process.env.PDMUX_SYNC_AGENT_BINARY ?? join(repository, `apps/web/static/agent/${agentVersion}/pdmux-agent-darwin-${process.arch === "arm64" ? "arm64" : "amd64"}`);
+  if (process.platform === "darwin") {
+    await access(agentBinary, constants.X_OK).catch(() => {
+      throw new Error(`No agent binary at ${agentBinary}. Run \`bun run build:agent\` or set PDMUX_SYNC_AGENT_BINARY.`);
+    });
+  }
+  // A process that never started (a missing executable) emits no exit event in Bun.
+  const stopChild = async child => {
+    if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+    const exited = new Promise(accept => child.once("exit", accept));
+    child.kill("SIGTERM"); await exited;
+  };
   const layout = name => {
     const data = join(root, name);
     return { bunExecutable: process.execPath, apiEntry: join(repository, name === "local" ? "apps/api/dist-desktop/main.js" : "apps/api/dist/main.js"), migrateEntry: join(repository, name === "local" ? "apps/api/dist-desktop/desktop-migrate.js" : "apps/api/dist/desktop-migrate.js"), webEntry: join(repository, name === "local" ? "apps/web/build-desktop/index.js" : "apps/web/build/index.js"), dataDirectory: data, filesDirectory: join(data, "files"), databasePath: join(data, "pdmux.sqlite"), secretPath: join(data, "auth.secret"), agentReleaseDirectory: join(repository, "apps/web/build/client/agent") };
@@ -266,7 +282,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
         throw new Error("Recovery fixture agent did not connect");
       };
       const stopAgent = async () => {
-        if (serverAgent && serverAgent.exitCode === null) { serverAgent.kill("SIGTERM"); await new Promise(resolve => serverAgent.once("exit", resolve)); }
+        await stopChild(serverAgent);
       };
       await startAgent();
       await new Promise((accept, reject) => {
@@ -334,8 +350,7 @@ if (!process.env.PDMUX_SYNC_FIXTURE) {
     }
     console.log(JSON.stringify({ stage: "desktop-server-sync", result: "passed", directions: 2, logoutCache: true }));
   } finally {
-    if (serverAgent && serverAgent.exitCode === null) { serverAgent.kill("SIGTERM"); await new Promise(accept => serverAgent.once("exit", accept)); }
-    if (agent && agent.exitCode === null) { agent.kill("SIGTERM"); await new Promise(accept => agent.once("exit", accept)); }
+    await stopChild(serverAgent); await stopChild(agent);
     if (fileFixture) await rm(fileFixture, { recursive: true, force: true });
     await local.stop(); await server.stop();
     // Engines intentionally outlive agents and Electron. Clean up only endpoints
