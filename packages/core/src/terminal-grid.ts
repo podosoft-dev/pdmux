@@ -198,6 +198,12 @@ export interface GridHost {
 	online: boolean;
 	nativeSessions?: boolean;
 	sessions?: readonly GridSession[];
+	/**
+	 * The host's agent is replacing itself right now: its terminals drop and come back on
+	 * the new build, and every pane on the host says so. `phase` is the agent's own report
+	 * (`accepted` … `restarting`); `targetVersion` is the build it is moving to.
+	 */
+	agentUpdate?: { phase: string; targetVersion: string | null } | null;
 }
 
 /**
@@ -353,6 +359,11 @@ export function setSlotPresentation(layout: TerminalLayout, slotId: string, valu
 		const { label: _label, tags: _tags, ...target } = slot;
 		return { ...target, ...presentation };
 	}) };
+}
+
+/** The agent update under way on a slot's host, if any. */
+export function slotAgentUpdate(slot: TerminalSlot, hosts: readonly GridHost[]): { phase: string; targetVersion: string | null } | null {
+	return hosts.find((h) => h.id === slot.hostId)?.agentUpdate ?? null;
 }
 
 /** True when a slot's terminal can be reached right now. */

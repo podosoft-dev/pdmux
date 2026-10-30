@@ -2179,6 +2179,68 @@ button.pdmux-card-pane:focus-visible {
 	}
 }
 
+/* The host's agent is updating itself: the whole pane says so, louder than a reconnect line,
+   because the terminal is about to drop for a reason the user did not cause. */
+.pdmux-pane-updating {
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	display: grid;
+	place-items: center;
+	padding: 12px;
+	background: color-mix(in srgb, var(--pdmux-card) 80%, transparent);
+	animation: pdmux-pane-lost-in 0.2s ease-out both;
+	cursor: progress;
+}
+
+.pdmux-pane-updating-card {
+	display: grid;
+	justify-items: center;
+	gap: 6px;
+	max-width: 28rem;
+	padding: 12px 16px;
+	border: 1px solid var(--pdmux-accent);
+	border-radius: var(--pdmux-radius-sm);
+	background: var(--pdmux-card);
+	box-shadow: 0 4px 16px color-mix(in srgb, var(--pdmux-fg) 12%, transparent);
+	text-align: center;
+}
+
+.pdmux-pane-updating-title {
+	margin: 0;
+	color: var(--pdmux-fg);
+	font-size: 0.875rem;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.pdmux-pane-updating-text {
+	margin: 0;
+	color: var(--pdmux-muted);
+	font-size: 0.75rem;
+	line-height: 1.4;
+}
+
+.pdmux-pane-updating-spinner {
+	width: 18px;
+	height: 18px;
+	border: 2px solid color-mix(in srgb, var(--pdmux-accent) 30%, transparent);
+	border-top-color: var(--pdmux-accent);
+	border-radius: 50%;
+	animation: pdmux-pane-updating-spin 0.9s linear infinite;
+}
+
+@keyframes pdmux-pane-updating-spin {
+	to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pdmux-pane-updating,
+	.pdmux-pane-updating-spinner {
+		animation: none;
+	}
+}
+
 /* --- commit graph --------------------------------------------------------- */
 
 .pdmux-graph {

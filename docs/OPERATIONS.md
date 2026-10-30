@@ -290,8 +290,9 @@ state it explicitly with `--server` when an exception is needed.
 ### 2-3. The agent is a service — a remote update is "exit and be restarted"
 
 The installer writes a systemd unit (Linux) or a launchd plist (macOS) with `Restart=always` /
-`KeepAlive`. That fact is **the premise of remote update**: triggering an update from the dashboard
-makes the agent fetch a new binary, verify it, swap it and **`exit(0)`**, and the service manager does
+`KeepAlive`. That fact is **the premise of remote update**: an update — sent automatically when an
+outdated agent connects (`docs/VERSIONING.md` §7, step 5), or triggered from the dashboard — makes
+the agent fetch a new binary, verify it, swap it and **`exit(0)`**, and the service manager does
 the rest. So the agent needs neither extra privileges nor a service-manager client.
 
 Four operational consequences follow:

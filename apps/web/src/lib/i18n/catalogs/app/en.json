@@ -373,7 +373,11 @@
       "terminateTitle": "Terminate this session?",
       "terminateWarning": "This ends the session and every program running in it. Closing a panel only disconnects its viewer.",
       "terminateFailed": "Could not terminate the session. Check the host connection and try again.",
-      "connectionLost": "Lost connection to the server · reconnecting…"
+      "connectionLost": "Lost connection to the server · reconnecting…",
+      "agentUpdating": "Updating the pdmux agent to {version}…",
+      "agentUpdatingAny": "Updating the pdmux agent…",
+      "agentUpdatingSession": "The terminal reconnects by itself when the update finishes. Programs in this session keep running.",
+      "agentUpdatingShell": "This shell closes when the agent restarts. Open it again after the update."
     },
     "picker": {
       "addTitle": "Add a terminal",
@@ -772,6 +776,10 @@
         "access": {
           "title": "Fleet-wide CLI tokens",
           "blurb": "These tokens work across all hosts you can access. Keys created on a host page work only on that host."
+        },
+        "updates": {
+          "title": "Agent updates",
+          "blurb": "How hosts get a new agent after the server is updated."
         }
       },
       "field": {
@@ -834,6 +842,10 @@
         "mcpUserTokens": {
           "label": "Allow fleet-wide tokens",
           "hint": "Turning this off stops existing tokens from working without deleting them. Turning it on restores them."
+        },
+        "agentAutoUpdate": {
+          "label": "Update agents automatically",
+          "hint": "When an agent older than the newest build connects, the server sends it the update. A machine that is offline is updated when it comes back. One host goes first; two failures stop the rollout of that version."
         }
       },
       "sweep": {

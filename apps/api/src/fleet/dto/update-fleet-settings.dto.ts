@@ -93,4 +93,9 @@ export class UpdateFleetSettingsDto {
   @IsOptional()
   @IsBoolean()
   mcpUserTokens?: boolean;
+
+  // Automatic agent updates when an outdated agent connects. On by default.
+  @IsOptional()
+  @IsBoolean()
+  agentAutoUpdate?: boolean;
 }

@@ -258,7 +258,7 @@
         </Tabs.Trigger>
       {/each}
     </Tabs.List>
-    <Tabs.Content value="collection" class="flex flex-none flex-col gap-4">{@render groups(TAB_GROUPS.collection)}</Tabs.Content>
+    <Tabs.Content value="collection" class="flex flex-none flex-col gap-4">{@render groups(TAB_GROUPS.collection)}{@render updatesCard()}</Tabs.Content>
     <Tabs.Content value="limits" class="flex flex-none flex-col gap-4">{@render groups(TAB_GROUPS.limits)}</Tabs.Content>
     <Tabs.Content value="access" class="flex flex-none flex-col gap-4">{@render accessCard()}</Tabs.Content>
     {#if serverFeatures}
@@ -321,6 +321,30 @@
           <span class="font-medium">{i18n.t.dash.fleet.field.mcpUserTokens.label}</span>
         </span>
       </label><InfoHint label={i18n.t.dash.fleet.field.mcpUserTokens.label} text={i18n.t.dash.fleet.field.mcpUserTokens.hint} /></div>
+    </Card.Content>
+  </Card.Root>
+{/snippet}
+
+<!-- A switch of its own: it decides whether the server restarts agents, not how they collect. -->
+{#snippet updatesCard()}
+  <Card.Root class="shrink-0" data-testid="fleet-group-updates">
+    <Card.Header>
+      <Card.Title class="flex items-center gap-1">{i18n.t.dash.fleet.group.updates.title}<InfoHint label={i18n.t.dash.fleet.group.updates.title} text={i18n.t.dash.fleet.group.updates.blurb} /></Card.Title>
+    </Card.Header>
+    <Card.Content class="grid gap-3">
+      <div class="flex items-start gap-1"><label class="flex items-start gap-3 text-sm">
+        <input
+          type="checkbox"
+          class="border-input mt-0.5 size-4 rounded"
+          checked={draft.agentAutoUpdate === "true"}
+          disabled={blocked}
+          data-testid="fleet-agent-auto-update"
+          onchange={(event) => (draft.agentAutoUpdate = String(event.currentTarget.checked))}
+        />
+        <span>
+          <span class="font-medium">{i18n.t.dash.fleet.field.agentAutoUpdate.label}</span>
+        </span>
+      </label><InfoHint label={i18n.t.dash.fleet.field.agentAutoUpdate.label} text={i18n.t.dash.fleet.field.agentAutoUpdate.hint} /></div>
     </Card.Content>
   </Card.Root>
 {/snippet}

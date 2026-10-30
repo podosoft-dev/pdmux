@@ -148,6 +148,14 @@ describe("[TC-PDWEB-020] a save carries what changed, and nothing else", () => {
     expect(review.patch).toEqual({ metricRetentionDays: 30 });
   });
 
+  it("reads a missing agentAutoUpdate as the shipped ON, and sends turning it off", () => {
+    const older: FleetSettingsView = { ...settings() };
+    delete older.agentAutoUpdate;
+    expect(draftFrom(older).agentAutoUpdate).toBe("true");
+    expect(reviewDraft(older, draftFrom(older)).patch).toEqual({});
+    expect(reviewDraft(older, { ...draftFrom(older), agentAutoUpdate: "false" }).patch).toEqual({ agentAutoUpdate: false });
+  });
+
   it("reads a missing staleHostRetentionDays as OFF rather than as absent", () => {
     // An API older than the field answers without it. `0` is the only safe reading:
     // anything else would make the screen claim a sweep is configured.

@@ -86,6 +86,21 @@ describe("[TC-PDUI-101] host reachability mapping", () => {
     expect(hostState(host())).toBe("online");
   });
 
+  it("[TC-PDUI-254] tells the grid which hosts are replacing their agent, and only while it runs", () => {
+    const running = { commandId: "00000000-0000-4000-8000-000000000001", phase: "restarting" as const, progressPct: null, currentVersion: "0.1.38", targetVersion: "0.1.39", code: null, message: "", shellPanes: 0, sessionPanes: 1 };
+    const [updating, finished, idle, arrived] = gridHosts([
+      host({ agentVersion: "0.1.38", lastUpdate: running }),
+      host({ lastUpdate: { ...running, phase: "done" } }),
+      host({ lastUpdate: null }),
+      // The new agent said hello before its `done` arrived.
+      host({ agentVersion: "0.1.39", lastUpdate: running }),
+    ]);
+    expect(updating?.agentUpdate).toEqual({ phase: "restarting", targetVersion: "0.1.39" });
+    expect(finished?.agentUpdate).toBeNull();
+    expect(idle?.agentUpdate).toBeNull();
+    expect(arrived?.agentUpdate).toBeNull();
+  });
+
   it("never reports a disabled host as reachable to the terminal grid", () => {
     const [row] = gridHosts([host({ enabled: false, online: true, sessions: [{ name: "main", attached: 0, windows: 1 }] })]);
     expect(row?.online).toBe(false);

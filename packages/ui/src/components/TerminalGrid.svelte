@@ -26,6 +26,7 @@
 		dropTargetIndex,
 		emptyCellKind,
 		isSlotReachable,
+		slotAgentUpdate,
 		orphanPaneIds,
 		soloIndex,
 		stalePaneIds,
@@ -278,6 +279,7 @@
 			{createSurface}
 			{t}
 			reachable={isSlotReachable(slot, hosts)}
+			agentUpdate={slotAgentUpdate(slot, hosts)}
 			zoomed={layout.zoomId === slot.id}
 			focused={layout.focusId === slot.id}
 			visible={visibleIds.has(slot.id)}

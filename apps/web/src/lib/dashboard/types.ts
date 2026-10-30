@@ -409,6 +409,12 @@ export interface FleetSettingsView {
   staleHostRetentionDays?: number;
   /** Whether this fleet accepts fleet-wide MCP tokens. Host-scoped keys are unaffected. */
   mcpUserTokens: boolean;
+  /**
+   * Whether the server updates an outdated agent by itself when it connects. Optional:
+   * an API older than this field answers without it, and that server updates nothing
+   * automatically — the screen reads the absence as the shipped default, ON.
+   */
+  agentAutoUpdate?: boolean;
 }
 
 /**

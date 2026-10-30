@@ -180,6 +180,13 @@
 		 * and a key pressed meanwhile is refused visibly (the line pulses) instead of vanishing.
 		 */
 		connectionLost?: boolean;
+		/**
+		 * The host's agent is replacing itself (`GridHost.agentUpdate`). The pane is covered by a
+		 * notice that says so until the agent reports back, because the terminal is about to drop
+		 * and come back — without it the user sees a dead pane and a reconnect with no reason.
+		 * Losing the server outranks it: with the server away, nobody knows how the update went.
+		 */
+		agentUpdate?: { phase: string; targetVersion: string | null } | null;
 	}
 
 	let {
@@ -222,6 +229,7 @@
 		diagnostics = false,
 		transport = 'open',
 		connectionLost = false,
+		agentUpdate = null,
 	}: Props = $props();
 
 	const tr = $derived(translator(t));
@@ -484,6 +492,18 @@
 	 */
 	let refusals = $state(0);
 	$effect(() => { if (!connectionLost) refusals = 0; });
+	const updating = $derived(agentUpdate !== null && !connectionLost);
+	const updatingTitle = $derived(
+		agentUpdate?.targetVersion
+			? tr('pdmux.pane.agentUpdating', 'Updating the pdmux agent to {version}…').replace('{version}', agentUpdate.targetVersion)
+			: tr('pdmux.pane.agentUpdatingAny', 'Updating the pdmux agent…'),
+	);
+	// A plain shell ends when the agent restarts; a session keeps its programs and reattaches.
+	const updatingHint = $derived(
+		slot.kind === 'shell'
+			? tr('pdmux.pane.agentUpdatingShell', 'This shell closes when the agent restarts. Open it again after the update.')
+			: tr('pdmux.pane.agentUpdatingSession', 'The terminal reconnects by itself when the update finishes. Programs in this session keep running.'),
+	);
 	function refuseInput(): boolean {
 		if (!connectionLost) return false;
 		refusals += 1;
@@ -809,8 +829,9 @@
 
 <div
 	class="pdmux pdmux-pane"
-	class:pdmux-unreachable={!reachable && !connectionLost}
-	class:pdmux-veiled={!reachable && !connectionLost && Boolean(veil)}
+	class:pdmux-unreachable={!reachable && !connectionLost && !updating}
+	class:pdmux-veiled={!reachable && !connectionLost && !updating && Boolean(veil)}
+	class:pdmux-updating={updating}
 	class:pdmux-cut-off={connectionLost}
 	class:pdmux-dragging={dragging}
 	class:pdmux-focused={active}
@@ -1029,7 +1050,7 @@
 			></button>
 		{/if}
 		<div class="pdmux-pane-surface" bind:this={surfaceHost} data-pdmux-surface></div>
-		{#if !reachable && veil && !connectionLost}
+		{#if !reachable && veil && !connectionLost && !updating}
 			<div class="pdmux-pane-veil" data-pdmux-veil>{@render veil(actionContext)}</div>
 		{/if}
 		{#if connectionLost}
@@ -1046,11 +1067,24 @@
 				{/key}
 			</div>
 		{/if}
+		{#if updating && agentUpdate}
+			<!--
+				Over the terminal, under a lost server. It takes the pointer like the lost overlay: the
+				terminal is about to drop, and a click on it would go nowhere.
+			-->
+			<div class="pdmux-pane-updating" data-pdmux-agent-update={agentUpdate.phase} role="status" aria-live="polite">
+				<div class="pdmux-pane-updating-card">
+					<span class="pdmux-pane-updating-spinner" aria-hidden="true"></span>
+					<p class="pdmux-pane-updating-title">{updatingTitle}</p>
+					<p class="pdmux-pane-updating-text">{updatingHint}</p>
+				</div>
+			</div>
+		{/if}
 		<!-- Not on an unreachable pane: the host is gone and the pane already says so; a second line
 		     saying the socket is retrying adds nothing but alarm (a machine put to sleep on purpose). -->
 		<!-- Nor on a pane whose session is gone: nothing is reconnecting, and the line would
 		     sit under the notice that says so for as long as the pane stays open. -->
-		{#if transport !== 'open' && reachable && !connectionLost && !missingSession}
+		{#if transport !== 'open' && reachable && !connectionLost && !missingSession && !updating}
 			<!--
 				⚠ NOT AN ERROR, AND NOT THE UNREACHABLE OVERLAY. The host is fine; this browser's
 				socket is away, which lasts a moment and is worth exactly one line — a full-pane

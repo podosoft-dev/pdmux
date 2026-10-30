@@ -33,6 +33,7 @@ import {
 } from "@pdmux/core";
 import type { HostDetail, HostPowerMark, HostResources, HostState, HostSummary, HostUpdateMark, PickerHost, RepoHead } from "@pdmux/ui";
 import { vmReachable } from "#lib/vm/power.js";
+import { updateInFlight } from "./agent-update";
 import type {
   GraphCommitRow,
   HostServiceView,
@@ -82,6 +83,11 @@ export function gridHosts(hosts: readonly HostView[]): GridHost[] {
     online: host.enabled && host.online && vmReachable(host.vm),
     sessions: host.sessions ?? [],
     nativeSessions: host.terminal?.nativeSessions === true && host.terminal.screenProtocol === 1,
+    // Not once the host already runs the target: the new agent's hello can land before
+    // its `done`, and the panes are back by then.
+    agentUpdate: host.lastUpdate && updateInFlight(host.lastUpdate) && host.agentVersion !== host.lastUpdate.targetVersion
+      ? { phase: host.lastUpdate.phase, targetVersion: host.lastUpdate.targetVersion }
+      : null,
   }));
 }
 

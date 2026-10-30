@@ -79,6 +79,16 @@ export interface FleetSettings {
    * it; `encodeSetting` already handles it through `String(value)`.
    */
   mcpUserTokens: boolean;
+  /**
+   * Whether the server sends an outdated agent the newest build by itself, when it
+   * connects (`AgentAutoUpdateService`). On by default: a release whose agent half
+   * waits for somebody to press a button is a release some hosts never get, and
+   * nobody notices.
+   *
+   * ⚠ NOT PUSHED TO AGENTS. It is the server's decision; the agent installs what
+   * it is sent either way.
+   */
+  agentAutoUpdate: boolean;
 }
 
 export const FLEET_SETTING_DEFAULTS: FleetSettings = {
@@ -103,6 +113,7 @@ export const FLEET_SETTING_DEFAULTS: FleetSettings = {
   // Off for the same reason as the line above: an upgrade must not hand a fleet a
   // credential shape it never asked for.
   mcpUserTokens: false,
+  agentAutoUpdate: true,
 };
 
 export const FLEET_SETTING_KEYS = Object.keys(FLEET_SETTING_DEFAULTS) as (keyof FleetSettings)[];
@@ -185,6 +196,10 @@ export function resolveFleetSettings(rows: { key: string; value: string }[]): Fl
         // Only the exact string turns it on. Anything else — a hand-edited row, a
         // half-written value — leaves the safer default in place.
         out.mcpUserTokens = row.value === "true";
+        break;
+      case "agentAutoUpdate":
+        // The reverse of the switch above: only the exact string turns it off.
+        out.agentAutoUpdate = row.value !== "false";
         break;
       default:
         break;

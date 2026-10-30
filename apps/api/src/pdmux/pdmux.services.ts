@@ -19,6 +19,7 @@ import {
 } from "../agents/agent-release.service";
 import { AgentToken } from "../agents/agent-token.entity";
 import { AgentTokensService } from "../agents/agent-tokens.service";
+import { AgentAutoUpdateService } from "../agents/agent-auto-update.service";
 import { AgentUpdateService } from "../agents/agent-update.service";
 import { AUDIT } from "../audit/audit.module";
 import type { AuditService } from "../audit/audit.service";
@@ -208,6 +209,9 @@ export function createPdmuxServices(services: ServiceRegistry, env: AppEnv): Pdm
     hosts,
   );
   const agentUpdates = new AgentUpdateService(hosts, agentRegistry, releases);
+  const agentAutoUpdates = new AgentAutoUpdateService(hosts, agentRegistry, releases, agentUpdates, fleetSettings);
+  void events.subscribe((event: unknown): void => agentAutoUpdates.handleEvent(event));
+  agentAutoUpdates.start();
   const agentIngest = new AgentIngestService(
     hosts,
     metrics,

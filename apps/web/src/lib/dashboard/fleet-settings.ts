@@ -46,7 +46,7 @@ export type FleetListKey = (typeof FLEET_LIST_KEYS)[number];
  * out-of-range state to refuse. It still has to be in `FLEET_FIELD_GROUPS`, because
  * a setting nobody put on the screen is a setting with no way to change it.
  */
-export const FLEET_TOGGLE_KEYS = ["mcpUserTokens"] as const;
+export const FLEET_TOGGLE_KEYS = ["mcpUserTokens", "agentAutoUpdate"] as const;
 export type FleetToggleKey = (typeof FLEET_TOGGLE_KEYS)[number];
 
 export type FleetSettingKey = FleetNumberKey | FleetListKey | FleetToggleKey;
@@ -107,9 +107,11 @@ export const FLEET_SETTING_FALLBACK: FleetSettingsView & { staleHostRetentionDay
   // Off for the same reason as the line above: an upgrade must not hand a fleet a
   // credential shape it never asked for.
   mcpUserTokens: false,
+  // On: an agent half of a release that waits for a button is one some hosts never get.
+  agentAutoUpdate: true,
 };
 
-export type FleetGroupId = "cadence" | "history" | "caps" | "lists" | "sweep" | "access";
+export type FleetGroupId = "cadence" | "history" | "caps" | "lists" | "sweep" | "access" | "updates";
 
 export interface FleetGroup {
   id: FleetGroupId;
@@ -136,6 +138,7 @@ export const FLEET_FIELD_GROUPS: readonly FleetGroup[] = [
   // Its own group for the same reason the sweep has one: this is not another
   // collection knob, it decides who can reach every machine in the fleet at once.
   { id: "access", keys: ["mcpUserTokens"] },
+  { id: "updates", keys: ["agentAutoUpdate"] },
 ];
 
 /** Why a field cannot be sent. The screen turns each into a sentence beside the input. */
@@ -201,6 +204,7 @@ export function draftFrom(settings: FleetSettingsView): FleetDraft {
     // Booleans ride as text so the draft stays one shape; the API stores them the
     // same way (`String(value)` out, `value === "true"` in).
     mcpUserTokens: String(settings.mcpUserTokens),
+    agentAutoUpdate: String(settings.agentAutoUpdate ?? FLEET_SETTING_FALLBACK.agentAutoUpdate),
     gitRoots: listText(settings.gitRoots),
     usageProviders: listText(settings.usageProviders),
   };
@@ -253,7 +257,7 @@ export function reviewDraft(saved: FleetSettingsView, draft: FleetDraft): DraftR
 
   for (const key of FLEET_TOGGLE_KEYS) {
     const next = draft[key] === "true";
-    if (next !== saved[key]) patch[key] = next;
+    if (next !== (saved[key] ?? FLEET_SETTING_FALLBACK[key])) patch[key] = next;
   }
 
   for (const key of FLEET_LIST_KEYS) {

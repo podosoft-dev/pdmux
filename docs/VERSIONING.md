@@ -200,8 +200,16 @@ archive every installer embeds and the release attaches), by the `agent-binaries
    `apps/web/static/agent/<version>/`.
 4. Deploy. The moment the web image serves that directory, `/install.sh` bakes the new
    version's checksums into what it hands out and the card's `outdated` badge lights up.
-5. Roll out **canary first** — a fleet batch update is refused with `NO_CANARY` (409) if
-   not one host is already running that version.
+5. Rollout is automatic (fleet setting **Update agents automatically**, on by default). When an
+   agent older than the newest build says `hello` — every connected agent does moments after the
+   deploy restarts the server, and a machine that was offline does when it comes back — the
+   server sends it the update (`AgentAutoUpdateService`). It keeps the canary rule: one host at a
+   time until one runs the new version, then up to three at once. Two hosts reporting `failed`
+   or `rolledBack` stop that version, and a host is not sent again a version it failed or that
+   never reported back within 15 minutes. Panes on a host whose agent is updating are covered by
+   a notice naming the target version until the agent reports back.
+   With the setting off, roll out by hand **canary first** — a fleet batch update is refused with
+   `NO_CANARY` (409) if not one host is already running that version.
 
 ⚠ **Do not casually delete an old version directory.** The server enumerates **every
 version directory** under the release root (`AGENT_RELEASE_DIR`, or
