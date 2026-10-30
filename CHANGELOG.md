@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.17.25
+
+- Resizing a pdmux terminal pane now also makes it the one that sets the session's size, so
+  repeatedly resizing a browser window that shares a session with a wider one no longer cuts
+  lines off again after the pane reconnects.
+- Sessions opened before 0.17.24 (still run by the engine of an older agent) now follow the
+  pane in use as well, without restarting them: the agent reports the other panes no larger
+  than that one. Needs agent 0.1.38 on the host.
+
 ## 0.17.24
 
 - A pdmux terminal shared with a wider window (another device, a detached window) no longer
