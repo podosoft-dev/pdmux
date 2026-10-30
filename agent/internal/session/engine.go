@@ -49,6 +49,9 @@ type running struct {
 	terminated bool
 	// restoredAt is when this session was reopened after a reboot; zero otherwise.
 	restoredAt time.Time
+	// active is the viewer that last typed into the session. The screen takes its
+	// size, so the person working in it gets lines wrapped to their own pane.
+	active *View
 }
 
 type queuedInput struct {
@@ -464,11 +467,18 @@ func (e *Engine) pump(s *running) {
 	}
 }
 
+// resize sizes the screen to the viewer that last typed into it, or, before anyone
+// has, to the largest viewer, so a viewer that only watches never shrinks another.
+// Other viewers see a viewport of that screen.
 func (e *Engine) resize(s *running) {
 	cols, rows := 1, 1
-	for v := range s.views {
-		cols = max(cols, v.cols)
-		rows = max(rows, v.rows)
+	if s.active != nil {
+		cols, rows = s.active.cols, s.active.rows
+	} else {
+		for v := range s.views {
+			cols = max(cols, v.cols)
+			rows = max(rows, v.rows)
+		}
 	}
 	if len(s.views) == 0 || cols == s.cols && rows == s.rows {
 		return
@@ -519,6 +529,10 @@ func (v *View) Apply(r Request) error {
 			return nil
 		}
 		if r.Source != "wheel" && !mouseOnly(r.Data) && r.Data != "\x1b[I" && r.Data != "\x1b[O" {
+			if v.session.active != v {
+				v.session.active = v
+				e.resize(v.session)
+			}
 			wasHistory := v.history > 0
 			v.follow = true
 			v.history = 0
@@ -581,6 +595,9 @@ func (v *View) Close() {
 		e := v.engine
 		e.mu.Lock()
 		delete(v.session.views, v)
+		if v.session.active == v {
+			v.session.active = nil
+		}
 		e.resize(v.session)
 		e.lastUsed = time.Now()
 		close(v.done)

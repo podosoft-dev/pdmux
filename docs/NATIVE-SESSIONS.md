@@ -80,12 +80,15 @@ creation does not require the tmux adapter to be installed or available.
 
 ## Several viewers, one application
 
-There is one PTY and one application screen per session. Its columns and rows are the
-largest requested dimensions among attached viewers; after the last viewer leaves,
-the previous size remains. Each viewer receives its own viewport with the original
-font size and a cursor-following policy. The terminal menu provides manual movement
-and a return to cursor following. A small viewer does not shrink the larger viewer
-and does not receive tmux's unused-area filler. A single application cannot have
+There is one PTY and one application screen per session. Its columns and rows are
+those of the viewer that last typed into it, so output wraps to the pane in use.
+Until a viewer types, and after the typing viewer leaves, the screen takes the
+largest requested dimensions among attached viewers; a viewer that only watches
+never shrinks another. Wheel, mouse and focus reports are not typing. After the
+last viewer leaves, the previous size remains. Every other viewer receives its own
+viewport with the original font size and a cursor-following policy. The terminal
+menu provides manual movement and a return to cursor following. A smaller viewer
+does not receive tmux's unused-area filler. A single application cannot have
 independently reflowed TUI layouts for every viewer at once.
 
 The helper parses VT output, answers terminal queries once, and sends rendered rows
