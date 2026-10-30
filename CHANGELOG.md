@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.17.24
+
+- A pdmux terminal shared with a wider window (another device, a detached window) no longer
+  cuts lines off at the right edge of a narrower pane. The session now takes the size of the
+  pane you type in, so output wraps to it; a pane that only watches still shows a viewport of
+  that screen and never shrinks the one in use. Needs agent 0.1.37 on the host.
+
 ## 0.17.23
 
 - Renaming a tmux session in pdmux now renames it in every window that has the session open,
