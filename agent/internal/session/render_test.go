@@ -280,3 +280,58 @@ func TestNativeExitInputModes(t *testing.T) {
 		}
 	})
 }
+
+func TestNativeTypingViewerSize(t *testing.T) {
+	t.Run("[TC-PDTERM-022] the viewer that types sets the screen size", func(t *testing.T) {
+		p := &screenProcess{output: make(chan []byte, 8), exit: make(chan *int, 1), written: make(chan string, 64)}
+		e := NewEngine(func(int, int, string) (Process, error) { return p, nil })
+		defer e.Close()
+		large, info, err := e.Open(Request{Action: "create", Name: "typing", Cols: 120, Rows: 40})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer large.Close()
+		small, _, err := e.Open(Request{Action: "attach", ID: info.ID, Cols: 40, Rows: 12})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer small.Close()
+		size := func() (int, int) {
+			e.mu.Lock()
+			defer e.mu.Unlock()
+			s := e.sessions[info.ID]
+			return s.cols, s.rows
+		}
+		if cols, _ := size(); cols != 120 {
+			t.Fatalf("a watching viewer shrank the screen to %d columns", cols)
+		}
+		// Wheel and focus reports are not typing and leave the size alone.
+		_ = small.Apply(Request{Action: "input", Data: "\x1b[I"})
+		_ = small.Apply(Request{Action: "input", Data: "\x1b[A", Source: "wheel"})
+		if cols, _ := size(); cols != 120 {
+			t.Fatalf("a report resized the screen to %d columns", cols)
+		}
+		if err := small.Apply(Request{Action: "input", Data: "x"}); err != nil {
+			t.Fatal(err)
+		}
+		if cols, rows := size(); cols != 40 || rows != 12 {
+			t.Fatalf("typing viewer got %dx%d, want its own 40x12", cols, rows)
+		}
+		if err := small.Apply(Request{Action: "resize", Cols: 50, Rows: 15}); err != nil {
+			t.Fatal(err)
+		}
+		if cols, rows := size(); cols != 50 || rows != 15 {
+			t.Fatalf("typing viewer's resize gave %dx%d, want 50x15", cols, rows)
+		}
+		if err := large.Apply(Request{Action: "input", Data: "y"}); err != nil {
+			t.Fatal(err)
+		}
+		if cols, _ := size(); cols != 120 {
+			t.Fatalf("the other viewer typing kept %d columns, want 120", cols)
+		}
+		large.Close()
+		if cols, _ := size(); cols != 50 {
+			t.Fatalf("remaining viewer did not take the screen: %d columns", cols)
+		}
+	})
+}
