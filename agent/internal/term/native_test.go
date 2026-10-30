@@ -2,6 +2,7 @@ package term
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -95,4 +96,77 @@ func TestNativeRenameControl(t *testing.T) {
 			t.Fatalf("changed session identity: %+v %v", list, err)
 		}
 	})
+}
+
+func TestNativeViewerInUse(t *testing.T) {
+	// The engine is today's code either way; the version it reports decides whether
+	// the agent also sizes the viewers itself, as it must for an older engine.
+	for _, tc := range []struct {
+		version    string
+		legacy     bool
+		wideFrames int
+	}{{"0.1.36", true, 40}, {sizingEngineVersion, false, 120}} {
+		t.Run("[TC-PDTERM-022] the viewer in use sets the screen size on engine "+tc.version, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			root := t.TempDir()
+			go func() {
+				_ = session.Serve(ctx, root, tc.version, func(int, int, string) (session.Process, error) { return newFakePty(), nil })
+			}()
+			client := &session.Client{Root: root}
+			waitFor(t, time.Second, "engine ready", func() bool { _, err := client.Request(ctx, session.Request{Action: "ping"}); return err == nil })
+			var mu sync.Mutex
+			last := map[string]*protocol.TerminalScreen{}
+			manager := NewManager(Options{Native: client, Send: func(frame protocol.TerminalServerFrame) {
+				if screen, ok := frame.(*protocol.TerminalScreen); ok {
+					mu.Lock()
+					last[screen.TermID] = screen
+					mu.Unlock()
+				}
+			}})
+			defer manager.CloseAll()
+			backend, create, attach, name := "native", "create", "attach", "shared"
+			open := func(id, intent string, cols, rows int) {
+				manager.Handle(&protocol.TerminalOpen{Type: protocol.TermOpen, TermID: id, Target: protocol.TerminalTarget{Kind: protocol.TerminalSession, Backend: &backend, Intent: &intent, Session: &name, Cols: cols, Rows: rows}})
+			}
+			open("wide", create, 120, 40)
+			open("narrow", attach, 40, 12)
+			screen := func(id string) (int, int) {
+				mu.Lock()
+				defer mu.Unlock()
+				if s := last[id]; s != nil {
+					return s.Cols, s.CanvasCols
+				}
+				return 0, 0
+			}
+			waitFor(t, time.Second, "a watching viewer leaves the screen at the widest pane", func() bool {
+				_, canvas := screen("narrow")
+				return canvas == 120
+			})
+			manager.Handle(&protocol.TerminalInput{Type: protocol.TermInput, TermID: "narrow", Data: "x"})
+			waitFor(t, time.Second, "the typing viewer's width", func() bool {
+				_, canvas := screen("narrow")
+				cols, wideCanvas := screen("wide")
+				return canvas == 40 && wideCanvas == 40 && cols == tc.wideFrames
+			})
+			manager.Handle(&protocol.TerminalResize{Type: protocol.TermResize, TermID: "wide", Cols: 100, Rows: 30})
+			waitFor(t, time.Second, "the resized viewer's width", func() bool {
+				cols, canvas := screen("wide")
+				return canvas == 100 && cols == 100
+			})
+			if !tc.legacy {
+				return
+			}
+			manager.Handle(&protocol.TerminalInput{Type: protocol.TermInput, TermID: "narrow", Data: "y"})
+			waitFor(t, time.Second, "the narrow viewer typing again", func() bool {
+				_, canvas := screen("wide")
+				return canvas == 40
+			})
+			manager.Close("narrow")
+			waitFor(t, time.Second, "the remaining viewer gets its own size back", func() bool {
+				cols, canvas := screen("wide")
+				return canvas == 100 && cols == 100
+			})
+		})
+	}
 }

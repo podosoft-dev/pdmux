@@ -49,8 +49,8 @@ type running struct {
 	terminated bool
 	// restoredAt is when this session was reopened after a reboot; zero otherwise.
 	restoredAt time.Time
-	// active is the viewer that last typed into the session. The screen takes its
-	// size, so the person working in it gets lines wrapped to their own pane.
+	// active is the viewer that last typed into or resized the session. The screen
+	// takes its size, so the person working in it gets lines wrapped to their pane.
 	active *View
 }
 
@@ -467,8 +467,9 @@ func (e *Engine) pump(s *running) {
 	}
 }
 
-// resize sizes the screen to the viewer that last typed into it, or, before anyone
-// has, to the largest viewer, so a viewer that only watches never shrinks another.
+// resize sizes the screen to the viewer that last typed into or resized it, or,
+// before anyone has, to the largest viewer, so a viewer that only watches never
+// shrinks another.
 // Other viewers see a viewport of that screen.
 func (e *Engine) resize(s *running) {
 	cols, rows := 1, 1
@@ -528,7 +529,7 @@ func (v *View) Apply(r Request) error {
 		if !v.session.acceptsInput(input) {
 			return nil
 		}
-		if r.Source != "wheel" && !mouseOnly(r.Data) && r.Data != "\x1b[I" && r.Data != "\x1b[O" {
+		if Typing(r.Data, r.Source) {
 			if v.session.active != v {
 				v.session.active = v
 				e.resize(v.session)
@@ -563,6 +564,8 @@ func (v *View) Apply(r Request) error {
 		}
 		return nil
 	case "resize":
+		// Resizing a pane is using it, as typing is.
+		v.session.active = v
 		v.cols, v.rows = dimensions(r.Cols, r.Rows)
 		v.historyRows = nil
 		v.last = nil

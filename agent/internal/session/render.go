@@ -204,6 +204,12 @@ func trimHistory(terminal *vt.Emulator) {
 
 var sgrMouse = regexp.MustCompile(`\x1b\[<([0-9]+);([0-9]+);([0-9]+)[Mm]`)
 
+// Typing reports whether input from a viewer is something a person typed: wheel,
+// mouse and focus reports are not. The viewer that types is the one in use.
+func Typing(data, source string) bool {
+	return source != "wheel" && !mouseOnly(data) && data != "\x1b[I" && data != "\x1b[O"
+}
+
 func mouseOnly(data string) bool {
 	if data == "" {
 		return false

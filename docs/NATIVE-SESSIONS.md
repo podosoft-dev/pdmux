@@ -81,10 +81,14 @@ creation does not require the tmux adapter to be installed or available.
 ## Several viewers, one application
 
 There is one PTY and one application screen per session. Its columns and rows are
-those of the viewer that last typed into it, so output wraps to the pane in use.
-Until a viewer types, and after the typing viewer leaves, the screen takes the
-largest requested dimensions among attached viewers; a viewer that only watches
-never shrinks another. Wheel, mouse and focus reports are not typing. After the
+those of the viewer in use, the one that last typed into or resized it, so output
+wraps to that pane. Until a viewer types or resizes, and after the viewer in use
+leaves, the screen takes the largest requested dimensions among attached viewers;
+a viewer that only watches never shrinks another. Wheel, mouse and focus reports
+are not typing. An engine keeps running its sessions after an agent update, and
+engines before agent 0.1.38 size the screen to the largest viewer; for those the
+agent reports every other viewer no larger than the one in use, which gives the
+same screen without restarting the session. After the
 last viewer leaves, the previous size remains. Every other viewer receives its own
 viewport with the original font size and a cursor-following policy. The terminal
 menu provides manual movement and a return to cursor following. A smaller viewer

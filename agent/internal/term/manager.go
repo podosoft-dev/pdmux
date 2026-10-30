@@ -99,6 +99,11 @@ type Options struct {
 type Manager struct {
 	nativeClient *session.Client
 	native       map[string]*session.Attachment
+	// Per native viewer: its pane size, the size last reported to the engine, and per
+	// session the viewer in use (native_sizing.go).
+	nativeSizes  map[*session.Attachment]nativeSize
+	nativeSent   map[*session.Attachment]nativeSize
+	nativeActive map[string]*session.Attachment
 	send         func(frame protocol.TerminalServerFrame)
 	logger       *log.Logger
 	spawn        func(spec Spec) (Process, error)
@@ -176,6 +181,9 @@ func NewManager(options Options) *Manager {
 	m := &Manager{
 		nativeClient:    options.Native,
 		native:          make(map[string]*session.Attachment),
+		nativeSizes:     make(map[*session.Attachment]nativeSize),
+		nativeSent:      make(map[*session.Attachment]nativeSize),
+		nativeActive:    make(map[string]*session.Attachment),
 		send:            options.Send,
 		logger:          options.Logger,
 		spawn:           options.Spawn,
@@ -288,6 +296,9 @@ func (m *Manager) Handle(frame protocol.TerminalClientFrame) {
 			if f.Source != nil {
 				source = *f.Source
 			}
+			if session.Typing(f.Data, source) {
+				m.nativeUse(f.TermID, nil)
+			}
 			_ = attachment.Send(session.Request{Action: "input", Data: f.Data, Source: source})
 			return
 		}
@@ -300,7 +311,9 @@ func (m *Manager) Handle(frame protocol.TerminalClientFrame) {
 		}
 	case *protocol.TerminalResize:
 		if attachment := m.nativeFor(f.TermID); attachment != nil {
-			_ = attachment.Send(session.Request{Action: "resize", Cols: f.Cols, Rows: f.Rows})
+			if m.nativeUse(f.TermID, &nativeSize{f.Cols, f.Rows}) {
+				_ = attachment.Send(session.Request{Action: "resize", Cols: f.Cols, Rows: f.Rows})
+			}
 			return
 		}
 		if t := m.lookup(f.TermID); t != nil {

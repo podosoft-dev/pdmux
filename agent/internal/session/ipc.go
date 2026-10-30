@@ -430,7 +430,9 @@ func (c *Client) cachedExecutable() (string, error) {
 }
 
 type Attachment struct {
-	Info       Info
+	Info Info
+	// Version is the agent version of the engine that serves the session.
+	Version    string
 	connection net.Conn
 	mu         sync.Mutex
 	replies    chan Reply
@@ -460,7 +462,7 @@ func (c *Client) attach(ctx context.Context, request Request) (*Attachment, erro
 		return nil, fmt.Errorf("SESSION_PROTOCOL_UNSUPPORTED")
 	}
 	_ = connection.SetReadDeadline(time.Time{})
-	a := &Attachment{Info: *ready.Info, connection: connection, replies: make(chan Reply, 1), done: make(chan struct{})}
+	a := &Attachment{Info: *ready.Info, Version: ready.Version, connection: connection, replies: make(chan Reply, 1), done: make(chan struct{})}
 	go func() {
 		defer close(a.replies)
 		defer a.Close()

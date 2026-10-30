@@ -81,6 +81,7 @@ func (m *Manager) openNative(id string, target protocol.TerminalTarget, restore 
 	}
 	m.native[id] = attachment
 	m.mu.Unlock()
+	m.nativeOpened(attachment, target.Cols, target.Rows)
 	m.opened.Add(1)
 	backend := "native"
 	ready := &protocol.TerminalReady{Type: protocol.TermReady, TermID: id, Pid: attachment.Info.PID, Backend: &backend, SessionID: &attachment.Info.ID}
@@ -97,6 +98,7 @@ func (m *Manager) openNative(id string, target protocol.TerminalTarget, restore 
 				delete(m.native, id)
 			}
 			m.mu.Unlock()
+			m.nativeReleased(attachment)
 		}()
 		for reply := range attachment.Replies() {
 			if m.nativeFor(id) != attachment {

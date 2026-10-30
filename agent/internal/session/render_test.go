@@ -282,7 +282,7 @@ func TestNativeExitInputModes(t *testing.T) {
 }
 
 func TestNativeTypingViewerSize(t *testing.T) {
-	t.Run("[TC-PDTERM-022] the viewer that types sets the screen size", func(t *testing.T) {
+	t.Run("[TC-PDTERM-022] the viewer that types or resizes sets the screen size", func(t *testing.T) {
 		p := &screenProcess{output: make(chan []byte, 8), exit: make(chan *int, 1), written: make(chan string, 64)}
 		e := NewEngine(func(int, int, string) (Process, error) { return p, nil })
 		defer e.Close()
@@ -329,8 +329,15 @@ func TestNativeTypingViewerSize(t *testing.T) {
 		if cols, _ := size(); cols != 120 {
 			t.Fatalf("the other viewer typing kept %d columns, want 120", cols)
 		}
+		// Resizing a pane is using it too.
+		if err := small.Apply(Request{Action: "resize", Cols: 45, Rows: 14}); err != nil {
+			t.Fatal(err)
+		}
+		if cols, rows := size(); cols != 45 || rows != 14 {
+			t.Fatalf("resized viewer got %dx%d, want its own 45x14", cols, rows)
+		}
 		large.Close()
-		if cols, _ := size(); cols != 50 {
+		if cols, _ := size(); cols != 45 {
 			t.Fatalf("remaining viewer did not take the screen: %d columns", cols)
 		}
 	})
