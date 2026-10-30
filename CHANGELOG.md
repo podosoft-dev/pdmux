@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.17.26
+
+- Agents update themselves after a release. When an agent older than the newest build
+  connects, the server sends it the update — right after a deploy for every connected host,
+  and as soon as it comes back for a machine that was offline. One host goes first; once it
+  runs the new version, up to three at a time; two failures stop that version. A host that
+  failed a version is not sent it again (updating it by hand still works). Turn it off in
+  Settings → Collection → Agent updates; it is on by default.
+- While a host's agent updates, every terminal pane on that host is covered by a notice
+  naming the version it is moving to. A session pane reconnects by itself; a plain shell is
+  told it will close.
+
 ## 0.17.25
 
 - Resizing a pdmux terminal pane now also makes it the one that sets the session's size, so
