@@ -55,8 +55,13 @@ COPY --from=agent /agent /agent
 RUN find /agent -type f ! -name manifest.json -delete && chmod -R a+rX /agent
 
 FROM oven/bun:1.4.4-alpine AS runtime
+ARG TARGETARCH
 WORKDIR /app
 ENV NODE_ENV=production
+# System packages and tools the application adds (apps/api/image.extensions.sh,
+# application-owned). Runs as root before the image switches to `bun`.
+COPY apps/api/image.extensions.sh /tmp/podokit/image.extensions.sh
+RUN TARGETARCH="$TARGETARCH" sh /tmp/podokit/image.extensions.sh && rm -rf /tmp/podokit
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=manifests /app/apps/api ./apps/api
 COPY --from=build /app/packages ./packages
@@ -66,6 +71,9 @@ COPY --from=agent-manifests /agent ./agent-releases
 ENV AGENT_RELEASE_DIR=/app/agent-releases
 ENV FILE_TRANSFER_DIR=/data/file-transfers
 RUN mkdir -p /data/file-transfers && chown bun:bun /data/file-transfers && chmod 700 /data/file-transfers
+# The API's own files (local object store, SQLite) go under data/. A volume
+# mounted there starts with this directory's owner, so `bun` can write to it.
+RUN mkdir -p /app/apps/api/data && chown bun:bun /app/apps/api/data
 WORKDIR /app/apps/api
 USER bun
 EXPOSE 3000

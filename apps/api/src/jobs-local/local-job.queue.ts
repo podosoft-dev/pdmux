@@ -36,8 +36,16 @@ export interface ScheduleTimer {
 export interface LocalJobQueueOptions {
   pollIntervalMs?: number;
   now?: () => number;
-  /** Waits for schedules; an unref'd setTimeout by default. */
+  /** Waits for schedules and heartbeats; an unref'd setTimeout by default. */
   timer?: ScheduleTimer;
+  /** How often a running job records that its process is alive (10 seconds by default). */
+  heartbeatMs?: number;
+  /**
+   * A running job whose heartbeat stopped this long ago belonged to a process
+   * that stopped (a restart, a crash, a deploy). It runs once more, then fails
+   * if its process stops again (60 seconds by default, more than `heartbeatMs`).
+   */
+  stalledAfterMs?: number;
 }
 
 interface Schedule {
@@ -53,6 +61,9 @@ type FinishedStatus = "completed" | "failed";
 
 // A scheduled job's deduplication key: this prefix, the schedule id, ":", and the time.
 const SCHEDULE_KEY = "schedule:";
+
+// The error a job keeps when the process running it stopped.
+export const STALLED_JOB_ERROR = "The process running this job stopped before the job finished";
 
 // setTimeout fires at once for a delay above 2^31 - 1 ms, so longer waits are split.
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
@@ -80,6 +91,9 @@ export class LocalJobQueue implements JobQueue {
   private readonly pollIntervalMs: number;
   private readonly now: () => number;
   private readonly scheduleTimer: ScheduleTimer;
+  private readonly heartbeatMs: number;
+  private readonly stalledAfterMs: number;
+  private lastStalledCheck = Number.NEGATIVE_INFINITY;
   private timer?: ReturnType<typeof setTimeout>;
   private started = false;
   private initialized?: Promise<void>;
@@ -94,6 +108,14 @@ export class LocalJobQueue implements JobQueue {
     }
     this.now = options.now ?? Date.now;
     this.scheduleTimer = options.timer ?? unrefTimer;
+    this.heartbeatMs = options.heartbeatMs ?? 10_000;
+    this.stalledAfterMs = options.stalledAfterMs ?? 60_000;
+    if (!Number.isSafeInteger(this.heartbeatMs) || this.heartbeatMs < 10) {
+      throw new Error("heartbeatMs must be an integer of at least 10");
+    }
+    if (!Number.isSafeInteger(this.stalledAfterMs) || this.stalledAfterMs <= this.heartbeatMs) {
+      throw new Error("stalledAfterMs must be an integer greater than heartbeatMs");
+    }
   }
 
   initialize(): Promise<void> {
@@ -195,6 +217,10 @@ export class LocalJobQueue implements JobQueue {
   async runOnce(): Promise<boolean> {
     await this.initialize();
     const now = this.now();
+    if (now - this.lastStalledCheck >= this.heartbeatMs) {
+      this.lastStalledCheck = now;
+      await this.recoverStalled(now);
+    }
     const rows = await this.sql<JobRow[]>`
       UPDATE "podokit_job"
       SET "status" = 'active', "attempts" = "attempts" + 1, "updatedAt" = ${now}
@@ -213,8 +239,10 @@ export class LocalJobQueue implements JobQueue {
       await this.fail(row, new Error(`No handler is registered for job ${row.name}`));
       return true;
     }
+    const stopHeartbeat = this.heartbeat(row.id);
     try {
       await handler(JSON.parse(row.payload) as unknown, { id: row.id, name: row.name });
+      stopHeartbeat();
       const completedAt = this.now();
       await this.sql`
         UPDATE "podokit_job"
@@ -223,9 +251,55 @@ export class LocalJobQueue implements JobQueue {
       `;
       await this.removeFinished(row, "completed");
     } catch (error) {
+      stopHeartbeat();
       await this.fail(row, error);
     }
     return true;
+  }
+
+  /**
+   * Returns the jobs a stopped process left running to the queue, as BullMQ
+   * does with stalled jobs. The interrupted run counts as an attempt and one
+   * more run is allowed, so a job whose process stops every time it runs
+   * (for example one that exhausts memory) fails instead of looping.
+   */
+  private async recoverStalled(now: number): Promise<void> {
+    const rows = await this.sql<JobRow[]>`
+      UPDATE "podokit_job"
+      SET "status" = CASE WHEN "attempts" <= "maxAttempts" THEN 'waiting' ELSE 'failed' END,
+          "availableAt" = ${now}, "updatedAt" = ${now}, "error" = ${STALLED_JOB_ERROR}
+      WHERE "status" = 'active' AND "updatedAt" < ${now - this.stalledAfterMs}
+      RETURNING "id", "name", "payload", "status", "attempts", "maxAttempts",
+                "availableAt", "createdAt", "updatedAt", "error"
+    `;
+    for (const row of rows) {
+      process.stderr.write(`Recovered stalled job ${row.id} (${row.name}): ${row.status}\n`);
+      if (row.status === "failed") await this.removeFinished(row, "failed");
+    }
+  }
+
+  /** Keeps a running job's `updatedAt` recent so it is not taken for stalled. */
+  private heartbeat(id: string): () => void {
+    let stopped = false;
+    let cancel = (): void => undefined;
+    const beat = (): void => {
+      cancel = this.scheduleTimer.after(this.heartbeatMs, () => {
+        if (stopped) return;
+        void this.sql`
+          UPDATE "podokit_job" SET "updatedAt" = ${this.now()}
+          WHERE "id" = ${id} AND "status" = 'active'
+        `.catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          process.stderr.write(`Record job heartbeat failed: ${id} ${message}\n`);
+        });
+        beat();
+      });
+    };
+    beat();
+    return () => {
+      stopped = true;
+      cancel();
+    };
   }
 
   close(): void {

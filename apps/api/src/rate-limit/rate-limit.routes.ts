@@ -137,8 +137,9 @@ export function generalProfile(config: RateLimitConfig): Required<RateLimitProfi
 /**
  * The built-in profiles. Authentication writes get the strict auth budget,
  * while administrator reads (the admin pages read users through Better Auth)
- * stay on the general budget, and session and public site-settings reads get
- * the higher runtime budget.
+ * stay on the general budget, and the reads behind every server-rendered page
+ * (the session, public site settings, and account capabilities) get the higher
+ * runtime budget.
  */
 export function defaultRateLimitRoutes(config: RateLimitConfig): RateLimitRoutes {
   const routes = new RateLimitRoutes(config.ttlSeconds);
@@ -151,5 +152,6 @@ export function defaultRateLimitRoutes(config: RateLimitConfig): RateLimitRoutes
   routes.register({ method: "GET", pathPrefix: "/api/auth/admin", profile: generalProfile(config) });
   routes.register({ method: "GET", pathPrefix: "/api/auth/get-session", profile: runtime });
   routes.register({ method: "GET", pathPrefix: "/site/settings", profile: runtime });
+  routes.register({ method: "GET", pathPrefix: "/account/capabilities", profile: runtime });
   return routes;
 }

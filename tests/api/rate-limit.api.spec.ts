@@ -247,7 +247,7 @@ test("rate limit: a user's sessions share one counter and forged sessions do not
 
   // A session cookie without a valid signature is counted with anonymous traffic
   // from the same client address instead of receiving a fresh counter. The probe
-  // requires a session, so compare on a public route with the general limit.
+  // requires a session, so compare on a public route.
   const token = decodeURIComponent(cookie?.value ?? "").split(".")[0] ?? "";
   const forged = await playwright.request.newContext({
     baseURL: base,
@@ -304,7 +304,7 @@ test("rate limit: each route is counted in its most specific registered budget",
 
   await inOneWindow(async () => {
     // Ordinary routes fall back to the general budget registered at "/".
-    const ordinary = budget(await ctx.get("/api/account/capabilities"));
+    const ordinary = budget(await ctx.get(PROBE));
     // Longer GET prefixes inside "/api/auth" win over its authentication budget:
     // administrator reads count in the general budget and session reads in the
     // runtime one.
@@ -313,7 +313,9 @@ test("rate limit: each route is counted in its most specific registered budget",
     // Other "/api/auth" requests count in the strict authentication budget.
     const authWrite = budget(await ctx.post("/api/auth/update-user", { data: { name: "Rate Limit" } }));
     const sessionReadAgain = budget(await ctx.get("/api/auth/get-session"));
-    const ordinaryAgain = budget(await ctx.get("/api/account/capabilities"));
+    const ordinaryAgain = budget(await ctx.get(PROBE));
+    // Capability reads, made on every server-rendered page, share the runtime budget.
+    const capabilities = budget(await ctx.get("/api/account/capabilities"));
 
     expect(ordinary.limit).toBe(generalLimit);
     expect(adminRead).toEqual({ limit: generalLimit, remaining: ordinary.remaining - 1 });
@@ -321,6 +323,7 @@ test("rate limit: each route is counted in its most specific registered budget",
     expect(ordinaryAgain).toEqual({ limit: generalLimit, remaining: ordinary.remaining - 2 });
     // the authentication write did not move the runtime one,
     expect(sessionReadAgain).toEqual({ limit: sessionRead.limit, remaining: sessionRead.remaining - 1 });
+    expect(capabilities).toEqual({ limit: sessionRead.limit, remaining: sessionRead.remaining - 2 });
     // and it was counted with sign-ups and sign-ins.
     expect(authWrite.limit).toBe(authLimit);
     expectConfigured("RATE_LIMIT_RUNTIME_MAX", sessionRead.limit);

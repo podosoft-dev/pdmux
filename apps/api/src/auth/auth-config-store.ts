@@ -12,6 +12,20 @@ export const AUTH_CONFIG_DEFAULTS: AuthConfigDefaults = {
   // podokit:end:auth-config-defaults
 };
 
+/** Optional modules that serve auth-related routes, such as the audit log.
+ *  Each adds its name below the marker; a capability whose module is missing
+ *  stays off even when the database or environment switches it on. */
+export const AUTH_FEATURE_MODULES: ReadonlySet<string> = new Set<string>([
+  // podokit:begin:auth-feature-modules
+  "audit-log",
+  // podokit:end:auth-feature-modules
+]);
+
+/** Whether the audit log is recorded and listed: on, and its module installed. */
+export function auditLogAvailable(enabled: boolean, modules: ReadonlySet<string> = AUTH_FEATURE_MODULES): boolean {
+  return enabled && modules.has("audit-log");
+}
+
 /** A store over this app's auth_config and app_setting tables. */
 export function createAuthConfigStore(): ConfigStore {
   return createConfigStore({

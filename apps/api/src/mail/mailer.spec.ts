@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { SmtpConfig } from "@podosoft/podokit-auth";
 import type { Transporter } from "nodemailer";
-import { mailTransport, setMailConfigStore, setMailTransport } from "./mailer";
+import { mailTransport, sendMail, setMailConfigStore, setMailTransport } from "./mailer";
 
 function storeOf(read: () => SmtpConfig | null) {
   let calls = 0;
@@ -50,5 +50,21 @@ describe("mailer transport", () => {
     const custom = { sendMail: async () => ({}) } as unknown as Transporter;
     setMailTransport(custom);
     expect(await mailTransport()).toBe(custom);
+  });
+
+  test("passes an optional Reply-To to the transport and leaves it out otherwise", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    setMailTransport({
+      sendMail: async (mail: Record<string, unknown>) => {
+        sent.push(mail);
+        return {};
+      },
+    } as unknown as Transporter);
+
+    await sendMail({ to: "ops@example.com", subject: "Inquiry", text: "Hi", replyTo: "visitor@example.com" });
+    await sendMail({ to: "ops@example.com", subject: "Plain", text: "Hi" });
+
+    expect(sent[0]?.replyTo).toBe("visitor@example.com");
+    expect(sent[1]).not.toHaveProperty("replyTo");
   });
 });

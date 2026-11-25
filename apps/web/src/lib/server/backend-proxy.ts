@@ -428,13 +428,26 @@ checkIdleTimeout(process.env.CONNECTION_IDLE_TIMEOUT, backendProxyTimeoutMs(), p
 // stops answering still ends a long or unbounded wait. Once the API is found
 // unreachable, requests still waiting for it fail, new ones fail at once instead
 // of each waiting for a refused connection, a DNS lookup, or a hung server, and
-// a background check runs at most every BACKEND_RETRY_AFTER_SECONDS. Any HTTP
-// answer, including an error status, means the API is reachable.
+// a background check runs every BACKEND_RETRY_AFTER_SECONDS until the API answers,
+// even when no request arrives, so the first request after it comes back is not
+// refused. Any HTTP answer, including an error status, means the API is reachable.
 let unreachable = false;
 let answers = 0;
 let lastCheckEnded = 0;
 let pendingCheck: Promise<void> | undefined;
 let outage = new AbortController();
+let recheckTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** While the API is unreachable, checks it again after BACKEND_RETRY_AFTER_SECONDS. */
+function scheduleRecheck(): void {
+  if (recheckTimer || !unreachable) return;
+  recheckTimer = setTimeout(() => {
+    recheckTimer = undefined;
+    if (unreachable) void checkBackend();
+  }, BACKEND_RETRY_AFTER_SECONDS * 1000);
+  // The check must not keep an otherwise finished process alive.
+  if (typeof recheckTimer === "object" && "unref" in recheckTimer) recheckTimer.unref();
+}
 
 /** Aborts when the API is found unreachable, failing the requests that still wait for it. */
 export function backendOutageSignal(): AbortSignal {
@@ -456,6 +469,7 @@ export function checkBackend(): Promise<void> {
           unreachable = true;
           outage.abort(new DOMException("The API is unavailable", "AbortError"));
           outage = new AbortController();
+          scheduleRecheck();
         },
       )
       .finally(() => {
@@ -475,6 +489,10 @@ function recheckBackend(now = Date.now()): void {
 export function reportBackendAnswer(): void {
   answers += 1;
   unreachable = false;
+  if (recheckTimer) {
+    clearTimeout(recheckTimer);
+    recheckTimer = undefined;
+  }
 }
 
 /** Record a request that got no HTTP answer, and check the API unless it is already known to be down. */

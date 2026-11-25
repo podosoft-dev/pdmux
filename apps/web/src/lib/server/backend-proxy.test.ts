@@ -809,6 +809,36 @@ describe("backend proxy outages", () => {
     expect(backendReachable()).toBe(true);
   });
 
+  it("keeps checking the API while it is down, so the first request after it comes back goes through", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      await takeApiDown();
+      // Still down at the first background check, back by the second; no request arrives meanwhile.
+      let checks = 0;
+      const fetch = stubApi(
+        (input, init) => (++checks === 1 ? refuse(input, init) : Promise.resolve(new Response("ok"))),
+        async () => new Response(null, { status: 204 }),
+      );
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(checks).toBe(1);
+      expect(backendReachable()).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(checks).toBe(2);
+      expect(backendReachable()).toBe(true);
+
+      const response = await proxyRequest(new Request("http://app.localhost/api/blog"), "http://api:5002/blog");
+      expect(response.status).toBe(204);
+      expect(fetch.mock.calls.map(([input]) => String(input)).at(-1)).toBe("http://api:5002/blog");
+
+      // Once the API answers, the background checks stop.
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(checks).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("relays an error status without checking the API", async () => {
     const fetch = stubApi(refuse, async () => Response.json({ success: false }, { status: 500 }));
 

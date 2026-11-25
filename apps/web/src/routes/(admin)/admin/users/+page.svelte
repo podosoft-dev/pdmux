@@ -21,11 +21,14 @@
   import { getI18n, fmt, formatDateTime } from "#lib/i18n/index.js";
   import { cn } from "#lib/utils.js";
   import { deviceLabel } from "#lib/device-label.js";
+  import { providerList } from "#lib/auth-providers.js";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
   const i18n = getI18n();
   const emailVerificationEnabled = $derived(data.capabilities.emailVerification);
+  // Social sign-in providers: an administrator can create an account that signs in only with them.
+  const socialProviders = $derived(data.capabilities.providers ?? []);
   // Assignable roles come from the server (access-control); label the known ones.
   const roleNames = $derived(data.capabilities.roles ?? ["admin", "user"]);
   const roleLabel = (r: string): string =>
@@ -170,11 +173,17 @@
 
   // Create user
   let createOpen = $state(false);
-  let form = $state({ name: "", email: "", password: "", confirm: "", role: "user", sendVerify: true });
+  const emptyForm = () => ({ name: "", email: "", password: "", confirm: "", role: "user", sendVerify: true, socialOnly: false });
+  let form = $state(emptyForm());
   let createError = $state("");
   async function createUser(event: Event): Promise<void> {
     event.preventDefault();
-    if (form.password !== form.confirm) {
+    // A social-only account has no password. Its email is marked verified because
+    // Better Auth links a provider sign-in to an existing account only when that
+    // account's email is verified (account.accountLinking.requireLocalEmailVerified);
+    // creating the account is the administrator vouching for the address.
+    const socialOnly = form.socialOnly && socialProviders.length > 0;
+    if (!socialOnly && form.password !== form.confirm) {
       createError = i18n.t.users.passwordMismatch;
       return;
     }
@@ -183,7 +192,7 @@
     const { error } = await api.auth.admin.createUser({
       name: form.name,
       email: form.email,
-      password: form.password,
+      ...(socialOnly ? { data: { emailVerified: true } } : { password: form.password }),
       // Roles are server-driven (capabilities.roles); the typed client only knows
       // the built-in ones, so assert at this boundary — the server validates it.
       role: form.role as "admin" | "user",
@@ -191,11 +200,11 @@
     busy = false;
     if (error) return void toast.error(error.message ?? i18n.t.users.actionFailed);
     toast.success(i18n.t.users.userCreated);
-    if (form.sendVerify && emailVerificationEnabled) {
+    if (!socialOnly && form.sendVerify && emailVerificationEnabled) {
       await api.auth.sendVerificationEmail({ email: form.email, callbackURL: `${location.origin}/admin` });
     }
     createOpen = false;
-    form = { name: "", email: "", password: "", confirm: "", role: "user", sendVerify: true };
+    form = emptyForm();
     page = 1;
     await load();
   }
@@ -482,8 +491,16 @@
     <form onsubmit={createUser} class="flex flex-col gap-3">
       <div class="flex flex-col gap-1"><Label for="c-name">{i18n.t.users.name}</Label><Input id="c-name" bind:value={form.name} required /></div>
       <div class="flex flex-col gap-1"><Label for="c-email">{i18n.t.users.email}</Label><Input id="c-email" type="email" bind:value={form.email} required /></div>
-      <div class="flex flex-col gap-1"><Label for="c-password">{i18n.t.users.password}</Label><Input id="c-password" type="password" bind:value={form.password} required /></div>
-      <div class="flex flex-col gap-1"><Label for="c-confirm">{i18n.t.users.confirmPassword}</Label><Input id="c-confirm" type="password" bind:value={form.confirm} required /></div>
+      {#if socialProviders.length > 0}
+        <div class="flex flex-col gap-1">
+          <Label class="flex items-center gap-2"><Checkbox bind:checked={form.socialOnly} data-testid="create-social-only" />{fmt(i18n.t.users.socialOnly, { providers: providerList(socialProviders) })}</Label>
+          {#if form.socialOnly}<p class="text-muted-foreground text-xs">{fmt(i18n.t.users.socialOnlyHint, { providers: providerList(socialProviders) })}</p>{/if}
+        </div>
+      {/if}
+      {#if !form.socialOnly || socialProviders.length === 0}
+        <div class="flex flex-col gap-1"><Label for="c-password">{i18n.t.users.password}</Label><Input id="c-password" type="password" bind:value={form.password} required /></div>
+        <div class="flex flex-col gap-1"><Label for="c-confirm">{i18n.t.users.confirmPassword}</Label><Input id="c-confirm" type="password" bind:value={form.confirm} required /></div>
+      {/if}
       {#if createError}<p class="text-destructive text-sm">{createError}</p>{/if}
       <div class="flex flex-col gap-1">
         <Label for="c-role">{i18n.t.users.role}</Label>
@@ -494,7 +511,7 @@
           </Select.Content>
         </Select.Root>
       </div>
-      {#if emailVerificationEnabled}
+      {#if emailVerificationEnabled && !form.socialOnly}
         <Label class="flex items-center gap-2"><Checkbox bind:checked={form.sendVerify} />{i18n.t.users.sendVerificationOnCreate}</Label>
       {/if}
       <Dialog.Footer>
@@ -546,16 +563,18 @@
                 </Button>
               </div>
             {/if}
-            {#if emailVerificationEnabled}
-              <div class="flex items-center gap-2">
-                {#if mUser?.emailVerified}<Badge variant="outline" class="text-green-600 dark:text-green-400">{i18n.t.users.verified}</Badge>
-                {:else}
-                  <Badge variant="secondary">{i18n.t.users.unverified}</Badge>
+            <!-- Shown even with email verification off: a verified email is also what lets a
+                 social sign-in with that address link to this account. -->
+            <div class="flex flex-wrap items-center gap-2" data-testid="manage-email-verification">
+              {#if mUser?.emailVerified}<Badge variant="outline" class="text-green-600 dark:text-green-400">{i18n.t.users.verified}</Badge>
+              {:else}
+                <Badge variant="secondary">{i18n.t.users.unverified}</Badge>
+                {#if emailVerificationEnabled}
                   <Button type="button" variant="outline" size="sm" disabled={busy} onclick={resendVerification}>{i18n.t.users.sendVerification}</Button>
-                  <Button type="button" variant="outline" size="sm" disabled={busy} onclick={markVerified}>{i18n.t.users.markVerified}</Button>
                 {/if}
-              </div>
-            {/if}
+                <Button type="button" variant="outline" size="sm" disabled={busy} onclick={markVerified}>{i18n.t.users.markVerified}</Button>
+              {/if}
+            </div>
             <Button type="submit" class="w-fit" disabled={busy}>{i18n.t.users.save}</Button>
           </form>
         {:else if mSection === "security"}

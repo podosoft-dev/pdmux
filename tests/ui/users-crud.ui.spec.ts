@@ -1,8 +1,31 @@
 import { type Page } from "@playwright/test";
-import { expect, test, type DisposableUsers } from "../helpers/disposable-users";
+import { expect, test as base, type DisposableUsers } from "../helpers/disposable-users";
 import { ready } from "../helpers/hydration";
 
-const base = process.env.E2E_BASE_URL ?? "http://localhost:5001";
+const origin = process.env.E2E_BASE_URL ?? "http://localhost:5001";
+
+// `dummyGoogle` enables a dummy Google client for one test and disables it again in the
+// fixture teardown, which runs even when the test times out; a client left enabled would
+// change every later login page in the run.
+const test = base.extend<{ dummyGoogle: void }>({
+  dummyGoogle: async ({ page }, use) => {
+    const google = (enabled: boolean) =>
+      page.request.put("/api/account/auth-config", {
+        headers: { origin },
+        data: {
+          social: {
+            google: enabled ? { enabled, clientId: "dummy-google-client-id", clientSecret: "dummy-google-client-secret" } : { enabled },
+          },
+        },
+      });
+    expect((await google(true)).ok()).toBeTruthy();
+    await expect
+      .poll(async () => ((await (await page.request.get("/api/account/capabilities")).json()) as { providers: string[] }).providers)
+      .toContain("google");
+    await use();
+    await google(false);
+  },
+});
 
 // Seed a throwaway user via the API (admin cookies come from storageState) so
 // the mutating UI tests don't touch the shared admin/user seed accounts.
@@ -98,7 +121,7 @@ test("manage: revoke a user's session", async ({ page, playwright, disposableUse
   const email = `ui-sess-${Date.now()}@example.com`;
   await seedUser(disposableUsers, email);
   // create a session for the user in an isolated context (don't touch the admin cookie)
-  const uctx = await playwright.request.newContext({ baseURL: base, extraHTTPHeaders: { origin: base } });
+  const uctx = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: { origin } });
   expect((await uctx.post("/api/auth/sign-in/email", { data: { email, password: "Podokit3e-Str0ng!pw" } })).ok()).toBeTruthy();
   await uctx.dispose();
   await openManage(page, email);
@@ -155,4 +178,30 @@ test("manage modal closes from its footer", async ({ page, disposableUsers }) =>
   // footer Close (a visible button, distinct from the header X) dismisses the modal
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).last().click();
   await expect(page.getByRole("dialog")).toBeHidden();
+});
+
+test("admin creates a Google-only user without a password, with the email marked verified", { tag: "@exclusive" }, async ({ page, disposableUsers, dummyGoogle: _google }) => {
+  await ready(page, "/admin/users");
+  const email = `ui-social-${Date.now()}@example.com`;
+  await page.getByRole("button", { name: "Add user" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill("Social Only");
+  await dialog.getByLabel("Email").fill(email);
+  await dialog.getByTestId("create-social-only").click();
+  await expect(dialog.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText("Sign in with Google only (no password)")).toBeVisible();
+  const created = page.waitForResponse(
+    (response) => response.url().endsWith("/api/auth/admin/create-user") && response.request().method() === "POST",
+  );
+  await dialog.getByRole("button", { name: "Create" }).click();
+  const response = await created;
+  await disposableUsers.trackResponse(response);
+  const body = response.request().postDataJSON() as { password?: string; data?: { emailVerified?: boolean } };
+  expect(body.password).toBeUndefined();
+  expect(body.data?.emailVerified).toBe(true);
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  // The manage panel shows the verification state even with email verification off.
+  await openManage(page, email);
+  await expect(page.getByRole("dialog").getByTestId("manage-email-verification")).toContainText("Verified");
 });

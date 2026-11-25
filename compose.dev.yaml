@@ -50,6 +50,8 @@ services:
         - { action: sync+restart, path: ./apps/web/vite.config.ts, target: /app/apps/web/vite.config.ts }
         - { action: sync+restart, path: ./apps/web/vite.extensions.ts, target: /app/apps/web/vite.extensions.ts }
         - { action: rebuild, path: ./apps/web/package.json }
+        - { action: rebuild, path: ./Dockerfile.dev }
+        - { action: rebuild, path: ./apps/api/image.extensions.sh }
 
   api:
     mem_limit: ${API_MEM_LIMIT:-2g}
@@ -71,6 +73,8 @@ services:
         - { action: sync+restart, path: ./apps/api/src, target: /app/apps/api/src }
         - { action: sync, path: ./apps/api/scripts, target: /app/apps/api/scripts }
         - { action: rebuild, path: ./apps/api/package.json }
+        - { action: rebuild, path: ./Dockerfile.dev }
+        - { action: rebuild, path: ./apps/api/image.extensions.sh }
 
   worker:
     mem_limit: ${WORKER_MEM_LIMIT:-1g}
@@ -93,6 +97,8 @@ services:
         - { action: sync+restart, path: ./apps/api/src, target: /app/apps/api/src }
         - { action: sync, path: ./apps/api/scripts, target: /app/apps/api/scripts }
         - { action: rebuild, path: ./apps/api/package.json }
+        - { action: rebuild, path: ./Dockerfile.dev }
+        - { action: rebuild, path: ./apps/api/image.extensions.sh }
 
   postgres:
     mem_limit: ${POSTGRES_MEM_LIMIT:-1g}

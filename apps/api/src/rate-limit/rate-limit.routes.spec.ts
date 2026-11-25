@@ -138,7 +138,8 @@ describe("RateLimiter route profiles", () => {
     expect(await ceiling("/api/auth/sign-out", "POST")).toBe("20");
     expect(await ceiling("/api/auth/sign-in/email", "POST")).toBe("20");
     expect(await ceiling("/site/settings", "PUT")).toBe("300");
-    expect(await ceiling("/account/capabilities")).toBe("300");
+    expect(await ceiling("/account/capabilities")).toBe("1000");
+    expect(await ceiling("/account/me")).toBe("300");
   });
 
   test("counts a registered route in its own bucket and skips exempt routes", async () => {

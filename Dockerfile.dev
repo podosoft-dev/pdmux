@@ -11,6 +11,12 @@ FROM oven/bun:1.4.4-alpine
 
 RUN apk add --no-cache git python3 make g++ ca-certificates
 
+# The system packages and tools the API image adds (apps/api/image.extensions.sh),
+# so development has what production has.
+ARG TARGETARCH
+COPY apps/api/image.extensions.sh /tmp/podokit/image.extensions.sh
+RUN TARGETARCH="$TARGETARCH" sh /tmp/podokit/image.extensions.sh && rm -rf /tmp/podokit
+
 WORKDIR /app
 COPY --from=manifests /app ./
 ARG PODOKIT_NPM_REGISTRY=""

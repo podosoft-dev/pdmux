@@ -84,6 +84,11 @@ const MODULE_ROUTES: Record<string, string[]> = {
     "DELETE /files/uploads/{id}",
   ],
   "job-progress": ["POST /progress"],
+  notifier: [
+    "GET /admin/notifier/config",
+    "PUT /admin/notifier/config",
+    "POST /admin/notifier/test",
+  ],
   "jobs-local": ["POST /jobs", "GET /jobs/{id}"],
   "object-storage-local": [
     "GET /files/content/*",

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { SQL } from "bun";
-import { LocalJobQueue, nextScheduledTime, type ScheduleTimer } from "./local-job.queue";
+import { LocalJobQueue, nextScheduledTime, STALLED_JOB_ERROR, type ScheduleTimer } from "./local-job.queue";
 
 let sql: SQL | undefined;
 
@@ -64,6 +64,89 @@ describe("local job queue", () => {
       error: "expected failure",
     });
     queue.close();
+  });
+});
+
+describe("local job queue after a stopped process", () => {
+  async function leaveRunning(database: SQL, id: string, attempts: number, updatedAt: number): Promise<void> {
+    await database`
+      UPDATE "podokit_job" SET "status" = 'active', "attempts" = ${attempts}, "updatedAt" = ${updatedAt}
+      WHERE "id" = ${id}
+    `;
+  }
+
+  it("runs a job a stopped process left running once more", async () => {
+    sql = new SQL(":memory:");
+    let now = 1_000;
+    const queue = new LocalJobQueue(sql, { pollIntervalMs: 10, now: () => now });
+    const payloads: unknown[] = [];
+    await queue.process("demo", (payload) => { payloads.push(payload); });
+    const job = await queue.enqueue("demo", { text: "interrupted" });
+    await leaveRunning(sql, job.id, 1, now);
+
+    // Its heartbeat is recent: another live process may still run it.
+    now += 30_000;
+    expect(await queue.runOnce()).toBe(false);
+    expect(payloads).toEqual([]);
+
+    now += 31_000;
+    expect(await queue.runOnce()).toBe(true);
+    expect(payloads).toEqual([{ text: "interrupted" }]);
+    await expect(queue.get(job.id)).resolves.toMatchObject({ status: "completed", attempts: 2 });
+    queue.close();
+  });
+
+  it("fails a job whose process stopped again instead of running it forever", async () => {
+    sql = new SQL(":memory:");
+    let now = 1_000;
+    const queue = new LocalJobQueue(sql, { pollIntervalMs: 10, now: () => now });
+    let runs = 0;
+    await queue.process("demo", () => { runs += 1; });
+    const job = await queue.enqueue("demo", {});
+    await leaveRunning(sql, job.id, 2, now);
+
+    now += 61_000;
+    expect(await queue.runOnce()).toBe(false);
+    expect(runs).toBe(0);
+    await expect(queue.get(job.id)).resolves.toMatchObject({ status: "failed", error: STALLED_JOB_ERROR });
+    queue.close();
+  });
+
+  it("keeps a long job's heartbeat so it is not taken for stalled", async () => {
+    sql = new SQL(":memory:");
+    const time = manualTime(1_000);
+    const queue = new LocalJobQueue(sql, { pollIntervalMs: 10, now: time.now, timer: time.timer });
+    let release = (): void => undefined;
+    let started = false;
+    await queue.process("long", () => new Promise<void>((resolve) => {
+      started = true;
+      release = resolve;
+    }));
+    const job = await queue.enqueue("long", {});
+    const running = queue.runOnce();
+    for (let waited = 0; !started && waited < 1_000; waited += 5) await Bun.sleep(5);
+
+    for (let at = 11_000; at <= 91_000; at += 10_000) {
+      time.advance(at);
+      await Bun.sleep(5);
+    }
+    // A second process looking at the queue now sees a live job, not a stalled one.
+    const other = new LocalJobQueue(sql, { pollIntervalMs: 10, now: () => 95_000 });
+    expect(await other.runOnce()).toBe(false);
+    await expect(queue.get(job.id)).resolves.toMatchObject({ status: "active", attempts: 1 });
+
+    release();
+    expect(await running).toBe(true);
+    await expect(queue.get(job.id)).resolves.toMatchObject({ status: "completed", attempts: 1 });
+    expect(time.waiting()).toBe(0);
+    other.close();
+    queue.close();
+  });
+
+  it("rejects a stall timeout that is not longer than the heartbeat", () => {
+    expect(() => new LocalJobQueue(new SQL(":memory:"), { heartbeatMs: 1_000, stalledAfterMs: 1_000 })).toThrow(
+      "stalledAfterMs must be an integer greater than heartbeatMs",
+    );
   });
 });
 

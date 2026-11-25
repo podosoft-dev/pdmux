@@ -18,7 +18,8 @@ Common modules: `auth` (better-auth: email/password, sessions, OAuth, 2FA,
 secure-by-default), `admin-dashboard` (user/session/org management + audit +
 runtime settings, requires auth), `redis`, `bullmq` (queue + worker),
 `job-progress` (SSE progress), `object-storage-s3`, `file-upload`, `sse`,
-`rate-limit`, `logging`, `api-key-auth`.
+`rate-limit`, `logging`, `api-key-auth`, `notifier` (operator alerts via
+Pushover, email, or a webhook; requires mailer).
 
 Notes:
 - A module auto-adds its required modules (e.g. `admin-dashboard` adds `auth`).
