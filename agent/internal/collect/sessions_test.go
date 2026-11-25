@@ -11,6 +11,12 @@ import (
 // does. The alternative — asserting against whatever tmux the machine running
 // the suite happens to have — makes "no server running" untestable on a host
 // where a server IS running, and untestable at all on a host with no tmux.
+// fakeTimeoutMs bounds a run of the fake tmux. These tests read what tmux
+// printed, not how long it took: macOS checks a freshly written executable the
+// first time it runs, and under a parallel preflight that alone passed the 2s
+// these tests used, so the read timed out and came back empty.
+const fakeTimeoutMs = 30_000
+
 func fakeTmux(t *testing.T, script string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -80,7 +86,7 @@ func TestSessions(t *testing.T) {
 		// Installed, but nothing running under it: tmux exits 1 and says so. That
 		// is the ordinary state of a fresh host and must not raise `mux.missing`.
 		fakeTmux(t, `echo "no server running on /tmp/tmux-0/default" >&2; exit 1`)
-		reading := ReadSessions(t.Context(), 2_000)
+		reading := ReadSessions(t.Context(), fakeTimeoutMs)
 		if !reading.Present {
 			t.Fatal("present = false for an installed tmux with no server")
 		}
@@ -91,7 +97,7 @@ func TestSessions(t *testing.T) {
 
 	t.Run("[TC-PDAGENT-013] lists what tmux prints", func(t *testing.T) {
 		fakeTmux(t, `printf 'main|1|3\nbuild|0|1\n'`)
-		reading := ReadSessions(t.Context(), 2_000)
+		reading := ReadSessions(t.Context(), fakeTimeoutMs)
 		if !reading.Present || len(reading.Sessions) != 2 {
 			t.Fatalf("reading = %+v", reading)
 		}
