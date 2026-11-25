@@ -2,6 +2,8 @@ package session
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -269,4 +271,28 @@ func waitFor(t *testing.T, condition func() bool) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// TestNativeSoftWrapGolden keeps the frame a browser test feeds into a real
+// xterm.js (packages/ui/test/geometry/soft-wrap-copy.spec.ts) equal to what the
+// renderer draws. PDMUX_UPDATE_GOLDEN=1 rewrites it.
+func TestNativeSoftWrapGolden(t *testing.T) {
+	t.Run("[TC-PDTERM-188] the frame the browser copy test uses is the renderer's", func(t *testing.T) {
+		e, s, v := wrapSession(t, 40, 6)
+		long := "A" + wrapDigits(70) + "Z"
+		data := draw(t, e, s, v, "first "+long+"\r\n"+strings.Repeat("k", 39)+"가나다\r\n$ ", true)
+		path := filepath.Join("testdata", "soft-wrap-frame.txt")
+		if os.Getenv("PDMUX_UPDATE_GOLDEN") == "1" {
+			if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		want, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(want) != data {
+			t.Fatalf("the renderer changed; check the frame and rerun with PDMUX_UPDATE_GOLDEN=1\n got %q\nwant %q", data, want)
+		}
+	})
 }

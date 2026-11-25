@@ -41,6 +41,17 @@ func renderCells(cells []uv.Cell) string {
 	return b.String()
 }
 
+// trimBlank drops trailing unstyled blank cells. The frame erases a row before
+// drawing it, so they draw nothing; printed, they became trailing spaces in
+// everything copied from the viewer's terminal.
+func trimBlank(cells []uv.Cell) []uv.Cell {
+	n := len(cells)
+	for n > 0 && (cells[n-1].IsZero() || cells[n-1].Equal(&uv.EmptyCell)) {
+		n--
+	}
+	return cells[:n]
+}
+
 func renderRow(terminal *vt.Emulator, x, y, width int) string {
 	return renderCells(rowCells(terminal, x, y, width))
 }
@@ -119,7 +130,7 @@ func joinedRow(above []uv.Cell, aboveInfo vt.LineInfo, below []uv.Cell, width, y
 		// Only a wide glyph wraps out of the one column the filler holds.
 		return "", false
 	}
-	return fmt.Sprintf("\x1b[%d;%dH\x1b[?7h", y, a+1) + renderCells(full[a:end]) + renderCells(first) + "\x1b[?7l" + renderCells(rest), true
+	return fmt.Sprintf("\x1b[%d;%dH\x1b[?7h", y, a+1) + renderCells(full[a:end]) + renderCells(first) + "\x1b[?7l" + renderCells(trimBlank(rest)), true
 }
 
 // Input-related modes only. Application escape sequences, queries and OSC side
@@ -215,7 +226,7 @@ func (e *Engine) render(s *running, v *View, full bool) {
 				continue
 			}
 		}
-		rows[y] = renderCells(cells[y])
+		rows[y] = renderCells(trimBlank(cells[y]))
 	}
 	// A reading/selection viewport is frozen until its owner scrolls, resizes,
 	// follows or types. New output must not move the text under a selection.
