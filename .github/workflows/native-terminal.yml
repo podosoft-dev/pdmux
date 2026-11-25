@@ -32,4 +32,4 @@ jobs:
           cache-dependency-path: agent/go.sum
       - name: Test native pseudoterminals and persistent sessions
         working-directory: agent
-        run: go test ./internal/term ./internal/session ./cmd/pdmux-agent -run 'TestWindowsConPTY|TestNative|TestLocalIPC|TestEngineIPCIsolation|TestExistingTmuxCoexistence' -count=1 -timeout=120s
+        run: go test ./internal/term ./internal/session ./internal/vt ./cmd/pdmux-agent -run 'TestWindowsConPTY|TestNative|TestLocalIPC|TestEngineIPCIsolation|TestExistingTmuxCoexistence' -count=1 -timeout=120s
