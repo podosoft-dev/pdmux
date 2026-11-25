@@ -49,6 +49,13 @@ export interface TerminalConnection {
 	onMissing?(listener: () => void): () => void;
 	send(data: string, source?: 'wheel'): void;
 	resize(cols: number, rows: number): void;
+	/**
+	 * This pane is the one in use: give a shared native screen this pane's size again,
+	 * even if it has not changed. The host sizes a native session's screen to the viewer
+	 * that last typed into or resized it, so without this a pane focused again in another
+	 * window keeps the other window's screen until somebody types. A no-op elsewhere.
+	 */
+	claim?(): void;
 	onData(listener: (data: string) => void): () => void;
 	onExit(listener: (code: number | null) => void): () => void;
 	close(): void;

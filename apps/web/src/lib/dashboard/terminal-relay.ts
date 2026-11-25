@@ -288,6 +288,14 @@ export class TerminalRelay implements TerminalAdapter {
         entry.rows = rows;
         this.send(connection, { type: "resize", termId: entry.termId, cols, rows });
       },
+      // A native screen takes the size of the viewer that last typed into or resized it.
+      // `resize` drops an unchanged size, so a pane coming back into use in another
+      // window could never take the screen back without typing; this resends its size,
+      // which the host counts as using it. A tmux or plain pane has nothing to claim.
+      claim: (): void => {
+        if (entry.closed || entry.backend !== "native") return;
+        this.send(connection, { type: "resize", termId: entry.termId, cols: entry.cols, rows: entry.rows });
+      },
       onData: (listener: (data: string) => void): (() => void) => {
         entry.data.add(listener);
         if (entry.buffered) {

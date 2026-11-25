@@ -81,11 +81,15 @@ creation does not require the tmux adapter to be installed or available.
 ## Several viewers, one application
 
 There is one PTY and one application screen per session. Its columns and rows are
-those of the viewer in use, the one that last typed into or resized it, so output
-wraps to that pane. Until a viewer types or resizes, and after the viewer in use
-leaves, the screen takes the largest requested dimensions among attached viewers;
-a viewer that only watches never shrinks another. Wheel, mouse and focus reports
-are not typing. An engine keeps running its sessions after an agent update, and
+those of the viewer in use, the one that last typed into, resized or focused it, so
+output wraps to that pane. The web client counts a pane as in use when it receives
+the focus in a focused window (a click into it, or its window coming back to the
+front with it focused) and when it reattaches while focused; it then resends its
+size, which the host treats as a resize. A pane in a background tab never claims
+the screen. Until a viewer claims it, and after the viewer in use leaves, the
+screen takes the largest requested dimensions among attached viewers; a viewer
+that only watches never shrinks another. Wheel, mouse and focus reports sent to
+the application are not typing. An engine keeps running its sessions after an agent update, and
 engines before agent 0.1.38 size the screen to the largest viewer; for those the
 agent reports every other viewer no larger than the one in use, which gives the
 same screen without restarting the session. After the

@@ -372,10 +372,26 @@
 				return;
 			}
 			connection = opened;
+			// A native session's screen takes the size of the viewer in use. This pane becomes
+			// that viewer when it is focused in a focused window: a click into it, its window
+			// coming back to the front, or a reattach (a lost socket returns every viewer to the
+			// largest size) while it holds the focus. A background tab never claims.
+			const claimIfFocused = (): void => {
+				if (typeof document === 'undefined' || !document.hasFocus() || !host.contains(document.activeElement)) return;
+				opened.claim?.();
+			};
+			host.addEventListener('focusin', claimIfFocused);
+			cleanups.push(() => host.removeEventListener('focusin', claimIfFocused));
+			if (typeof window !== 'undefined') {
+				window.addEventListener('focus', claimIfFocused);
+				cleanups.push(() => window.removeEventListener('focus', claimIfFocused));
+			}
 			if (opened.onSession) cleanups.push(opened.onSession(id => {
 				resolvedSessionId = id;
 				if (reopenByName) reopenedId = id;
 				onSessionResolved?.(slot.id, id);
+				// Each attach of a native pane reports its session; a focused one takes the screen.
+				claimIfFocused();
 			}));
 			if (opened.onRestored) cleanups.push(opened.onRestored(() => { restoredNotice = true; }));
 			if (opened.onMissing) cleanups.push(opened.onMissing(() => { if (target.backend === 'native') missingSession = true; }));

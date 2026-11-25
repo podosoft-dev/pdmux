@@ -7,6 +7,10 @@
   partway through: every open page lost its connection
   until it restarted, the upload resumed, and it happened again. Memory now stays flat
   however much is uploaded.
+- A pdmux terminal pane open in two windows takes the session's size back as soon as you
+  click into it or return to its window, instead of keeping the other window's size until
+  you type. The same applies after a reconnect to the pane that has the focus. Background
+  tabs never take it.
 
 ## 0.17.26
 
