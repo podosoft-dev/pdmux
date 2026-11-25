@@ -284,40 +284,52 @@ func (c *Client) rename(ctx context.Context, r Request) (Reply, error) {
 	return reply, err
 }
 
+// Attach reaches a running session wherever it runs. Only a session that has to
+// start, or reopen after a restart, needs an engine of this client's version, so
+// only then is one ensured: a pane reconnecting to an older engine's session
+// starts nothing.
 func (c *Client) Attach(ctx context.Context, request Request) (*Attachment, error) {
-	current, err := c.ensure(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if request.ID != "" {
-		return c.attachID(ctx, current, request)
+		return c.attachID(ctx, request)
 	}
-	return c.attachName(ctx, current, request)
+	return c.attachName(ctx, request)
 }
 
 // attachID reaches a session by its immutable ID in the engine running it. An
 // ID nothing runs may be a session a restart ended: the engine that recorded it
 // reopens it, so each engine is asked in turn, the current one first.
-func (c *Client) attachID(ctx context.Context, current string, r Request) (*Attachment, error) {
+func (c *Client) attachID(ctx context.Context, r Request) (*Attachment, error) {
 	lists, err := c.lists(ctx)
 	if err != nil {
 		return nil, err
 	}
-	order := []string{current}
 	for _, list := range lists {
 		for _, info := range list.reply.Sessions {
 			if info.ID == r.ID {
 				return c.attachWithNames(ctx, list.dir, r)
 			}
 		}
-		if list.dir != current {
-			order = append(order, list.dir)
+	}
+	current, err := c.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	order := []string{current}
+	for _, dir := range engineDirs(c.Root) {
+		if dir != current {
+			order = append(order, dir)
 		}
 	}
 	for _, dir := range order {
 		attachment, err := c.attachWithNames(ctx, dir, r)
-		if err == nil || err.Error() != "SESSION_NOT_FOUND" {
-			return attachment, err
+		switch {
+		case err == nil:
+			return attachment, nil
+		case err.Error() == "SESSION_NOT_FOUND":
+		case dir != current && c.skippable(dir, err):
+			// An older engine that stopped meanwhile, or a stale slot.
+		default:
+			return nil, err
 		}
 	}
 	return nil, fmt.Errorf("SESSION_NOT_FOUND")
@@ -325,7 +337,7 @@ func (c *Client) attachID(ctx context.Context, current string, r Request) (*Atta
 
 // attachName resolves a visible name across every engine, so one name never
 // means two programs. A name no engine has starts in the current engine.
-func (c *Client) attachName(ctx context.Context, current string, r Request) (*Attachment, error) {
+func (c *Client) attachName(ctx context.Context, r Request) (*Attachment, error) {
 	unlock, err := c.lockClient(ctx, "session-names.lock")
 	if err != nil {
 		return nil, err
@@ -349,6 +361,11 @@ func (c *Client) attachName(ctx context.Context, current string, r Request) (*At
 	}
 	if r.Action == "attach" {
 		return nil, fmt.Errorf("SESSION_NOT_FOUND")
+	}
+	// Under session-names.lock, so the name stays free until the session starts.
+	current, err := c.ensure(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if current == c.Root {
 		return c.createInRoot(ctx, r)

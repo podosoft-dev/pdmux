@@ -135,6 +135,15 @@ func TestNativeEnginesSideBySide(t *testing.T) {
 		root, _, kept := busyOldEngine(t)
 		current := newEngineRig(t, "0.1.40")
 		client := &Client{Root: root, Version: "0.1.40", start: current.start}
+		// Reconnecting to the older engine's running session starts nothing.
+		for _, request := range []Request{{Action: "attach", ID: kept.Info.ID}, {Action: "attach", Name: "kept"}, {Action: "ensure", Name: "kept"}} {
+			request.Cols, request.Rows = 80, 24
+			reconnected, err := client.Attach(ctx, request)
+			if err != nil || reconnected.Info.ID != kept.Info.ID || reconnected.Version != "0.1.0" || len(engineDirs(root)) != 1 {
+				t.Fatalf("reconnect %+v: %v, engine directories %v", request, err, engineDirs(root))
+			}
+			reconnected.Close()
+		}
 		fresh, err := client.Attach(ctx, Request{Action: "create", Name: "fresh", Cols: 80, Rows: 24})
 		if err != nil {
 			t.Fatal(err)
