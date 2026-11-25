@@ -234,6 +234,13 @@ const PATTERN_ALLOW = [
 	// boundary and check the halves; replacing the text deletes what they measure.
 	{ file: 'agent/internal/term/pty_test.go', ids: ['korean'] },
 	{ file: 'agent/internal/term/manager_test.go', ids: ['korean'] },
+	// ⚠ Korean as a WIDE-CHARACTER FIXTURE. Soft-wrap and reflow specs need glyphs two
+	// columns wide at the last column, where the reported bug lost them; the browser
+	// spec and its golden frame copy the same text through a real xterm.js.
+	{ file: 'agent/internal/vt/reflow_test.go', ids: ['korean'] },
+	{ file: 'agent/internal/session/softwrap_test.go', ids: ['korean'] },
+	{ file: 'agent/internal/session/testdata/soft-wrap-frame.txt', ids: ['korean'] },
+	{ file: 'packages/ui/test/geometry/soft-wrap-copy.spec.ts', ids: ['korean'] },
 	// Quoted patch tests use Korean filenames to verify octal UTF-8 decoding and
 	// compatibility with stored paths. Translating these names removes the regression.
 	{ file: 'agent/internal/git/diff_paths_test.go', ids: ['korean'] },
