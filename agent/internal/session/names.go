@@ -15,6 +15,8 @@ import (
 
 // Legacy helpers keep owning their PTYs. A generation-scoped name catalog lets
 // updated clients rename those programs without restarting the old helper.
+// Only the engine in Root can be such a helper: engines in slots are started by
+// clients that rename natively, so the catalog applies to Root's sessions alone.
 type sessionNames struct {
 	Generation string            `json:"generation"`
 	Names      map[string]string `json:"names"`
@@ -143,15 +145,12 @@ func (c *Client) saveNames(names sessionNames, active []Info) error {
 	return os.Rename(file.Name(), filepath.Join(c.Root, "session-names.json"))
 }
 
+// renameLegacy renames a session of an old engine in Root through the catalog.
+// The caller holds session-names.lock and has checked the other engines.
 func (c *Client) renameLegacy(ctx context.Context, r Request) (Reply, error) {
 	if !validName.MatchString(r.Name) {
 		return Reply{}, fmt.Errorf("INVALID_SESSION_NAME")
 	}
-	unlock, err := c.lockClient(ctx, "session-names.lock")
-	if err != nil {
-		return Reply{}, err
-	}
-	defer unlock()
 	list, err := c.request(ctx, Request{Action: "list"})
 	if err != nil {
 		return Reply{}, err
@@ -182,22 +181,16 @@ func (c *Client) renameLegacy(ctx context.Context, r Request) (Reply, error) {
 	return Reply{Protocol: Protocol, Type: "result", Version: list.Version, Info: target}, nil
 }
 
-func (c *Client) attachNamed(ctx context.Context, r Request) (*Attachment, error) {
-	// Immutable IDs need no name lookup and cannot select a different program.
-	if r.ID != "" {
-		return c.attachWithNames(ctx, r)
-	}
-	unlock, err := c.lockClient(ctx, "session-names.lock")
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
+// createInRoot starts a named session in Root's engine. No engine has a session
+// of that visible name; the caller holds session-names.lock. Root's engine may
+// still use the name under the catalog, so the program then gets a hidden one.
+func (c *Client) createInRoot(ctx context.Context, r Request) (*Attachment, error) {
 	names, err := c.names()
 	if err != nil {
 		return nil, err
 	}
 	if len(names.Names) == 0 {
-		return c.attach(ctx, r)
+		return c.attachAt(ctx, c.Root, r)
 	}
 	if !validName.MatchString(r.Name) {
 		return nil, fmt.Errorf("INVALID_SESSION_NAME")
@@ -206,21 +199,6 @@ func (c *Client) attachNamed(ctx context.Context, r Request) (*Attachment, error
 	if err != nil {
 		return nil, err
 	}
-	effective := Reply{Sessions: append([]Info(nil), raw.Sessions...)}
-	overlayNames(&effective, names)
-	for _, info := range effective.Sessions {
-		if info.Name != r.Name {
-			continue
-		}
-		if r.Action == "create" {
-			return nil, fmt.Errorf("SESSION_EXISTS")
-		}
-		r.ID, r.Action = info.ID, "attach"
-		return c.attachWithNames(ctx, r)
-	}
-	if r.Action == "attach" {
-		return nil, fmt.Errorf("SESSION_NOT_FOUND")
-	}
 	visible := r.Name
 	for _, info := range raw.Sessions {
 		if info.Name == r.Name {
@@ -228,7 +206,7 @@ func (c *Client) attachNamed(ctx context.Context, r Request) (*Attachment, error
 			break
 		}
 	}
-	attachment, err := c.attach(ctx, r)
+	attachment, err := c.attachAt(ctx, c.Root, r)
 	if err != nil {
 		return nil, err
 	}
@@ -244,10 +222,14 @@ func (c *Client) attachNamed(ctx context.Context, r Request) (*Attachment, error
 	return attachment, nil
 }
 
-func (c *Client) attachWithNames(ctx context.Context, r Request) (*Attachment, error) {
-	attachment, err := c.attach(ctx, r)
+// attachWithNames attaches in dir and shows Root's sessions by catalog name.
+func (c *Client) attachWithNames(ctx context.Context, dir string, r Request) (*Attachment, error) {
+	attachment, err := c.attachAt(ctx, dir, r)
 	if err != nil {
 		return nil, err
+	}
+	if dir != c.Root {
+		return attachment, nil
 	}
 	reply := Reply{Info: &attachment.Info}
 	if err := c.applyNames(&reply); err != nil {

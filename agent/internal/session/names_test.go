@@ -106,7 +106,8 @@ func TestNativeLegacyNames(t *testing.T) {
 		if engine.List()[0].Name != "main" {
 			t.Fatal("test did not keep the legacy helper unchanged")
 		}
-		replacement := &Client{Root: client.Root, Version: "0.1.33"}
+		// The old helper still runs main, so the replacement serves beside it.
+		replacement := &Client{Root: client.Root, Version: "0.1.33", start: newEngineRig(t, "0.1.33").start}
 		if err := replacement.Ensure(ctx); err != nil {
 			t.Fatal(err)
 		}

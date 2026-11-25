@@ -91,8 +91,13 @@ func TestNativeLegacyEngineUpgrade(t *testing.T) {
 			t.Fatal(err)
 		}
 		wait("initial shell state", func() bool { return historyContains("BEFORE_alive") })
+		// [TC-PDTERM-191] The busy historical helper keeps its shell; the candidate
+		// starts beside it for new sessions.
 		if err := current.Ensure(ctx); err != nil {
 			t.Fatal(err)
+		}
+		if ping, err := current.Request(ctx, session.Request{Action: "ping"}); err != nil || ping.Version != cli.AgentVersion {
+			t.Fatalf("no candidate engine beside the busy helper: %+v %v", ping, err)
 		}
 		renamed, err := current.Request(ctx, session.Request{Action: "rename", ID: original.ID, Name: "work"})
 		if err != nil || renamed.Info == nil || renamed.Info.Name != "work" {
@@ -124,10 +129,19 @@ func TestNativeLegacyEngineUpgrade(t *testing.T) {
 			t.Fatal(err)
 		}
 		wait("retained shell state", func() bool { return historyContains("AFTER_alive") })
-		ping, err = restarted.Request(ctx, session.Request{Action: "ping"})
-		if err != nil || ping.Version != "0.1.32" {
+		select {
+		case <-exited:
 			t.Fatal("busy helper was replaced")
+		default:
 		}
+		fresh, err := restarted.Attach(ctx, session.Request{Action: "create", Name: "fresh", Cols: 80, Rows: 24})
+		if err != nil || fresh.Version != cli.AgentVersion {
+			t.Fatalf("new session not on the candidate: %v", err)
+		}
+		if _, err := restarted.Request(ctx, session.Request{Action: "terminate", ID: fresh.Info.ID}); err != nil {
+			t.Fatal(err)
+		}
+		fresh.Close()
 		if _, err := restarted.Request(ctx, session.Request{Action: "terminate", ID: original.ID}); err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +150,7 @@ func TestNativeLegacyEngineUpgrade(t *testing.T) {
 			return err == nil && len(reply.Sessions) == 0
 		})
 		t.Run("[TC-PDTERM-026] concurrent clients automatically replace the idle historical helper", func(t *testing.T) {
-			// [TC-PDTERM-026] The next open uses the candidate after the old engine is idle.
+			// [TC-PDTERM-026] Once idle, the historical helper stops at the next ensure.
 			results := make(chan error, 2)
 			for range 2 {
 				go func() {

@@ -31,11 +31,18 @@ type endpoint struct {
 
 // Client contains paths, not server credentials. Reading a list never starts an
 // engine; only an explicit create/attach operation may ensure one exists.
+//
+// The engine normally serves from Root. When an older engine there still runs
+// programs, a newer one starts in a slot under Root (engines.go) and takes the
+// new sessions, while the older one keeps its own until they end.
 type Client struct {
 	Root       string
 	Executable string
 	Version    string
 	startMu    sync.Mutex
+	// start launches an engine serving dir. Nil runs the cached agent
+	// executable as `session serve --root dir`; tests serve in process.
+	start func(ctx context.Context, dir string) error
 }
 
 func scanner(connection io.Reader) *bufio.Scanner {
@@ -91,6 +98,9 @@ func Serve(ctx context.Context, root, version string, spawn Factory) error {
 		return err
 	}
 	defer unlock()
+	// Before this engine reads its own restore record: engines that stopped
+	// hand theirs over, so a restart brings back a retired engine's shells too.
+	adoptRetired(root, sys.BootID())
 	listener, address, err := listen(root)
 	if err != nil {
 		return err
@@ -252,8 +262,8 @@ func (e *Engine) Close() {
 	e.mu.Unlock()
 }
 
-func (c *Client) connect(ctx context.Context, request Request) (net.Conn, *bufio.Scanner, error) {
-	bytes, err := os.ReadFile(filepath.Join(c.Root, "endpoint.json"))
+func (c *Client) connectAt(ctx context.Context, dir string, request Request) (net.Conn, *bufio.Scanner, error) {
+	bytes, err := os.ReadFile(filepath.Join(dir, "endpoint.json"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("SESSION_ENGINE_NOT_RUNNING")
 	}
@@ -279,19 +289,8 @@ func (c *Client) connect(ctx context.Context, request Request) (net.Conn, *bufio
 	return connection, scanner(connection), nil
 }
 
-func (c *Client) Request(ctx context.Context, r Request) (Reply, error) {
-	reply, err := c.request(ctx, r)
-	if r.Action == "rename" && err != nil && err.Error() == "INVALID_SESSION_ACTION" {
-		return c.renameLegacy(ctx, r)
-	}
-	if err == nil {
-		err = c.applyNames(&reply)
-	}
-	return reply, err
-}
-
-func (c *Client) request(ctx context.Context, r Request) (Reply, error) {
-	connection, input, err := c.connect(ctx, r)
+func (c *Client) requestAt(ctx context.Context, dir string, r Request) (Reply, error) {
+	connection, input, err := c.connectAt(ctx, dir, r)
 	if err != nil {
 		return Reply{}, err
 	}
@@ -299,61 +298,73 @@ func (c *Client) request(ctx context.Context, r Request) (Reply, error) {
 	return readReply(input)
 }
 
+// request asks the engine in Root, the one the legacy name catalog belongs to.
+func (c *Client) request(ctx context.Context, r Request) (Reply, error) {
+	return c.requestAt(ctx, c.Root, r)
+}
+
 func (c *Client) Ensure(ctx context.Context) error {
+	_, err := c.ensure(ctx)
+	return err
+}
+
+// ensure returns the directory of an engine at least as new as this client,
+// starting one when there is none. Older engines with nothing running stop; an
+// older engine that still runs programs keeps them, takes no new sessions, and
+// stops by itself once they end.
+func (c *Client) ensure(ctx context.Context) (string, error) {
 	c.startMu.Lock()
 	defer c.startMu.Unlock()
 	// Serialize upgrade/start across the network agent and local CLI processes.
 	unlockStart, err := c.lockClient(ctx, "engine-start.lock")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer unlockStart()
-	if reply, err := c.request(ctx, Request{Action: "ping"}); err == nil {
-		newer, valid := semver.CompareStrings(c.Version, reply.Version)
-		if !valid || newer <= 0 {
-			return nil
-		}
-		// StopIdle is atomic with Open: a busy engine always keeps its PTYs.
-		if _, err := c.request(ctx, Request{Action: "shutdown"}); err != nil {
-			if err.Error() == "SESSION_ENGINE_BUSY" {
-				return nil
-			}
-			return err
-		}
-		// The engine removes its endpoint before releasing the lock. Do not let its
-		// deferred cleanup remove a replacement engine's endpoint.
-		for {
-			unlock, err := lockEngine(c.Root)
-			if err == nil {
-				unlock()
-				break
-			}
-			if err.Error() != "SESSION_ENGINE_ALREADY_RUNNING" {
-				return err
-			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(10 * time.Millisecond):
-			}
-		}
-	} else if err.Error() != "SESSION_ENGINE_NOT_RUNNING" {
-		return err
-	}
-	if err := secureDirectory(c.Root); err != nil {
-		return err
-	}
-	path, err := c.cachedExecutable()
+	engines, err := c.running(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
-	command := exec.Command(path, "session", "serve", "--root", c.Root)
-	command.Env = engineEnvironment(os.Environ())
-	detach(command)
-	if err := command.Start(); err != nil {
-		return err
+	current, currentVersion := "", ""
+	rootBusy := false
+	for _, e := range engines {
+		if newer, valid := semver.CompareStrings(c.Version, e.version); valid && newer > 0 {
+			// StopIdle is atomic with Open: a busy engine always keeps its PTYs.
+			if _, err := c.requestAt(ctx, e.dir, Request{Action: "shutdown"}); err != nil {
+				if err.Error() != "SESSION_ENGINE_BUSY" {
+					return "", err
+				}
+				rootBusy = rootBusy || e.dir == c.Root
+				continue
+			}
+			if err := waitStopped(ctx, e.dir); err != nil {
+				return "", err
+			}
+			continue
+		}
+		if current == "" || newerVersion(e.version, currentVersion) {
+			current, currentVersion = e.dir, e.version
+		}
 	}
-	go func() { _ = command.Wait() }()
+	if current != "" {
+		return current, nil
+	}
+	dir := c.Root
+	if rootBusy {
+		if dir, err = newSlot(c.Root); err != nil {
+			return "", err
+		}
+	}
+	if err := secureDirectory(dir); err != nil {
+		return "", err
+	}
+	start := c.start
+	if start == nil {
+		start = c.startExecutable
+	}
+	if err := start(ctx, dir); err != nil {
+		return "", err
+	}
 	deadline := time.NewTimer(8 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -361,15 +372,51 @@ func (c *Client) Ensure(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return "", ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("SESSION_ENGINE_START_TIMEOUT")
+			return "", fmt.Errorf("SESSION_ENGINE_START_TIMEOUT")
 		case <-ticker.C:
-			if _, err := c.Request(ctx, Request{Action: "ping"}); err == nil {
-				return nil
+			if _, err := c.requestAt(ctx, dir, Request{Action: "ping"}); err == nil {
+				return dir, nil
 			}
 		}
 	}
+}
+
+// waitStopped waits until the engine in dir has released its lock. The engine
+// removes its endpoint before releasing the lock; do not let its deferred
+// cleanup remove a replacement engine's endpoint.
+func waitStopped(ctx context.Context, dir string) error {
+	for {
+		unlock, err := lockEngine(dir)
+		if err == nil {
+			unlock()
+			return nil
+		}
+		if err.Error() != "SESSION_ENGINE_ALREADY_RUNNING" {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func (c *Client) startExecutable(_ context.Context, dir string) error {
+	path, err := c.cachedExecutable()
+	if err != nil {
+		return err
+	}
+	command := exec.Command(path, "session", "serve", "--root", dir)
+	command.Env = engineEnvironment(os.Environ())
+	detach(command)
+	if err := command.Start(); err != nil {
+		return err
+	}
+	go func() { _ = command.Wait() }()
+	return nil
 }
 
 func engineEnvironment(environment []string) []string {
@@ -389,6 +436,11 @@ func (c *Client) cachedExecutable() (string, error) {
 	path := c.Executable
 	if path == "" {
 		path, _ = os.Executable()
+		// A Go test binary run as `session serve` runs its tests again, which
+		// start another engine the same way, without end.
+		if base := strings.TrimSuffix(filepath.Base(path), ".exe"); strings.HasSuffix(base, ".test") {
+			return "", fmt.Errorf("SESSION_ENGINE_EXECUTABLE_INVALID")
+		}
 	}
 	bytes, err := os.ReadFile(path)
 	if err != nil {
@@ -440,15 +492,8 @@ type Attachment struct {
 	once       sync.Once
 }
 
-func (c *Client) Attach(ctx context.Context, request Request) (*Attachment, error) {
-	if err := c.Ensure(ctx); err != nil {
-		return nil, err
-	}
-	return c.attachNamed(ctx, request)
-}
-
-func (c *Client) attach(ctx context.Context, request Request) (*Attachment, error) {
-	connection, input, err := c.connect(ctx, request)
+func (c *Client) attachAt(ctx context.Context, dir string, request Request) (*Attachment, error) {
+	connection, input, err := c.connectAt(ctx, dir, request)
 	if err != nil {
 		return nil, err
 	}

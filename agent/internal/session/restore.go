@@ -220,8 +220,13 @@ func (r *restoreStore) restorableByName(name string) (RestoreEntry, bool) {
 // owner-only, synced, then renamed over the old one. A crash mid-write leaves the
 // previous file, never half of a new one.
 func (r *restoreStore) saveLocked() error {
-	document := restoreDocument{Version: 1, Entries: r.sorted()}
-	file, err := os.CreateTemp(filepath.Dir(r.path), ".restore-")
+	return writeRestore(r.path, r.sorted())
+}
+
+// writeRestore replaces the record at path atomically, owner-only.
+func writeRestore(path string, entries []RestoreEntry) error {
+	document := restoreDocument{Version: 1, Entries: entries}
+	file, err := os.CreateTemp(filepath.Dir(path), ".restore-")
 	if err != nil {
 		return err
 	}
@@ -239,7 +244,80 @@ func (r *restoreStore) saveLocked() error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(file.Name(), r.path)
+	return os.Rename(file.Name(), path)
+}
+
+// restoreEntriesAt returns the entries recorded at path, unchecked: the store that
+// loads them applies every rule.
+func restoreEntriesAt(path string) []RestoreEntry {
+	bytes, err := os.ReadFile(path)
+	if err != nil || len(bytes) > maxRestoreFileBytes {
+		return nil
+	}
+	var document restoreDocument
+	if json.Unmarshal(bytes, &document) != nil {
+		return nil
+	}
+	return document.Entries
+}
+
+// adoptRetired runs while the engine for root starts, before it loads its own
+// record. Every other engine directory of the same Root whose engine has stopped
+// hands its entries over (the newer entry wins for a UUID in both), so after a
+// restart a pane of a retired engine's session reopens like any other. Stopped
+// slot directories are removed then; Root's own record stays for agents that
+// only know Root. Starts are serialized by the client's engine-start.lock.
+func adoptRetired(root, bootID string) {
+	base := engineBase(root)
+	var stopped, slots []string
+	for _, dir := range engineDirs(base) {
+		if dir == root {
+			continue
+		}
+		unlock, err := lockEngine(dir)
+		if err != nil {
+			continue // still serving its sessions
+		}
+		unlock()
+		stopped = append(stopped, dir)
+		if dir != base {
+			slots = append(slots, dir)
+		}
+	}
+	if bootID != "" {
+		own := filepath.Join(root, RestoreFile)
+		merged := make(map[string]RestoreEntry)
+		for _, entry := range restoreEntriesAt(own) {
+			merged[entry.UUID] = entry
+		}
+		adopted := false
+		for _, dir := range stopped {
+			for _, entry := range restoreEntriesAt(filepath.Join(dir, RestoreFile)) {
+				if current, ok := merged[entry.UUID]; !ok || entry.UpdatedAt > current.UpdatedAt {
+					merged[entry.UUID] = entry
+					adopted = true
+				}
+			}
+		}
+		if adopted {
+			entries := make([]RestoreEntry, 0, len(merged))
+			for _, entry := range merged {
+				entries = append(entries, entry)
+			}
+			sort.Slice(entries, func(i, j int) bool {
+				if entries[i].UpdatedAt != entries[j].UpdatedAt {
+					return entries[i].UpdatedAt > entries[j].UpdatedAt
+				}
+				return entries[i].UUID < entries[j].UUID
+			})
+			if writeRestore(own, entries) != nil {
+				return // keep the slots: their entries are not saved anywhere else
+			}
+		}
+	}
+	for _, dir := range slots {
+		_ = os.RemoveAll(dir)
+	}
 }
 
 // restoreDirectory is where a restored shell starts: the recorded directory when
