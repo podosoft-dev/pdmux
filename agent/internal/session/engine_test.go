@@ -142,6 +142,13 @@ func TestLocalIPC(t *testing.T) {
 		if _, err := client.Request(ctx, session.Request{Action: "terminate", ID: id}); err != nil {
 			t.Fatal(err)
 		}
+		// The program ends after terminate returns, and the engine then rewrites
+		// restore.json in root. Stopping the engine first left that write racing
+		// the test's removal of root ("directory not empty").
+		eventually(t, func() bool {
+			reply, err := client.Request(ctx, session.Request{Action: "list"})
+			return err == nil && len(reply.Sessions) == 0
+		})
 		cancel()
 		select {
 		case err := <-finished:
