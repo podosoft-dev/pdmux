@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Uploading a large file no longer brings the dashboard down. The web server kept every
+  uploaded chunk in memory, so a file around the size of its memory limit got it killed
+  partway through: every open page lost its connection
+  until it restarted, the upload resumed, and it happened again. Memory now stays flat
+  however much is uploaded.
+
 ## 0.17.26
 
 - Agents update themselves after a release. When an agent older than the newest build
