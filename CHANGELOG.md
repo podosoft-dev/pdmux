@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.27
+
 - Uploading a large file no longer brings the dashboard down. The web server kept every
   uploaded chunk in memory, so a file around the size of its memory limit got it killed
   partway through: every open page lost its connection
