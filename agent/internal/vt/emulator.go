@@ -226,38 +226,39 @@ func (e *Emulator) CursorStyle() (style CursorStyle, blink bool) {
 	return e.scr.cur.Style, !e.scr.cur.Steady
 }
 
-// Resize resizes the terminal.
+// Resize resizes the terminal. The main screen and its scrollback are
+// rewrapped to the new width (pdmux addition, reflow.go); the alternate screen
+// is cut or padded as upstream did, because the program drawing on it redraws.
 func (e *Emulator) Resize(width int, height int) {
-	x, y := e.scr.CursorPosition()
-	if e.atPhantom {
-		if x < width-1 {
-			e.atPhantom = false
-			x++
-		}
-	}
+	e.ResizeTracking(width, height, nil)
+}
 
-	if y < 0 {
-		y = 0
-	}
-	if y >= height {
-		y = height - 1
-	}
-	if x < 0 {
-		x = 0
-	}
-	if x >= width {
-		x = width - 1
-	}
+// ResizeTracking resizes the terminal like Resize and reports where some rows
+// of the main screen's history went. rows are positions in the scrollback and
+// screen together: i < ScrollbackLen() is scrollback line i, ScrollbackLen()+y
+// is screen row y. The result has the same positions after the resize, so a
+// reader scrolled back through the history keeps reading the same text.
+//
+// pdmux addition.
+func (e *Emulator) ResizeTracking(width int, height int, rows []int) []int {
+	width, height = max(1, width), max(1, height)
+	mainActive := e.scr == &e.scrs[0]
+	awm := e.isModeSet(ansi.ModeAutoWrap)
+	moved, pending := e.scrs[0].reflow(width, height, e.atPhantom && mainActive, awm, rows)
 
-	e.scrs[0].Resize(width, height)
-	e.scrs[1].Resize(width, height)
+	alt := &e.scrs[1]
+	alt.Resize(width, height)
+	alt.cur.X = max(0, min(alt.cur.X, width-1))
+	alt.cur.Y = max(0, min(alt.cur.Y, height-1))
+	alt.saved.X = max(0, min(alt.saved.X, width-1))
+	alt.saved.Y = max(0, min(alt.saved.Y, height-1))
 	e.tabstops = uv.DefaultTabStops(width)
-
-	e.setCursor(x, y)
+	e.atPhantom = mainActive && pending
 
 	if e.isModeSet(ansi.ModeInBandResize) {
 		_, _ = io.WriteString(e.pw, ansi.InBandResize(e.Height(), e.Width(), 0, 0))
 	}
+	return moved
 }
 
 // Read reads data from the terminal input buffer.

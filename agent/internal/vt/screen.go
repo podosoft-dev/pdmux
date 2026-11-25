@@ -17,6 +17,9 @@ type Screen struct {
 	scroll uv.Rectangle
 	// scrollback is the scrollback buffer for lines scrolled off the top.
 	scrollback *Scrollback
+	// flags holds one entry per buffer row: soft wrap and wide-character
+	// filler (pdmux addition, see lineinfo.go).
+	flags []rowFlags
 }
 
 // NewScreen creates a new screen.
@@ -26,6 +29,7 @@ func NewScreen(w, h int) *Screen {
 		scrollback: NewScrollback(DefaultScrollbackSize),
 	}
 	s.scroll = s.buf.Bounds()
+	s.syncFlags()
 	return &s
 }
 
@@ -38,6 +42,8 @@ func (s *Screen) Reset() {
 	s.saved = Cursor{}
 	s.scroll = s.buf.Bounds()
 	s.buf.Touched = nil
+	s.syncFlags()
+	s.clearFlags(0, len(s.flags))
 }
 
 // Bounds returns the bounds of the screen.
@@ -79,6 +85,10 @@ func (s *Screen) Resize(width int, height int) {
 		s.buf.Touched = nil
 	}
 	s.scroll = s.buf.Bounds()
+	// Cutting or padding rows breaks every soft wrap. The main screen does not
+	// come through here on a resize: it is rewrapped instead (reflow.go).
+	s.syncFlags()
+	s.clearFlags(0, len(s.flags))
 }
 
 // Width returns the width of the screen.
@@ -96,11 +106,17 @@ func (s *Screen) Clear() {
 // be preserved in history.
 func (s *Screen) ClearWithScrollback() {
 	if s.scrollback != nil {
-		// Save all lines that have content before clearing
+		// Save all lines that have content before clearing. A row continues
+		// the scrollback only while the row before it was saved too.
+		saved := true
 		for y := 0; y < s.buf.Height(); y++ {
 			line := s.buf.Line(y)
 			if line != nil && !s.isLineEmpty(line) {
-				s.scrollback.Push(line)
+				f := s.flagsAt(y)
+				s.scrollback.push(line, LineInfo{Wrapped: f.wrapped && saved, Pad: f.pad, Width: s.buf.Width()})
+				saved = true
+			} else {
+				saved = false
 			}
 		}
 	}
@@ -121,6 +137,7 @@ func (s *Screen) isLineEmpty(line uv.Line) bool {
 func (s *Screen) ClearArea(area uv.Rectangle) {
 	s.buf.ClearArea(area)
 	s.touchArea(area)
+	s.erased(area)
 }
 
 // Fill fills the screen or part of it.
@@ -132,6 +149,7 @@ func (s *Screen) Fill(c *uv.Cell) {
 func (s *Screen) FillArea(c *uv.Cell, area uv.Rectangle) {
 	s.buf.FillArea(c, area)
 	s.touchArea(area)
+	s.erased(area)
 }
 
 // setHorizontalMargins sets the horizontal margins.
@@ -332,6 +350,7 @@ func (s *Screen) InsertLine(n int) bool {
 	}
 
 	s.buf.InsertLineArea(y, n, s.blankCell(), s.scroll)
+	s.shiftFlags(y, -min(n, s.scroll.Max.Y-y), false)
 
 	return true
 }
@@ -359,16 +378,54 @@ func (s *Screen) DeleteLine(n int) bool {
 	// Save lines to scrollback if we're at the top of the scroll region
 	// and the scroll region uses the full width (typical terminal scroll).
 	// This captures lines that would be lost during scroll up operations.
+	pushed := false
 	if s.scrollback != nil && y == scroll.Min.Y &&
 		scroll.Min.X == 0 && scroll.Max.X == s.buf.Width() {
-		// Save lines that will be deleted
+		// Save lines that will be deleted, with their soft-wrap flags. The
+		// first one continues the scrollback only when the region starts at
+		// the top of the screen: above a sub-region is a row that stays.
 		linesToSave := min(n, scroll.Max.Y-y)
-		s.scrollback.PushN(s.buf, y, linesToSave)
+		for i := range linesToSave {
+			f := s.flagsAt(y + i)
+			wrapped := f.wrapped && (i > 0 || scroll.Min.Y == 0)
+			s.scrollback.push(s.buf.Line(y+i), LineInfo{Wrapped: wrapped, Pad: f.pad, Width: s.buf.Width()})
+		}
+		pushed = true
 	}
 
 	s.buf.DeleteLineArea(y, n, s.blankCell(), scroll)
+	s.shiftFlags(y, min(n, scroll.Max.Y-y), pushed && scroll.Min.Y == 0)
 
 	return true
+}
+
+// shiftFlags moves the row flags with the rows of the scroll region after rows
+// were deleted at y (n > 0) or inserted at y (n < 0). The row that lands right
+// after the change no longer continues the row now above it, unless the rows
+// above went to the scrollback in order (keepTop). The row below the region
+// sits after a different row now. With left and right margins only part of
+// each row moved, so the region's flags are dropped.
+func (s *Screen) shiftFlags(y, n int, keepTop bool) {
+	s.syncFlags()
+	scroll := s.scroll
+	top, bottom := y, scroll.Max.Y
+	if scroll.Min.X != 0 || scroll.Max.X != s.buf.Width() {
+		s.clearFlags(scroll.Min.Y, scroll.Max.Y)
+	} else if n > 0 {
+		copy(s.flags[top:bottom], s.flags[top+n:bottom])
+		s.clearFlags(bottom-n, bottom)
+		if !keepTop {
+			s.setWrapped(top, false)
+		}
+	} else if n < 0 {
+		m := -n
+		copy(s.flags[top+m:bottom], s.flags[top:bottom-m])
+		s.clearFlags(top, top+m)
+		s.setWrapped(top+m, false)
+	}
+	if bottom < len(s.flags) {
+		s.setWrapped(bottom, false)
+	}
 }
 
 // blankCell returns the cursor blank cell with the background color set to the

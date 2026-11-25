@@ -85,7 +85,7 @@ func (e *Emulator) handleGrapheme(content string, width int) {
 		// moves cursor down similar to [Terminal.linefeed] except it doesn't
 		// respects [ansi.LNM] mode.
 		// This will reset the phantom state i.e. pending wrap state.
-		e.index()
+		e.softWrap()
 		_, y = e.scr.CursorPosition()
 		x = 0
 	}
@@ -120,14 +120,53 @@ func (e *Emulator) handleGrapheme(content string, width int) {
 		e.lastChar, _ = utf8.DecodeRuneInString(content)
 	}
 
-	e.scr.SetCell(x, y, &cell)
+	// A wide character that does not fit in what is left of the row wraps
+	// whole, as in xterm: the rest of the row is left blank and marked as
+	// filler. Upstream wrote blanks in place of the character, or let the
+	// next character overwrite it. Only from a column past the first, so a
+	// character wider than the whole screen cannot wrap forever.
+	cols := e.scr.Width()
+	if awm && x > 0 && x+cell.Width > cols {
+		for fill := x; fill < cols; fill++ {
+			e.scr.SetCell(fill, y, &uv.EmptyCell)
+		}
+		e.scr.setPad(y, true)
+		e.softWrap()
+		_, y = e.scr.CursorPosition()
+		x = 0
+	}
 
-	// Handle phantom state at the end of the line
-	e.atPhantom = awm && x >= e.scr.Width()-1
+	e.scr.SetCell(x, y, &cell)
+	if x+cell.Width >= cols {
+		// The last column now holds text, not filler.
+		e.scr.setPad(y, false)
+	}
+
+	// Handle phantom state at the end of the line. A wide character that
+	// ends in the last column leaves the cursor pending a wrap too.
+	e.atPhantom = awm && x+max(1, cell.Width) >= cols
 	if !e.atPhantom {
 		x += cell.Width
+	} else {
+		x = cols - 1
 	}
 
 	// NOTE: We don't reset the phantom state here, we handle it up above.
 	e.scr.setCursor(x, y, false)
+}
+
+// softWrap moves the cursor to the next row because the current one is full,
+// and marks that row as continuing this one when the cursor really got there:
+// by moving down, or by the screen scrolling under it. A cursor stuck below
+// the scroll region stays where it is and marks nothing. Rows that only part
+// of their width moves (left and right margins) are not marked either.
+func (e *Emulator) softWrap() {
+	x, y := e.scr.CursorPosition()
+	scroll := e.scr.ScrollRegion()
+	full := scroll.Min.X == 0 && scroll.Max.X == e.scr.Width()
+	scrolls := y == scroll.Max.Y-1 && x >= scroll.Min.X && x < scroll.Max.X
+	e.index()
+	if _, next := e.scr.CursorPosition(); full && (scrolls || next != y) {
+		e.scr.setWrapped(next, true)
+	}
 }

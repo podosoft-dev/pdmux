@@ -15,7 +15,13 @@ func (e *Emulator) handleControl(r byte) {
 
 // linefeed is the same as [index], except that it respects [ansi.LNM] mode.
 func (e *Emulator) linefeed() {
+	_, y := e.scr.CursorPosition()
 	e.index()
+	// An explicit line feed into an existing row starts a new logical line
+	// there, as xterm does (a scrolled-in row is blank and unmarked already).
+	if _, next := e.scr.CursorPosition(); next != y {
+		e.scr.setWrapped(next, false)
+	}
 	if e.isModeSet(ansi.ModeLineFeedNewLine) {
 		e.carriageReturn()
 	}
