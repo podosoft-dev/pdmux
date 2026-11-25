@@ -42,6 +42,12 @@ func renderCells(cells []uv.Cell) string {
 }
 
 func renderRow(terminal *vt.Emulator, x, y, width int) string {
+	return renderCells(rowCells(terminal, x, y, width))
+}
+
+// rowCells is the part of screen row y a viewport from column x, width wide,
+// shows, without half a wide glyph at either edge.
+func rowCells(terminal *vt.Emulator, x, y, width int) []uv.Cell {
 	cells := make([]uv.Cell, 0, width)
 	for col := x; col < min(terminal.Width(), x+width); col++ {
 		cell := terminal.CellAt(col, y)
@@ -62,7 +68,58 @@ func renderRow(terminal *vt.Emulator, x, y, width int) string {
 		}
 		cells = append(cells, *cell)
 	}
-	return renderCells(cells)
+	return cells
+}
+
+// joinedRow renders a row that continues the row above it (a soft wrap) so
+// that the terminal drawing it records the wrap too, the way xterm.js marks
+// IBufferLine.isWrapped: copying, word selection and link detection then treat
+// the two rows as one line, as they would for a program writing straight into
+// that terminal. The frame has already moved to this row (1-based y+1) and
+// erased it. This goes back to the last glyph of the row above (row y),
+// prints it again with autowrap on, then this row's first glyph, which wraps
+// onto this row and marks it, and the rest with autowrap off again.
+//
+// Autowrap is on for two glyphs only, and the wrap leaves the row above, never
+// the bottom row, so the terminal cannot scroll. If the two terminals measured
+// a glyph differently only this row is affected. It returns false when the
+// rows do not have the shape a soft wrap leaves, and the row is drawn plainly.
+func joinedRow(above []uv.Cell, aboveInfo vt.LineInfo, below []uv.Cell, width, y int) (string, bool) {
+	if aboveInfo.Width != width || len(above) > width {
+		return "", false
+	}
+	full := make([]uv.Cell, width)
+	copy(full, above)
+	for i := len(above); i < width; i++ {
+		full[i] = uv.EmptyCell
+	}
+	// The anchor ends in the last column, or one before it when a wide glyph
+	// did not fit and left filler there.
+	end := width
+	if aboveInfo.Pad {
+		end--
+	}
+	a := end - 1
+	if a >= 0 && full[a].IsZero() {
+		a--
+	}
+	if a < 0 || full[a].IsZero() || a+max(1, full[a].Width) != end {
+		return "", false
+	}
+	first := []uv.Cell{uv.EmptyCell}
+	var rest []uv.Cell
+	if len(below) > 0 {
+		if below[0].IsZero() {
+			return "", false
+		}
+		n := min(len(below), max(1, below[0].Width))
+		first, rest = below[:n], below[n:]
+	}
+	if aboveInfo.Pad && first[0].Width < 2 {
+		// Only a wide glyph wraps out of the one column the filler holds.
+		return "", false
+	}
+	return fmt.Sprintf("\x1b[%d;%dH\x1b[?7h", y, a+1) + renderCells(full[a:end]) + renderCells(first) + "\x1b[?7l" + renderCells(rest), true
 }
 
 // Input-related modes only. Application escape sequences, queries and OSC side
@@ -116,22 +173,49 @@ func (e *Engine) render(s *running, v *View, full bool) {
 	v.y = max(0, min(max(0, s.rows-v.rows), v.y))
 	rows := make([]string, v.rows)
 	history := s.vt.Scrollback()
+	length := s.vt.ScrollbackLen()
+	// Each view row's cells and where it comes from: a scrollback line or a
+	// screen row, numbered together (scrollback first), or -1 for nothing.
+	cells := make([][]uv.Cell, v.rows)
+	sources := make([]int, v.rows)
 	for y := range rows {
+		sources[y] = -1
 		line := v.y + y
 		if v.history > 0 {
-			index := s.vt.ScrollbackLen() - v.history + y
-			if index < s.vt.ScrollbackLen() {
-				cells := history.Line(index)
-				if len(cells) > v.x {
-					rows[y] = renderCells(cells[v.x:min(len(cells), v.x+v.cols)])
+			index := length - v.history + y
+			if index < length {
+				if row := history.Line(index); len(row) > v.x {
+					cells[y], sources[y] = row[v.x:min(len(row), v.x+v.cols)], index
 				}
 				continue
 			}
-			line = index - s.vt.ScrollbackLen()
+			line = index - length
 		}
 		if line < s.rows {
-			rows[y] = renderRow(s.vt, v.x, line, v.cols)
+			cells[y], sources[y] = rowCells(s.vt, v.x, line, v.cols), length+line
 		}
+	}
+	info := func(source int) vt.LineInfo {
+		if source < length {
+			return s.vt.ScrollbackLineInfo(source)
+		}
+		return s.vt.LineInfo(source - length)
+	}
+	// Soft wraps are drawn as wraps only where the view shows whole rows of
+	// the main screen. A narrower or panned view cuts rows, and a full-screen
+	// program on the alternate screen positions everything itself.
+	joins := !s.vt.IsAltScreen() && v.x == 0 && v.cols == s.cols
+	for y := range rows {
+		if sources[y] < 0 {
+			continue
+		}
+		if joins && y > 0 && sources[y-1] >= 0 && sources[y] == sources[y-1]+1 && info(sources[y]).Wrapped {
+			if row, ok := joinedRow(cells[y-1], info(sources[y-1]), cells[y], v.cols, y); ok {
+				rows[y] = row
+				continue
+			}
+		}
+		rows[y] = renderCells(cells[y])
 	}
 	// A reading/selection viewport is frozen until its owner scrolls, resizes,
 	// follows or types. New output must not move the text under a selection.

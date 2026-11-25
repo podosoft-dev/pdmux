@@ -32,4 +32,5 @@ copy it over this directory and apply these changes again.
   not fit wraps whole and leaves filler, and one that ends in the last column
   leaves the cursor pending a wrap instead of being overwritten.
 - `cc.go`: an explicit line feed into an existing row starts a new logical line.
+- `handlers.go`: ED 1 also ends the soft wrap of the row below, as in xterm.
 - `reflow_test.go` (new): the tests for all of the above.

@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/podosoft-dev/pdmux/agent/internal/vt"
 )
@@ -421,23 +420,13 @@ func (e *Engine) pump(s *running) {
 				continue
 			}
 			e.mu.Lock()
-			previous := s.vt.Scrollback().Lines()
-			var tail *uv.Cell
-			if len(previous) > 0 && len(previous[len(previous)-1]) > 0 {
-				tail = &previous[len(previous)-1][0]
-			}
+			// Keep a reader anchored even when the bounded ring evicts old
+			// lines: the push count says how many lines this write added. (It
+			// used to find the newest line by address, which failed when that
+			// line was blank and sent every reader to the oldest line.)
+			before := s.vt.Scrollback().Pushed()
 			_, _ = s.vt.Write(data)
-			// Keep a reader anchored even when the bounded ring evicts old lines.
-			added := s.vt.ScrollbackLen()
-			if tail != nil {
-				current := s.vt.Scrollback().Lines()
-				for i := len(current) - 1; i >= 0; i-- {
-					if len(current[i]) > 0 && &current[i][0] == tail {
-						added = len(current) - i - 1
-						break
-					}
-				}
-			}
+			added := int(s.vt.Scrollback().Pushed() - before)
 			for v := range s.views {
 				if v.history > 0 {
 					v.history = min(s.vt.ScrollbackLen(), v.history+added)
@@ -485,7 +474,27 @@ func (e *Engine) resize(s *running) {
 		return
 	}
 	s.cols, s.rows = cols, rows
-	s.vt.Resize(cols, rows)
+	// The screen and its history are rewrapped to the new width. A viewer
+	// reading the history keeps reading the same text: the row at the top of
+	// its view is tracked through the rewrap. Its frozen rows stay as they
+	// were until it scrolls, follows or resizes.
+	length := s.vt.ScrollbackLen()
+	var readers []*View
+	var tops []int
+	for v := range s.views {
+		if v.history > 0 {
+			readers = append(readers, v)
+			tops = append(tops, length-v.history)
+		}
+	}
+	moved := s.vt.ResizeTracking(cols, rows, tops)
+	length = s.vt.ScrollbackLen()
+	for i, v := range readers {
+		v.history = max(0, min(length, length-moved[i]))
+		if v.history == 0 {
+			v.follow, v.historyRows = true, nil
+		}
+	}
 	_ = s.process.Resize(cols, rows)
 	for v := range s.views {
 		v.last = nil
@@ -631,12 +640,15 @@ func (e *Engine) History(id string) ([]string, bool, error) {
 	}
 	lines := []string{}
 	if !s.vt.IsAltScreen() {
-		for _, row := range s.vt.Scrollback().Lines() {
-			lines = append(lines, renderCells(row))
+		// The lines the program wrote: rows a long line wrapped onto are
+		// joined, so copying from the history gives the line as it was.
+		for _, line := range s.vt.LogicalLines() {
+			lines = append(lines, renderCells(line))
 		}
+		return lines, false, nil
 	}
 	for y := 0; y < s.rows; y++ {
 		lines = append(lines, renderRow(s.vt, 0, y, s.cols))
 	}
-	return lines, s.vt.IsAltScreen(), nil
+	return lines, true, nil
 }
