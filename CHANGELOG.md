@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.28
+
 - pdmux terminal sessions now rewrap their lines when a pane is resized, as tmux and
   other terminals do. Narrowing a pane used to cut every line at the new width and
   lose the rest for good, and widening it never joined the pieces again; now the
@@ -13,8 +15,9 @@
   whole line, and the history view shows whole lines too.
 - A wide character (Korean, Chinese, Japanese, emoji) that reaches the last column
   now moves to the next row instead of disappearing.
-- These apply to sessions started after the host's agent is updated; sessions that are
-  already running keep their current behaviour until they are closed.
+- These apply to sessions started after the host's agent is updated to 0.1.39 (agents
+  update themselves after the release); sessions that are already running keep their
+  current behaviour until they are closed.
 
 ## 0.17.27
 
