@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -14,6 +15,10 @@ import (
 func renderCells(cells []uv.Cell) string {
 	var b strings.Builder
 	style := ""
+	// The link the output has open. A run of cells with the same link is one
+	// OSC 8 hyperlink, so the viewer's terminal sees the link once and the
+	// cells' own characters as the text.
+	open := uv.Link{}
 	for i := range cells {
 		cell := &cells[i]
 		if cell.Content == "" && cell.Width == 0 {
@@ -25,20 +30,53 @@ func renderCells(cells []uv.Cell) string {
 			b.WriteString(current)
 			style = current
 		}
-		if cell.Link.URL != "" {
-			b.WriteString(cell.Link.String())
+		if cell.Link != open {
+			if open.URL != "" {
+				b.WriteString(endHyperlink)
+			}
+			open = uv.Link{}
+			if start := hyperlink(cell.Link); start != "" {
+				b.WriteString(start)
+				open = cell.Link
+			}
 		}
 		if cell.Content == "" {
 			b.WriteByte(' ')
 		} else {
 			b.WriteString(cell.Content)
 		}
-		if cell.Link.URL != "" {
-			b.WriteString("\x1b]8;;\x1b\\")
-		}
+	}
+	if open.URL != "" {
+		b.WriteString(endHyperlink)
 	}
 	b.WriteString("\x1b[0m")
 	return b.String()
+}
+
+const endHyperlink = "\x1b]8;;\x1b\\"
+
+// hyperlink is the OSC 8 sequence that starts link, or "" when there is no link
+// or the viewer's terminal could misread it. The program chose the URL and the
+// parameters; a control character in either could end the sequence early and
+// turn the rest into terminal input, so such a link is left out and its text
+// stays plain.
+func hyperlink(link uv.Link) string {
+	if link.URL == "" || !linkSafe(link.URL) || !linkSafe(link.Params) || strings.Contains(link.Params, ";") {
+		return ""
+	}
+	return "\x1b]8;" + link.Params + ";" + link.URL + "\x1b\\"
+}
+
+func linkSafe(value string) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	for _, r := range value {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			return false
+		}
+	}
+	return true
 }
 
 // trimBlank drops trailing unstyled blank cells. The frame erases a row before

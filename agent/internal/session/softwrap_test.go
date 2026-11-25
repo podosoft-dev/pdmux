@@ -260,7 +260,9 @@ func TestNativeSoftWrapHistory(t *testing.T) {
 	})
 }
 
-func replayTextLine(cells []uv.Cell) string { return strings.TrimRight(ansi.Strip(renderCells(cells)), " ") }
+func replayTextLine(cells []uv.Cell) string {
+	return strings.TrimRight(ansi.Strip(renderCells(cells)), " ")
+}
 
 func waitFor(t *testing.T, condition func() bool) {
 	t.Helper()
