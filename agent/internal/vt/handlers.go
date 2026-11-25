@@ -554,6 +554,8 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 		case 1: // Erase screen above (including cursor)
 			rect := uv.Rect(0, 0, width, y+1)
 			e.scr.FillArea(e.scr.blankCell(), rect)
+			// The row below no longer continues anything (pdmux, as xterm).
+			e.scr.setWrapped(y+1, false)
 		case 2: // erase screen
 			// Save screen content to scrollback before clearing
 			e.scr.ClearWithScrollback()

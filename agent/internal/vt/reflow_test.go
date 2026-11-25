@@ -109,10 +109,22 @@ func TestNativeVTSoftWrap(t *testing.T) {
 		if e.LineInfo(1).Wrapped {
 			t.Fatal("a line feed into the continued row kept its flag")
 		}
+		// As in xterm: erasing a row ends its own continuation, erasing the row
+		// above (to redraw it) does not, erasing everything above does.
+		e = newVT(40, 5)
+		feed(e, long+"\x1b[2;1H\x1b[2K")
+		if e.LineInfo(1).Wrapped {
+			t.Fatal("erasing the continued row kept its flag")
+		}
 		e = newVT(40, 5)
 		feed(e, long+"\x1b[1;1H\x1b[2K")
+		if !e.LineInfo(1).Wrapped {
+			t.Fatal("redrawing the row above ended the continuation")
+		}
+		e = newVT(40, 5)
+		feed(e, long+"\x1b[1;5H\x1b[1J")
 		if e.LineInfo(1).Wrapped {
-			t.Fatal("erasing the row above kept the continuation")
+			t.Fatal("erasing everything above kept the continuation")
 		}
 		e = newVT(40, 5)
 		feed(e, long+"\x1b[1;1H\x1b[L")

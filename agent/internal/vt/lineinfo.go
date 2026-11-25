@@ -60,12 +60,13 @@ func (s *Screen) clearFlags(from, to int) {
 	}
 }
 
-// erased updates the flags after the cells of area were erased or filled. A
-// row erased in full no longer continues anything, and the row after it no
-// longer continues it. Erasing up to the last column removes a wide-character
-// filler.
+// erased updates the flags after the cells of area were erased or filled, as
+// xterm does: a row erased in full no longer continues the row above, and
+// erasing up to the last column removes a wide-character filler. The row
+// after an erased row keeps its flag (a program erasing a row to redraw it
+// has not ended the line below); ED 1 clears it itself.
 func (s *Screen) erased(area uv.Rectangle) {
-	w, h := s.buf.Width(), s.buf.Height()
+	w := s.buf.Width()
 	area = area.Intersect(s.buf.Bounds())
 	for y := area.Min.Y; y < area.Max.Y; y++ {
 		if area.Max.X >= w {
@@ -73,9 +74,6 @@ func (s *Screen) erased(area uv.Rectangle) {
 		}
 		if area.Min.X <= 0 && area.Max.X >= w {
 			s.setWrapped(y, false)
-			if y+1 < h && y+1 >= area.Max.Y {
-				s.setWrapped(y+1, false)
-			}
 		}
 	}
 }
