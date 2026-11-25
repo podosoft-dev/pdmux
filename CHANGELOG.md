@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- A link printed in a pdmux terminal session (such as the sign-in link Claude Code
+  prints) showed the start of the URL over and over and cut the rest off. It now shows
+  once, wraps like other text, and stays clickable.
+- An agent update now takes effect for new pdmux terminal sessions straight away. Until
+  now the host kept using its old session engine while any session on it was running, so
+  new sessions also got the old behaviour, including the cut lines 0.17.28 fixed. The old
+  engine keeps the sessions it already has until they end, and then stops by itself.
+- Ending a pdmux terminal session that had already exited no longer shows an error.
+
 ## 0.17.28
 
 - pdmux terminal sessions now rewrap their lines when a pane is resized, as tmux and

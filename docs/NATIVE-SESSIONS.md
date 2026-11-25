@@ -187,13 +187,34 @@ byte cannot terminate a title early and print its suffix in a coding client's
 input row. Other output, including colors, hyperlinks and terminal queries,
 continues to the emulator.
 
-A running helper retains its own executable and environment across desktop updates.
-The updated agent compares its version with the helper before opening a terminal. An
-older helper with no sessions is stopped through its atomic idle-only shutdown operation,
-and a helper from the installed agent is started automatically. Concurrent agent/CLI
-opens share a startup lock; equal or newer helpers are reused. A busy helper stays alive,
-so engine parser and rendering changes take effect after its programs have exited.
-Updates never kill those programs to replace the helper.
+Hyperlinks (OSC 8) reach the viewer as one link over the cells' own text, opened once
+per run of linked cells, so a long link wraps like any other text. A link whose URL or
+parameters contain control characters is left out and its text stays plain: the program
+chose them, and a control character could end the sequence early in the viewer.
+
+A running helper retains its own executable and environment across updates. Before
+opening a terminal the updated agent compares its version with each running helper:
+
+- An older helper with no sessions is stopped through its atomic idle-only shutdown
+  operation.
+- An older helper that still runs programs keeps them (updates never kill programs to
+  replace a helper) but takes no new sessions. The installed agent's helper starts
+  beside it, in a slot under the state directory (`sessions/<id>/slots/<random>`), and
+  every new session opens there.
+- Equal or newer helpers are reused. Concurrent agent/CLI opens share a startup lock, so
+  one helper starts.
+
+The agent treats the helpers as one: lists are merged, a session is reached in the helper
+that runs it, names stay unique across helpers, and history, rename and terminate go to
+the right one. An older helper stops by itself a minute after its last program exits, and
+the next helper to start removes its slot. After a restart, the first helper to start
+takes over the restore records of the helpers that stopped, so their sessions reopen too.
+
+Engine parser and rendering changes therefore apply to sessions opened after the update.
+A session that was already running stays in the helper it started in until it exits.
+Going back to an older agent (for example when an automatic update rolls back) lists only
+the sessions of the helper in the state directory itself; sessions in a slot keep running
+and show up again with a newer agent.
 
 ## Interactive CLI over SSH
 
