@@ -8,7 +8,7 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/vt"
+	"github.com/podosoft-dev/pdmux/agent/internal/vt"
 )
 
 func renderCells(cells []uv.Cell) string {

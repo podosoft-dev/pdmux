@@ -26,7 +26,7 @@ The main dependencies are:
 | `github.com/santhosh-tekuri/jsonschema/v6` | validating frames against the embedded contract |
 | `golang.org/x/text` | UTF-8 boundary handling for terminal output |
 | `github.com/UserExistsError/conpty` | Windows native pseudoconsole |
-| `github.com/charmbracelet/x/vt` and `ultraviolet` | native-session screen state and Unicode cells |
+| `ultraviolet`, plus a copy of `charmbracelet/x/vt` in `internal/vt` | native-session screen state and Unicode cells; the copy adds soft-wrap tracking and resize reflow (`internal/vt/UPSTREAM.md`) |
 | `github.com/Microsoft/go-winio` | private Windows named-pipe IPC |
 | `golang.org/x/term` and `x/sys` | interactive attachment and OS IPC permissions |
 

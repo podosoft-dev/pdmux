@@ -12,7 +12,7 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/vt"
+	"github.com/podosoft-dev/pdmux/agent/internal/vt"
 )
 
 var validName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/vt"
+	"github.com/podosoft-dev/pdmux/agent/internal/vt"
 )
 
 type screenProcess struct {

@@ -40,6 +40,20 @@ https://github.com/lucide-icons/lucide.
 
 `apps/web` uses the package itself (`@lucide/svelte`) in the ordinary way.
 
+## x/vt — terminal emulator (MIT)
+
+| | |
+|---|---|
+| Where | `agent/internal/vt/` |
+| Upstream | https://github.com/charmbracelet/x/tree/main/vt — commit 67fa755d101a |
+| Licence | MIT — `agent/internal/vt/LICENSE` |
+| Credit | © 2023 Charmbracelet, Inc. |
+
+Copied into the agent so native sessions can track soft-wrapped rows and rewrap
+them on resize, which needs the library's private screen state. The MIT notice
+travels with the code; `agent/internal/vt/UPSTREAM.md` lists every change made
+to it.
+
 ## Runtime dependencies
 
 Everything installed from npm keeps the licence declared in its own package. This
