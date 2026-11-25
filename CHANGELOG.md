@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.29
+
 - A link printed in a pdmux terminal session (such as the sign-in link Claude Code
   prints) showed the start of the URL over and over and cut the rest off. It now shows
   once, wraps like other text, and stays clickable.

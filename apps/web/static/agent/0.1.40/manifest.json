@@ -1,0 +1,41 @@
+{
+  "version": "0.1.40",
+  "builtAt": "2026-11-25T11:06:21.680Z",
+  "artifacts": [
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "path": "/agent/0.1.40/pdmux-agent-linux-amd64",
+      "sha256": "6f000890f85b15c9fe5df988be286b2be86e1b13ff5b1b2998830bcc6ff250f5",
+      "bytes": 9445538
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "path": "/agent/0.1.40/pdmux-agent-linux-arm64",
+      "sha256": "1acd7229719ea7da9fb751bb65194c1b98241bd7527eda04113cd99d97c80cb8",
+      "bytes": 8716450
+    },
+    {
+      "os": "darwin",
+      "arch": "amd64",
+      "path": "/agent/0.1.40/pdmux-agent-darwin-amd64",
+      "sha256": "b0c56c0fdd857c4abe39d41280e6fad867a798b90b046ef9970e638029df85e8",
+      "bytes": 9636192
+    },
+    {
+      "os": "darwin",
+      "arch": "arm64",
+      "path": "/agent/0.1.40/pdmux-agent-darwin-arm64",
+      "sha256": "4e10387230ee401fbe5d5ba9fee9dad2a8706cfa9cde92648264e95c55f4f1cd",
+      "bytes": 8951538
+    },
+    {
+      "os": "windows",
+      "arch": "amd64",
+      "path": "/agent/0.1.40/pdmux-agent-windows-amd64",
+      "sha256": "a45b62aace1be2a052ab657def40205ea804be716f74df1746739b621d07a393",
+      "bytes": 9864192
+    }
+  ]
+}

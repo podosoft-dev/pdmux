@@ -1,6 +1,6 @@
 {
   "name": "pdmux-web",
-  "version": "0.17.28",
+  "version": "0.17.29",
   "private": true,
   "type": "module",
   "imports": {
