@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- pdmux terminal sessions now rewrap their lines when a pane is resized, as tmux and
+  other terminals do. Narrowing a pane used to cut every line at the new width and
+  lose the rest for good, and widening it never joined the pieces again; now the
+  lines wrap to the new width and come back together when it widens. A shorter pane
+  keeps the newest lines instead of the oldest, and a cleared screen keeps its
+  prompt at the top.
+- Copying a long line from a pdmux terminal session gives the whole line, not pieces
+  with line breaks where it wrapped, and no trailing spaces. Triple-click selects the
+  whole line, and the history view shows whole lines too.
+- A wide character (Korean, Chinese, Japanese, emoji) that reaches the last column
+  now moves to the next row instead of disappearing.
+- These apply to sessions started after the host's agent is updated; sessions that are
+  already running keep their current behaviour until they are closed.
+
 ## 0.17.27
 
 - Uploading a large file no longer brings the dashboard down. The web server kept every

@@ -99,6 +99,36 @@ menu provides manual movement and a return to cursor following. A smaller viewer
 does not receive tmux's unused-area filler. A single application cannot have
 independently reflowed TUI layouts for every viewer at once.
 
+## Wrapped lines and resizing
+
+The helper records which rows are soft-wrap continuations: a row the output
+wrapped onto because the row above filled up, as opposed to a row after an
+explicit line break. A wide character that does not fit in the last column wraps
+whole and leaves that column as filler, which is not part of the text. The
+records follow rows through scrolling, erasing (with xterm's rules) and the
+history.
+
+When the screen changes size, the helper rewraps the main screen and its history
+the way tmux and xterm do: rows that were one line before are joined and wrapped
+at the new width, so narrowing a pane never cuts text off and widening it joins
+the rows again. The newest rows stay on screen when the screen gets shorter; a
+screen that was cleared keeps its prompt at the top. The cursor keeps its place
+in its line, and a viewer reading the history keeps reading the same text. The
+alternate screen is not rewrapped: a full-screen program redraws it after the
+resize. A shell redrawing its prompt after a resize can still leave the
+artifacts it leaves in any terminal that rewraps.
+
+Where a view shows whole rows of the main screen (the same width as the screen,
+not panned), a continued row is drawn so that the viewer's terminal records the
+wrap as well (xterm.js `isWrapped`): the last glyph of the row above is printed
+again with autowrap on, followed by the row's first glyph. Selecting, copying,
+triple-clicking and link detection then treat the rows as one line. The history
+sheet receives whole lines. Rows are drawn without trailing blanks, so copies do
+not end in spaces.
+
+Sessions keep the helper that started them, so these behaviours apply to
+sessions opened after an agent that includes them is running.
+
 The helper parses VT output, answers terminal queries once, and sends rendered rows
 and cursor state. Raw application control sequences are not broadcast to every
 viewer. Input modes such as bracketed paste, cursor keys and mouse tracking are
