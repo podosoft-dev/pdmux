@@ -155,6 +155,11 @@ func (m *Manager) nativeControl(frame *protocol.TerminalSessionControl) {
 		if frame.Action == "rename" && result.Error == "INVALID_SESSION_ACTION" {
 			result.Error = "SESSION_ENGINE_UPDATE_REQUIRED"
 		}
+		// A session that already ended is what terminating it asked for; the
+		// list catches up on the next heartbeat.
+		if frame.Action == "terminate" && result.Error == "SESSION_NOT_FOUND" {
+			result.Error = ""
+		}
 	} else {
 		result.ScreenOnly = reply.ScreenOnly
 		if reply.Info != nil {

@@ -170,3 +170,55 @@ func TestNativeViewerInUse(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeTerminateEnded(t *testing.T) {
+	t.Run("[TC-PDTERM-195] terminating a session that already ended succeeds", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		root := t.TempDir()
+		go func() {
+			_ = session.Serve(ctx, root, "test", func(int, int, string) (session.Process, error) { return newFakePty(), nil })
+		}()
+		client := &session.Client{Root: root}
+		waitFor(t, time.Second, "engine ready", func() bool { _, err := client.Request(ctx, session.Request{Action: "ping"}); return err == nil })
+		viewer, err := client.Attach(ctx, session.Request{Action: "create", Name: "gone", Cols: 80, Rows: 24})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer viewer.Close()
+		results := make(chan *protocol.TerminalSessionResult, 2)
+		manager := NewManager(Options{Native: client, Send: func(frame protocol.TerminalServerFrame) {
+			if result, ok := frame.(*protocol.TerminalSessionResult); ok {
+				results <- result
+			}
+		}})
+		defer manager.CloseAll()
+		// The second request finds the session already gone, as when the
+		// program exited before the browser's list caught up.
+		for _, id := range []string{"first", "second"} {
+			manager.Handle(&protocol.TerminalSessionControl{Type: protocol.TermSessionControl, TermID: id, SessionID: viewer.Info.ID, Action: "terminate"})
+			select {
+			case result := <-results:
+				if result.Error != "" {
+					t.Fatalf("%s terminate: %+v", id, result)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("no %s acknowledgement", id)
+			}
+			waitFor(t, 2*time.Second, "session gone", func() bool {
+				list, err := client.Request(ctx, session.Request{Action: "list"})
+				return err == nil && len(list.Sessions) == 0
+			})
+		}
+		history := "history"
+		manager.Handle(&protocol.TerminalSessionControl{Type: protocol.TermSessionControl, TermID: history, SessionID: viewer.Info.ID, Action: "history"})
+		select {
+		case result := <-results:
+			if result.Error != "SESSION_NOT_FOUND" {
+				t.Fatalf("history of an ended session: %+v", result)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("no history answer")
+		}
+	})
+}
