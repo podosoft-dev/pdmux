@@ -5,7 +5,8 @@
  * lazily loaded production route is evaluated.
  */
 
-import { readFile, readdir } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -39,8 +40,14 @@ for (const source of requiredSources) {
   if (!importedSources.has(source)) throw new Error(`web build did not contain ${source}`);
 }
 
-const cwd = new URL("../apps/web/", import.meta.url).pathname;
-const child = Bun.spawn(["bun", "./build"], {
+// ⚠ RUN IT THE WAY THE IMAGE DOES: the output alone, no node_modules above it, and
+// Bun's auto-install off. Started inside the workspace, a server whose bundle left
+// its dependencies external still found them in node_modules and passed, while the
+// image (which copies only the build) could not start: `Cannot find package 'clsx'`
+// with no network, or Bun fetched the packages from npm at startup with one.
+const cwd = await mkdtemp(join(tmpdir(), "pdmux-web-smoke-"));
+await cp(buildRoot, join(cwd, "build"), { recursive: true });
+const child = Bun.spawn(["bun", "--no-install", "./build"], {
   cwd,
   // Port 1 refuses at once, so the smoke never reaches an API that happens to run here.
   env: { ...process.env, NODE_ENV: "production", PORT: "0", BACKEND_INTERNAL_URL: "http://127.0.0.1:1" },
@@ -111,6 +118,7 @@ if (exited === null) {
   await child.exited;
 }
 const stderr = await stderrPromise;
+await rm(cwd, { recursive: true, force: true });
 
 if (failure) {
   console.error(stdout.trim());
