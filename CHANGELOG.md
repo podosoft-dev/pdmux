@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.30
+
 - An administrator can add someone who signs in only with Google (or another
   configured provider) from Admin → Users, without a password, while sign-up is
   closed. The manage dialog shows whether an email is verified and can mark it.
