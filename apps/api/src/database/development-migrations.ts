@@ -35,6 +35,11 @@ export interface DevelopmentMigrationOptions {
   maxRetryDelayMs?: number;
   /** Ends the retries, for example when the API shuts down. */
   signal?: AbortSignal;
+  /**
+   * Waits `ms` before a retry and resolves false when `signal` aborts. Defaults
+   * to a timer; tests pass one that records the delays instead of sleeping.
+   */
+  wait?: (ms: number, signal?: AbortSignal) => Promise<boolean>;
 }
 
 export interface DevelopmentMigrations {
@@ -116,9 +121,10 @@ export async function applyDevelopmentMigrations(
   });
   const maxDelayMs = options.maxRetryDelayMs ?? DEVELOPMENT_MIGRATION_MAX_RETRY_MS;
   let delayMs = Math.min(options.retryDelayMs ?? DEVELOPMENT_MIGRATION_RETRY_MS, maxDelayMs);
+  const sleep = options.wait ?? wait;
   const applied = (async (): Promise<boolean> => {
     for (let attempt = 2; ; attempt += 1) {
-      if (!(await wait(delayMs, options.signal))) return false;
+      if (!(await sleep(delayMs, options.signal))) return false;
       reason = await migrateOnce(migrateAll, log, attempt);
       if (reason === null) {
         unregister();

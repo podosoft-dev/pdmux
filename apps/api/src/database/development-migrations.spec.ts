@@ -108,26 +108,29 @@ describe("development migrations", () => {
   it("waits longer after each failure, up to the limit", async () => {
     const { log } = recorder();
     const readiness = new ReadinessService({ cacheMs: 0 });
-    const times: number[] = [];
+    // The delays asked for, not measured: timer gaps on a loaded CI runner
+    // stretched the first wait past the second and failed the comparison.
+    const delays: number[] = [];
+    let runs = 0;
     const { applied } = await applyDevelopmentMigrations(
       { NODE_ENV: "development", PODOKIT_DEV_MIGRATE: true },
       readiness,
       log,
       {
         migrateAll: async () => {
-          times.push(performance.now());
-          return times.length < 6 ? 1 : 0;
+          runs += 1;
+          return runs < 6 ? 1 : 0;
         },
         retryDelayMs: 10,
         maxRetryDelayMs: 40,
+        wait: async (ms) => {
+          delays.push(ms);
+          return true;
+        },
       },
     );
     expect(await applied).toBe(true);
-    const gaps = times.slice(1).map((time, index) => time - (times[index] ?? 0));
-    // 10, 20, 40, then capped at 40.
-    expect(gaps[1]).toBeGreaterThan((gaps[0] ?? 0) * 1.5);
-    expect(gaps[2]).toBeGreaterThan(35);
-    expect(gaps[4]).toBeLessThan(80);
+    expect(delays).toEqual([10, 20, 40, 40, 40]);
   });
 
   it("stops retrying when the API shuts down", async () => {
