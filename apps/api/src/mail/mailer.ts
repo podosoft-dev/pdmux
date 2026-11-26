@@ -99,7 +99,14 @@ export async function mailTransport(): Promise<Transporter> {
   return override ?? (await currentSetup()).transport;
 }
 
-export type Mail = { to: string; subject: string; text: string; html?: string };
+export type Mail = {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  /** Reply-To address, e.g. the visitor who filled in a contact form. */
+  replyTo?: string;
+};
 
 export async function sendMail(mail: Mail): Promise<void> {
   if (override) {

@@ -87,11 +87,20 @@ describe("ADMIN_EMAILS", () => {
 interface StartOptions {
   requireSignupApproval?: boolean;
   googleEmailVerified?: boolean;
+  /** The public sign-up setting; closed, only administrators create accounts. */
+  signupOpen?: boolean;
+  /** The address Google reports for the signed-in user. */
+  googleEmail?: string;
 }
 
 // The account rules of the generated auth.ts on an in-memory database, with
 // sign-up open and ADMIN_EMAILS naming ADMIN_EMAIL.
-function startAuth({ requireSignupApproval = false, googleEmailVerified = true }: StartOptions = {}) {
+function startAuth({
+  requireSignupApproval = false,
+  googleEmailVerified = true,
+  signupOpen = true,
+  googleEmail = ADMIN_EMAIL,
+}: StartOptions = {}) {
   const mail = { magicLink: "" };
   const db: Record<string, Record<string, unknown>[]> = {};
   const options = {
@@ -105,10 +114,10 @@ function startAuth({ requireSignupApproval = false, googleEmailVerified = true }
         clientId: "client",
         clientSecret: "secret",
         getUserInfo: async () => ({
-          user: { email: ADMIN_EMAIL, name: "Owner", emailVerified: googleEmailVerified },
+          user: { email: googleEmail, name: "Owner", emailVerified: googleEmailVerified },
           data: {
             sub: "google-1",
-            email: ADMIN_EMAIL,
+            email: googleEmail,
             email_verified: googleEmailVerified,
             name: "Owner",
             given_name: "Owner",
@@ -131,12 +140,14 @@ function startAuth({ requireSignupApproval = false, googleEmailVerified = true }
       }),
       admin(),
     ],
-    databaseHooks: databaseHooksFor({ requireSignupApproval }, new Set([ADMIN_EMAIL]), async () => true),
+    databaseHooks: databaseHooksFor({ requireSignupApproval }, new Set([ADMIN_EMAIL]), async () => signupOpen),
   };
   for (const table of Object.values(getAuthTables(options))) db[table.modelName] = [];
   const auth = betterAuth(options);
   const users = (): Array<{ email: string; role?: string; signupApproved?: boolean; emailVerified?: boolean }> =>
     (db.user ?? []) as Array<{ email: string; role?: string; signupApproved?: boolean; emailVerified?: boolean }>;
+  const accounts = (): Array<{ providerId: string; userId: string }> =>
+    (db.account ?? []) as Array<{ providerId: string; userId: string }>;
   const request = (path: string, init: { method?: string; body?: unknown; cookie?: string } = {}): Promise<Response> =>
     auth.handler(
       new Request(path.startsWith("http") ? path : `${BASE_URL}/api/auth${path}`, {
@@ -150,7 +161,7 @@ function startAuth({ requireSignupApproval = false, googleEmailVerified = true }
         redirect: "manual",
       }),
     );
-  return { auth, mail, users, request };
+  return { auth, mail, users, accounts, request };
 }
 
 const cookiesOf = (response: Response): string =>
@@ -235,5 +246,45 @@ describe("accounts with an ADMIN_EMAILS address", () => {
       expect.objectContaining({ email: ADMIN_EMAIL, role: "admin", signupApproved: true, emailVerified: true }),
     ]);
     expect((await started.request("/sign-in/email", { body: { email: ADMIN_EMAIL, password: PASSWORD } })).status).toBe(200);
+  });
+});
+
+describe("accounts an administrator creates for social sign-in", () => {
+  const MEMBER = "member@podokit.dev";
+  const errorOf = (response: Response): string | null =>
+    new URL(response.headers.get("location") ?? "", BASE_URL).searchParams.get("error");
+
+  test("links the first Google sign-in to a password-less account with a verified email while sign-up is closed", async () => {
+    const closed = startAuth({ signupOpen: false, googleEmail: MEMBER });
+    // The admin users page creates a social-only account through this call.
+    await closed.auth.api.createUser({ body: { email: MEMBER, name: "Member", role: "user", data: { emailVerified: true } } });
+    expect(closed.accounts()).toEqual([]);
+
+    const callback = await googleSignIn(closed);
+    expect(callback.status).toBe(302);
+    expect(errorOf(callback)).toBeNull();
+    expect(cookiesOf(callback)).toContain("session_token");
+    // No second user: the Google account joined the one the administrator made.
+    expect(closed.users()).toEqual([expect.objectContaining({ email: MEMBER, role: "user", emailVerified: true })]);
+    expect(closed.accounts().map((account) => account.providerId)).toEqual(["google"]);
+  });
+
+  test("refuses to link Google to an account whose email is not verified, and creates nobody", async () => {
+    const closed = startAuth({ signupOpen: false, googleEmail: MEMBER });
+    // What the admin page created before: a password and an unverified email.
+    await closed.auth.api.createUser({ body: { email: MEMBER, password: PASSWORD, name: "Member", role: "user" } });
+
+    const callback = await googleSignIn(closed);
+    expect(callback.status).toBe(302);
+    expect(errorOf(callback)).toBe("account_not_linked");
+    expect(closed.users()).toHaveLength(1);
+    expect(closed.accounts().map((account) => account.providerId)).toEqual(["credential"]);
+  });
+
+  test("still refuses a Google sign-in for an address nobody created while sign-up is closed", async () => {
+    const closed = startAuth({ signupOpen: false, googleEmail: MEMBER });
+    const callback = await googleSignIn(closed);
+    expect(errorOf(callback)).toBeTruthy();
+    expect(closed.users()).toEqual([]);
   });
 });

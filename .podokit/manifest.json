@@ -1,6 +1,6 @@
 {
   "schemaVersion": 4,
-  "podokitVersion": "1.7.5",
+  "podokitVersion": "1.9.3",
   "template": "fullstack",
   "toolchain": {
     "runtime": "bun",
@@ -142,6 +142,7 @@
     "apps/api/src/database/entities.ts",
     "apps/api/src/core/api-contract.extensions.ts",
     "apps/api/scripts/build.extensions.mjs",
+    "apps/api/image.extensions.sh",
     "apps/web/src/lib/server/proxy-headers.ts",
     "apps/web/src/lib/server/body-limits.ts",
     "apps/web/src/lib/server/proxy-timeouts.ts",

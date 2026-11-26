@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- An administrator can add someone who signs in only with Google (or another
+  configured provider) from Admin → Users, without a password, while sign-up is
+  closed. The manage dialog shows whether an email is verified and can mark it.
+- An unknown API path now answers with the usual not-found error for signed-in users
+  too, instead of an empty response.
+- Dependency updates: PodoKit 1.9.3 with Better Auth 1.7.28 (the web, desktop and
+  Electron plugin pins move together), Elysia 1.4.31, and the stable SvelteKit 3.1
+  release in place of the 3.0 prerelease.
+
 ## 0.17.29
 
 - A link printed in a pdmux terminal session (such as the sign-in link Claude Code

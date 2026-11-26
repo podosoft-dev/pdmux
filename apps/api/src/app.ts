@@ -153,6 +153,16 @@ export interface ErrorResponseState {
  * validation and routing errors as 400 and 404; anything else as 500 without
  * its message.
  */
+/**
+ * The status a request was answered with, for the request log. A handler that
+ * returns a Response (a mounted handler, a proxied file) sets its own status
+ * and leaves Elysia's `set.status` at the default 200.
+ */
+export function responseStatus(response: unknown, fallback: number | string | undefined): number | string {
+  if (response instanceof Response) return response.status;
+  return fallback ?? 200;
+}
+
 export function renderError(code: unknown, error: unknown, path: string, set: ErrorResponseState): ErrorEnvelope {
   if (error instanceof AppException) {
     set.status = error.statusCode;
@@ -238,9 +248,9 @@ const buildApp = (options: CreateAppOptions = {}) => {
         setHeader: (name, value) => { set.headers[name] = value; },
       });
     })
-    .onAfterResponse(({ request, set }) => {
+    .onAfterResponse(({ request, set, response }) => {
       context.logger.info(
-        { method: request.method, path: new URL(request.url).pathname, statusCode: set.status },
+        { method: request.method, path: new URL(request.url).pathname, statusCode: responseStatus(response, set.status) },
         "Complete request",
       );
     })

@@ -19,8 +19,9 @@ import {
 } from "../auth-config/auth-config.service";
 import { APP_FLAGS } from "../settings/flag-defaults";
 import { FEATURE_FLAGS, SettingsService, type FeatureFlag } from "../settings/settings.service";
-import { authConfigStore } from "./auth-config-store";
+import { auditLogAvailable, authConfigStore } from "./auth-config-store";
 import { getAuth, authRuntime, primeAuth } from "./auth-provider";
+import { authHandlerRoutes } from "./auth-handler-routes";
 import { cachedAuthOpenApiDocuments } from "./auth.openapi";
 import { ROLE_NAMES } from "./permissions";
 import { AuthService, createRequestIdentity } from "./auth.service";
@@ -69,7 +70,7 @@ const accountPlugin: AppPlugin = ({ services }) => {
   const database = services.resolve(DATABASE);
 
   return new Elysia({ name: "podokit.auth" })
-    .mount(authRuntime.handler)
+    .use(authHandlerRoutes(authRuntime.handler))
     .get("/account/me", async ({ request }) => {
       const session = await authService.requireSession(request);
       return session.user;
@@ -102,7 +103,7 @@ const accountPlugin: AppPlugin = ({ services }) => {
         emailVerification: snapshot.requireEmailVerification,
         signupApprovalRequired: snapshot.requireSignupApproval,
         passwordBreachCheck: snapshot.passwordBreachCheck,
-        auditLog: snapshot.auditLog,
+        auditLog: auditLogAvailable(snapshot.auditLog),
         sessionIdleTimeoutMinutes: snapshot.sessionIdleTimeoutMinutes,
         roles: ROLE_NAMES,
         appFlags: Object.fromEntries(APP_FLAGS.map((flag) => [flag, flags[flag]])),

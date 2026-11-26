@@ -3,6 +3,7 @@ import { AppException } from "@podosoft/podokit-contracts";
 import {
   cachedOpenApiDocument,
   renderError,
+  responseStatus,
   setRetryAfter,
   UNAVAILABLE_RETRY_AFTER_SECONDS,
   type OpenApiDocumentLoader,
@@ -118,5 +119,16 @@ describe("renderError", () => {
       message: "Internal server error",
       statusCode: 500,
     });
+  });
+});
+
+describe("responseStatus", () => {
+  it("logs the status of a Response a handler returned", () => {
+    expect(responseStatus(new Response(null, { status: 404 }), 200)).toBe(404);
+  });
+
+  it("uses Elysia's status for any other value", () => {
+    expect(responseStatus({ ok: true }, 201)).toBe(201);
+    expect(responseStatus(undefined, undefined)).toBe(200);
   });
 });

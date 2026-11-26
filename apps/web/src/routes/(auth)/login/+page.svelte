@@ -12,6 +12,7 @@
   import { getI18n, fmt } from "#lib/i18n/index.js";
   import { SIGNUP_APPROVAL_REQUIRED } from "@podosoft/podokit-api-client";
   import { site } from "#lib/site.svelte.js";
+  import { providerLabel } from "#lib/auth-providers.js";
 
   import type { PageData } from "./$types";
 
@@ -42,14 +43,6 @@
     new URL(withAuthRedirect("/login", redirectTo()), page.url.origin).toString();
   const signupHref = (): string => withAuthRedirect("/signup", redirectTo());
   const socialProviders = $derived(data.capabilities?.providers ?? []);
-  const providerLabels: Record<string, string> = {
-    github: "GitHub",
-    google: "Google",
-    apple: "Apple",
-    microsoft: "Microsoft",
-  };
-  const providerLabel = (provider: string): string =>
-    providerLabels[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
 
   async function handlePolicyError(code: string | undefined): Promise<boolean> {
     if (code === SIGNUP_APPROVAL_REQUIRED) {
