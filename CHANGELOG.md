@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.17.32
+
+- The desktop app's web server bundles its runtime dependencies too. 0.17.31's
+  desktop packages could not start it offline and fetched the packages from npm
+  otherwise; their release checks failed, so they were never published. The
+  server release is unchanged.
+
 ## 0.17.31
 
 - The web server image bundles its runtime dependencies again. With the stable
