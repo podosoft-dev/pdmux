@@ -29,6 +29,7 @@ const repoVersion = (
  * server could not start: with no network it died on `Cannot find package 'clsx'`
  * (the release's image check caught it), and with one Bun fetched the packages from
  * npm at startup, unpinned. The 1.0 prerelease bundled everything; this keeps that.
+ * The desktop build ships the same way and needs the same list.
  */
 const webDependencies = Object.keys(
   (JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
@@ -193,8 +194,9 @@ export const appViteConfig: UserConfig | UserConfigFnObject = {
       return undefined;
     },
   }] : [])],
-  // The desktop build keeps its own runtime packaging and bundles only the client.
-  ssr: { noExternal: desktopBuild ? ["@podosoft/podokit-api-client"] : webDependencies },
+  // The desktop app ships apps/web/build-desktop without node_modules too
+  // (apps/desktop/src/staging.ts), so it bundles the same list, the client included.
+  ssr: { noExternal: webDependencies },
   // Read through `$lib/version.ts`, which is the only module that names it.
   define: { __PDMUX_VERSION__: JSON.stringify(repoVersion ?? "") },
   /**
