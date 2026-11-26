@@ -20,6 +20,22 @@ const repoVersion = (
   }
 ).version;
 
+/**
+ * The web server's runtime dependencies, bundled into its build.
+ *
+ * ⚠ THE PRODUCTION IMAGE CARRIES NO node_modules. The stable adapter-bun (1.0,
+ * through @sveltejs/adapter-server) leaves every package.json `dependency` out of
+ * the server bundle unless `ssr.noExternal` names it. Built that way, the image's
+ * server could not start: with no network it died on `Cannot find package 'clsx'`
+ * (the release's image check caught it), and with one Bun fetched the packages from
+ * npm at startup, unpinned. The 1.0 prerelease bundled everything; this keeps that.
+ */
+const webDependencies = Object.keys(
+  (JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
+    dependencies?: Record<string, string>;
+  }).dependencies ?? {},
+);
+
 const inDocker = process.env.VITE_DOCKER === "1";
 const desktopBuild = process.env.PDMUX_DESKTOP_BUILD === "1";
 
@@ -177,7 +193,8 @@ export const appViteConfig: UserConfig | UserConfigFnObject = {
       return undefined;
     },
   }] : [])],
-  ...(desktopBuild ? { ssr: { noExternal: ["@podosoft/podokit-api-client"] } } : {}),
+  // The desktop build keeps its own runtime packaging and bundles only the client.
+  ssr: { noExternal: desktopBuild ? ["@podosoft/podokit-api-client"] : webDependencies },
   // Read through `$lib/version.ts`, which is the only module that names it.
   define: { __PDMUX_VERSION__: JSON.stringify(repoVersion ?? "") },
   /**
