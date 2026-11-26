@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.17.31
+
+- The web server image bundles its runtime dependencies again. With the stable
+  SvelteKit adapter, 0.17.30's image could not start without network access, so
+  0.17.30 was tagged but never published or deployed; its changes ship here.
+
 ## 0.17.30
 
 - An administrator can add someone who signs in only with Google (or another
